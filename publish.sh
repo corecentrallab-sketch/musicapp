@@ -16,7 +16,9 @@ mkdir -p .run
 # once node_modules is current.
 bun install
 bun run build
-setsid nohup bun run start > .run/server.log 2>&1 < /dev/null &
+# Load .env for the server process (setsid doesn't auto-load Bun's .env)
+export $(grep -v '^#' .env | xargs) 2>/dev/null || true
+setsid nohup env DATABASE_URL="$DATABASE_URL" bun run start > .run/server.log 2>&1 < /dev/null &
 
 # Wait for the new server to actually answer before reporting success, so a
 # startup crash surfaces here instead of silently leaving the old page live.

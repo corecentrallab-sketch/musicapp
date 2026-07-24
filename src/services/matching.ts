@@ -41,7 +41,7 @@ export async function matchFingerprint(
   const fpLiteral = `{${queryFingerprint.join(",")}}`;
 
   const query = await sql()`
-    WITH overlaps AS (
+    WITH candidates AS (
       SELECT
         f.id AS fingerprint_id,
         f.piece_id,
@@ -61,7 +61,7 @@ export async function matchFingerprint(
         o.overlap_count::float /
           GREATEST(1, o.stored_count + o.query_count - o.overlap_count)::float
           AS confidence
-      FROM overlaps o
+      FROM candidates o
     )
     SELECT
       s.fingerprint_id,
