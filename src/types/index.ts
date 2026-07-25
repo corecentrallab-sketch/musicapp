@@ -33,3 +33,53 @@ export interface Recommendation {
   /** Cover art URL (freely licensed). */
   coverArtUrl?: string;
 }
+
+// ─── Onboarding ───────────────────────────────────────────────
+
+export type Instrument = 'piano' | 'guitar' | 'both';
+export type SkillLevel = 'beginner' | 'intermediate' | 'advanced';
+export type Genre = 'classical' | 'jazz-ragtime' | 'folk-traditional';
+
+export interface OnboardingAnswers {
+  instrument: Instrument;
+  level: SkillLevel;
+  genres: Genre[];
+  completedAt: string; // ISO date string
+}
+
+// ─── Streaks ──────────────────────────────────────────────────
+
+export interface StreakData {
+  currentStreak: number;
+  lastPracticeDate: string | null; // ISO date string (YYYY-MM-DD)
+  bestStreak: number;
+}
+
+// ─── Achievements ─────────────────────────────────────────────
+
+export interface Badge {
+  id: string;
+  name: string;
+  description: string;
+  emoji: string;
+  earnedAt?: string; // ISO date string, set when earned
+}
+
+// ─── Weekly Goals ─────────────────────────────────────────────
+
+export interface WeeklyGoal {
+  target: number;
+  current: number;
+  weekStart: string; // ISO date string (Monday)
+}
+
+// ─── Daily Challenge ──────────────────────────────────────────
+
+export interface DailyChallengePiece {
+  id: string;
+  title: string;
+  composer: string;
+  genre: string;
+  difficulty: string; // "Beginner" | "Intermediate" | "Advanced"
+  description: string;
+}
