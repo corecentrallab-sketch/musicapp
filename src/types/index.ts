@@ -33,3 +33,56 @@ export interface Recommendation {
   /** Cover art URL (freely licensed). */
   coverArtUrl?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Recognition API types
+// ---------------------------------------------------------------------------
+
+/** Purchase link URLs for a matched piece. */
+export interface PurchaseUrls {
+  musicnotes: string;
+  sheetmusicplus: string;
+}
+
+/** A single match result from the recognition API. */
+export interface RecognitionMatch {
+  piece_id: string;
+  title: string;
+  composer: string;
+  catalog: string | null;
+  confidence: number;
+  album_art_url: string | null;
+  sheet_music_url: string | null;
+  tab_url: string | null;
+  matched_at_s: number;
+  /** Null for public-domain pieces (we already serve the score). */
+  purchase_url: PurchaseUrls | null;
+}
+
+/** Successful response from POST /api/recognize. */
+export interface RecognitionResponse {
+  success: true;
+  matches: RecognitionMatch[];
+  query_duration_ms: number;
+  db_available: boolean;
+  /** Fallback purchase link when no matches found. */
+  purchase_url?: PurchaseUrls;
+}
+
+/** Error response from POST /api/recognize. */
+export interface RecognitionError {
+  success: false;
+  error: string;
+}
+
+export type RecognitionResult = RecognitionResponse | RecognitionError;
+
+/** The states a recognition session can be in. */
+export type RecognitionState =
+  | "idle"
+  | "recording"
+  | "uploading"
+  | "processing"
+  | "success"
+  | "no_match"
+  | "error";
