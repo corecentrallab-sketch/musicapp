@@ -135,22 +135,49 @@ export async function handleRecognize(req: Request): Promise<Response> {
     );
   }
 
+  // --- Helper: generate affiliate purchase URLs ---
+  function generatePurchaseUrls(
+    title: string,
+    composer: string,
+  ): { musicnotes: string; sheetmusicplus: string } {
+    const q = encodeURIComponent(`${title} ${composer}`);
+    return {
+      musicnotes: `https://www.musicnotes.com/search/go?q=${q}&w=NoteSnap`,
+      sheetmusicplus: `https://www.sheetmusicplus.com/search?q=${q}&aff_id=notesnap`,
+    };
+  }
+
   // --- Match against database ---
   let matches: unknown[] = [];
   let dbAvailable = false;
+  let bestGuessTitle: string | null = null;
+  let bestGuessComposer: string | null = null;
   try {
     const rawMatches = await matchFingerprint(fingerprint);
-    matches = rawMatches.map((m) => ({
-      piece_id: m.piece_id,
-      title: m.title,
-      composer: m.composer,
-      catalog: m.catalog,
-      confidence: Math.round(m.confidence * 100) / 100,
-      album_art_url: m.album_art_url,
-      sheet_music_url: m.sheet_music_url,
-      tab_url: m.tab_url,
-      matched_at_s: m.segment_start_s,
-    }));
+    matches = rawMatches.map((m) => {
+      // Keep best-guess metadata for fallback when no match found
+      if (!bestGuessTitle && m.title) {
+        bestGuessTitle = m.title;
+        bestGuessComposer = m.composer;
+      }
+      // Public-domain pieces (with sheet_music_url) get null purchase_url —
+      // we already serve the score. Others get affiliate search links.
+      const isPublicDomain = !!m.sheet_music_url;
+      return {
+        piece_id: m.piece_id,
+        title: m.title,
+        composer: m.composer,
+        catalog: m.catalog,
+        confidence: Math.round(m.confidence * 100) / 100,
+        album_art_url: m.album_art_url,
+        sheet_music_url: m.sheet_music_url,
+        tab_url: m.tab_url,
+        matched_at_s: m.segment_start_s,
+        purchase_url: isPublicDomain
+          ? null
+          : generatePurchaseUrls(m.title, m.composer),
+      };
+    });
     dbAvailable = true;
   } catch (err) {
     console.warn(
@@ -161,10 +188,25 @@ export async function handleRecognize(req: Request): Promise<Response> {
 
   const queryDurationMs = Math.round(performance.now() - startTime);
 
-  return Response.json({
+  // Build response. Include a top-level purchase_url when there are no matches
+  // or the DB was unavailable — a generic search link if we have a guess.
+  const response: Record<string, unknown> = {
     success: true,
     matches,
     query_duration_ms: queryDurationMs,
     db_available: dbAvailable,
-  });
+  };
+
+  if (matches.length === 0) {
+    response.purchase_url = bestGuessTitle
+      ? generatePurchaseUrls(bestGuessTitle, bestGuessComposer || "")
+      : {
+          musicnotes:
+            "https://www.musicnotes.com/search/go?q=&w=NoteSnap",
+          sheetmusicplus:
+            "https://www.sheetmusicplus.com/search?q=&aff_id=notesnap",
+        };
+  }
+
+  return Response.json(response);
 }
