@@ -9,7 +9,7 @@
 import type { RecognitionResponse, RecognitionError } from "../types";
 
 /** Override with the live site URL in production. */
-let BASE_URL = "http://localhost:3000";
+let BASE_URL = "https://site-ten-sigma-27.vercel.app";
 
 export function setApiBaseUrl(url: string): void {
   BASE_URL = url.replace(/\/+$/, "");
