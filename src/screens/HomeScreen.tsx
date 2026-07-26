@@ -11,7 +11,7 @@ import {
   Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useAudioRecorder } from "expo-audio";
+import { Audio } from "expo-av";
 import * as WebBrowser from "expo-web-browser";
 import { recognizeAudio } from "../services/api";
 import type { RecognitionResponse, RecognitionMatch, RecognitionState } from "../types";
@@ -209,7 +209,7 @@ const MatchCard: React.FC<{
 // Main Component: HomeScreen
 // ---------------------------------------------------------------------------
 export const HomeScreen: React.FC = () => {
-  const recorder = useAudioRecorder();
+  const recordingRef = useRef<Audio.Recording | null>(null);
   const [state, setState] = useState<RecognitionState>("idle");
   const [results, setResults] = useState<RecognitionResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
