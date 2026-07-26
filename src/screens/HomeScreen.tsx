@@ -1,539 +1,636 @@
-/**
- * HomeScreen (Discover tab) — the main hub.
- * Shows: recognition prompt, streak counter, weekly goals, daily challenge,
- * and personalised recommendation copy.
- */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
-  RefreshControl,
-} from 'react-native';
-import { BadgeToast } from '../components/BadgeToast';
-import { PieceDetailScreen } from './PieceDetailScreen';
-import {
-  getStreakData,
-  recordPractice,
-  getWeeklyGoal,
-  getOnboardingAnswers,
-} from '../services/storage';
-import { checkAndAwardBadges } from '../services/achievements';
-import { getTodayChallenge } from '../services/dailyChallenge';
-import type {
-  StreakData,
-  WeeklyGoal,
-  DailyChallengePiece,
-  OnboardingAnswers,
-  Badge,
-} from '../types';
+  ActivityIndicator,
+  ScrollView,
+  Animated,
+  Easing,
+  Image,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useAudioRecorder } from "expo-audio";
+import * as WebBrowser from "expo-web-browser";
+import { recognizeAudio } from "../services/api";
+import type { RecognitionResponse, RecognitionMatch, RecognitionState } from "../types";
 
-export const HomeScreen: React.FC = () => {
-  // State
-  const [streak, setStreak] = useState<StreakData>({
-    currentStreak: 0,
-    lastPracticeDate: null,
-    bestStreak: 0,
-  });
-  const [weeklyGoal, setWeeklyGoal] = useState<WeeklyGoal>({
-    target: 5,
-    current: 0,
-    weekStart: '',
-  });
-  const [dailyChallenge, setDailyChallenge] =
-    useState<DailyChallengePiece | null>(null);
-  const [onboarding, setOnboarding] = useState<OnboardingAnswers | null>(null);
-  const [badgeToast, setBadgeToast] = useState<Badge | null>(null);
-  const [showDetail, setShowDetail] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+const RECORDING_DURATION_MS = 6000; // 6 seconds
 
-  // Load initial data
+const COLORS = {
+  bg: "#1a1a2e",
+  header: "#16213e",
+  accent: "#e94560",
+  muted: "#a0a0b8",
+  card: "#0f3460",
+  success: "#2ecc71",
+  warning: "#f39c12",
+  white: "#ffffff",
+} as const;
+
+// ---------------------------------------------------------------------------
+// Sub-component: Pulsing Mic Button
+// ---------------------------------------------------------------------------
+const PulsingMic: React.FC<{ onPress: () => void; disabled?: boolean }> = ({
+  onPress,
+  disabled,
+}) => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
   useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    const [s, wg, ob, dc] = await Promise.all([
-      getStreakData(),
-      getWeeklyGoal(),
-      getOnboardingAnswers(),
-      Promise.resolve(getTodayChallenge()),
-    ]);
-    setStreak(s);
-    setWeeklyGoal(wg);
-    setOnboarding(ob);
-    setDailyChallenge(dc);
-  };
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await loadData();
-
-    // Check for new badges on refresh
-    const newBadges = await checkAndAwardBadges({
-      totalRecognitions: undefined,
-      totalSavedPieces: undefined,
-    });
-    if (newBadges.length > 0) {
-      setBadgeToast(newBadges[0]);
-    }
-
-    setRefreshing(false);
-  }, []);
-
-  // Simulate "practice" action for demonstration — tap daily challenge counts
-  const handleDailyChallengeTap = useCallback(async () => {
-    const newStreak = await recordPractice();
-    setStreak(newStreak);
-
-    const wg = await getWeeklyGoal();
-    setWeeklyGoal(wg);
-
-    // Check for streak-related badges
-    const newBadges = await checkAndAwardBadges({
-      totalRecognitions: undefined,
-    });
-    if (newBadges.length > 0) {
-      setBadgeToast(newBadges[0]);
-    }
-
-    setShowDetail(true);
-  }, []);
-
-  // Build personalised recommendation text
-  const personalisedCopy = onboarding
-    ? onboarding.instrument === 'both'
-      ? `Piano & Guitar picks for ${onboarding.level}s`
-      : `${onboarding.instrument === 'piano' ? 'Piano' : 'Guitar'} picks for ${
-          onboarding.level
-        }s`
-    : 'Discover sheet music';
-
-  const genreCopy =
-    onboarding?.genres?.length
-      ? `Curated ${onboarding.genres
-          .map((g) =>
-            g === 'jazz-ragtime'
-              ? 'Jazz & Ragtime'
-              : g.charAt(0).toUpperCase() + g.slice(1)
-          )
-          .join(', ')}`
-      : 'All genres';
-
-  const streakText =
-    streak.currentStreak > 0
-      ? `🔥 ${streak.currentStreak}-day streak`
-      : 'Start your streak today!';
-
-  const streakNudge =
-    streak.currentStreak > 0 && streak.currentStreak < 7
-      ? 'Keep it going — don\'t break your streak!'
-      : streak.currentStreak >= 7
-      ? 'Amazing consistency! You\'re on fire! 🔥'
-      : 'Practice today to start your streak!';
-
-  const weekProgress = `${weeklyGoal.current}/${weeklyGoal.target} days practiced`;
-  const weekPercent = Math.min(
-    (weeklyGoal.current / weeklyGoal.target) * 100,
-    100
-  );
-  const weekComplete = weeklyGoal.current >= weeklyGoal.target;
-
-  if (showDetail && dailyChallenge) {
-    return (
-      <PieceDetailScreen
-        piece={dailyChallenge}
-        onBack={() => setShowDetail(false)}
-      />
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.15,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
     );
-  }
+    animation.start();
+    return () => animation.stop();
+  }, [pulseAnim]);
 
   return (
-    <View style={styles.container}>
-      {/* Badge toast overlay */}
-      <BadgeToast
-        badge={badgeToast ?? { id: '', name: '', description: '', emoji: '' }}
-        visible={badgeToast !== null}
-        onDismiss={() => setBadgeToast(null)}
-      />
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#e94560"
-          />
-        }
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.7}
+      style={styles.micOuter}
+    >
+      <Animated.View
+        style={[
+          styles.micInner,
+          { transform: [{ scale: pulseAnim }] },
+        ]}
       >
-        {/* ── Header ── */}
-        <Text style={styles.headerEmoji}>🎵</Text>
-        <Text style={styles.title}>NoteSnap</Text>
-        <Text style={styles.subtitle}>{genreCopy}</Text>
+        <Ionicons name="mic" size={48} color={COLORS.white} />
+      </Animated.View>
+    </TouchableOpacity>
+  );
+};
 
-        {/* ── Streak Card ── */}
-        <View style={styles.streakCard}>
-          <View style={styles.streakRow}>
-            <Text style={styles.streakEmoji}>🔥</Text>
-            <View style={styles.streakInfo}>
-              <Text style={styles.streakCount}>{streakText}</Text>
-              <Text style={styles.streakBest}>
-                Best: {streak.bestStreak} days
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.streakNudge}>{streakNudge}</Text>
-        </View>
+// ---------------------------------------------------------------------------
+// Sub-component: Recording Indicator (animated waveform bars)
+// ---------------------------------------------------------------------------
+const RecordingWaveform: React.FC = () => {
+  const bars = Array.from({ length: 5 }, (_, i) => {
+    const anim = useRef(new Animated.Value(0.3)).current;
+    useEffect(() => {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 300 + i * 80,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(anim, {
+            toValue: 0.3,
+            duration: 300 + i * 80,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      loop.start();
+      return () => loop.stop();
+    }, [anim]);
 
-        {/* ── Weekly Goals ── */}
-        <View style={styles.goalCard}>
-          <View style={styles.goalHeader}>
-            <Text style={styles.goalTitle}>📋 This Week</Text>
-            {weekComplete && <Text style={styles.goalComplete}>🎉 Done!</Text>}
-          </View>
-          <Text style={styles.goalProgress}>{weekProgress}</Text>
-          <View style={styles.progressBar}>
-            <View
-              style={[
-                styles.progressFill,
-                { width: `${weekPercent}%` },
-                weekComplete && styles.progressFillComplete,
-              ]}
-            />
-          </View>
-          {weekComplete && (
-            <Text style={styles.goalCelebrate}>
-              You crushed your goal this week!
-            </Text>
-          )}
-        </View>
+    return (
+      <Animated.View
+        key={i}
+        style={[
+          styles.waveBar,
+          {
+            transform: [{ scaleY: anim }],
+            marginHorizontal: 3,
+          },
+        ]}
+      />
+    );
+  });
 
-        {/* ── Daily Challenge ── */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>🌟 Today's Featured Piece</Text>
-        </View>
+  return <View style={styles.waveformContainer}>{bars}</View>;
+};
 
-        {dailyChallenge && (
-          <TouchableOpacity
-            style={styles.challengeCard}
-            onPress={handleDailyChallengeTap}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.challengeEmoji}>🎼</Text>
-            <Text style={styles.challengeTitle}>{dailyChallenge.title}</Text>
-            <Text style={styles.challengeComposer}>
-              {dailyChallenge.composer}
-            </Text>
-            <View style={styles.challengeMeta}>
-              <View style={styles.challengeTag}>
-                <Text style={styles.challengeTagText}>
-                  {dailyChallenge.genre}
-                </Text>
-              </View>
-              <View style={styles.challengeTag}>
-                <Text style={styles.challengeTagText}>
-                  {dailyChallenge.difficulty === 'Beginner'
-                    ? '🌱'
-                    : dailyChallenge.difficulty === 'Intermediate'
-                    ? '🌿'
-                    : '🌳'}{' '}
-                  {dailyChallenge.difficulty}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.challengeDesc} numberOfLines={2}>
-              {dailyChallenge.description}
-            </Text>
-            <View style={styles.challengeCta}>
-              <Text style={styles.challengeCtaText}>View & Practice →</Text>
-            </View>
-          </TouchableOpacity>
+// ---------------------------------------------------------------------------
+// Sub-component: Match Result Card
+// ---------------------------------------------------------------------------
+const MatchCard: React.FC<{
+  match: RecognitionMatch;
+  onSaveToHistory: (match: RecognitionMatch) => void;
+}> = ({ match, onSaveToHistory }) => {
+  const isPublicDomain = !!match.sheet_music_url;
+  const hasPurchaseUrl = !!match.purchase_url;
+
+  const handlePurchase = useCallback(async () => {
+    if (match.purchase_url?.musicnotes) {
+      await WebBrowser.openBrowserAsync(match.purchase_url.musicnotes);
+    }
+  }, [match.purchase_url]);
+
+  const handleOpenSheetMusic = useCallback(async () => {
+    if (match.sheet_music_url) {
+      // For public-domain: sheet_music_url points to our hosted score
+      await WebBrowser.openBrowserAsync(match.sheet_music_url);
+    }
+  }, [match.sheet_music_url]);
+
+  return (
+    <View style={styles.matchCard}>
+      {/* Album art placeholder */}
+      <View style={styles.albumArtPlaceholder}>
+        {match.album_art_url ? (
+          <Image
+            source={{ uri: match.album_art_url }}
+            style={styles.albumArt}
+            resizeMode="cover"
+          />
+        ) : (
+          <Ionicons name="musical-notes" size={40} color={COLORS.muted} />
         )}
+      </View>
 
-        {/* ── Personalised Recommendations ── */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>🎯 For You</Text>
-        </View>
-        <Text style={styles.recoLabel}>{personalisedCopy}</Text>
-        <Text style={styles.recoByline}>
-          {onboarding
-            ? 'Based on your instrument, level, and genre preferences.'
-            : 'Complete onboarding to personalise your feed.'}
-        </Text>
+      {/* Info */}
+      <Text style={styles.matchTitle}>{match.title}</Text>
+      <Text style={styles.matchComposer}>{match.composer}</Text>
+      {match.catalog ? (
+        <Text style={styles.matchCatalog}>{match.catalog}</Text>
+      ) : null}
+      <Text style={styles.matchConfidence}>
+        Match confidence: {Math.round(match.confidence * 100)}%
+      </Text>
 
-        {/* ── Recognition CTA ── */}
-        <View style={styles.recognitionCard}>
-          <Text style={styles.recognitionEmoji}>🎤</Text>
-          <Text style={styles.recognitionTitle}>Recognize a Song</Text>
-          <Text style={styles.recognitionDesc}>
-            Hear a song you want to play? Tap to identify it and get the sheet
-            music instantly.
-          </Text>
-          <TouchableOpacity style={styles.recognitionBtn}>
-            <Text style={styles.recognitionBtnText}>Start Listening</Text>
+      {/* Action buttons */}
+      <View style={styles.actionRow}>
+        {isPublicDomain ? (
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handleOpenSheetMusic}
+          >
+            <Ionicons name="document-text" size={18} color={COLORS.white} />
+            <Text style={styles.buttonText}>Open sheet music</Text>
           </TouchableOpacity>
-        </View>
+        ) : hasPurchaseUrl ? (
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handlePurchase}
+          >
+            <Ionicons name="cart" size={18} color={COLORS.white} />
+            <Text style={styles.buttonText}>Get official sheet music</Text>
+          </TouchableOpacity>
+        ) : null}
 
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() => onSaveToHistory(match)}
+        >
+          <Ionicons name="bookmark" size={18} color={COLORS.accent} />
+          <Text style={styles.secondaryButtonText}>Save to History</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
 
+// ---------------------------------------------------------------------------
+// Main Component: HomeScreen
+// ---------------------------------------------------------------------------
+export const HomeScreen: React.FC = () => {
+  const recorder = useAudioRecorder();
+  const [state, setState] = useState<RecognitionState>("idle");
+  const [results, setResults] = useState<RecognitionResponse | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  // ── Handle "Listen" tap ──────────────────────────────────────────────
+  const handleListen = useCallback(async () => {
+    try {
+      setState("recording");
+      setResults(null);
+      setErrorMessage(null);
+      setElapsedMs(0);
+
+      // Start elapsed timer
+      const startTime = Date.now();
+      timerRef.current = setInterval(() => {
+        setElapsedMs(Date.now() - startTime);
+      }, 100);
+
+      // Request permission and start recording
+      await recorder.record({
+        sampleRate: 44100,
+        encoding: "opus",
+        channelCount: 1,
+      });
+
+      // Record for fixed duration
+      await new Promise((resolve) => setTimeout(resolve, RECORDING_DURATION_MS));
+
+      // Stop recording
+      const recording = await recorder.stop();
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+
+      if (!recording?.uri) {
+        setState("error");
+        setErrorMessage("Recording failed — no audio captured.");
+        return;
+      }
+
+      // Upload & recognize
+      setState("uploading");
+      const response = await recognizeAudio(recording.uri);
+
+      setState("processing");
+      // Brief visual pause so the user sees "processing"
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      if (response.matches.length === 0) {
+        setState("no_match");
+        setResults(response);
+      } else {
+        setState("success");
+        setResults(response);
+      }
+    } catch (err: unknown) {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      setState("error");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Something went wrong.",
+      );
+    }
+  }, [recorder]);
+
+  // ── Handle "Save to History" ─────────────────────────────────────────
+  const handleSaveToHistory = useCallback((match: RecognitionMatch) => {
+    // TODO: persist to AsyncStorage or the site DB in a future iteration
+    // For now we show feedback inline.
+    alert(`Saved "${match.title}" to History!`);
+  }, []);
+
+  // ── Handle "Try Again" ───────────────────────────────────────────────
+  const handleReset = useCallback(() => {
+    setState("idle");
+    setResults(null);
+    setErrorMessage(null);
+  }, []);
+
+  // ── Render ───────────────────────────────────────────────────────────
+  return (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+    >
+      {/* Header */}
+      <Text style={styles.title}>Discover</Text>
+      <Text style={styles.subtitle}>
+        Tap the mic to identify music around you.
+      </Text>
+
+      {/* ── IDLE STATE ── */}
+      {state === "idle" && (
+        <View style={styles.centerSection}>
+          <PulsingMic onPress={handleListen} />
+          <Text style={styles.hint}>Record 6 seconds of audio</Text>
+        </View>
+      )}
+
+      {/* ── RECORDING STATE ── */}
+      {state === "recording" && (
+        <View style={styles.centerSection}>
+          <View style={styles.recordingIndicator}>
+            <Ionicons name="radio" size={24} color={COLORS.accent} />
+            <Text style={styles.recordingText}>Listening...</Text>
+          </View>
+          <RecordingWaveform />
+          <Text style={styles.timerText}>
+            {(elapsedMs / 1000).toFixed(1)}s / {(RECORDING_DURATION_MS / 1000).toFixed(0)}s
+          </Text>
+        </View>
+      )}
+
+      {/* ── UPLOADING / PROCESSING STATES ── */}
+      {(state === "uploading" || state === "processing") && (
+        <View style={styles.centerSection}>
+          <ActivityIndicator size="large" color={COLORS.accent} />
+          <Text style={styles.statusText}>
+            {state === "uploading" ? "Uploading audio..." : "Matching against database..."}
+          </Text>
+        </View>
+      )}
+
+      {/* ── SUCCESS STATE ── */}
+      {state === "success" && results && (
+        <View style={styles.resultsSection}>
+          <Text style={styles.resultsHeader}>
+            {results.matches.length} match{results.matches.length !== 1 ? "es" : ""} found
+          </Text>
+          {results.matches.map((match) => (
+            <MatchCard
+              key={match.piece_id}
+              match={match}
+              onSaveToHistory={handleSaveToHistory}
+            />
+          ))}
+          <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+            <Text style={styles.resetButtonText}>Try another</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── NO MATCH STATE ── */}
+      {state === "no_match" && (
+        <View style={styles.centerSection}>
+          <Ionicons name="search" size={64} color={COLORS.muted} />
+          <Text style={styles.statusTitle}>No match found</Text>
+          <Text style={styles.statusSubtitle}>
+            We couldn't identify this piece. Try recording closer to the source.
+          </Text>
+          {results?.purchase_url && (
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={async () => {
+                await WebBrowser.openBrowserAsync(
+                  results.purchase_url!.musicnotes,
+                );
+              }}
+            >
+              <Ionicons name="search" size={18} color={COLORS.white} />
+              <Text style={styles.buttonText}>Search on Musicnotes</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+            <Text style={styles.resetButtonText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── ERROR STATE ── */}
+      {state === "error" && (
+        <View style={styles.centerSection}>
+          <Ionicons name="alert-circle" size={64} color={COLORS.warning} />
+          <Text style={styles.statusTitle}>Something went wrong</Text>
+          <Text style={styles.statusSubtitle}>
+            {errorMessage || "An unexpected error occurred."}
+          </Text>
+          <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+            <Text style={styles.resetButtonText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </ScrollView>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: COLORS.bg,
   },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 40,
-  },
-
-  // Header
-  headerEmoji: {
-    fontSize: 48,
-    textAlign: 'center',
-    marginBottom: 4,
+  contentContainer: {
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 48,
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
-    color: '#e94560',
-    textAlign: 'center',
-    marginBottom: 2,
+    fontWeight: "700",
+    color: COLORS.accent,
+    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 14,
-    color: '#a0a0b8',
-    textAlign: 'center',
-    marginBottom: 24,
+    fontSize: 16,
+    color: COLORS.muted,
+    textAlign: "center",
+    lineHeight: 24,
+    marginBottom: 32,
   },
 
-  // Streak
-  streakCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: '#0f3460',
+  // ── Mic button ──
+  micOuter: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: COLORS.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    elevation: 8,
+    shadowColor: COLORS.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
   },
-  streakRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  micInner: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  hint: {
+    fontSize: 14,
+    color: COLORS.muted,
+    marginTop: 8,
+  },
+
+  // ── Center section ──
+  centerSection: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+    width: "100%",
+  },
+
+  // ── Recording ──
+  recordingIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 16,
+  },
+  recordingText: {
+    color: COLORS.accent,
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  timerText: {
+    color: COLORS.muted,
+    fontSize: 14,
+    marginTop: 12,
+    fontVariant: ["tabular-nums"],
+  },
+  waveformContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    height: 60,
+  },
+  waveBar: {
+    width: 6,
+    height: 40,
+    backgroundColor: COLORS.accent,
+    borderRadius: 3,
+  },
+
+  // ── Status (uploading, processing, no_match, error) ──
+  statusText: {
+    color: COLORS.muted,
+    fontSize: 16,
+    marginTop: 16,
+  },
+  statusTitle: {
+    color: COLORS.white,
+    fontSize: 20,
+    fontWeight: "700",
+    marginTop: 16,
     marginBottom: 8,
   },
-  streakEmoji: {
-    fontSize: 36,
-    marginRight: 14,
+  statusSubtitle: {
+    color: COLORS.muted,
+    fontSize: 15,
+    textAlign: "center",
+    lineHeight: 22,
+    marginBottom: 24,
+    paddingHorizontal: 16,
   },
-  streakInfo: {
-    flex: 1,
+
+  // ── Results ──
+  resultsSection: {
+    width: "100%",
+    alignItems: "center",
   },
-  streakCount: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#ffffff',
+  resultsHeader: {
+    color: COLORS.white,
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 16,
   },
-  streakBest: {
-    fontSize: 13,
-    color: '#a0a0b8',
-    marginTop: 2,
+
+  // ── Match card ──
+  matchCard: {
+    width: "100%",
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    alignItems: "center",
   },
-  streakNudge: {
-    fontSize: 14,
-    color: '#ffb347',
-    fontWeight: '600',
+  albumArtPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+    backgroundColor: COLORS.header,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  albumArt: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+  },
+  matchTitle: {
+    color: COLORS.white,
+    fontSize: 18,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  matchComposer: {
+    color: COLORS.accent,
+    fontSize: 15,
+    fontWeight: "500",
     marginTop: 4,
   },
-
-  // Weekly goal
-  goalCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 22,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-  },
-  goalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  goalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  goalComplete: {
-    fontSize: 14,
-    color: '#4ecdc4',
-    fontWeight: '700',
-  },
-  goalProgress: {
-    fontSize: 15,
-    color: '#c0c0d0',
-    fontWeight: '600',
-    marginBottom: 10,
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: '#1a1a2e',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#e94560',
-    borderRadius: 4,
-  },
-  progressFillComplete: {
-    backgroundColor: '#4ecdc4',
-  },
-  goalCelebrate: {
+  matchCatalog: {
+    color: COLORS.muted,
     fontSize: 13,
-    color: '#4ecdc4',
-    fontWeight: '600',
-    marginTop: 10,
+    marginTop: 2,
   },
-
-  // Daily challenge
-  sectionHeader: {
-    marginBottom: 12,
-    marginTop: 6,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#e94560',
-  },
-  challengeCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 20,
-    padding: 22,
-    marginBottom: 22,
-    borderWidth: 1,
-    borderColor: '#e94560',
-    borderStyle: 'dashed',
-  },
-  challengeEmoji: {
-    fontSize: 40,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  challengeTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#ffffff',
-    textAlign: 'center',
-    marginBottom: 2,
-  },
-  challengeComposer: {
-    fontSize: 15,
-    color: '#a0a0b8',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  challengeMeta: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  challengeTag: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  challengeTagText: {
-    color: '#c0c0d0',
+  matchConfidence: {
+    color: COLORS.muted,
     fontSize: 12,
-    fontWeight: '600',
-  },
-  challengeDesc: {
-    fontSize: 13,
-    color: '#a0a0b8',
-    textAlign: 'center',
-    lineHeight: 19,
-    marginBottom: 14,
-  },
-  challengeCta: {
-    alignItems: 'center',
-  },
-  challengeCtaText: {
-    color: '#e94560',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-
-  // Recommendations
-  recoLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  recoByline: {
-    fontSize: 13,
-    color: '#a0a0b8',
-    marginBottom: 22,
-    lineHeight: 19,
-  },
-
-  // Recognition CTA
-  recognitionCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 22,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#0f3460',
+    marginTop: 6,
     marginBottom: 16,
   },
-  recognitionEmoji: {
-    fontSize: 40,
-    marginBottom: 8,
+
+  // ── Action buttons ──
+  actionRow: {
+    width: "100%",
+    gap: 10,
   },
-  recognitionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 6,
-  },
-  recognitionDesc: {
-    fontSize: 13,
-    color: '#a0a0b8',
-    textAlign: 'center',
-    lineHeight: 19,
-    marginBottom: 16,
-    paddingHorizontal: 10,
-  },
-  recognitionBtn: {
-    backgroundColor: '#e94560',
-    borderRadius: 14,
+  primaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.accent,
     paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    gap: 8,
+  },
+  buttonText: {
+    color: COLORS.white,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  secondaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+    gap: 8,
+  },
+  secondaryButtonText: {
+    color: COLORS.accent,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  // ── Reset button ──
+  resetButton: {
+    marginTop: 20,
+    paddingVertical: 12,
     paddingHorizontal: 32,
   },
-  recognitionBtnText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
-  bottomSpacer: {
-    height: 60,
+  resetButtonText: {
+    color: COLORS.muted,
+    fontSize: 15,
+    fontWeight: "600",
+    textDecorationLine: "underline",
   },
 });
