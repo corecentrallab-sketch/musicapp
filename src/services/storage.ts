@@ -16,6 +16,7 @@ const KEYS = {
   BADGES: '@notesnap/badges',
   WEEKLY_GOAL: '@notesnap/weeklyGoal',
   PRACTICE_DAYS: '@notesnap/practiceDays',
+  DAILY_CHALLENGE_DONE: '@notesnap/dailyChallengeDone',
 } as const;
 
 // ─── Onboarding ───────────────────────────────────────────────
@@ -189,4 +190,26 @@ function getMondayStr(d: Date): string {
   const monday = new Date(d);
   monday.setDate(monday.getDate() + diff);
   return getDateStr(monday);
+}
+
+// ─── Daily Challenge Completion ────────────────────────────────
+
+/** Check whether today's daily challenge has been completed. */
+export async function isDailyChallengeDone(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.DAILY_CHALLENGE_DONE);
+    if (!raw) return false;
+    const { date } = JSON.parse(raw);
+    return date === getTodayStr();
+  } catch {
+    return false;
+  }
+}
+
+/** Mark today's daily challenge as completed. */
+export async function markDailyChallengeDone(): Promise<void> {
+  await AsyncStorage.setItem(
+    KEYS.DAILY_CHALLENGE_DONE,
+    JSON.stringify({ date: getTodayStr() }),
+  );
 }

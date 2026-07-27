@@ -7,11 +7,26 @@ import {
   ActivityIndicator,
   ScrollView,
   Linking,
+  Share,
+  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { recognizeAudio } from "../services/api";
-import type { RecognitionMatch, RecognitionState } from "../types";
+import { getTodayChallenge } from "../services/dailyChallenge";
+import {
+  getStreakData,
+  recordPractice,
+  isDailyChallengeDone,
+  markDailyChallengeDone,
+} from "../services/storage";
+import { hashCode } from "../utils/hash";
+import type {
+  RecognitionMatch,
+  RecognitionState,
+  DailyChallengePiece,
+  StreakData,
+} from "../types";
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 const COLORS = {
@@ -49,12 +64,30 @@ const DEMO_MATCHES: RecognitionMatch[] = [
 
 // ── Component ────────────────────────────────────────────────────────────────
 
+/** Deterministic "player count" for today's challenge (1-50). */
+function getPlayerCount(): number {
+  const today = new Date().toISOString().slice(0, 10);
+  return (hashCode(today) % 50) + 1;
+}
+
 export const HomeScreen: React.FC = () => {
   // ── State ──
   const [recState, setRecState] = useState<RecognitionState>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [matches, setMatches] = useState<RecognitionMatch[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
+
+  // Social / gamification state
+  const [streakData, setStreakData] = useState<StreakData>({
+    currentStreak: 0,
+    lastPracticeDate: null,
+    bestStreak: 0,
+  });
+  const [dailyPiece, setDailyPiece] = useState<DailyChallengePiece | null>(null);
+  const [challengeDone, setChallengeDone] = useState(false);
+  const [playerCount] = useState(getPlayerCount);
+  const checkScale = useRef(new Animated.Value(1)).current;
+  const [showCheckAnim, setShowCheckAnim] = useState(false);
 
   // ── Refs ──
   const recordingRef = useRef<Audio.Recording | null>(null);
@@ -74,6 +107,22 @@ export const HomeScreen: React.FC = () => {
     };
   }, []);
 
+  // Load gamification data on mount
+  useEffect(() => {
+    (async () => {
+      const [streak, piece, done] = await Promise.all([
+        getStreakData(),
+        Promise.resolve(getTodayChallenge()),
+        isDailyChallengeDone(),
+      ]);
+      if (mountedRef.current) {
+        setStreakData(streak);
+        setDailyPiece(piece);
+        setChallengeDone(done);
+      }
+    })();
+  }, []);
+
   // ── Helpers ──
   const clearTimer = () => {
     if (timerRef.current) {
@@ -88,6 +137,49 @@ export const HomeScreen: React.FC = () => {
     setMatches([]);
     setErrorMsg("");
   };
+
+  // ── Social / Gamification ────────────────────────────────────────────────
+
+  /** Mark daily challenge as done with check animation. */
+  const handleChallengeTap = useCallback(async () => {
+    if (challengeDone) return;
+    setChallengeDone(true);
+    setShowCheckAnim(true);
+
+    // Pulse animation
+    Animated.sequence([
+      Animated.timing(checkScale, {
+        toValue: 1.4,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(checkScale, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => setShowCheckAnim(false));
+
+    await markDailyChallengeDone();
+    // Also record as a practice session for streak
+    const updated = await recordPractice();
+    if (mountedRef.current) setStreakData(updated);
+  }, [challengeDone, checkScale]);
+
+  /** Share streak with friends. */
+  const handleStreakShare = useCallback(async () => {
+    if (streakData.currentStreak < 1) return;
+    const msg =
+      streakData.currentStreak >= 7
+        ? `I'm on a ${streakData.currentStreak}-day streak on NoteSnap! 🔥\nCan you beat it? Join me: notesnap.com`
+        : `I'm on a ${streakData.currentStreak}-day streak on NoteSnap 🔥\nGet it at notesnap.com`;
+
+    try {
+      await Share.share({ message: msg, title: "NoteSnap Streak" });
+    } catch {
+      // User cancelled — no action
+    }
+  }, [streakData.currentStreak]);
 
   // ── Recording ──
   const startRecording = useCallback(async () => {
@@ -391,20 +483,69 @@ export const HomeScreen: React.FC = () => {
             </TouchableOpacity>
           )}
 
-          {/* Info cards */}
-          <View style={styles.card}>
-            <Ionicons name="flame" size={20} color={COLORS.accent} />
-            <Text style={styles.cardText}>
-              Practice daily to build your streak
-            </Text>
-          </View>
+          {/* ── Gamification cards ── */}
+          {/* Streak card */}
+          {streakData.currentStreak >= 1 && (
+            <TouchableOpacity
+              style={styles.card}
+              onPress={handleStreakShare}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="flame" size={20} color={COLORS.accent} />
+              <Text style={styles.cardText}>
+                {streakData.currentStreak}-day streak 🔥 — Share with friends
+              </Text>
+              <Ionicons name="share-social" size={16} color={COLORS.accent} />
+            </TouchableOpacity>
+          )}
 
-          <View style={styles.card}>
-            <Ionicons name="star" size={20} color={COLORS.accent} />
-            <Text style={styles.cardText}>
-              Today's Challenge: Prelude in C Major — J.S. Bach
-            </Text>
-          </View>
+          {streakData.currentStreak < 1 && (
+            <View style={styles.card}>
+              <Ionicons name="flame" size={20} color={COLORS.accent} />
+              <Text style={styles.cardText}>
+                Practice daily to build your streak
+              </Text>
+            </View>
+          )}
+
+          {/* Daily challenge card */}
+          {dailyPiece && (
+            <TouchableOpacity
+              style={[
+                styles.card,
+                challengeDone && styles.cardCompleted,
+              ]}
+              onPress={handleChallengeTap}
+              activeOpacity={0.7}
+            >
+              <Animated.View
+                style={{
+                  transform: [{ scale: showCheckAnim ? checkScale : 1 }],
+                }}
+              >
+                <Ionicons
+                  name={challengeDone ? "checkmark-circle" : "star"}
+                  size={20}
+                  color={challengeDone ? COLORS.success : COLORS.accent}
+                />
+              </Animated.View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardText}>
+                  🎯 Today's Challenge: {dailyPiece.title} — {dailyPiece.composer}
+                </Text>
+                <Text style={styles.cardSubtext}>
+                  {challengeDone
+                    ? "You played today's challenge ✅"
+                    : playerCount === 1
+                      ? "Be the first to play today's challenge"
+                      : `${playerCount} musicians playing`}
+                </Text>
+              </View>
+              {!challengeDone && (
+                <Ionicons name="play-circle" size={22} color={COLORS.accent} />
+              )}
+            </TouchableOpacity>
+          )}
 
           {/* Demo button */}
           <TouchableOpacity style={styles.demoBtn} onPress={handleDemo}>
@@ -531,6 +672,15 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   cardText: { color: COLORS.text, fontSize: 14, flex: 1 },
+  cardSubtext: {
+    color: COLORS.muted,
+    fontSize: 12,
+    marginTop: 4,
+  },
+  cardCompleted: {
+    borderColor: COLORS.success,
+    borderWidth: 1.5,
+  },
 
   // Demo button
   demoBtn: {

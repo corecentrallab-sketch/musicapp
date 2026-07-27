@@ -86,3 +86,47 @@ export type RecognitionState =
   | "success"
   | "no_match"
   | "error";
+
+// ---------------------------------------------------------------------------
+// Retention / gamification types
+// ---------------------------------------------------------------------------
+
+/** A piece in the daily challenge pool. */
+export interface DailyChallengePiece {
+  id: string;
+  title: string;
+  composer: string;
+  genre: string;
+  difficulty: string;
+  description: string;
+}
+
+/** Streak tracking data persisted in AsyncStorage. */
+export interface StreakData {
+  currentStreak: number;
+  lastPracticeDate: string | null;
+  bestStreak: number;
+}
+
+/** Onboarding wizard answers. */
+export interface OnboardingAnswers {
+  instrument: string;
+  level: string;
+  genres: string[];
+}
+
+/** An achievement badge that can be earned. */
+export interface Badge {
+  id: string;
+  name: string;
+  description: string;
+  emoji: string;
+  earnedAt?: string;
+}
+
+/** Weekly practice goal tracking. */
+export interface WeeklyGoal {
+  target: number;
+  current: number;
+  weekStart: string;
+}
