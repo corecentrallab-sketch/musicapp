@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { readFile } from "node:fs/promises";
+import { useState, useCallback } from "react";
 
 const getBusinessName = createServerFn({ method: "GET" }).handler(async () => {
   try {
@@ -18,8 +19,37 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
+// Price IDs for Stripe Checkout
+const PRICE_IDS = {
+  proMonthly: "price_1TyU6EBbnDObsY4u0FbZ2fui",
+  proYearly: "price_1TyUC6BbnDObsY4uOHfB8glf",
+  family: "price_1TyUFsBbnDObsY4uXFnCubR4",
+} as const;
+
 function Home() {
   const businessName = Route.useLoaderData();
+  const [loadingPrice, setLoadingPrice] = useState<string | null>(null);
+
+  const handleSubscribe = useCallback(async (priceId: string) => {
+    setLoadingPrice(priceId);
+    try {
+      const res = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId }),
+      });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert(data.error || "Something went wrong. Please try again.");
+      }
+    } catch {
+      alert("Failed to connect. Please check your internet connection.");
+    } finally {
+      setLoadingPrice(null);
+    }
+  }, []);
 
   return (
     <div className="min-h-dvh bg-stone-50 text-stone-800 antialiased">
@@ -230,7 +260,7 @@ function Home() {
                 ))}
               </ul>
               <a
-                href="#"
+                href="/"
                 className="mt-8 block rounded-full border border-stone-300 py-3 text-center text-sm font-semibold text-stone-700 hover:border-amber-400 hover:text-amber-700 transition-colors"
               >
                 Start free
@@ -270,12 +300,26 @@ function Home() {
                   </li>
                 ))}
               </ul>
-              <a
-                href="#"
-                className="mt-8 block rounded-full bg-amber-600 py-3 text-center text-sm font-semibold text-white hover:bg-amber-700 transition-colors"
-              >
-                Start free trial
-              </a>
+              <div className="mt-8 space-y-3">
+                <button
+                  onClick={() => handleSubscribe(PRICE_IDS.proMonthly)}
+                  disabled={loadingPrice !== null}
+                  className="w-full rounded-full bg-amber-600 py-3 text-center text-sm font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {loadingPrice === PRICE_IDS.proMonthly
+                    ? "Starting checkout…"
+                    : "Start free trial — $4.99/mo"}
+                </button>
+                <button
+                  onClick={() => handleSubscribe(PRICE_IDS.proYearly)}
+                  disabled={loadingPrice !== null}
+                  className="w-full rounded-full border border-amber-400 py-3 text-center text-sm font-semibold text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {loadingPrice === PRICE_IDS.proYearly
+                    ? "Starting checkout…"
+                    : "Save 33% — $39.99/year"}
+                </button>
+              </div>
             </div>
 
             {/* Family */}
@@ -299,12 +343,15 @@ function Home() {
                   </li>
                 ))}
               </ul>
-              <a
-                href="#"
-                className="mt-8 block rounded-full border border-stone-300 py-3 text-center text-sm font-semibold text-stone-700 hover:border-amber-400 hover:text-amber-700 transition-colors"
+              <button
+                onClick={() => handleSubscribe(PRICE_IDS.family)}
+                disabled={loadingPrice !== null}
+                className="mt-8 w-full rounded-full border border-stone-300 py-3 text-center text-sm font-semibold text-stone-700 hover:border-amber-400 hover:text-amber-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Start free trial
-              </a>
+                {loadingPrice === PRICE_IDS.family
+                  ? "Starting checkout…"
+                  : "Start free trial"}
+              </button>
             </div>
           </div>
         </div>

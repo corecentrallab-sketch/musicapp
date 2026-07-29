@@ -11,6 +11,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import handler from "./dist/server/server.js";
+import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
 
 const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
@@ -42,6 +43,27 @@ export default async function vercelHandler(
   res: ServerResponse,
 ): Promise<void> {
   try {
+    // --- API route interception (before SSR) ---
+    const url = req.url ?? "/";
+    // Simple pathname extraction (no URL object needed for routing)
+    const pathname = url.split("?")[0];
+    if (pathname === "/api/create-checkout-session") {
+      const webReq = toWebRequest(req);
+      const webRes = await handleCreateCheckoutSession(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+
     const webRes = await fetchHandler.fetch(toWebRequest(req));
     res.statusCode = webRes.status;
     webRes.headers.forEach((value, key) => res.setHeader(key, value));

@@ -10,6 +10,7 @@
 // the takeover works across user boundaries.
 import handler from "./dist/server/server.js";
 import { handleRecognize } from "./src/services/recognize-handler";
+import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
 
 // Pinned, NOT read from the environment. The published preview URL
 // (<label>.<PUBLIC_SITE_DOMAIN>) is reverse-proxied to 0.0.0.0:3000 inside the
@@ -46,6 +47,9 @@ for (let attempt = 1; ; attempt++) {
         // --- API routes (handled before static files / SSR) ---
         if (pathname === "/api/recognize" && req.method === "POST") {
           return handleRecognize(req);
+        }
+        if (pathname === "/api/create-checkout-session") {
+          return handleCreateCheckoutSession(req);
         }
 
         // --- Static file serving ---
