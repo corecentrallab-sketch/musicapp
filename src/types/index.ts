@@ -15,6 +15,45 @@ export interface SavedPiece {
   difficulty?: number;
 }
 
+// ─── API types ─────────────────────────────────────────────────
+
+export interface RecognitionResponse {
+  success: true;
+  matches: Match[];
+  query_duration_ms: number;
+  db_available: boolean;
+  purchase_url?: {
+    musicnotes: string;
+    sheetmusicplus: string;
+  };
+}
+
+export interface RecognitionError {
+  success: false;
+  error: string;
+}
+
+export interface Match {
+  piece_id: string;
+  title: string;
+  composer: string;
+  catalog?: string;
+  confidence: number;
+  album_art_url?: string;
+  sheet_music_url?: string;
+  tab_url?: string;
+  matched_at_s?: number;
+  purchase_url?: {
+    musicnotes: string;
+    sheetmusicplus: string;
+  } | null;
+}
+
+export interface CheckoutSessionResponse {
+  url?: string;
+  error?: string;
+}
+
 /** Navigation param list for the tab navigator. */
 export type RootTabParamList = {
   Home: undefined;
