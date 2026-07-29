@@ -7,7 +7,7 @@
 import type { RecognitionResponse, RecognitionError, CheckoutSessionResponse } from "../types";
 
 /** Production NoteSnap site URL. */
-let BASE_URL = "https://site-ten-sigma-27.vercel.app";
+let BASE_URL = "https://site-mmafqjfbo-notesnap.vercel.app";
 
 export function setApiBaseUrl(url: string): void {
   BASE_URL = url.replace(/\/+$/, "");
