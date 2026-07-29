@@ -1,835 +1,798 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+/**
+ * HomeScreen (Discover tab) — the main hub.
+ * Shows: recognition prompt, streak counter, weekly goals, daily challenge,
+ * and personalised recommendation copy.
+ *
+ * Recognition flow:
+ * 1. Tap "Start Listening" → microphone recording starts
+ * 2. Auto-stops after 8s or manual tap → sends audio to API
+ * 3. Results shown in RecognitionResultView modal
+ */
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
   ScrollView,
-  Linking,
-  Share,
+  TouchableOpacity,
+  RefreshControl,
   Animated,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { Audio } from "expo-av";
-import { recognizeAudio } from "../services/api";
-import { getTodayChallenge } from "../services/dailyChallenge";
+} from 'react-native';
+import { BadgeToast } from '../components/BadgeToast';
+import {
+  RecognitionResultView,
+  type RecognitionPhase,
+} from '../components/RecognitionResultView';
+import { PieceDetailScreen } from './PieceDetailScreen';
+import { useAudioRecorder } from '../hooks/useAudioRecorder';
+import { recognizeAudio } from '../services/api';
 import {
   getStreakData,
   recordPractice,
-  isDailyChallengeDone,
-  markDailyChallengeDone,
-} from "../services/storage";
-import { hashCode } from "../utils/hash";
+  getWeeklyGoal,
+  getOnboardingAnswers,
+  saveRecognition,
+  getRecognitionCount,
+} from '../services/storage';
+import { checkAndAwardBadges } from '../services/achievements';
+import { getTodayChallenge } from '../services/dailyChallenge';
 import type {
-  RecognitionMatch,
-  RecognitionState,
-  DailyChallengePiece,
   StreakData,
-} from "../types";
+  WeeklyGoal,
+  DailyChallengePiece,
+  OnboardingAnswers,
+  Badge,
+  Match,
+} from '../types';
 
-// ── Theme ────────────────────────────────────────────────────────────────────
-const COLORS = {
-  bg: "#1a1a2e",
-  accent: "#e94560",
-  card: "#16213e",
-  border: "#0f3460",
-  text: "#eaeaea",
-  muted: "#888",
-  success: "#2ecc71",
-};
-
-const RECORDING_DURATION_S = 6;
-
-// ── Demo mock data ──────────────────────────────────────────────────────────
-const DEMO_MATCHES: RecognitionMatch[] = [
-  {
-    piece_id: "demo-clair-de-lune",
-    title: "Clair de Lune",
-    composer: "Claude Debussy",
-    catalog: "Suite bergamasque, L. 75, III",
-    confidence: 0.94,
-    album_art_url: null,
-    sheet_music_url: null,
-    tab_url: null,
-    matched_at_s: 2.3,
-    purchase_url: {
-      musicnotes:
-        "https://www.musicnotes.com/sheetmusic/mtd.asp?ppn=MN0065432",
-      sheetmusicplus:
-        "https://www.sheetmusicplus.com/title/clair-de-lune-digital-sheet-music/123456",
-    },
-  },
-];
-
-// ── Component ────────────────────────────────────────────────────────────────
-
-/** Deterministic "player count" for today's challenge (1-50). */
-function getPlayerCount(): number {
-  const today = new Date().toISOString().slice(0, 10);
-  return (hashCode(today) % 50) + 1;
-}
+/** Auto-stop recording after this many ms. */
+const RECORDING_TIMEOUT_MS = 8000;
 
 export const HomeScreen: React.FC = () => {
-  // ── State ──
-  const [recState, setRecState] = useState<RecognitionState>("idle");
-  const [elapsed, setElapsed] = useState(0);
-  const [matches, setMatches] = useState<RecognitionMatch[]>([]);
-  const [errorMsg, setErrorMsg] = useState("");
-
-  // Social / gamification state
-  const [streakData, setStreakData] = useState<StreakData>({
+  // ── Core data state ──
+  const [streak, setStreak] = useState<StreakData>({
     currentStreak: 0,
     lastPracticeDate: null,
     bestStreak: 0,
   });
-  const [dailyPiece, setDailyPiece] = useState<DailyChallengePiece | null>(null);
-  const [challengeDone, setChallengeDone] = useState(false);
-  const [playerCount] = useState(getPlayerCount);
-  const checkScale = useRef(new Animated.Value(1)).current;
-  const [showCheckAnim, setShowCheckAnim] = useState(false);
+  const [weeklyGoal, setWeeklyGoal] = useState<WeeklyGoal>({
+    target: 5,
+    current: 0,
+    weekStart: '',
+  });
+  const [dailyChallenge, setDailyChallenge] =
+    useState<DailyChallengePiece | null>(null);
+  const [onboarding, setOnboarding] = useState<OnboardingAnswers | null>(null);
+  const [badgeToast, setBadgeToast] = useState<Badge | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // ── Refs ──
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const mountedRef = useRef(true);
+  // ── Recognition state ──
+  const recorder = useAudioRecorder();
+  const [recognitionPhase, setRecognitionPhase] =
+    useState<RecognitionPhase | null>(null);
+  const [showRecognitionResults, setShowRecognitionResults] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Pulsing animation for the mic indicator
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Cleanup on unmount
+  // ── Load initial data ──
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    const [s, wg, ob, dc] = await Promise.all([
+      getStreakData(),
+      getWeeklyGoal(),
+      getOnboardingAnswers(),
+      Promise.resolve(getTodayChallenge()),
+    ]);
+    setStreak(s);
+    setWeeklyGoal(wg);
+    setOnboarding(ob);
+    setDailyChallenge(dc);
+  };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+
+    // Check for new badges on refresh
+    const newBadges = await checkAndAwardBadges({
+      totalRecognitions: undefined,
+      totalSavedPieces: undefined,
+    });
+    if (newBadges.length > 0) {
+      setBadgeToast(newBadges[0]);
+    }
+
+    setRefreshing(false);
+  }, []);
+
+  // ── Pulsing mic animation ──
+  useEffect(() => {
+    if (recorder.isRecording) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.3,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [recorder.isRecording, pulseAnim]);
+
+  // ── Recognition flow ──
+
+  const handleStartListening = useCallback(async () => {
+    // If already recording, stop it
+    if (recorder.isRecording) {
+      handleStopRecording();
+      return;
+    }
+
+    const started = await recorder.startRecording();
+    if (!started) return;
+
+    // Auto-stop after timeout
+    timeoutRef.current = setTimeout(() => {
+      handleStopRecording();
+    }, RECORDING_TIMEOUT_MS);
+  }, [recorder.isRecording, recorder.startRecording]);
+
+  const handleStopRecording = useCallback(async () => {
+    // Clear the auto-stop timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    const uri = await recorder.stopRecording();
+    if (!uri) return;
+
+    // Show loading phase
+    setRecognitionPhase({ type: 'loading' });
+    setShowRecognitionResults(true);
+
+    try {
+      const result = await recognizeAudio(uri);
+
+      // Handle success: check for matches
+      if (result.matches && result.matches.length > 0) {
+        setRecognitionPhase({ type: 'success', response: result });
+
+        // Save top match to history
+        const topMatch: Match = result.matches[0];
+        await saveRecognition({
+          id: topMatch.piece_id,
+          title: topMatch.title,
+          composer: topMatch.composer,
+          savedAt: new Date().toISOString(),
+          genre: topMatch.catalog,
+        });
+
+        // Increment streak (recognition counts as practice)
+        const newStreak = await recordPractice();
+        setStreak(newStreak);
+
+        // Refresh weekly goal
+        const wg = await getWeeklyGoal();
+        setWeeklyGoal(wg);
+
+        // Check for badges
+        const totalRecognitions = await getRecognitionCount();
+        const newBadges = await checkAndAwardBadges({
+          totalRecognitions,
+          currentHour: new Date().getHours(),
+        });
+        if (newBadges.length > 0) {
+          setBadgeToast(newBadges[0]);
+        }
+      } else {
+        // API returned success but no matches
+        setRecognitionPhase({ type: 'no-match' });
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Something went wrong.';
+      setRecognitionPhase({ type: 'error', message });
+    }
+  }, [recorder]);
+
+  // ── Cleanup timeout on unmount ──
   useEffect(() => {
     return () => {
-      mountedRef.current = false;
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (recordingRef.current) {
-        recordingRef.current
-          .stopAndUnloadAsync()
-          .catch(() => {});
-      }
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
 
-  // Load gamification data on mount
-  useEffect(() => {
-    (async () => {
-      const [streak, piece, done] = await Promise.all([
-        getStreakData(),
-        Promise.resolve(getTodayChallenge()),
-        isDailyChallengeDone(),
-      ]);
-      if (mountedRef.current) {
-        setStreakData(streak);
-        setDailyPiece(piece);
-        setChallengeDone(done);
-      }
-    })();
+  // ── Close recognition results ──
+  const handleCloseRecognition = useCallback(() => {
+    setShowRecognitionResults(false);
+    setRecognitionPhase(null);
   }, []);
 
-  // ── Helpers ──
-  const clearTimer = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+  // ── Retry recognition ──
+  const handleRetryRecognition = useCallback(() => {
+    setShowRecognitionResults(false);
+    setRecognitionPhase(null);
+    // Auto-start listening again
+    setTimeout(() => handleStartListening(), 300);
+  }, [handleStartListening]);
+
+  // ── Simulate "practice" action for daily challenge ──
+  const handleDailyChallengeTap = useCallback(async () => {
+    const newStreak = await recordPractice();
+    setStreak(newStreak);
+
+    const wg = await getWeeklyGoal();
+    setWeeklyGoal(wg);
+
+    // Check for streak-related badges
+    const newBadges = await checkAndAwardBadges({
+      totalRecognitions: undefined,
+    });
+    if (newBadges.length > 0) {
+      setBadgeToast(newBadges[0]);
     }
-  };
 
-  const resetState = () => {
-    clearTimer();
-    setElapsed(0);
-    setMatches([]);
-    setErrorMsg("");
-  };
-
-  // ── Social / Gamification ────────────────────────────────────────────────
-
-  /** Mark daily challenge as done with check animation. */
-  const handleChallengeTap = useCallback(async () => {
-    if (challengeDone) return;
-    setChallengeDone(true);
-    setShowCheckAnim(true);
-
-    // Pulse animation
-    Animated.sequence([
-      Animated.timing(checkScale, {
-        toValue: 1.4,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-      Animated.timing(checkScale, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-    ]).start(() => setShowCheckAnim(false));
-
-    await markDailyChallengeDone();
-    // Also record as a practice session for streak
-    const updated = await recordPractice();
-    if (mountedRef.current) setStreakData(updated);
-  }, [challengeDone, checkScale]);
-
-  /** Share streak with friends. */
-  const handleStreakShare = useCallback(async () => {
-    if (streakData.currentStreak < 1) return;
-    const msg =
-      streakData.currentStreak >= 7
-        ? `I'm on a ${streakData.currentStreak}-day streak on NoteSnap! 🔥\nCan you beat it? Join me: notesnap.com`
-        : `I'm on a ${streakData.currentStreak}-day streak on NoteSnap 🔥\nGet it at notesnap.com`;
-
-    try {
-      await Share.share({ message: msg, title: "NoteSnap Streak" });
-    } catch {
-      // User cancelled — no action
-    }
-  }, [streakData.currentStreak]);
-
-  // ── Recording ──
-  const startRecording = useCallback(async () => {
-    resetState();
-    setRecState("idle");
-
-    try {
-      // 1. Request microphone permission
-      const perm = await Audio.requestPermissionsAsync();
-      if (!perm.granted) {
-        setErrorMsg("Microphone permission is required to recognize music.");
-        setRecState("error");
-        return;
-      }
-
-      // 2. Prepare recording
-      const recording = new Audio.Recording();
-      recordingRef.current = recording;
-
-      // Configure for 16000Hz mono — use custom options instead of preset
-      // so we get the right sample rate for the audio fingerprinting API.
-      await recording.prepareToRecordAsync({
-        android: {
-          extension: ".m4a",
-          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-          audioEncoder: Audio.AndroidAudioEncoder.AAC,
-          sampleRate: 16000,
-          numberOfChannels: 1,
-          bitRate: 64000,
-        },
-        ios: {
-          extension: ".m4a",
-          outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
-          audioQuality: Audio.IOSAudioQuality.MEDIUM,
-          sampleRate: 16000,
-          numberOfChannels: 1,
-          bitRate: 64000,
-        },
-        web: {
-          mimeType: "audio/webm",
-          bitsPerSecond: 64000,
-        },
-      });
-
-      // 3. Start recording
-      setRecState("recording");
-      await recording.startAsync();
-
-      // 4. Start timer
-      let seconds = 0;
-      timerRef.current = setInterval(() => {
-        seconds++;
-        setElapsed(seconds);
-        if (seconds >= RECORDING_DURATION_S) {
-          clearTimer();
-          stopAndUpload(recording);
-        }
-      }, 1000);
-    } catch (err: any) {
-      setErrorMsg(err?.message || "Failed to start recording.");
-      setRecState("error");
-    }
+    setShowDetail(true);
   }, []);
 
-  // ── Stop + Upload ──
-  const stopAndUpload = useCallback(
-    async (recording: Audio.Recording) => {
-      try {
-        clearTimer();
-        setRecState("uploading");
+  // ── Permission denied state ──
+  if (recorder.error && !recorder.isRecording) {
+    // Only show a full error screen if the user can't proceed
+  }
 
-        await recording.stopAndUnloadAsync();
-        const uri = recording.getURI();
-        recordingRef.current = null;
+  // ── Build personalised recommendation text ──
+  const personalisedCopy = onboarding
+    ? onboarding.instrument === 'both'
+      ? `Piano & Guitar picks for ${onboarding.level}s`
+      : `${onboarding.instrument === 'piano' ? 'Piano' : 'Guitar'} picks for ${
+          onboarding.level
+        }s`
+    : 'Discover sheet music';
 
-        if (!uri) {
-          throw new Error("No recording URI after stop.");
-        }
+  const genreCopy =
+    onboarding?.genres?.length
+      ? `Curated ${onboarding.genres
+          .map((g) =>
+            g === 'jazz-ragtime'
+              ? 'Jazz & Ragtime'
+              : g.charAt(0).toUpperCase() + g.slice(1),
+          )
+          .join(', ')}`
+      : 'All genres';
 
-        const response = await recognizeAudio(uri);
+  const streakText =
+    streak.currentStreak > 0
+      ? `🔥 ${streak.currentStreak}-day streak`
+      : 'Start your streak today!';
 
-        if (!mountedRef.current) return;
+  const streakNudge =
+    streak.currentStreak > 0 && streak.currentStreak < 7
+      ? "Keep it going — don't break your streak!"
+      : streak.currentStreak >= 7
+        ? "Amazing consistency! You're on fire! 🔥"
+        : 'Practice today to start your streak!';
 
-        if (response.matches && response.matches.length > 0) {
-          setMatches(response.matches);
-          setRecState("success");
-        } else {
-          setRecState("no_match");
-        }
-      } catch (err: any) {
-        if (!mountedRef.current) return;
-        setErrorMsg(err?.message || "Recognition failed. Try again.");
-        setRecState("error");
-      }
-    },
-    [],
+  const weekProgress = `${weeklyGoal.current}/${weeklyGoal.target} days practiced`;
+  const weekPercent = Math.min(
+    (weeklyGoal.current / weeklyGoal.target) * 100,
+    100,
   );
+  const weekComplete = weeklyGoal.current >= weeklyGoal.target;
 
-  // ── Mic button press ──
-  const handleMicPress = () => {
-    if (recState === "recording") {
-      // Manual stop before 6s
-      if (recordingRef.current) {
-        clearTimer();
-        stopAndUpload(recordingRef.current);
-      }
-    } else if (recState === "idle" || recState === "error" || recState === "no_match" || recState === "success") {
-      startRecording();
-    }
-  };
-
-  // ── Demo mode ──
-  const handleDemo = () => {
-    resetState();
-    setMatches(DEMO_MATCHES);
-    setRecState("success");
-  };
-
-  // ── Dismiss results ──
-  const handleDismiss = () => {
-    resetState();
-    setRecState("idle");
-  };
-
-  // ── Open purchase link ──
-  const openPurchaseLink = (match: RecognitionMatch) => {
-    if (match.sheet_music_url) {
-      Linking.openURL(match.sheet_music_url).catch(() => {});
-    } else if (match.purchase_url?.musicnotes) {
-      Linking.openURL(match.purchase_url.musicnotes).catch(() => {});
-    }
-  };
-
-  // ── Render helpers ──
-
-  const renderMicButton = () => {
-    const isActive =
-      recState === "recording" || recState === "uploading";
-
+  if (showDetail && dailyChallenge) {
     return (
-      <TouchableOpacity
-        style={[styles.listenButton, isActive && styles.listenButtonActive]}
-        onPress={handleMicPress}
-        activeOpacity={0.8}
-        disabled={recState === "uploading"}
-      >
-        {recState === "uploading" ? (
-          <ActivityIndicator size="large" color="#fff" />
-        ) : recState === "recording" ? (
-          <Ionicons name="stop" size={48} color="#fff" />
-        ) : (
-          <Ionicons name="mic" size={48} color="#fff" />
-        )}
-      </TouchableOpacity>
+      <PieceDetailScreen
+        piece={dailyChallenge}
+        onBack={() => setShowDetail(false)}
+      />
     );
-  };
-
-  const renderStatusLabel = () => {
-    switch (recState) {
-      case "idle":
-        return "Tap to recognize music";
-      case "recording":
-        return `Recording... ${elapsed}s / ${RECORDING_DURATION_S}s`;
-      case "uploading":
-        return "Uploading & analyzing...";
-      case "success":
-        return matches.length === 1
-          ? "1 match found"
-          : `${matches.length} matches found`;
-      case "no_match":
-        return "No match found — try again";
-      case "error":
-        return errorMsg || "Something went wrong";
-      default:
-        return "";
-    }
-  };
-
-  const renderProgressBar = () => {
-    if (recState !== "recording") return null;
-    const pct = (elapsed / RECORDING_DURATION_S) * 100;
-    return (
-      <View style={styles.progressBarTrack}>
-        <View style={[styles.progressBarFill, { width: `${pct}%` }]} />
-      </View>
-    );
-  };
-
-  const renderMatchCard = (match: RecognitionMatch, idx: number) => {
-    const confidencePct = Math.round(match.confidence * 100);
-    const isPublicDomain = match.sheet_music_url != null;
-    const isCopyrighted = match.purchase_url != null;
-
-    return (
-      <View key={match.piece_id || idx} style={styles.matchCard}>
-        {/* Header row */}
-        <View style={styles.matchHeader}>
-          <Ionicons name="musical-notes" size={24} color={COLORS.accent} />
-          <View style={styles.matchTitleGroup}>
-            <Text style={styles.matchTitle}>{match.title}</Text>
-            <Text style={styles.matchComposer}>{match.composer}</Text>
-          </View>
-          <View style={styles.confidenceBadge}>
-            <Text style={styles.confidenceText}>{confidencePct}%</Text>
-          </View>
-        </View>
-
-        {/* Catalog info */}
-        {match.catalog ? (
-          <Text style={styles.catalogText}>{match.catalog}</Text>
-        ) : null}
-
-        {/* Action buttons */}
-        <View style={styles.matchActions}>
-          {isPublicDomain && (
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => openPurchaseLink(match)}
-            >
-              <Ionicons name="document-text" size={18} color="#fff" />
-              <Text style={styles.actionBtnText}>Open sheet music</Text>
-            </TouchableOpacity>
-          )}
-
-          {isCopyrighted && (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.purchaseBtn]}
-              onPress={() => openPurchaseLink(match)}
-            >
-              <Ionicons name="cart" size={18} color="#fff" />
-              <Text style={styles.actionBtnText}>
-                Get official sheet music
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {!isPublicDomain && !isCopyrighted && (
-            <Text style={styles.noLinkText}>
-              No sheet music available for this piece.
-            </Text>
-          )}
-        </View>
-      </View>
-    );
-  };
-
-  const renderResults = () => {
-    if (recState !== "success" && recState !== "no_match") return null;
-
-    return (
-      <ScrollView
-        style={styles.resultsContainer}
-        contentContainerStyle={styles.resultsContent}
-      >
-        {recState === "no_match" && (
-          <View style={styles.noMatchCard}>
-            <Ionicons name="search-outline" size={40} color={COLORS.muted} />
-            <Text style={styles.noMatchTitle}>No Match</Text>
-            <Text style={styles.noMatchText}>
-              We couldn't identify this piece. Try recording closer to the
-              music source, or check your internet connection.
-            </Text>
-          </View>
-        )}
-
-        {matches.map(renderMatchCard)}
-
-        {/* Dismiss button */}
-        <TouchableOpacity style={styles.dismissBtn} onPress={handleDismiss}>
-          <Text style={styles.dismissBtnText}>Done</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    );
-  };
-
-  // ── Main render ──
-  const showingResults =
-    recState === "success" || recState === "no_match" || recState === "error";
+  }
 
   return (
     <View style={styles.container}>
-      {/* Static header — always visible */}
-      <Text style={styles.heading}>NoteSnap</Text>
-      <Text style={styles.subtitle}>Identify music. Get sheet music.</Text>
+      {/* Badge toast overlay */}
+      <BadgeToast
+        badge={badgeToast ?? { id: '', name: '', description: '', emoji: '' }}
+        visible={badgeToast !== null}
+        onDismiss={() => setBadgeToast(null)}
+      />
 
-      {!showingResults && (
-        <>
-          {/* Mic section */}
-          {renderMicButton()}
-          <Text style={styles.listenLabel}>{renderStatusLabel()}</Text>
-          {renderProgressBar()}
+      {/* Recognition results modal */}
+      <RecognitionResultView
+        visible={showRecognitionResults}
+        phase={recognitionPhase}
+        onClose={handleCloseRecognition}
+        onRetry={handleRetryRecognition}
+      />
 
-          {/* Error inline */}
-          {recState === "error" && (
-            <TouchableOpacity
-              style={styles.retryBtn}
-              onPress={handleMicPress}
-            >
-              <Ionicons name="refresh" size={18} color="#fff" />
-              <Text style={styles.retryBtnText}>Retry</Text>
-            </TouchableOpacity>
-          )}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#e94560"
+          />
+        }
+      >
+        {/* ── Header ── */}
+        <Text style={styles.headerEmoji}>🎵</Text>
+        <Text style={styles.title}>NoteSnap</Text>
+        <Text style={styles.subtitle}>{genreCopy}</Text>
 
-          {/* ── Gamification cards ── */}
-          {/* Streak card */}
-          {streakData.currentStreak >= 1 && (
-            <TouchableOpacity
-              style={styles.card}
-              onPress={handleStreakShare}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="flame" size={20} color={COLORS.accent} />
-              <Text style={styles.cardText}>
-                {streakData.currentStreak}-day streak 🔥 — Share with friends
+        {/* ── Streak Card ── */}
+        <View style={styles.streakCard}>
+          <View style={styles.streakRow}>
+            <Text style={styles.streakEmoji}>🔥</Text>
+            <View style={styles.streakInfo}>
+              <Text style={styles.streakCount}>{streakText}</Text>
+              <Text style={styles.streakBest}>
+                Best: {streak.bestStreak} days
               </Text>
-              <Ionicons name="share-social" size={16} color={COLORS.accent} />
-            </TouchableOpacity>
-          )}
+            </View>
+          </View>
+          <Text style={styles.streakNudge}>{streakNudge}</Text>
+        </View>
 
-          {streakData.currentStreak < 1 && (
-            <View style={styles.card}>
-              <Ionicons name="flame" size={20} color={COLORS.accent} />
-              <Text style={styles.cardText}>
-                Practice daily to build your streak
-              </Text>
+        {/* ── Weekly Goals ── */}
+        <View style={styles.goalCard}>
+          <View style={styles.goalHeader}>
+            <Text style={styles.goalTitle}>📋 This Week</Text>
+            {weekComplete && <Text style={styles.goalComplete}>🎉 Done!</Text>}
+          </View>
+          <Text style={styles.goalProgress}>{weekProgress}</Text>
+          <View style={styles.progressBar}>
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${weekPercent}%` },
+                weekComplete && styles.progressFillComplete,
+              ]}
+            />
+          </View>
+          {weekComplete && (
+            <Text style={styles.goalCelebrate}>
+              You crushed your goal this week!
+            </Text>
+          )}
+        </View>
+
+        {/* ── Daily Challenge ── */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>🌟 Today's Featured Piece</Text>
+        </View>
+
+        {dailyChallenge && (
+          <TouchableOpacity
+            style={styles.challengeCard}
+            onPress={handleDailyChallengeTap}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.challengeEmoji}>🎼</Text>
+            <Text style={styles.challengeTitle}>{dailyChallenge.title}</Text>
+            <Text style={styles.challengeComposer}>
+              {dailyChallenge.composer}
+            </Text>
+            <View style={styles.challengeMeta}>
+              <View style={styles.challengeTag}>
+                <Text style={styles.challengeTagText}>
+                  {dailyChallenge.genre}
+                </Text>
+              </View>
+              <View style={styles.challengeTag}>
+                <Text style={styles.challengeTagText}>
+                  {dailyChallenge.difficulty === 'Beginner'
+                    ? '🌱'
+                    : dailyChallenge.difficulty === 'Intermediate'
+                      ? '🌿'
+                      : '🌳'}{' '}
+                  {dailyChallenge.difficulty}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.challengeDesc} numberOfLines={2}>
+              {dailyChallenge.description}
+            </Text>
+            <View style={styles.challengeCta}>
+              <Text style={styles.challengeCtaText}>View & Practice →</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
+        {/* ── Personalised Recommendations ── */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>🎯 For You</Text>
+        </View>
+        <Text style={styles.recoLabel}>{personalisedCopy}</Text>
+        <Text style={styles.recoByline}>
+          {onboarding
+            ? 'Based on your instrument, level, and genre preferences.'
+            : 'Complete onboarding to personalise your feed.'}
+        </Text>
+
+        {/* ── Recognition CTA ── */}
+        <View style={styles.recognitionCard}>
+          <Text style={styles.recognitionEmoji}>
+            {recorder.isRecording ? '🎙️' : '🎤'}
+          </Text>
+          <Text style={styles.recognitionTitle}>
+            {recorder.isRecording ? 'Listening...' : 'Recognize a Song'}
+          </Text>
+          <Text style={styles.recognitionDesc}>
+            {recorder.isRecording
+              ? 'Recording audio — move closer to the music source for best results.'
+              : 'Hear a song you want to play? Tap to identify it and get the sheet music instantly.'}
+          </Text>
+
+          {/* Mic permission error inline */}
+          {recorder.error && !recorder.isRecording && (
+            <View style={styles.permissionError}>
+              <Text style={styles.permissionErrorText}>{recorder.error}</Text>
+              <TouchableOpacity
+                style={styles.settingsBtn}
+                onPress={recorder.openSettings}
+              >
+                <Text style={styles.settingsBtnText}>Open Settings</Text>
+              </TouchableOpacity>
             </View>
           )}
 
-          {/* Daily challenge card */}
-          {dailyPiece && (
-            <TouchableOpacity
+          {/* Recording indicator */}
+          {recorder.isRecording && (
+            <Animated.View
               style={[
-                styles.card,
-                challengeDone && styles.cardCompleted,
+                styles.recordingIndicator,
+                { transform: [{ scale: pulseAnim }] },
               ]}
-              onPress={handleChallengeTap}
-              activeOpacity={0.7}
             >
-              <Animated.View
-                style={{
-                  transform: [{ scale: showCheckAnim ? checkScale : 1 }],
-                }}
-              >
-                <Ionicons
-                  name={challengeDone ? "checkmark-circle" : "star"}
-                  size={20}
-                  color={challengeDone ? COLORS.success : COLORS.accent}
-                />
-              </Animated.View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardText}>
-                  🎯 Today's Challenge: {dailyPiece.title} — {dailyPiece.composer}
-                </Text>
-                <Text style={styles.cardSubtext}>
-                  {challengeDone
-                    ? "You played today's challenge ✅"
-                    : playerCount === 1
-                      ? "Be the first to play today's challenge"
-                      : `${playerCount} musicians playing`}
-                </Text>
-              </View>
-              {!challengeDone && (
-                <Ionicons name="play-circle" size={22} color={COLORS.accent} />
-              )}
-            </TouchableOpacity>
+              <View style={styles.recordingDot} />
+            </Animated.View>
           )}
 
-          {/* Demo button */}
-          <TouchableOpacity style={styles.demoBtn} onPress={handleDemo}>
-            <Ionicons name="flask" size={16} color={COLORS.muted} />
-            <Text style={styles.demoBtnText}>Demo</Text>
-          </TouchableOpacity>
-        </>
-      )}
-
-      {/* Results overlay */}
-      {showingResults && (
-        <>
-          {/* Compact status after recognition */}
-          <View style={styles.resultsHeader}>
-            <Ionicons
-              name={
-                recState === "success"
-                  ? "checkmark-circle"
-                  : recState === "error"
-                    ? "alert-circle"
-                    : "help-circle"
-              }
-              size={24}
-              color={recState === "success" ? COLORS.success : COLORS.muted}
-            />
-            <Text style={styles.resultsHeaderText}>
-              {renderStatusLabel()}
+          <TouchableOpacity
+            style={[
+              styles.recognitionBtn,
+              recorder.isRecording && styles.recognitionBtnActive,
+            ]}
+            onPress={handleStartListening}
+            disabled={recorder.checkingPermissions}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.recognitionBtnText}>
+              {recorder.checkingPermissions
+                ? 'Checking permissions...'
+                : recorder.isRecording
+                  ? 'Stop & Identify'
+                  : 'Start Listening'}
             </Text>
-          </View>
+          </TouchableOpacity>
+        </View>
 
-          {recState === "error" && (
-            <TouchableOpacity
-              style={styles.retryBtn}
-              onPress={handleMicPress}
-            >
-              <Ionicons name="refresh" size={18} color="#fff" />
-              <Text style={styles.retryBtnText}>Retry</Text>
-            </TouchableOpacity>
-          )}
-
-          {renderResults()}
-        </>
-      )}
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
     </View>
   );
 };
 
-// ── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
-    alignItems: "center",
-    paddingTop: 60,
-    paddingHorizontal: 20,
+    backgroundColor: '#1a1a2e',
   },
-  heading: { fontSize: 28, fontWeight: "bold", color: "#fff" },
-  subtitle: {
-    fontSize: 16,
-    color: COLORS.muted,
-    marginTop: 8,
-    marginBottom: 32,
-  },
-
-  // Mic button
-  listenButton: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: COLORS.accent,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-    elevation: 8,
-    shadowColor: COLORS.accent,
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-  },
-  listenButtonActive: {
-    backgroundColor: "#c0392b",
-    shadowColor: "#c0392b",
-  },
-  listenLabel: { fontSize: 14, color: COLORS.muted, marginBottom: 12 },
-  progressBarTrack: {
-    width: "80%",
-    height: 4,
-    backgroundColor: COLORS.border,
-    borderRadius: 2,
-    marginBottom: 24,
-  },
-  progressBarFill: {
-    height: 4,
-    backgroundColor: COLORS.accent,
-    borderRadius: 2,
-  },
-
-  // Retry
-  retryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: COLORS.card,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  retryBtnText: { color: "#fff", fontSize: 14 },
-
-  // Info cards
-  card: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: COLORS.card,
-    padding: 16,
-    borderRadius: 12,
-    width: "100%",
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  cardText: { color: COLORS.text, fontSize: 14, flex: 1 },
-  cardSubtext: {
-    color: COLORS.muted,
-    fontSize: 12,
-    marginTop: 4,
-  },
-  cardCompleted: {
-    borderColor: COLORS.success,
-    borderWidth: 1.5,
-  },
-
-  // Demo button
-  demoBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    marginTop: 8,
-    backgroundColor: COLORS.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  demoBtnText: { color: COLORS.muted, fontSize: 12 },
-
-  // Results header
-  resultsHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 16,
-  },
-  resultsHeaderText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: COLORS.text,
-  },
-
-  // Results scroll area
-  resultsContainer: {
+  scroll: {
     flex: 1,
-    width: "100%",
   },
-  resultsContent: {
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
     paddingBottom: 40,
   },
 
-  // No-match card
-  noMatchCard: {
-    alignItems: "center",
-    backgroundColor: COLORS.card,
-    padding: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: 16,
+  // Header
+  headerEmoji: {
+    fontSize: 48,
+    textAlign: 'center',
+    marginBottom: 4,
   },
-  noMatchTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: COLORS.text,
-    marginTop: 12,
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#e94560',
+    textAlign: 'center',
+    marginBottom: 2,
   },
-  noMatchText: {
+  subtitle: {
     fontSize: 14,
-    color: COLORS.muted,
-    textAlign: "center",
-    marginTop: 8,
+    color: '#a0a0b8',
+    textAlign: 'center',
+    marginBottom: 24,
   },
 
-  // Match cards
-  matchCard: {
-    backgroundColor: COLORS.card,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
+  // Streak
+  streakCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 14,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#0f3460',
   },
-  matchHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+  streakRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  matchTitleGroup: {
+  streakEmoji: {
+    fontSize: 36,
+    marginRight: 14,
+  },
+  streakInfo: {
     flex: 1,
   },
-  matchTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#fff",
+  streakCount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#ffffff',
   },
-  matchComposer: {
+  streakBest: {
     fontSize: 13,
-    color: COLORS.muted,
+    color: '#a0a0b8',
     marginTop: 2,
   },
-  confidenceBadge: {
-    backgroundColor: COLORS.success,
-    borderRadius: 12,
-    paddingVertical: 3,
-    paddingHorizontal: 10,
-  },
-  confidenceText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  catalogText: {
-    fontSize: 12,
-    color: COLORS.muted,
-    marginTop: 8,
-    fontStyle: "italic",
-  },
-  matchActions: {
-    marginTop: 12,
-    flexDirection: "row",
-    gap: 8,
-  },
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: COLORS.border,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    flex: 1,
-    justifyContent: "center",
-  },
-  purchaseBtn: {
-    backgroundColor: COLORS.accent,
-  },
-  actionBtnText: {
-    color: "#fff",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  noLinkText: {
-    fontSize: 13,
-    color: COLORS.muted,
-    fontStyle: "italic",
+  streakNudge: {
+    fontSize: 14,
+    color: '#ffb347',
+    fontWeight: '600',
+    marginTop: 4,
   },
 
-  // Dismiss button
-  dismissBtn: {
-    alignSelf: "center",
-    marginTop: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 32,
-    backgroundColor: COLORS.card,
-    borderRadius: 8,
+  // Weekly goal
+  goalCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 22,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#0f3460',
   },
-  dismissBtnText: {
-    color: COLORS.text,
+  goalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  goalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  goalComplete: {
     fontSize: 14,
-    fontWeight: "600",
+    color: '#4ecdc4',
+    fontWeight: '700',
+  },
+  goalProgress: {
+    fontSize: 15,
+    color: '#c0c0d0',
+    fontWeight: '600',
+    marginBottom: 10,
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: '#1a1a2e',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#e94560',
+    borderRadius: 4,
+  },
+  progressFillComplete: {
+    backgroundColor: '#4ecdc4',
+  },
+  goalCelebrate: {
+    fontSize: 13,
+    color: '#4ecdc4',
+    fontWeight: '600',
+    marginTop: 10,
+  },
+
+  // Daily challenge
+  sectionHeader: {
+    marginBottom: 12,
+    marginTop: 6,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#e94560',
+  },
+  challengeCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 20,
+    padding: 22,
+    marginBottom: 22,
+    borderWidth: 1,
+    borderColor: '#e94560',
+    borderStyle: 'dashed',
+  },
+  challengeEmoji: {
+    fontSize: 40,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  challengeTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#ffffff',
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  challengeComposer: {
+    fontSize: 15,
+    color: '#a0a0b8',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  challengeMeta: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  challengeTag: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  challengeTagText: {
+    color: '#c0c0d0',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  challengeDesc: {
+    fontSize: 13,
+    color: '#a0a0b8',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 14,
+  },
+  challengeCta: {
+    alignItems: 'center',
+  },
+  challengeCtaText: {
+    color: '#e94560',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  // Recommendations
+  recoLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 4,
+  },
+  recoByline: {
+    fontSize: 13,
+    color: '#a0a0b8',
+    marginBottom: 22,
+    lineHeight: 19,
+  },
+
+  // Recognition CTA
+  recognitionCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    padding: 22,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    marginBottom: 16,
+  },
+  recognitionEmoji: {
+    fontSize: 40,
+    marginBottom: 8,
+  },
+  recognitionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 6,
+  },
+  recognitionDesc: {
+    fontSize: 13,
+    color: '#a0a0b8',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 16,
+    paddingHorizontal: 10,
+  },
+  recognitionBtn: {
+    backgroundColor: '#e94560',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    minWidth: 200,
+    alignItems: 'center',
+  },
+  recognitionBtnActive: {
+    backgroundColor: '#ff6b6b',
+  },
+  recognitionBtnText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  // Recording indicator
+  recordingIndicator: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#e94560',
+    marginBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ff6b6b',
+  },
+
+  // Permission error
+  permissionError: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#e94560',
+  },
+  permissionErrorText: {
+    color: '#ffb347',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 8,
+    lineHeight: 18,
+  },
+  settingsBtn: {
+    backgroundColor: '#0f3460',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignSelf: 'center',
+  },
+  settingsBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  bottomSpacer: {
+    height: 60,
   },
 });

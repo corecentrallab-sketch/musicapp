@@ -2,7 +2,7 @@
  * PieceDetailScreen — shows piece info with share card functionality.
  * Navigated to from daily challenge, history, or recommendations.
  */
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,93 +13,25 @@ import {
   Alert,
 } from 'react-native';
 import type { DailyChallengePiece } from '../types';
-import { getStreakData } from '../services/storage';
-import type { StreakData } from '../types';
 
 interface PieceDetailScreenProps {
   piece: DailyChallengePiece;
   onBack: () => void;
-  /** Whether this piece has been marked as "mastered" by the user. */
-  isCompleted?: boolean;
 }
-
-/** Share variant types. */
-type ShareVariant = 'played' | 'streak' | 'mastered' | 'challenge';
-
-interface ShareOption {
-  variant: ShareVariant;
-  label: string;
-  emoji: string;
-}
-
-const APP_CTA = 'Get it at notesnap.com';
 
 export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
   piece,
   onBack,
-  isCompleted = false,
 }) => {
   const [sharing, setSharing] = useState(false);
-  const [activeVariant, setActiveVariant] = useState<ShareVariant>('played');
-  const [streakData, setStreakData] = useState<StreakData>({
-    currentStreak: 0,
-    lastPracticeDate: null,
-    bestStreak: 0,
-  });
-
-  useEffect(() => {
-    (async () => {
-      const streak = await getStreakData();
-      setStreakData(streak);
-    })();
-  }, []);
-
-  // Build available share variants based on context
-  const shareOptions: ShareOption[] = [
-    { variant: 'played', label: 'Share what I played', emoji: '🎹' },
-  ];
-
-  if (streakData.currentStreak > 1) {
-    shareOptions.push({
-      variant: 'streak',
-      label: `Share my ${streakData.currentStreak}-day streak`,
-      emoji: '🔥',
-    });
-    shareOptions.push({
-      variant: 'challenge',
-      label: 'Challenge friends',
-      emoji: '⚔️',
-    });
-  }
-
-  if (isCompleted) {
-    shareOptions.push({
-      variant: 'mastered',
-      label: 'Share that I mastered this',
-      emoji: '🏆',
-    });
-  }
-
-  // Build message based on active variant
-  const getShareMessage = (variant: ShareVariant): string => {
-    switch (variant) {
-      case 'played':
-        return `I just played "${piece.title}" by ${piece.composer} on NoteSnap 🎹\n\n${APP_CTA}`;
-      case 'streak':
-        return `I'm on a ${streakData.currentStreak}-day streak on NoteSnap 🔥\n\n${APP_CTA}`;
-      case 'mastered':
-        return `I just mastered "${piece.title}" by ${piece.composer} on NoteSnap 🎹\n\n${APP_CTA}`;
-      case 'challenge':
-        return `Can you beat my ${streakData.currentStreak}-day streak? Join me on NoteSnap 🎹\n\n${APP_CTA}`;
-    }
-  };
 
   const handleShare = useCallback(async () => {
     setSharing(true);
     try {
-      const shareMessage = getShareMessage(activeVariant);
+      const shareMessage = `I just played "${piece.title}" by ${piece.composer} on NoteSnap! 🎹\n\nDiscover sheet music for any song: [notesnap.app]`;
 
       if (Platform.OS === 'web') {
+        // Web fallback — copy to clipboard concept
         Alert.alert('Share', shareMessage);
       } else {
         await Share.share({
@@ -107,12 +39,12 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           title: `🎵 ${piece.title} — NoteSnap`,
         });
       }
-    } catch {
+    } catch (err) {
       // User cancelled — no action needed
     } finally {
       setSharing(false);
     }
-  }, [piece, activeVariant, streakData.currentStreak]);
+  }, [piece]);
 
   const difficultyEmoji =
     piece.difficulty === 'Beginner'
@@ -143,11 +75,6 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
               {difficultyEmoji} {piece.difficulty}
             </Text>
           </View>
-          {isCompleted && (
-            <View style={[styles.tag, styles.tagCompleted]}>
-              <Text style={styles.tagText}>✅ Mastered</Text>
-            </View>
-          )}
         </View>
 
         <Text style={styles.description}>{piece.description}</Text>
@@ -170,34 +97,6 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* Share variant selector */}
-      {shareOptions.length > 1 && (
-        <View style={styles.variantSelector}>
-          <Text style={styles.variantLabel}>Share as:</Text>
-          <View style={styles.variantRow}>
-            {shareOptions.map((opt) => (
-              <TouchableOpacity
-                key={opt.variant}
-                style={[
-                  styles.variantChip,
-                  activeVariant === opt.variant && styles.variantChipActive,
-                ]}
-                onPress={() => setActiveVariant(opt.variant)}
-              >
-                <Text
-                  style={[
-                    styles.variantChipText,
-                    activeVariant === opt.variant && styles.variantChipTextActive,
-                  ]}
-                >
-                  {opt.emoji} {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      )}
-
       {/* Share card preview */}
       <View style={styles.shareCard}>
         <Text style={styles.shareCardLabel}>Share Preview</Text>
@@ -206,11 +105,9 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           <Text style={styles.shareCardComposer}>{piece.composer}</Text>
           <View style={styles.shareCardDivider} />
           <Text style={styles.shareCardTagline}>
-            {getShareMessage(activeVariant).split('\n\n')[0]}
+            I just played this on NoteSnap 🎹
           </Text>
-          <Text style={styles.shareCardApp}>
-            NoteSnap · {APP_CTA}
-          </Text>
+          <Text style={styles.shareCardApp}>notesnap.app</Text>
         </View>
       </View>
     </View>
@@ -260,17 +157,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginBottom: 16,
-    flexWrap: 'wrap',
-    justifyContent: 'center',
   },
   tag: {
     backgroundColor: '#1a1a2e',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
-  },
-  tagCompleted: {
-    backgroundColor: '#1a3a2e',
   },
   tagText: {
     color: '#c0c0d0',
@@ -317,46 +209,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  // Variant selector
-  variantSelector: {
-    marginTop: 16,
-  },
-  variantLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#a0a0b8',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  variantRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  variantChip: {
-    backgroundColor: '#16213e',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-  },
-  variantChipActive: {
-    backgroundColor: '#e94560',
-    borderColor: '#e94560',
-  },
-  variantChipText: {
-    color: '#c0c0d0',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  variantChipTextActive: {
-    color: '#ffffff',
-  },
-  // Share card preview
   shareCard: {
-    marginTop: 20,
+    marginTop: 28,
   },
   shareCardLabel: {
     fontSize: 12,
@@ -396,7 +250,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '600',
     marginBottom: 4,
-    textAlign: 'center',
   },
   shareCardApp: {
     fontSize: 13,
