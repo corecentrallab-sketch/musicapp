@@ -15,28 +15,7 @@ export interface SavedPiece {
   difficulty?: number;
 }
 
-/** Navigation param list for the tab navigator. */
-export type RootTabParamList = {
-  Home: undefined;
-  History: undefined;
-  Editor: undefined;
-  Settings: undefined;
-};
-
-/** Represents a music recommendation shown in the Home feed. */
-export interface Recommendation {
-  id: string;
-  title: string;
-  composer: string;
-  /** Plain-language reason this was recommended. */
-  reason: string;
-  /** Cover art URL (freely licensed). */
-  coverArtUrl?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Recognition API types
-// ---------------------------------------------------------------------------
+// ─── API types ─────────────────────────────────────────────────
 
 /** Purchase link URLs for a matched piece. */
 export interface PurchaseUrls {
@@ -87,46 +66,76 @@ export type RecognitionState =
   | "no_match"
   | "error";
 
-// ---------------------------------------------------------------------------
-// Retention / gamification types
-// ---------------------------------------------------------------------------
+export interface CheckoutSessionResponse {
+  url?: string;
+  error?: string;
+}
 
-/** A piece in the daily challenge pool. */
-export interface DailyChallengePiece {
+/** Navigation param list for the tab navigator. */
+export type RootTabParamList = {
+  Home: undefined;
+  History: undefined;
+  Editor: undefined;
+  Settings: undefined;
+};
+
+/** Represents a music recommendation shown in the Home feed. */
+export interface Recommendation {
   id: string;
   title: string;
   composer: string;
-  genre: string;
-  difficulty: string;
-  description: string;
+  /** Plain-language reason this was recommended. */
+  reason: string;
+  /** Cover art URL (freely licensed). */
+  coverArtUrl?: string;
 }
 
-/** Streak tracking data persisted in AsyncStorage. */
+// ─── Onboarding ───────────────────────────────────────────────
+
+export type Instrument = 'piano' | 'guitar' | 'both';
+export type SkillLevel = 'beginner' | 'intermediate' | 'advanced';
+export type Genre = 'classical' | 'jazz-ragtime' | 'folk-traditional';
+
+export interface OnboardingAnswers {
+  instrument: Instrument;
+  level: SkillLevel;
+  genres: Genre[];
+  completedAt: string; // ISO date string
+}
+
+// ─── Streaks ──────────────────────────────────────────────────
+
 export interface StreakData {
   currentStreak: number;
-  lastPracticeDate: string | null;
+  lastPracticeDate: string | null; // ISO date string (YYYY-MM-DD)
   bestStreak: number;
 }
 
-/** Onboarding wizard answers. */
-export interface OnboardingAnswers {
-  instrument: string;
-  level: string;
-  genres: string[];
-}
+// ─── Achievements ─────────────────────────────────────────────
 
-/** An achievement badge that can be earned. */
 export interface Badge {
   id: string;
   name: string;
   description: string;
   emoji: string;
-  earnedAt?: string;
+  earnedAt?: string; // ISO date string, set when earned
 }
 
-/** Weekly practice goal tracking. */
+// ─── Weekly Goals ─────────────────────────────────────────────
+
 export interface WeeklyGoal {
   target: number;
   current: number;
-  weekStart: string;
+  weekStart: string; // ISO date string (Monday)
+}
+
+// ─── Daily Challenge ──────────────────────────────────────────
+
+export interface DailyChallengePiece {
+  id: string;
+  title: string;
+  composer: string;
+  genre: string;
+  difficulty: string; // "Beginner" | "Intermediate" | "Advanced"
+  description: string;
 }

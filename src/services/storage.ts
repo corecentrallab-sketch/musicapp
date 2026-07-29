@@ -8,6 +8,7 @@ import type {
   StreakData,
   Badge,
   WeeklyGoal,
+  SavedPiece,
 } from '../types';
 
 const KEYS = {
@@ -16,6 +17,7 @@ const KEYS = {
   BADGES: '@notesnap/badges',
   WEEKLY_GOAL: '@notesnap/weeklyGoal',
   PRACTICE_DAYS: '@notesnap/practiceDays',
+  RECOGNITION_HISTORY: '@notesnap/recognitionHistory',
   DAILY_CHALLENGE_DONE: '@notesnap/dailyChallengeDone',
 } as const;
 
@@ -172,24 +174,32 @@ export async function saveBadges(badges: Badge[]): Promise<void> {
   await AsyncStorage.setItem(KEYS.BADGES, JSON.stringify(badges));
 }
 
-// ─── Helpers ──────────────────────────────────────────────────
+// ─── Recognition History ─────────────────────────────────────
 
-/** Returns today's date as YYYY-MM-DD. */
-export function getTodayStr(): string {
-  return getDateStr(new Date());
+export async function getRecognitionHistory(): Promise<SavedPiece[]> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.RECOGNITION_HISTORY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
 }
 
-function getDateStr(d: Date): string {
-  return d.toISOString().slice(0, 10);
+export async function getRecognitionCount(): Promise<number> {
+  const history = await getRecognitionHistory();
+  return history.length;
 }
 
-/** Returns the Monday of the current week as YYYY-MM-DD. */
-function getMondayStr(d: Date): string {
-  const day = d.getDay(); // 0=Sun, 1=Mon...
-  const diff = day === 0 ? -6 : 1 - day;
-  const monday = new Date(d);
-  monday.setDate(monday.getDate() + diff);
-  return getDateStr(monday);
+export async function saveRecognition(piece: SavedPiece): Promise<void> {
+  const history = await getRecognitionHistory();
+  // Avoid duplicates by piece_id
+  if (!history.some((p) => p.id === piece.id)) {
+    history.unshift(piece);
+    await AsyncStorage.setItem(
+      KEYS.RECOGNITION_HISTORY,
+      JSON.stringify(history),
+    );
+  }
 }
 
 // ─── Daily Challenge Completion ────────────────────────────────
@@ -212,4 +222,24 @@ export async function markDailyChallengeDone(): Promise<void> {
     KEYS.DAILY_CHALLENGE_DONE,
     JSON.stringify({ date: getTodayStr() }),
   );
+}
+
+// ─── Helpers ──────────────────────────────────────────────────
+
+/** Returns today's date as YYYY-MM-DD. */
+export function getTodayStr(): string {
+  return getDateStr(new Date());
+}
+
+function getDateStr(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** Returns the Monday of the current week as YYYY-MM-DD. */
+function getMondayStr(d: Date): string {
+  const day = d.getDay(); // 0=Sun, 1=Mon...
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d);
+  monday.setDate(monday.getDate() + diff);
+  return getDateStr(monday);
 }

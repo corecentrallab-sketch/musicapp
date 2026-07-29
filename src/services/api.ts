@@ -1,14 +1,12 @@
 /**
  * NoteSnap API client.
  *
- * Communicates with the recognition endpoint running on the site server.
- * The base URL is configurable — defaults to localhost:3000 for development
- * but should be set to the production URL when going live.
+ * Communicates with the site server for recognition and checkout.
+ * The base URL defaults to the production site; override for local dev.
  */
+import type { RecognitionResponse, RecognitionError, CheckoutSessionResponse } from "../types";
 
-import type { RecognitionResponse, RecognitionError } from "../types";
-
-/** Override with the live site URL in production. */
+/** Production NoteSnap site URL. */
 let BASE_URL = "https://site-ten-sigma-27.vercel.app";
 
 export function setApiBaseUrl(url: string): void {
@@ -21,17 +19,10 @@ export function getApiBaseUrl(): string {
 
 /**
  * Upload an audio recording for recognition.
- *
- * Sends the audio file as multipart/form-data to POST /api/recognize.
- * Returns the parsed response on success, or throws with a user-friendly
- * message on failure.
- */
-export async function recognizeAudio(
+ */ export async function recognizeAudio(
   audioUri: string,
 ): Promise<RecognitionResponse> {
   const formData = new FormData();
-
-  // React Native's FormData accepts { uri, name, type } for file uploads
   formData.append("audio", {
     uri: audioUri,
     name: "recording.ogg",
@@ -41,10 +32,7 @@ export async function recognizeAudio(
   const response = await fetch(`${BASE_URL}/api/recognize`, {
     method: "POST",
     body: formData,
-    headers: {
-      // Don't set Content-Type — fetch sets it with the boundary for multipart
-      Accept: "application/json",
-    },
+    headers: { Accept: "application/json" },
   });
 
   const json: RecognitionResponse | RecognitionError = await response.json();
@@ -54,4 +42,30 @@ export async function recognizeAudio(
   }
 
   return json;
+}
+
+/**
+ * Create a Stripe Checkout Session for a subscription plan.
+ *
+ * Returns the Checkout URL that should be opened in the browser
+ * (via expo-web-browser or similar).
+ */
+export async function createCheckoutSession(
+  priceId: string,
+): Promise<string> {
+  const response = await fetch(`${BASE_URL}/api/create-checkout-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ priceId }),
+  });
+
+  const json: CheckoutSessionResponse = await response.json();
+
+  if (!json.url) {
+    throw new Error(
+      (json as { error?: string }).error || "Failed to create checkout session",
+    );
+  }
+
+  return json.url;
 }
