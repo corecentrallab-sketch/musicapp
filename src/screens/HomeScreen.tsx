@@ -43,6 +43,7 @@ import type {
   OnboardingAnswers,
   Badge,
   Match,
+  RecognitionResponse,
 } from '../types';
 
 /** Auto-stop recording after this many ms. */
@@ -133,6 +134,79 @@ export const HomeScreen: React.FC = () => {
       pulseAnim.setValue(1);
     }
   }, [recorder.isRecording, pulseAnim]);
+
+  // ── Demo recognition (skips mic, injects mock results) ──
+
+  const handleDemo = useCallback(async () => {
+    // Brief loading phase
+    setRecognitionPhase({ type: 'loading' });
+    setShowRecognitionResults(true);
+
+    // Simulate network delay, then inject mock success
+    await new Promise((r) => setTimeout(r, 1200));
+
+    const mockResponse: RecognitionResponse = {
+      success: true,
+      query_duration_ms: 234,
+      db_available: true,
+      matches: [
+        {
+          piece_id: 'debussy-clair-de-lune',
+          title: 'Clair de Lune',
+          composer: 'Claude Debussy',
+          catalog: 'Suite bergamasque, L. 75',
+          confidence: 0.94,
+          album_art_url: null,
+          sheet_music_url: null,
+          tab_url: null,
+          matched_at_s: 12.5,
+          purchase_url: null,
+        },
+        {
+          piece_id: 'debussy-reverie',
+          title: 'Rêverie',
+          composer: 'Claude Debussy',
+          catalog: 'L. 68',
+          confidence: 0.31,
+          album_art_url: null,
+          sheet_music_url: null,
+          tab_url: null,
+          matched_at_s: 8.2,
+          purchase_url: null,
+        },
+      ],
+    };
+
+    setRecognitionPhase({ type: 'success', response: mockResponse });
+
+    // Save top match to history (mirrors real recognition flow)
+    const topMatch = mockResponse.matches[0];
+    await saveRecognition({
+      id: topMatch.piece_id,
+      title: topMatch.title,
+      composer: topMatch.composer,
+      savedAt: new Date().toISOString(),
+      genre: topMatch.catalog ?? undefined,
+    });
+
+    // Increment streak
+    const newStreak = await recordPractice();
+    setStreak(newStreak);
+
+    // Refresh weekly goal
+    const wg = await getWeeklyGoal();
+    setWeeklyGoal(wg);
+
+    // Check for badges
+    const totalRecognitions = await getRecognitionCount();
+    const newBadges = await checkAndAwardBadges({
+      totalRecognitions,
+      currentHour: new Date().getHours(),
+    });
+    if (newBadges.length > 0) {
+      setBadgeToast(newBadges[0]);
+    }
+  }, []);
 
   // ── Recognition flow ──
 
@@ -484,6 +558,17 @@ export const HomeScreen: React.FC = () => {
                   : 'Start Listening'}
             </Text>
           </TouchableOpacity>
+
+          {/* Demo button — dev-only shortcut that skips microphone */}
+          {__DEV__ && !recorder.isRecording && (
+            <TouchableOpacity
+              style={styles.demoBtn}
+              onPress={handleDemo}
+              activeOpacity={0.6}
+            >
+              <Text style={styles.demoBtnText}>🧪 Try Demo</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.bottomSpacer} />
@@ -743,6 +828,23 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
+  },
+
+  // Demo button (dev-only)
+  demoBtn: {
+    marginTop: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#4ecdc4',
+    backgroundColor: 'transparent',
+  },
+  demoBtnText: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 
   // Recording indicator
