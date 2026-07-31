@@ -5,6 +5,7 @@
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
+    "android-dev": "expo start --dev-client",
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "eslint .",
@@ -19,6 +20,7 @@
     "expo-asset": "~9.0.0",
     "expo-av": "~15.0.0",
     "expo-constants": "~16.0.0",
+    "expo-dev-client": "~5.0.20",
     "expo-file-system": "~17.0.0",
     "expo-font": "~13.0.0",
     "expo-sharing": "~13.0.0",
