@@ -138,4 +138,6 @@ export interface DailyChallengePiece {
   genre: string;
   difficulty: string; // "Beginner" | "Intermediate" | "Advanced"
   description: string;
+  /** Optional URL to sheet music PDF/MusicXML. */
+  sheetMusicUrl?: string;
 }

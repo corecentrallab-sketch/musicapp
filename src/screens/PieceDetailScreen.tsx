@@ -13,6 +13,7 @@ import {
   Alert,
 } from 'react-native';
 import type { DailyChallengePiece } from '../types';
+import { ScoreViewer } from '../components/ScoreViewer';
 
 interface PieceDetailScreenProps {
   piece: DailyChallengePiece;
@@ -24,6 +25,19 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
   onBack,
 }) => {
   const [sharing, setSharing] = useState(false);
+  const [showScoreViewer, setShowScoreViewer] = useState(false);
+
+  // If showing the ScoreViewer
+  if (showScoreViewer && piece.sheetMusicUrl) {
+    return (
+      <ScoreViewer
+        url={piece.sheetMusicUrl}
+        title={piece.title}
+        composer={piece.composer}
+        onClose={() => setShowScoreViewer(false)}
+      />
+    );
+  }
 
   const handleShare = useCallback(async () => {
     setSharing(true);
@@ -45,6 +59,13 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
       setSharing(false);
     }
   }, [piece]);
+
+  const handleViewSheetMusic = () => {
+    if (piece.sheetMusicUrl) {
+      setShowScoreViewer(true);
+    }
+    // If no URL, the button will be disabled (see below)
+  };
 
   const difficultyEmoji =
     piece.difficulty === 'Beginner'
@@ -82,8 +103,22 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
 
       {/* Action buttons */}
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.viewSheetBtn}>
-          <Text style={styles.viewSheetText}>🎵 View Sheet Music</Text>
+        <TouchableOpacity
+          style={[
+            styles.viewSheetBtn,
+            !piece.sheetMusicUrl && styles.viewSheetBtnDisabled,
+          ]}
+          onPress={handleViewSheetMusic}
+          disabled={!piece.sheetMusicUrl}
+        >
+          <Text
+            style={[
+              styles.viewSheetText,
+              !piece.sheetMusicUrl && styles.viewSheetTextDisabled,
+            ]}
+          >
+            🎵 View Sheet Music
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -187,10 +222,17 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
   },
+  viewSheetBtnDisabled: {
+    backgroundColor: '#3a3a5c',
+    opacity: 0.6,
+  },
   viewSheetText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  viewSheetTextDisabled: {
+    color: '#8888aa',
   },
   shareBtn: {
     flex: 1,
