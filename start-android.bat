@@ -3,6 +3,7 @@ setlocal enabledelayedexpansion
 
 echo ============================================
 echo   NoteSnap - Android Emulator Launcher
+echo   (expo-dev-client - no Expo Go needed)
 echo ============================================
 echo.
 
@@ -188,19 +189,51 @@ exit /b 1
 echo.
 
 :: ------------------------------------------------------------------
-:: 5. Launch Expo and open on emulator
+:: 5. Build dev client (first run only)
 :: ------------------------------------------------------------------
-echo [5/5] Starting Expo and opening app on emulator...
+echo [5/6] Checking for expo-dev-client native build...
+
+if not exist "android\app\build\outputs\apk\debug\app-debug.apk" (
+    echo.
+    echo        ╔══════════════════════════════════════════════════════════╗
+    echo        ║  FIRST-TIME SETUP: Building expo-dev-client natively    ║
+    echo        ║  This compiles native code and takes 2-5 minutes.       ║
+    echo        ║  This only happens ONCE. Subsequent launches are instant.║
+    echo        ╚══════════════════════════════════════════════════════════╝
+    echo.
+    echo        Running: npx expo run:android
+    echo.
+    call npx expo run:android
+    if errorlevel 1 (
+        echo.
+        echo ERROR: Native build failed. Check the output above.
+        echo        Make sure you have Android SDK, NDK, and Java installed.
+        pause
+        exit /b 1
+    )
+    echo.
+    echo        Build complete! The dev client is now installed on the emulator.
+    echo        You won't see this step again unless you clean the build.
+    echo.
+) else (
+    echo        Dev client build found - skipping native compilation.
+    echo.
+)
+
+:: ------------------------------------------------------------------
+:: 6. Launch Expo dev client on emulator
+:: ------------------------------------------------------------------
+echo [6/6] Starting Expo dev client on emulator...
 echo.
-echo        Press 'a' will be sent automatically once Metro is ready.
+echo        Using expo-dev-client (no Expo Go needed!)
 echo        Press Ctrl+C to stop the dev server.
 echo.
 
-:: Start expo — we pipe 'a' to stdin after a delay so the bundler
-:: has time to start before we send the key
+:: Start expo in dev-client mode — we pipe 'a' to stdin after a
+:: delay so the bundler has time to start before we send the key
 (
     timeout /t 8 /nobreak >nul
     echo a
-) | npx expo start
+) | npx expo start --dev-client
 
 endlocal
