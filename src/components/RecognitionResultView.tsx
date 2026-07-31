@@ -19,8 +19,9 @@ import {
   ScrollView,
   Linking,
 } from 'react-native';
-import type { Match, RecognitionResponse } from '../types';
+import type { RecognitionMatch, RecognitionResponse } from '../types';
 import { PieceDetailScreen } from '../screens/PieceDetailScreen';
+import { ScoreViewer } from './ScoreViewer';
 
 export type RecognitionPhase =
   | { type: 'loading' }
@@ -35,8 +36,8 @@ interface RecognitionResultViewProps {
   onRetry: () => void;
 }
 
-/** Convert a Match to a shape the PieceDetailScreen can render. */
-function matchToDailyChallenge(match: Match) {
+/** Convert a RecognitionMatch to a shape the PieceDetailScreen can render. */
+function matchToDailyChallenge(match: RecognitionMatch) {
   return {
     id: match.piece_id,
     title: match.title,
@@ -44,6 +45,7 @@ function matchToDailyChallenge(match: Match) {
     genre: match.catalog ?? 'Classical',
     difficulty: 'Intermediate' as const,
     description: `Recognized with ${Math.round(match.confidence * 100)}% confidence`,
+    sheetMusicUrl: match.sheet_music_url ?? undefined,
   };
 }
 
@@ -54,18 +56,32 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   onRetry,
 }) => {
   const [showDetail, setShowDetail] = React.useState(false);
-  const [selectedMatch, setSelectedMatch] = React.useState<Match | null>(null);
+  const [showScoreViewer, setShowScoreViewer] = React.useState(false);
+  const [selectedMatch, setSelectedMatch] = React.useState<RecognitionMatch | null>(null);
 
-  // Reset detail view when modal opens with new results
+  // Reset views when modal opens with new results
   React.useEffect(() => {
     if (visible) {
       setShowDetail(false);
+      setShowScoreViewer(false);
     }
   }, [visible]);
 
   if (!visible || !phase) return null;
 
-  // If viewing detail for a match, show PieceDetailScreen
+  // If viewing the ScoreViewer for a match that has a sheet_music_url
+  if (showScoreViewer && selectedMatch && phase.type === 'success' && selectedMatch.sheet_music_url) {
+    return (
+      <ScoreViewer
+        url={selectedMatch.sheet_music_url}
+        title={selectedMatch.title}
+        composer={selectedMatch.composer}
+        onClose={() => setShowScoreViewer(false)}
+      />
+    );
+  }
+
+  // If viewing detail for a match (no sheet_music_url), show PieceDetailScreen
   if (showDetail && selectedMatch && phase.type === 'success') {
     const piece = matchToDailyChallenge(selectedMatch);
     return (
@@ -75,9 +91,13 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
     );
   }
 
-  const handleViewSheetMusic = (match: Match) => {
+  const handleViewSheetMusic = (match: RecognitionMatch) => {
     setSelectedMatch(match);
-    setShowDetail(true);
+    if (match.sheet_music_url) {
+      setShowScoreViewer(true);
+    } else {
+      setShowDetail(true);
+    }
   };
 
   const handleOpenPurchaseUrl = (url: string) => {

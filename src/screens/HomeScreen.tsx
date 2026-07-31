@@ -42,7 +42,7 @@ import type {
   DailyChallengePiece,
   OnboardingAnswers,
   Badge,
-  Match,
+  RecognitionMatch,
   RecognitionResponse,
 } from '../types';
 
@@ -248,13 +248,13 @@ export const HomeScreen: React.FC = () => {
         setRecognitionPhase({ type: 'success', response: result });
 
         // Save top match to history
-        const topMatch: Match = result.matches[0];
+        const topMatch: RecognitionMatch = result.matches[0];
         await saveRecognition({
           id: topMatch.piece_id,
           title: topMatch.title,
           composer: topMatch.composer,
           savedAt: new Date().toISOString(),
-          genre: topMatch.catalog,
+          genre: topMatch.catalog ?? undefined,
         });
 
         // Increment streak (recognition counts as practice)
