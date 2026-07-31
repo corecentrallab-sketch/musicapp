@@ -145,6 +145,10 @@ export const HomeScreen: React.FC = () => {
     // Simulate network delay, then inject mock success
     await new Promise((r) => setTimeout(r, 1200));
 
+    // Public-domain PDF from Mutopia Project — real sheet music for demo
+    const demoSheetUrl =
+      'https://www.mutopiaproject.org/ftp/BachJS/BWV846/bwv-846-prelude/bwv-846-prelude-a4.pdf';
+
     const mockResponse: RecognitionResponse = {
       success: true,
       query_duration_ms: 234,
@@ -157,7 +161,7 @@ export const HomeScreen: React.FC = () => {
           catalog: 'Suite bergamasque, L. 75',
           confidence: 0.94,
           album_art_url: null,
-          sheet_music_url: null,
+          sheet_music_url: demoSheetUrl,
           tab_url: null,
           matched_at_s: 12.5,
           purchase_url: null,
@@ -169,10 +173,13 @@ export const HomeScreen: React.FC = () => {
           catalog: 'L. 68',
           confidence: 0.31,
           album_art_url: null,
-          sheet_music_url: null,
+          sheet_music_url: demoSheetUrl,
           tab_url: null,
           matched_at_s: 8.2,
-          purchase_url: null,
+          purchase_url: {
+            musicnotes: 'https://www.musicnotes.com/sheetmusic/mtd.asp?ppn=MN0217881',
+            sheetmusicplus: 'https://www.sheetmusicplus.com/title/clair-de-lune-digital-sheet-music/19377456',
+          },
         },
       ],
     };
