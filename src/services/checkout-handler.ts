@@ -15,9 +15,9 @@ interface CheckoutRequest {
 }
 
 const VALID_PRICE_IDS = new Set([
-  "price_1TyU6EBbnDObsY4u0FbZ2fui", // Pro Monthly $4.99/mo
-  "price_1TyUC6BbnDObsY4uOHfB8glf", // Pro Yearly $39.99/yr
-  "price_1TyUFsBbnDObsY4uXFnCubR4", // Family $9.99/mo
+  "price_1TwbqHReFDEYPfXjxq8vMcdV", // Pro Monthly $4.99/mo
+  "price_1TwbqHReFDEYPfXjLTbo7zgH", // Pro Yearly $39.99/yr
+  "price_1TwbqHReFDEYPfXj0oIi8bGt", // Family $9.99/mo
 ]);
 
 /**
