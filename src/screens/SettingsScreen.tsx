@@ -96,8 +96,8 @@ export const SettingsScreen: React.FC = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Upgrade</Text>
           <Text style={styles.sectionSubtitle}>
-            7-day free trial on all plans · cancel anytime.{'\n'}
-            Unlock unlimited recognitions, advanced features, and more.
+            You're on the free plan — 5 recognitions/month.{'\n'}
+            Upgrade anytime for unlimited access.
           </Text>
 
           {/* Pro Monthly */}
@@ -123,7 +123,7 @@ export const SettingsScreen: React.FC = () => {
               <ActivityIndicator color="#e94560" size="small" />
             ) : (
               <View style={styles.upgradeBtn}>
-                <Text style={styles.upgradeBtnText}>Start Trial</Text>
+                <Text style={styles.upgradeBtnText}>Subscribe</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -150,7 +150,7 @@ export const SettingsScreen: React.FC = () => {
               <ActivityIndicator color="#e94560" size="small" />
             ) : (
               <View style={[styles.upgradeBtn, styles.upgradeBtnPrimary]}>
-                <Text style={styles.upgradeBtnTextPrimary}>Start Trial</Text>
+                <Text style={styles.upgradeBtnTextPrimary}>Subscribe</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -176,7 +176,7 @@ export const SettingsScreen: React.FC = () => {
               <ActivityIndicator color="#e94560" size="small" />
             ) : (
               <View style={styles.upgradeBtn}>
-                <Text style={styles.upgradeBtnText}>Start Trial</Text>
+                <Text style={styles.upgradeBtnText}>Subscribe</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -203,8 +203,8 @@ export const SettingsScreen: React.FC = () => {
         <Text style={styles.sectionTitle}>Billing</Text>
         <View style={styles.infoCard}>
           <Text style={styles.infoText}>
-            • 7-day free trial on all paid plans{'\n'}
-            • Cancel anytime with one tap{'\n'}
+            • Cancel anytime — one tap, no hassle{'\n'}
+            • Free plan available with 5 recognitions/month{'\n'}
             • No commitments — you're in control{'\n'}
             • Payment processed securely by Stripe
           </Text>
