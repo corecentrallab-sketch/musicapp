@@ -190,17 +190,31 @@ echo.
 :: ------------------------------------------------------------------
 :: 5. Launch Expo and open on emulator
 :: ------------------------------------------------------------------
-echo [5/5] Starting Expo and opening app on emulator...
+echo [5/5] Starting Expo dev client and opening app on emulator...
 echo.
-echo        Press 'a' will be sent automatically once Metro is ready.
-echo        Press Ctrl+C to stop the dev server.
+echo        Starting Metro in dev-client mode. Press Ctrl+C to stop.
 echo.
 
-:: Start expo — we pipe 'a' to stdin after a delay so the bundler
-:: has time to start before we send the key
-(
-    timeout /t 8 /nobreak >nul
-    echo a
-) | npx expo start
+:: Build/install the native dev client when it does not exist yet.
+if not exist "android\app\build\outputs\apk\debug\app-debug.apk" (
+    echo        No dev client APK found. Building it now...
+    call npx expo run:android
+    if errorlevel 1 (
+        echo ERROR: Native dev-client build failed.
+        echo        Falling back to Expo Go mode. Install Expo Go on the emulator if prompted.
+        call npx expo start
+        if errorlevel 1 echo ERROR: Expo could not start. Run npm install and retry.
+        endlocal
+        exit /b 1
+    )
+)
+
+call npx expo start --dev-client
+if errorlevel 1 (
+    echo ERROR: Dev-client Metro failed to start.
+    echo        Retrying in Expo Go mode...
+    call npx expo start
+    if errorlevel 1 echo ERROR: Expo could not start. Run npm install and retry.
+)
 
 endlocal

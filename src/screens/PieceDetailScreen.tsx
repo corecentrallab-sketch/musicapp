@@ -2,7 +2,7 @@
  * PieceDetailScreen — shows piece info with share card functionality.
  * Navigated to from daily challenge, history, or recommendations.
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 import type { DailyChallengePiece } from '../types';
 import { ScoreViewer } from '../components/ScoreViewer';
+import { addPracticeMinutes, recordPractice } from '../services/storage';
+import { refreshStreakNudge } from '../services/notifications';
 
 interface PieceDetailScreenProps {
   piece: DailyChallengePiece;
@@ -26,6 +28,19 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
 }) => {
   const [sharing, setSharing] = useState(false);
   const [showScoreViewer, setShowScoreViewer] = useState(false);
+  const startedAt = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!showScoreViewer) return;
+    startedAt.current = Date.now();
+    void recordPractice();
+    return () => {
+      const elapsedMinutes = (Date.now() - (startedAt.current ?? Date.now())) / 60000;
+      if (elapsedMinutes > 0) {
+        void addPracticeMinutes(elapsedMinutes).then(() => refreshStreakNudge());
+      }
+    };
+  }, [showScoreViewer]);
 
   // If showing the ScoreViewer
   if (showScoreViewer && piece.sheetMusicUrl) {

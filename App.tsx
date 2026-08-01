@@ -9,6 +9,7 @@ import {
   hasCompletedOnboarding,
   saveOnboardingAnswers,
 } from './src/services/storage';
+import { requestNotificationPermission, refreshStreakNudge } from './src/services/notifications';
 import type { OnboardingAnswers } from './src/types';
 
 export default function App() {
@@ -17,6 +18,8 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
+      await requestNotificationPermission();
+      await refreshStreakNudge();
       const completed = await hasCompletedOnboarding();
       setShowOnboarding(!completed);
       setLoading(false);
