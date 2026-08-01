@@ -3,7 +3,17 @@ import { matchFingerprint } from "~/services/matching";
 
 // ---------------------------------------------------------------------------
 // Rate limiting (simple in-memory counter for free tier — 5 per month)
-// In production, replace with a DB-backed counter using recognition_history.
+//
+// ** IMPORTANT — post-launch hardening needed **
+// This implementation resets on every server restart. In-memory Maps do not
+// survive cold starts, deploys, or instance scaling. For production, this
+// must be migrated to a DB-backed counter using the `recognition_history`
+// table. The schema already has `recognition_history(user_identifier, created_at)`
+// with an index ready for rate-limit queries. Recommended approach:
+//   1. On each recognition, INSERT into recognition_history
+//   2. COUNT rows for user_identifier WHERE created_at > NOW() - INTERVAL '30 days'
+//   3. If count >= 5, reject with 429
+//   4. Consider adding a `tier` column to users for Pro unlimited bypass
 // ---------------------------------------------------------------------------
 const monthlyLimits = new Map<string, { count: number; resetAt: number }>();
 
@@ -33,6 +43,26 @@ function checkMonthlyLimit(userId: string): boolean {
 // ---------------------------------------------------------------------------
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
+// ---------------------------------------------------------------------------
+// CORS headers — required for cross-origin requests from the mobile app
+// and any web-based clients. Applied to every response (success and error).
+// ---------------------------------------------------------------------------
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Accept, x-user-id",
+};
+
+function corsResponse(
+  body: Record<string, unknown>,
+  init?: ResponseInit,
+): Response {
+  return Response.json(body, {
+    ...init,
+    headers: { ...CORS_HEADERS, ...(init?.headers as Record<string, string> | undefined) },
+  });
+}
+
 /**
  * POST /api/recognize handler
  *
@@ -52,7 +82,7 @@ export async function handleRecognize(req: Request): Promise<Response> {
   // --- Validate Content-Type ---
   const contentType = req.headers.get("content-type") || "";
   if (!contentType.includes("multipart/form-data")) {
-    return Response.json(
+    return corsResponse(
       { success: false, error: "Content-Type must be multipart/form-data" },
       { status: 400 },
     );
@@ -61,7 +91,7 @@ export async function handleRecognize(req: Request): Promise<Response> {
   // --- Check content-length ---
   const contentLength = parseInt(req.headers.get("content-length") || "0", 10);
   if (contentLength > MAX_UPLOAD_BYTES) {
-    return Response.json(
+    return corsResponse(
       { success: false, error: "Audio file too large (max 5 MB)" },
       { status: 413 },
     );
@@ -72,7 +102,7 @@ export async function handleRecognize(req: Request): Promise<Response> {
   try {
     formData = await req.formData();
   } catch {
-    return Response.json(
+    return corsResponse(
       { success: false, error: "Invalid form data" },
       { status: 400 },
     );
@@ -80,21 +110,21 @@ export async function handleRecognize(req: Request): Promise<Response> {
 
   const audioFile = formData.get("audio");
   if (!audioFile || !(audioFile instanceof File)) {
-    return Response.json(
+    return corsResponse(
       { success: false, error: "Missing 'audio' file in form data" },
       { status: 400 },
     );
   }
 
   if (audioFile.size === 0) {
-    return Response.json(
+    return corsResponse(
       { success: false, error: "Audio file is empty" },
       { status: 400 },
     );
   }
 
   if (audioFile.size > MAX_UPLOAD_BYTES) {
-    return Response.json(
+    return corsResponse(
       { success: false, error: "Audio file too large (max 5 MB)" },
       { status: 413 },
     );
@@ -107,7 +137,7 @@ export async function handleRecognize(req: Request): Promise<Response> {
     "anonymous";
 
   if (!checkMonthlyLimit(userId)) {
-    return Response.json(
+    return corsResponse(
       {
         success: false,
         error:
@@ -118,6 +148,10 @@ export async function handleRecognize(req: Request): Promise<Response> {
   }
 
   // --- Generate fingerprint ---
+  // NOTE: fingerprintFromBuffer calls ffmpeg and fpcalc via child_process.execFile.
+  // These external processes have no timeout — if ffmpeg or fpcalc hang (e.g. on
+  // corrupted audio), the request will stall indefinitely. Post-launch, wrap in a
+  // Promise.race with a 30-second timeout to return a 408/504 instead of hanging.
   let fingerprint: number[];
   try {
     const audioBuffer = Buffer.from(await audioFile.arrayBuffer());
@@ -125,7 +159,7 @@ export async function handleRecognize(req: Request): Promise<Response> {
     fingerprint = result.fingerprint;
   } catch (err) {
     console.error("[recognize] fingerprint generation failed:", err);
-    return Response.json(
+    return corsResponse(
       {
         success: false,
         error:
@@ -208,5 +242,5 @@ export async function handleRecognize(req: Request): Promise<Response> {
         };
   }
 
-  return Response.json(response);
+  return corsResponse(response as Record<string, unknown>);
 }

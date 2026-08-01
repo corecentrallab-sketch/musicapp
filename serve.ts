@@ -31,6 +31,26 @@ const freePort =
   `kill $pids 2>/dev/null || true; sleep 0.2; ` +
   `done`;
 
+// --- Health check handler ---
+async function handleHealth(): Promise<Response> {
+  let db = false;
+  try {
+    const { sql } = await import("./src/db");
+    const result = await sql()`SELECT 1 AS ok`;
+    db = result.length > 0;
+  } catch {
+    db = false;
+  }
+  return Response.json(
+    { status: "ok", db },
+    {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+      },
+    },
+  );
+}
+
 // Take over the port, re-freeing and retrying if another publish grabbed it in the
 // gap between freeing and binding (last publish wins). Bun.serve throws EADDRINUSE
 // synchronously, so without this a raced publish would die while the shell already
@@ -45,6 +65,21 @@ for (let attempt = 1; ; attempt++) {
         const { pathname } = new URL(req.url);
 
         // --- API routes (handled before static files / SSR) ---
+        if (req.method === "OPTIONS") {
+          // CORS preflight — return 204 with allow-* headers
+          return new Response(null, {
+            status: 204,
+            headers: {
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+              "Access-Control-Allow-Headers": "Content-Type, Accept, x-user-id",
+              "Access-Control-Max-Age": "86400",
+            },
+          });
+        }
+        if (pathname === "/api/health" && req.method === "GET") {
+          return handleHealth();
+        }
         if (pathname === "/api/recognize" && req.method === "POST") {
           return handleRecognize(req);
         }
