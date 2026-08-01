@@ -4,7 +4,7 @@
  * Communicates with the site server for recognition and checkout.
  * The base URL defaults to the production site; override for local dev.
  */
-import type { RecognitionResponse, RecognitionError, CheckoutSessionResponse } from "../types";
+import type { RecognitionResponse, RecognitionError } from "../types";
 
 /** Production NoteSnap site URL. */
 let BASE_URL = "https://site-ten-sigma-27.vercel.app";
@@ -42,30 +42,4 @@ export function getApiBaseUrl(): string {
   }
 
   return json;
-}
-
-/**
- * Create a Stripe Checkout Session for a subscription plan.
- *
- * Returns the Checkout URL that should be opened in the browser
- * (via expo-web-browser or similar).
- */
-export async function createCheckoutSession(
-  priceId: string,
-): Promise<string> {
-  const response = await fetch(`${BASE_URL}/api/create-checkout-session`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ priceId }),
-  });
-
-  const json: CheckoutSessionResponse = await response.json();
-
-  if (!json.url) {
-    throw new Error(
-      (json as { error?: string }).error || "Failed to create checkout session",
-    );
-  }
-
-  return json.url;
 }

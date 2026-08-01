@@ -2,8 +2,8 @@
  * SettingsScreen — subscription management and account settings.
  *
  * For free users, shows the current plan and upgrade options.
- * Upgrade buttons call the live API to create a Stripe Checkout Session,
- * then open the returned URL using expo-web-browser.
+ * Upgrade buttons open Stripe Payment Links directly via expo-web-browser —
+ * no API call, no server-side key needed.
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -16,22 +16,21 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
-import { createCheckoutSession } from '../services/api';
 import { useEffect } from 'react';
 import { getNotificationEnabled, setNotificationEnabled } from '../services/storage';
 import { scheduleDailyStreakNudge, cancelStreakNudge } from '../services/notifications';
 
-// Stripe price IDs
-const PRICE_IDS = {
-  proMonthly: 'price_1TyU6EBbnDObsY4u0FbZ2fui',
-  proYearly: 'price_1TyUC6BbnDObsY4uOHfB8glf',
-  family: 'price_1TyUFsBbnDObsY4uXFnCubR4',
+// Stripe Payment Links (live, no API key needed)
+const PAYMENT_LINKS = {
+  proMonthly: 'https://buy.stripe.com/3cI28tfBL0ZJ8h7gIX04804',
+  proYearly: 'https://buy.stripe.com/00wdRb1KV37RfJz64j04803',
+  family: 'https://buy.stripe.com/00wdRb4X7fUDdBr50f04805',
 } as const;
 
-type LoadingPrice = string | null;
+type LoadingLink = string | null;
 
 export const SettingsScreen: React.FC = () => {
-  const [loadingPrice, setLoadingPrice] = useState<LoadingPrice>(null);
+  const [loadingLink, setLoadingLink] = useState<LoadingLink>(null);
   const [currentPlan] = useState<'free' | 'pro' | 'family'>('free');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
@@ -47,23 +46,21 @@ export const SettingsScreen: React.FC = () => {
     else await cancelStreakNudge();
   }, [notificationsEnabled]);
 
-  const handleUpgrade = useCallback(async (priceId: string, planName: string) => {
-    setLoadingPrice(priceId);
+  const handleUpgrade = useCallback(async (paymentLink: string) => {
+    setLoadingLink(paymentLink);
     try {
-      const checkoutUrl = await createCheckoutSession(priceId);
-      const result = await WebBrowser.openBrowserAsync(checkoutUrl);
+      const result = await WebBrowser.openBrowserAsync(paymentLink);
 
       if (result.type === 'cancel') {
         // User closed the browser without completing — no action needed
       }
-      // On success, Stripe redirects to success_url which closes the browser,
-      // but we handle the return gracefully regardless.
+      // On success, Stripe redirects to success_url which closes the browser.
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Something went wrong.';
       Alert.alert('Checkout Error', message);
     } finally {
-      setLoadingPrice(null);
+      setLoadingLink(null);
     }
   }, []);
 
@@ -105,8 +102,8 @@ export const SettingsScreen: React.FC = () => {
           {/* Pro Monthly */}
           <TouchableOpacity
             style={styles.upgradeCard}
-            onPress={() => handleUpgrade(PRICE_IDS.proMonthly, 'Pro Monthly')}
-            disabled={loadingPrice !== null}
+            onPress={() => handleUpgrade(PAYMENT_LINKS.proMonthly)}
+            disabled={loadingLink !== null}
             activeOpacity={0.7}
           >
             <View style={styles.upgradeInfo}>
@@ -121,7 +118,7 @@ export const SettingsScreen: React.FC = () => {
                 ✓ No ads anywhere
               </Text>
             </View>
-            {loadingPrice === PRICE_IDS.proMonthly ? (
+            {loadingLink === PAYMENT_LINKS.proMonthly ? (
               <ActivityIndicator color="#e94560" size="small" />
             ) : (
               <View style={styles.upgradeBtn}>
@@ -133,8 +130,8 @@ export const SettingsScreen: React.FC = () => {
           {/* Pro Yearly */}
           <TouchableOpacity
             style={[styles.upgradeCard, styles.upgradeCardHighlight]}
-            onPress={() => handleUpgrade(PRICE_IDS.proYearly, 'Pro Yearly')}
-            disabled={loadingPrice !== null}
+            onPress={() => handleUpgrade(PAYMENT_LINKS.proYearly)}
+            disabled={loadingLink !== null}
             activeOpacity={0.7}
           >
             <View style={styles.bestValueBadge}>
@@ -148,7 +145,7 @@ export const SettingsScreen: React.FC = () => {
                 All Pro features, billed annually.
               </Text>
             </View>
-            {loadingPrice === PRICE_IDS.proYearly ? (
+            {loadingLink === PAYMENT_LINKS.proYearly ? (
               <ActivityIndicator color="#e94560" size="small" />
             ) : (
               <View style={[styles.upgradeBtn, styles.upgradeBtnPrimary]}>
@@ -160,8 +157,8 @@ export const SettingsScreen: React.FC = () => {
           {/* Family Plan */}
           <TouchableOpacity
             style={styles.upgradeCard}
-            onPress={() => handleUpgrade(PRICE_IDS.family, 'Family')}
-            disabled={loadingPrice !== null}
+            onPress={() => handleUpgrade(PAYMENT_LINKS.family)}
+            disabled={loadingLink !== null}
             activeOpacity={0.7}
           >
             <View style={styles.upgradeInfo}>
@@ -174,7 +171,7 @@ export const SettingsScreen: React.FC = () => {
                 ✓ Perfect for families & music teachers
               </Text>
             </View>
-            {loadingPrice === PRICE_IDS.family ? (
+            {loadingLink === PAYMENT_LINKS.family ? (
               <ActivityIndicator color="#e94560" size="small" />
             ) : (
               <View style={styles.upgradeBtn}>
