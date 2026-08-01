@@ -19,36 +19,21 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
-// Price IDs for Stripe Checkout
-const PRICE_IDS = {
-  proMonthly: "price_1TyU6EBbnDObsY4u0FbZ2fui",
-  proYearly: "price_1TyUC6BbnDObsY4uOHfB8glf",
-  family: "price_1TyUFsBbnDObsY4uXFnCubR4",
+// Live Stripe Payment Links — no API keys needed
+const PAYMENT_LINKS = {
+  proMonthly: "https://buy.stripe.com/3cI28tfBL0ZJ8h7gIX04804",
+  proYearly: "https://buy.stripe.com/00wdRb1KV37RfJz64j04803",
+  family: "https://buy.stripe.com/00wdRb4X7fUDdBr50f04805",
 } as const;
 
 function Home() {
   const businessName = Route.useLoaderData();
-  const [loadingPrice, setLoadingPrice] = useState<string | null>(null);
+  const [loadingLink, setLoadingLink] = useState<string | null>(null);
 
-  const handleSubscribe = useCallback(async (priceId: string) => {
-    setLoadingPrice(priceId);
-    try {
-      const res = await fetch("/api/create-checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId }),
-      });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        alert(data.error || "Something went wrong. Please try again.");
-      }
-    } catch {
-      alert("Failed to connect. Please check your internet connection.");
-    } finally {
-      setLoadingPrice(null);
-    }
+  const handleSubscribe = useCallback((url: string) => {
+    setLoadingLink(url);
+    window.open(url, "_blank");
+    setTimeout(() => setLoadingLink(null), 2000);
   }, []);
 
   return (
@@ -230,7 +215,7 @@ function Home() {
             Simple, honest pricing
           </h2>
           <p className="mt-4 text-center text-lg text-stone-500">
-            Free is genuinely free. Pro has a trial. Cancel in one tap.
+          Free is genuinely free. Cancel anytime in one tap.
           </p>
 
           <div className="mt-14 grid gap-8 lg:grid-cols-3">
@@ -292,7 +277,6 @@ function Home() {
                   "Cloud sync (Dropbox, Google Drive, more)",
                   "PDF import & score scanning",
                   "No ads anywhere",
-                  "Trial period — no upfront charge",
                 ].map((item) => (
                   <li key={item} className="flex items-start gap-2">
                     <span className="mt-0.5 text-amber-600">✓</span>
@@ -302,21 +286,21 @@ function Home() {
               </ul>
               <div className="mt-8 space-y-3">
                 <button
-                  onClick={() => handleSubscribe(PRICE_IDS.proMonthly)}
-                  disabled={loadingPrice !== null}
+                  onClick={() => handleSubscribe(PAYMENT_LINKS.proMonthly)}
+                  disabled={loadingLink !== null}
                   className="w-full rounded-full bg-amber-600 py-3 text-center text-sm font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {loadingPrice === PRICE_IDS.proMonthly
-                    ? "Starting checkout…"
-                    : "Start free trial — $4.99/mo"}
+                  {loadingLink === PAYMENT_LINKS.proMonthly
+                    ? "Opening checkout…"
+                    : "Subscribe — $4.99/mo"}
                 </button>
                 <button
-                  onClick={() => handleSubscribe(PRICE_IDS.proYearly)}
-                  disabled={loadingPrice !== null}
+                  onClick={() => handleSubscribe(PAYMENT_LINKS.proYearly)}
+                  disabled={loadingLink !== null}
                   className="w-full rounded-full border border-amber-400 py-3 text-center text-sm font-semibold text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {loadingPrice === PRICE_IDS.proYearly
-                    ? "Starting checkout…"
+                  {loadingLink === PAYMENT_LINKS.proYearly
+                    ? "Opening checkout…"
                     : "Save 33% — $39.99/year"}
                 </button>
               </div>
@@ -344,13 +328,13 @@ function Home() {
                 ))}
               </ul>
               <button
-                onClick={() => handleSubscribe(PRICE_IDS.family)}
-                disabled={loadingPrice !== null}
+                onClick={() => handleSubscribe(PAYMENT_LINKS.family)}
+                disabled={loadingLink !== null}
                 className="mt-8 w-full rounded-full border border-stone-300 py-3 text-center text-sm font-semibold text-stone-700 hover:border-amber-400 hover:text-amber-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {loadingPrice === PRICE_IDS.family
-                  ? "Starting checkout…"
-                  : "Start free trial"}
+                {loadingLink === PAYMENT_LINKS.family
+                  ? "Opening checkout…"
+                  : "Subscribe"}
               </button>
             </div>
           </div>
@@ -375,8 +359,8 @@ function Home() {
               },
               {
                 icon: "🆓",
-                title: "Free trial, genuinely free",
-                desc: "Pro comes with a trial period. After it ends, you can keep using the free tier with no obligation — nothing is forced.",
+                title: "Free tier, genuinely free",
+                desc: "5 recognitions per month with full editor and practice tools. Upgrade when you're ready — nothing is forced.",
               },
               {
                 icon: "💡",
