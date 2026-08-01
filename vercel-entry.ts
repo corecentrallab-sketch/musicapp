@@ -11,7 +11,28 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import handler from "./dist/server/server.js";
+import { handleRecognize } from "./src/services/recognize-handler";
 import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
+
+// --- Health check handler ---
+async function handleHealth(): Promise<Response> {
+  let db = false;
+  try {
+    const { sql } = await import("./src/db");
+    const result = await sql()`SELECT 1 AS ok`;
+    db = result.length > 0;
+  } catch {
+    db = false;
+  }
+  return Response.json(
+    { status: "ok", db },
+    {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+      },
+    },
+  );
+}
 
 const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
@@ -47,6 +68,45 @@ export default async function vercelHandler(
     const url = req.url ?? "/";
     // Simple pathname extraction (no URL object needed for routing)
     const pathname = url.split("?")[0];
+    if (pathname === "/api/health" && req.method === "GET") {
+      const webRes = await handleHealth();
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+
+    if (pathname === "/api/recognize") {
+      if (req.method !== "POST") {
+        res.statusCode = 405;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: "Method not allowed. Use POST." }));
+        return;
+      }
+      const webReq = toWebRequest(req);
+      const webRes = await handleRecognize(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+
     if (pathname === "/api/create-checkout-session") {
       const webReq = toWebRequest(req);
       const webRes = await handleCreateCheckoutSession(webReq);
