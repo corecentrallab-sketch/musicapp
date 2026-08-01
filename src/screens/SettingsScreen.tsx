@@ -96,6 +96,7 @@ export const SettingsScreen: React.FC = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Upgrade</Text>
           <Text style={styles.sectionSubtitle}>
+            7-day free trial on all plans · cancel anytime.{'\n'}
             Unlock unlimited recognitions, advanced features, and more.
           </Text>
 
@@ -202,7 +203,7 @@ export const SettingsScreen: React.FC = () => {
         <Text style={styles.sectionTitle}>Billing</Text>
         <View style={styles.infoCard}>
           <Text style={styles.infoText}>
-            • Free trial available on all paid plans{'\n'}
+            • 7-day free trial on all paid plans{'\n'}
             • Cancel anytime with one tap{'\n'}
             • No commitments — you're in control{'\n'}
             • Payment processed securely by Stripe
