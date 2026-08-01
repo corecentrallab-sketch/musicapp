@@ -1,6 +1,9 @@
 /**
  * PieceDetailScreen — shows piece info with share card functionality.
  * Navigated to from daily challenge, history, or recommendations.
+ *
+ * After practicing a piece for >2 minutes, prompts the user to share
+ * their progress via the ShareCard component.
  */
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
@@ -12,9 +15,15 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import type { DailyChallengePiece } from '../types';
+import type { DailyChallengePiece, StreakData } from '../types';
 import { ScoreViewer } from '../components/ScoreViewer';
-import { addPracticeMinutes, recordPractice } from '../services/storage';
+import { ShareCard } from '../components/ShareCard';
+import {
+  addPracticeMinutes,
+  recordPractice,
+  getStreakData,
+  getTodayPracticeMinutes,
+} from '../services/storage';
 import { refreshStreakNudge } from '../services/notifications';
 
 interface PieceDetailScreenProps {
@@ -30,17 +39,81 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
   const [showScoreViewer, setShowScoreViewer] = useState(false);
   const startedAt = useRef<number | null>(null);
 
+  // Share-card state
+  const [showShareCard, setShowShareCard] = useState(false);
+  const [shareCardData, setShareCardData] = useState<{
+    streak: number;
+    practiceMinutes: number;
+  }>({ streak: 0, practiceMinutes: 0 });
+
+  // Track whether share prompt was already shown this session
+  const sharePromptShown = useRef(false);
+
   useEffect(() => {
     if (!showScoreViewer) return;
     startedAt.current = Date.now();
     void recordPractice();
     return () => {
-      const elapsedMinutes = (Date.now() - (startedAt.current ?? Date.now())) / 60000;
+      const now = Date.now();
+      const elapsedMinutes =
+        (now - (startedAt.current ?? now)) / 60000;
       if (elapsedMinutes > 0) {
-        void addPracticeMinutes(elapsedMinutes).then(() => refreshStreakNudge());
+        void addPracticeMinutes(elapsedMinutes).then(() =>
+          refreshStreakNudge(),
+        );
       }
     };
   }, [showScoreViewer]);
+
+  /**
+   * When ScoreViewer closes, check if the user practiced long enough
+   * to warrant a share prompt. Only shows once per session.
+   */
+  const handleCloseScoreViewer = useCallback(async () => {
+    setShowScoreViewer(false);
+
+    const elapsedMinutes =
+      (Date.now() - (startedAt.current ?? Date.now())) / 60000;
+
+    // Only prompt if they practiced > 2 minutes and haven't been asked yet
+    if (elapsedMinutes >= 2 && !sharePromptShown.current) {
+      sharePromptShown.current = true;
+
+      // Small delay to let the modal dismiss animation finish
+      setTimeout(async () => {
+        const [streakData, todayMinutes] = await Promise.all([
+          getStreakData(),
+          getTodayPracticeMinutes(),
+        ]);
+
+        Alert.alert(
+          '🎵 Nice practice session!',
+          'Share your progress?',
+          [
+            {
+              text: 'Not now',
+              style: 'cancel',
+            },
+            {
+              text: 'Share',
+              onPress: () => {
+                setShareCardData({
+                  streak: streakData.currentStreak,
+                  practiceMinutes: todayMinutes,
+                });
+                setShowShareCard(true);
+              },
+            },
+          ],
+          { cancelable: true },
+        );
+      }, 400);
+    }
+  }, []);
+
+  const handleCloseShareCard = useCallback(() => {
+    setShowShareCard(false);
+  }, []);
 
   // If showing the ScoreViewer
   if (showScoreViewer && piece.sheetMusicUrl) {
@@ -49,7 +122,7 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
         url={piece.sheetMusicUrl}
         title={piece.title}
         composer={piece.composer}
-        onClose={() => setShowScoreViewer(false)}
+        onClose={handleCloseScoreViewer}
       />
     );
   }
@@ -68,7 +141,7 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           title: `🎵 ${piece.title} — NoteSnap`,
         });
       }
-    } catch (err) {
+    } catch {
       // User cancelled — no action needed
     } finally {
       setSharing(false);
@@ -77,9 +150,9 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
 
   const handleViewSheetMusic = () => {
     if (piece.sheetMusicUrl) {
+      sharePromptShown.current = false; // Reset for this session
       setShowScoreViewer(true);
     }
-    // If no URL, the button will be disabled (see below)
   };
 
   const difficultyEmoji =
@@ -160,6 +233,17 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           <Text style={styles.shareCardApp}>notesnap.app</Text>
         </View>
       </View>
+
+      {/* Share progress card modal */}
+      <ShareCard
+        visible={showShareCard}
+        title={piece.title}
+        composer={piece.composer}
+        genre={piece.genre}
+        streak={shareCardData.streak}
+        practiceMinutes={shareCardData.practiceMinutes}
+        onClose={handleCloseShareCard}
+      />
     </View>
   );
 };
