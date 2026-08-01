@@ -6,6 +6,8 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
+    "owner": "notesnap",
+    "privacyPolicyUrl": "https://0eb3ebd375af606892cd883ecc4906b1.ctonew.app",
     "splash": {
       "backgroundColor": "#1a1a2e"
     },
@@ -18,6 +20,7 @@
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#1a1a2e"
       },
       "package": "com.notesnap.app"
