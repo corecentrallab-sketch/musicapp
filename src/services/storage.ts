@@ -19,6 +19,8 @@ const KEYS = {
   PRACTICE_DAYS: '@notesnap/practiceDays',
   RECOGNITION_HISTORY: '@notesnap/recognitionHistory',
   DAILY_CHALLENGE_DONE: '@notesnap/dailyChallengeDone',
+  PRACTICE_MINUTES: '@notesnap/practiceMinutes',
+  NOTIFICATIONS_ENABLED: '@notesnap/notificationsEnabled',
 } as const;
 
 // ─── Onboarding ───────────────────────────────────────────────
@@ -200,6 +202,39 @@ export async function saveRecognition(piece: SavedPiece): Promise<void> {
       JSON.stringify(history),
     );
   }
+}
+
+export async function getNotificationEnabled(): Promise<boolean> {
+  const value = await AsyncStorage.getItem(KEYS.NOTIFICATIONS_ENABLED);
+  return value !== 'false';
+}
+
+export async function setNotificationEnabled(enabled: boolean): Promise<void> {
+  await AsyncStorage.setItem(KEYS.NOTIFICATIONS_ENABLED, String(enabled));
+}
+
+// ─── Practice minutes ──────────────────────────────────────────
+
+export async function getPracticeMinutes(): Promise<Record<string, number>> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.PRACTICE_MINUTES);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+export async function getTodayPracticeMinutes(): Promise<number> {
+  const data = await getPracticeMinutes();
+  return data[getTodayStr()] ?? 0;
+}
+
+export async function addPracticeMinutes(minutes: number): Promise<number> {
+  if (!Number.isFinite(minutes) || minutes <= 0) return getTodayPracticeMinutes();
+  const data = await getPracticeMinutes();
+  const today = getTodayStr();
+  data[today] = Math.round(((data[today] ?? 0) + minutes) * 10) / 10;
+  await AsyncStorage.setItem(KEYS.PRACTICE_MINUTES, JSON.stringify(data));
+  await addPracticeDay(today);
+  return data[today];
 }
 
 // ─── Daily Challenge Completion ────────────────────────────────

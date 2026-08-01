@@ -17,6 +17,9 @@ import {
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { createCheckoutSession } from '../services/api';
+import { useEffect } from 'react';
+import { getNotificationEnabled, setNotificationEnabled } from '../services/storage';
+import { scheduleDailyStreakNudge, cancelStreakNudge } from '../services/notifications';
 
 // Stripe price IDs
 const PRICE_IDS = {
@@ -30,6 +33,19 @@ type LoadingPrice = string | null;
 export const SettingsScreen: React.FC = () => {
   const [loadingPrice, setLoadingPrice] = useState<LoadingPrice>(null);
   const [currentPlan] = useState<'free' | 'pro' | 'family'>('free');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  useEffect(() => {
+    getNotificationEnabled().then(setNotificationsEnabled);
+  }, []);
+
+  const toggleNotifications = useCallback(async () => {
+    const next = !notificationsEnabled;
+    setNotificationsEnabled(next);
+    await setNotificationEnabled(next);
+    if (next) await scheduleDailyStreakNudge();
+    else await cancelStreakNudge();
+  }, [notificationsEnabled]);
 
   const handleUpgrade = useCallback(async (priceId: string, planName: string) => {
     setLoadingPrice(priceId);
@@ -169,6 +185,21 @@ export const SettingsScreen: React.FC = () => {
         </View>
       )}
 
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Practice reminders</Text>
+        <View style={styles.infoCard}>
+          <View style={styles.reminderRow}>
+            <View style={styles.reminderCopy}>
+              <Text style={styles.reminderTitle}>Daily streak nudge</Text>
+              <Text style={styles.infoText}>At 6:00 PM, remind me if I have not practiced.</Text>
+            </View>
+            <TouchableOpacity onPress={toggleNotifications} style={[styles.toggle, notificationsEnabled && styles.toggleOn]} accessibilityRole="switch" accessibilityState={{ checked: notificationsEnabled }}>
+              <Text style={styles.toggleText}>{notificationsEnabled ? 'ON' : 'OFF'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
       {/* ── Billing Info ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Billing</Text>
@@ -212,6 +243,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     lineHeight: 20,
   },
+
+  reminderRow: { flexDirection: 'row', alignItems: 'center' },
+  reminderCopy: { flex: 1, marginRight: 12 },
+  reminderTitle: { color: '#fff', fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  toggle: { backgroundColor: '#3a3a5c', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 },
+  toggleOn: { backgroundColor: '#e94560' },
+  toggleText: { color: '#fff', fontWeight: '800', fontSize: 12 },
 
   // Current Plan
   planCard: {

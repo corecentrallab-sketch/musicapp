@@ -33,6 +33,7 @@ import {
   getOnboardingAnswers,
   saveRecognition,
   getRecognitionCount,
+  getTodayPracticeMinutes,
 } from '../services/storage';
 import { checkAndAwardBadges } from '../services/achievements';
 import { getTodayChallenge } from '../services/dailyChallenge';
@@ -67,6 +68,7 @@ export const HomeScreen: React.FC = () => {
   const [badgeToast, setBadgeToast] = useState<Badge | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [practiceMinutes, setPracticeMinutes] = useState(0);
 
   // ── Recognition state ──
   const recorder = useAudioRecorder();
@@ -83,16 +85,18 @@ export const HomeScreen: React.FC = () => {
   }, []);
 
   const loadData = async () => {
-    const [s, wg, ob, dc] = await Promise.all([
+    const [s, wg, ob, dc, minutes] = await Promise.all([
       getStreakData(),
       getWeeklyGoal(),
       getOnboardingAnswers(),
       Promise.resolve(getTodayChallenge()),
+      getTodayPracticeMinutes(),
     ]);
     setStreak(s);
     setWeeklyGoal(wg);
     setOnboarding(ob);
     setDailyChallenge(dc);
+    setPracticeMinutes(minutes);
   };
 
   const onRefresh = useCallback(async () => {
@@ -433,6 +437,11 @@ export const HomeScreen: React.FC = () => {
           <Text style={styles.streakNudge}>{streakNudge}</Text>
         </View>
 
+        <View style={styles.practiceCard}>
+          <Text style={styles.practiceTitle}>⏱️ Practice today</Text>
+          <Text style={styles.practiceValue}>You practiced {Math.round(practiceMinutes)} minutes today</Text>
+        </View>
+
         {/* ── Weekly Goals ── */}
         <View style={styles.goalCard}>
           <View style={styles.goalHeader}>
@@ -655,6 +664,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 4,
   },
+
+  // Practice
+  practiceCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
+  practiceTitle: { fontSize: 16, fontWeight: '700', color: '#ffffff', marginBottom: 6 },
+  practiceValue: { fontSize: 15, color: '#c0c0d0' },
 
   // Weekly goal
   goalCard: {
