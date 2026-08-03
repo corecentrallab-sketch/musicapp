@@ -65,13 +65,12 @@ function Home() {
             {businessName || "NoteSnap"} for musicians
           </span>
           <h1 className="text-4xl font-bold tracking-tight text-stone-900 sm:text-6xl sm:leading-tight">
-            Identify public-domain music.
+            Identify any song.
             <br />
             <span className="text-amber-600">Get sheet music instantly.</span>
           </h1>
           <p className="mt-6 max-w-xl text-lg text-stone-600 leading-relaxed">
-            Hear a classical piece and want to play it? NoteSnap identifies
-            copyright-free music playing around you — and brings you piano scores, guitar tablature, and album art, ready to edit, practice, and perform.
+            Hear a piece and want to play it? NoteSnap identifies music playing around you — classical masterpieces, modern hits, anything. For public-domain works you get free sheet music and tabs. For copyrighted songs, tap to buy the official score from licensed retailers.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <a
@@ -104,12 +103,12 @@ function Home() {
               {
                 step: "1",
                 title: "Recognize",
-                desc: "NoteSnap listens and identifies the copyright-free classical or public-domain piece playing around you.",
+                desc: "NoteSnap listens and identifies the piece playing around you — classical, jazz, pop, anything. Like Shazam for sheet music.",
               },
               {
                 step: "2",
                 title: "Get sheet music",
-                desc: "Instantly see piano sheet music, guitar tablature, and album cover art — sourced from the highest-rated arrangements across leading platforms.",
+                desc: "For public-domain works: free piano scores, guitar tabs, and album art. For copyrighted songs: one tap to buy the official sheet music from licensed retailers like Musicnotes and Sheet Music Plus.",
               },
               {
                 step: "3",
@@ -401,6 +400,12 @@ function Home() {
               </a>
               <a href="#pricing" className="hover:text-amber-700 transition-colors">
                 Pricing
+              </a>
+              <a href="/privacy" className="hover:text-amber-700 transition-colors">
+                Privacy
+              </a>
+              <a href="/terms" className="hover:text-amber-700 transition-colors">
+                Terms
               </a>
             </div>
             <p className="text-xs text-stone-400">
