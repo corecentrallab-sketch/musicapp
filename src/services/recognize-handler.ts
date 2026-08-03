@@ -1,5 +1,6 @@
 import { fingerprintFromBuffer } from "~/services/fpcalc";
 import { matchFingerprint } from "~/services/matching";
+import { generatePurchaseUrls } from "~/services/generate-purchase-urls";
 
 // ---------------------------------------------------------------------------
 // Rate limiting (simple in-memory counter for free tier — 5 per month)
@@ -167,18 +168,6 @@ export async function handleRecognize(req: Request): Promise<Response> {
       },
       { status: 400 },
     );
-  }
-
-  // --- Helper: generate affiliate purchase URLs ---
-  function generatePurchaseUrls(
-    title: string,
-    composer: string,
-  ): { musicnotes: string; sheetmusicplus: string } {
-    const q = encodeURIComponent(`${title} ${composer}`);
-    return {
-      musicnotes: `https://www.musicnotes.com/search/go?q=${q}&w=NoteSnap`,
-      sheetmusicplus: `https://www.sheetmusicplus.com/search?q=${q}&aff_id=notesnap`,
-    };
   }
 
   // --- Match against database ---
