@@ -75,6 +75,7 @@ export const HomeScreen: React.FC = () => {
   const [recognitionPhase, setRecognitionPhase] =
     useState<RecognitionPhase | null>(null);
   const [showRecognitionResults, setShowRecognitionResults] = useState(false);
+  const [freeRecognitions, setFreeRecognitions] = useState(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Pulsing animation for the mic indicator
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -97,6 +98,7 @@ export const HomeScreen: React.FC = () => {
     setOnboarding(ob);
     setDailyChallenge(dc);
     setPracticeMinutes(minutes);
+    setFreeRecognitions(await getRecognitionCount());
   };
 
   const onRefresh = useCallback(async () => {
@@ -257,6 +259,7 @@ export const HomeScreen: React.FC = () => {
       // Handle success: check for matches
       if (result.matches && result.matches.length > 0) {
         setRecognitionPhase({ type: 'success', response: result });
+        recorder.completeRecording();
 
         // Save top match to history
         const topMatch: RecognitionMatch = result.matches[0];
@@ -278,6 +281,7 @@ export const HomeScreen: React.FC = () => {
 
         // Check for badges
         const totalRecognitions = await getRecognitionCount();
+        setFreeRecognitions(totalRecognitions);
         const newBadges = await checkAndAwardBadges({
           totalRecognitions,
           currentHour: new Date().getHours(),
@@ -287,11 +291,13 @@ export const HomeScreen: React.FC = () => {
         }
       } else {
         // API returned success but no matches
+        recorder.completeRecording();
         setRecognitionPhase({ type: 'no-match' });
       }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Something went wrong.';
+      recorder.completeRecording();
       setRecognitionPhase({ type: 'error', message });
     }
   }, [recorder]);
@@ -307,7 +313,8 @@ export const HomeScreen: React.FC = () => {
   const handleCloseRecognition = useCallback(() => {
     setShowRecognitionResults(false);
     setRecognitionPhase(null);
-  }, []);
+    recorder.clearError();
+  }, [recorder]);
 
   // ── Retry recognition ──
   const handleRetryRecognition = useCallback(() => {
@@ -423,6 +430,76 @@ export const HomeScreen: React.FC = () => {
         <Text style={styles.title}>NoteSnap</Text>
         <Text style={styles.subtitle}>{genreCopy}</Text>
 
+        {/* ── Recognition CTA ── */}
+        <View style={styles.recognitionCard}>
+          <Text style={styles.recognitionEmoji}>
+            {recorder.isRecording ? '🎙️' : '🎤'}
+          </Text>
+          <Text style={styles.recognitionTitle}>
+            {recorder.isRecording ? 'Listening...' : 'Recognize a Song'}
+          </Text>
+          <Text style={styles.recognitionDesc}>
+            {recorder.isRecording
+              ? 'Recording audio — move closer to the music source for best results.'
+              : `Hear a song you want to play? Tap to identify it and get the sheet music instantly. (${freeRecognitions}/5 free recognitions)`}
+          </Text>
+
+          {/* Mic permission error inline */}
+          {recorder.error && !recorder.isRecording && (
+            <View style={styles.permissionError}>
+              <Text style={styles.permissionErrorText}>{recorder.error}</Text>
+              <TouchableOpacity
+                style={styles.settingsBtn}
+                onPress={recorder.openSettings}
+              >
+                <Text style={styles.settingsBtnText}>Open Settings</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Recording indicator */}
+          {recorder.isRecording && (
+            <Animated.View
+              style={[
+                styles.recordingIndicator,
+                { transform: [{ scale: pulseAnim }] },
+              ]}
+            >
+              <View style={styles.recordingDot} />
+            </Animated.View>
+          )}
+
+          <TouchableOpacity
+            style={[
+              styles.recognitionBtn,
+              recorder.isRecording && styles.recognitionBtnActive,
+            ]}
+            onPress={handleStartListening}
+            disabled={recorder.checkingPermissions}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.recognitionBtnText}>
+              {recorder.checkingPermissions
+                ? 'Checking...'
+                : recorder.isRecording
+                  ? 'Stop & Identify'
+                  : 'Tap to Identify'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Demo button — dev-only shortcut that skips microphone */}
+          {__DEV__ && !recorder.isRecording && (
+            <TouchableOpacity
+              style={styles.demoBtn}
+              onPress={handleDemo}
+              activeOpacity={0.6}
+            >
+              <Text style={styles.demoBtnText}>🧪 Try Demo</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+
         {/* ── Streak Card ── */}
         <View style={styles.streakCard}>
           <View style={styles.streakRow}>
@@ -518,74 +595,6 @@ export const HomeScreen: React.FC = () => {
             : 'Complete onboarding to personalise your feed.'}
         </Text>
 
-        {/* ── Recognition CTA ── */}
-        <View style={styles.recognitionCard}>
-          <Text style={styles.recognitionEmoji}>
-            {recorder.isRecording ? '🎙️' : '🎤'}
-          </Text>
-          <Text style={styles.recognitionTitle}>
-            {recorder.isRecording ? 'Listening...' : 'Recognize a Song'}
-          </Text>
-          <Text style={styles.recognitionDesc}>
-            {recorder.isRecording
-              ? 'Recording audio — move closer to the music source for best results.'
-              : 'Hear a song you want to play? Tap to identify it and get the sheet music instantly.'}
-          </Text>
-
-          {/* Mic permission error inline */}
-          {recorder.error && !recorder.isRecording && (
-            <View style={styles.permissionError}>
-              <Text style={styles.permissionErrorText}>{recorder.error}</Text>
-              <TouchableOpacity
-                style={styles.settingsBtn}
-                onPress={recorder.openSettings}
-              >
-                <Text style={styles.settingsBtnText}>Open Settings</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Recording indicator */}
-          {recorder.isRecording && (
-            <Animated.View
-              style={[
-                styles.recordingIndicator,
-                { transform: [{ scale: pulseAnim }] },
-              ]}
-            >
-              <View style={styles.recordingDot} />
-            </Animated.View>
-          )}
-
-          <TouchableOpacity
-            style={[
-              styles.recognitionBtn,
-              recorder.isRecording && styles.recognitionBtnActive,
-            ]}
-            onPress={handleStartListening}
-            disabled={recorder.checkingPermissions}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.recognitionBtnText}>
-              {recorder.checkingPermissions
-                ? 'Checking permissions...'
-                : recorder.isRecording
-                  ? 'Stop & Identify'
-                  : 'Start Listening'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Demo button — dev-only shortcut that skips microphone */}
-          {__DEV__ && !recorder.isRecording && (
-            <TouchableOpacity
-              style={styles.demoBtn}
-              onPress={handleDemo}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.demoBtnText}>🧪 Try Demo</Text>
-            </TouchableOpacity>
-          )}
-        </View>
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
@@ -843,11 +852,16 @@ const styles = StyleSheet.create({
   },
   recognitionBtn: {
     backgroundColor: '#e94560',
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    minWidth: 200,
+    borderRadius: 90,
+    width: 172,
+    height: 172,
     alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#e94560',
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   recognitionBtnActive: {
     backgroundColor: '#ff6b6b',

@@ -8,7 +8,11 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { Audio } from 'expo-av';
 import { Platform, PermissionsAndroid, Alert, Linking } from 'react-native';
 
+export type RecordingPhase = 'idle' | 'recording' | 'processing' | 'done';
+
 export interface AudioRecorderState {
+  /** Current lifecycle phase for the recording/recognition UI. */
+  phase: RecordingPhase;
   /** Whether a recording is currently in progress. */
   isRecording: boolean;
   /** Error message string, or null if no error. */
@@ -20,6 +24,7 @@ export interface AudioRecorderState {
 export function useAudioRecorder() {
   const recordingRef = useRef<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [phase, setPhase] = useState<RecordingPhase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
 
@@ -82,6 +87,9 @@ export function useAudioRecorder() {
     }
   }, []);
 
+  /** Mark the recognition request complete so the UI can return to idle/done. */
+  const completeRecording = useCallback(() => setPhase('done'), []);
+
   /** Open the device Settings app so the user can manually grant permission. */
   const openSettings = useCallback(() => {
     Linking.openSettings().catch(() => {
@@ -116,6 +124,7 @@ export function useAudioRecorder() {
       await recording.startAsync();
       recordingRef.current = recording;
       setIsRecording(true);
+      setPhase('recording');
       return true;
     } catch (err) {
       setError('Failed to start recording. Please try again.');
@@ -131,6 +140,7 @@ export function useAudioRecorder() {
     try {
       if (!recordingRef.current) {
         setIsRecording(false);
+        setPhase('idle');
         return null;
       }
 
@@ -138,6 +148,7 @@ export function useAudioRecorder() {
       const uri = recordingRef.current.getURI();
       recordingRef.current = null;
       setIsRecording(false);
+      setPhase('processing');
 
       // Reset audio mode after recording
       await Audio.setAudioModeAsync({
@@ -148,6 +159,7 @@ export function useAudioRecorder() {
       return uri;
     } catch (err) {
       setIsRecording(false);
+      setPhase('idle');
       recordingRef.current = null;
       setError('Failed to stop recording.');
       return null;
@@ -155,11 +167,13 @@ export function useAudioRecorder() {
   }, []);
 
   return {
+    phase,
     isRecording,
     error,
     checkingPermissions,
     startRecording,
     stopRecording,
+    completeRecording,
     openSettings,
     clearError: () => setError(null),
   };
