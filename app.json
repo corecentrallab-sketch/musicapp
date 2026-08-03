@@ -16,18 +16,22 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.notesnap.app"
+      "bundleIdentifier": "com.notesnap.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "NoteSnap uses your microphone to identify music playing around you."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#1a1a2e"
       },
-      "package": "com.notesnap.app"
+      "package": "com.notesnap.app",
+      "permissions": ["android.permission.RECORD_AUDIO"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["expo-notifications"]
+    "plugins": ["expo-notifications", "expo-av"]
   }
 }
