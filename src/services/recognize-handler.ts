@@ -40,9 +40,11 @@ function checkMonthlyLimit(userId: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Maximum upload size: 5 MB
+// Maximum upload size: 4 MB (Vercel's function payload hard limit is 4.5MB —
+// keep margin so the platform never rejects the request with 413 before we
+// can return a friendly error).
 // ---------------------------------------------------------------------------
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // CORS headers — required for cross-origin requests from the mobile app
@@ -73,7 +75,7 @@ function corsResponse(
  * Error responses:
  *   400 — invalid audio / missing file
  *   405 — wrong method
- *   413 — file too large (>5MB)
+ *   413 — file too large (>4MB)
  *   429 — rate limit exceeded (free tier: 5/month)
  *   500 — processing error
  */
@@ -93,7 +95,7 @@ export async function handleRecognize(req: Request): Promise<Response> {
   const contentLength = parseInt(req.headers.get("content-length") || "0", 10);
   if (contentLength > MAX_UPLOAD_BYTES) {
     return corsResponse(
-      { success: false, error: "Audio file too large (max 5 MB)" },
+      { success: false, error: "Audio file too large (max 4 MB)" },
       { status: 413 },
     );
   }
@@ -126,7 +128,7 @@ export async function handleRecognize(req: Request): Promise<Response> {
 
   if (audioFile.size > MAX_UPLOAD_BYTES) {
     return corsResponse(
-      { success: false, error: "Audio file too large (max 5 MB)" },
+      { success: false, error: "Audio file too large (max 4 MB)" },
       { status: 413 },
     );
   }
@@ -203,16 +205,25 @@ export async function handleRecognize(req: Request): Promise<Response> {
     });
     dbAvailable = true;
   } catch (err) {
-    console.warn(
-      "[recognize] database lookup skipped (DATABASE_URL not set or query failed):",
-      (err as Error).message,
+    console.error(
+      "[recognize] database lookup failed (recognition service unavailable):",
+      err,
     );
+    // The recognition service is broken — never report success with empty
+    // matches, or every query would look like a clean "no match".
+    return corsResponse({
+      success: false,
+      error: "recognition service unavailable",
+      db_available: false,
+    });
   }
 
   const queryDurationMs = Math.round(performance.now() - startTime);
 
-  // Build response. Include a top-level purchase_url when there are no matches
-  // or the DB was unavailable — a generic search link if we have a guess.
+  // Build response. When there are no matches, include a top-level
+  // purchase_url ONLY if we have a best-guess title (the DB returned
+  // close-but-below-threshold candidates) — never a hardcoded empty-query
+  // search link.
   const response: Record<string, unknown> = {
     success: true,
     matches,
@@ -220,15 +231,11 @@ export async function handleRecognize(req: Request): Promise<Response> {
     db_available: dbAvailable,
   };
 
-  if (matches.length === 0) {
-    response.purchase_url = bestGuessTitle
-      ? generatePurchaseUrls(bestGuessTitle, bestGuessComposer || "")
-      : {
-          musicnotes:
-            "https://www.musicnotes.com/search/go?q=&w=NoteSnap",
-          sheetmusicplus:
-            "https://www.sheetmusicplus.com/search?q=&aff_id=notesnap",
-        };
+  if (matches.length === 0 && bestGuessTitle) {
+    response.purchase_url = generatePurchaseUrls(
+      bestGuessTitle,
+      bestGuessComposer || "",
+    );
   }
 
   return corsResponse(response as Record<string, unknown>);
