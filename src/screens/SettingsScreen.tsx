@@ -28,7 +28,15 @@ import { getDeviceId } from '../services/device';
 // Owner-account Stripe price IDs (USD). These are public identifiers passed to
 // our own API — the API is what creates the Checkout session on the owner's
 // Stripe account, so money always lands in the right place.
-const PLANS = [
+type Plan = {
+  id: string;
+  name: string;
+  price: string;
+  feature: string;
+  savings?: string;
+  highlight?: boolean;
+};
+const PLANS: Plan[] = [
   {
     id: 'price_1U3SEFBbnDObsY4ujb2zxBSs', // NoteSnap Pro — Monthly $4.99
     name: 'Pro Monthly',
@@ -51,7 +59,7 @@ const PLANS = [
     feature:
       '✓ Up to 5 accounts\n✓ Shared History libraries\n✓ All Pro features included\n✓ Perfect for families & music teachers',
   },
-] as const;
+];
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_MS = 30000;

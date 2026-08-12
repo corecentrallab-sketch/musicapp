@@ -147,6 +147,13 @@ export const HomeScreen: React.FC = () => {
   // ── Demo recognition (skips mic, injects mock results) ──
 
   const handleDemo = useCallback(async () => {
+    // Dev-only. The button below is already gated behind __DEV__; this guard
+    // makes the handler itself inert in production builds (Metro compiles
+    // __DEV__ to false in release bundles, so this returns immediately and
+    // the mock path can never execute even if invoked programmatically).
+    if (!__DEV__) {
+      return;
+    }
     // Brief loading phase
     setRecognitionPhase({ type: 'loading' });
     setShowRecognitionResults(true);
