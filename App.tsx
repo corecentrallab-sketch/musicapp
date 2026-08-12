@@ -2,39 +2,46 @@ import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, Text, ActivityIndicator } from 'react-native';
 import { TabNavigator } from './src/navigation/TabNavigator';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
+import { PdfViewerScreen } from './src/screens/PdfViewerScreen';
+import { ScannedViewerScreen } from './src/screens/ScannedViewerScreen';
+import { ScanScoreScreen } from './src/screens/ScanScoreScreen';
 import {
   hasCompletedOnboarding,
   saveOnboardingAnswers,
 } from './src/services/storage';
-import { requestNotificationPermission, refreshStreakNudge } from './src/services/notifications';
-import type { OnboardingAnswers } from './src/types';
+import type { OnboardingAnswers, RootStackParamList } from './src/types';
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
+
+const stackScreenOptions = {
+  headerStyle: { backgroundColor: '#16213e' },
+  headerTintColor: '#e94560',
+  headerTitleStyle: { fontWeight: '700' as const },
+  headerBackButtonDisplayMode: 'minimal' as const,
+  contentStyle: { backgroundColor: '#1a1a2e' },
+};
 
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
-
   useEffect(() => {
     (async () => {
-      await requestNotificationPermission();
-      await refreshStreakNudge();
       const completed = await hasCompletedOnboarding();
       setShowOnboarding(!completed);
       setLoading(false);
     })();
   }, []);
-
   const handleOnboardingComplete = async (answers: OnboardingAnswers) => {
     await saveOnboardingAnswers(answers);
     setShowOnboarding(false);
   };
-
   const handleOnboardingSkip = () => {
     setShowOnboarding(false);
   };
-
   if (loading) {
     return (
       <View
@@ -59,7 +66,6 @@ export default function App() {
       </View>
     );
   }
-
   if (showOnboarding) {
     return (
       <SafeAreaProvider>
@@ -71,12 +77,32 @@ export default function App() {
       </SafeAreaProvider>
     );
   }
-
   return (
     <SafeAreaProvider>
       <NavigationContainer>
         <StatusBar style="auto" />
-        <TabNavigator />
+        <Stack.Navigator screenOptions={stackScreenOptions}>
+          <Stack.Screen
+            name="Tabs"
+            component={TabNavigator}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="PdfViewer"
+            component={PdfViewerScreen}
+            options={{ title: 'PDF' }}
+          />
+          <Stack.Screen
+            name="ScannedViewer"
+            component={ScannedViewerScreen}
+            options={{ title: 'Scanned score' }}
+          />
+          <Stack.Screen
+            name="ScanScore"
+            component={ScanScoreScreen}
+            options={{ title: 'Scan score' }}
+          />
+        </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
   );
