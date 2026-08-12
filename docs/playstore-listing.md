@@ -1,7 +1,7 @@
-# NoteSnap — Google Play Store Listing
+# NoteSnap: Sheet Music — Google Play Store Listing
 
 ## App name
-NoteSnap
+NoteSnap: Sheet Music
 
 ## Short description (80 characters max)
 Identify music and get sheet music instantly — like Shazam for scores.
