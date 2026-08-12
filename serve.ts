@@ -11,6 +11,8 @@
 import handler from "./dist/server/server.js";
 import { handleRecognize } from "./src/services/recognize-handler";
 import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
+import { handleStripeWebhook } from "./src/services/webhook-handler";
+import { handleEntitlement } from "./src/services/entitlement";
 
 // Pinned, NOT read from the environment. The published preview URL
 // (<label>.<PUBLIC_SITE_DOMAIN>) is reverse-proxied to 0.0.0.0:3000 inside the
@@ -85,6 +87,12 @@ for (let attempt = 1; ; attempt++) {
         }
         if (pathname === "/api/create-checkout-session") {
           return handleCreateCheckoutSession(req);
+        }
+        if (pathname === "/api/stripe-webhook" && req.method === "POST") {
+          return handleStripeWebhook(req);
+        }
+        if (pathname === "/api/entitlement") {
+          return handleEntitlement(req);
         }
 
         // --- Static file serving ---

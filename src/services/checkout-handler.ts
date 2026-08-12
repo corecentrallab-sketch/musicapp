@@ -10,6 +10,8 @@ import Stripe from "stripe";
 
 interface CheckoutRequest {
   priceId: string;
+  /** Anonymous app device UUID — stored in session metadata for entitlement. */
+  deviceId?: string;
   successUrl?: string;
   cancelUrl?: string;
 }
@@ -42,12 +44,12 @@ export async function handleCreateCheckoutSession(
     body = (await req.json()) as CheckoutRequest;
   } catch {
     return Response.json(
-      { error: "Invalid JSON body. Expected { priceId, successUrl?, cancelUrl? }" },
+      { error: "Invalid JSON body. Expected { priceId, deviceId?, successUrl?, cancelUrl? }" },
       { status: 400 },
     );
   }
 
-  const { priceId, successUrl, cancelUrl } = body;
+  const { priceId, deviceId, successUrl, cancelUrl } = body;
 
   // --- Validate price ID ---
   if (!priceId || typeof priceId !== "string") {
@@ -81,9 +83,15 @@ export async function handleCreateCheckoutSession(
   });
 
   // --- Determine origin for default URLs ---
-  const origin = req.headers.get("origin") || req.headers.get("referer") || "https://notesnap.app";
+  // NOTE: the app always passes explicit success/cancel URLs; these defaults are
+  // for API clients that omit them. Defaults must resolve 200 on the site —
+  // `${origin}/pricing` 404s, so the cancel default is the site root.
+  const origin =
+    req.headers.get("origin") ||
+    req.headers.get("referer") ||
+    "https://site-notesnap.vercel.app";
   const defaultSuccessUrl = `${origin}/subscription/success`;
-  const defaultCancelUrl = `${origin}/pricing`;
+  const defaultCancelUrl = `${origin}/`;
 
   // --- Create Checkout Session ---
   try {
@@ -95,6 +103,12 @@ export async function handleCreateCheckoutSession(
           quantity: 1,
         },
       ],
+      // deviceId ties the purchase back to the app install: the webhook reads
+      // metadata.device_id to write the subscription row that /api/entitlement
+      // serves. client_reference_id is kept as a Stripe-visible fallback.
+      ...(deviceId
+        ? { metadata: { device_id: deviceId }, client_reference_id: deviceId }
+        : {}),
       success_url: successUrl || defaultSuccessUrl,
       cancel_url: cancelUrl || defaultCancelUrl,
     });

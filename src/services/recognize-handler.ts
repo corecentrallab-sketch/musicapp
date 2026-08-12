@@ -1,6 +1,7 @@
 import { fingerprintFromBuffer } from "~/services/fpcalc";
 import { matchFingerprint } from "~/services/matching";
 import { generatePurchaseUrls } from "~/services/generate-purchase-urls";
+import { hasActiveSubscription } from "~/services/entitlement";
 
 // ---------------------------------------------------------------------------
 // Rate limiting (simple in-memory counter for free tier — 5 per month)
@@ -134,12 +135,25 @@ export async function handleRecognize(req: Request): Promise<Response> {
   }
 
   // --- Rate limiting ---
-  const userId =
-    req.headers.get("x-user-id") ||
-    req.headers.get("x-forwarded-for") ||
-    "anonymous";
-
-  if (!checkMonthlyLimit(userId)) {
+  // Devices that send x-user-id (the app's anonymous device UUID) are checked
+  // against the subscriptions table: an active subscription bypasses the free
+  // tier's 5/month limit. Clients without the header fall back to per-IP
+  // limiting (the in-memory counter above — see its hardening note).
+  const deviceId = req.headers.get("x-user-id");
+  const fallbackId = req.headers.get("x-forwarded-for") || "anonymous";
+  if (deviceId) {
+    const isPro = await hasActiveSubscription(deviceId);
+    if (!isPro && !checkMonthlyLimit(deviceId)) {
+      return corsResponse(
+        {
+          success: false,
+          error:
+            "Monthly recognition limit reached (5/month). Upgrade to Pro for unlimited.",
+        },
+        { status: 429 },
+      );
+    }
+  } else if (!checkMonthlyLimit(fallbackId)) {
     return corsResponse(
       {
         success: false,
