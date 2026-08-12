@@ -1,9 +1,12 @@
 /**
  * SettingsScreen — subscription management and account settings.
  *
- * For free users, shows the current plan and upgrade options.
- * Upgrade buttons open Stripe Payment Links directly via expo-web-browser —
- * no API call, no server-side key needed.
+ * Upgrade flow (no hardcoded payment links — the old buy.stripe.com URLs pointed
+ * at a foreign Stripe account and are gone):
+ *   1. Tap a plan → POST /api/create-checkout-session with the device id
+ *   2. Open the returned Stripe Checkout URL in a browser
+ *   3. On return, poll GET /api/entitlement until the webhook grants Pro
+ *   4. Persist the Pro state locally and show the active-plan UI
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -17,25 +20,77 @@ import {
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
-import { getNotificationEnabled, setNotificationEnabled } from '../services/storage';
+import { getNotificationEnabled, setNotificationEnabled, getProState, saveProState, type ProState } from '../services/storage';
 import { scheduleDailyStreakNudge, cancelStreakNudge } from '../services/notifications';
+import { createCheckoutSession, checkEntitlement } from '../services/api';
+import { getDeviceId } from '../services/device';
 
-// Stripe Payment Links (live, no API key needed)
-const PAYMENT_LINKS = {
-  proMonthly: 'https://buy.stripe.com/3cI28tfBL0ZJ8h7gIX04804',
-  proYearly: 'https://buy.stripe.com/00wdRb1KV37RfJz64j04803',
-  family: 'https://buy.stripe.com/00wdRb4X7fUDdBr50f04805',
-} as const;
+// Owner-account Stripe price IDs (USD). These are public identifiers passed to
+// our own API — the API is what creates the Checkout session on the owner's
+// Stripe account, so money always lands in the right place.
+const PLANS = [
+  {
+    id: 'price_1U3SEFBbnDObsY4ujb2zxBSs', // NoteSnap Pro — Monthly $4.99
+    name: 'Pro Monthly',
+    price: '$4.99 / month',
+    feature:
+      '✓ Unlimited recognitions\n✓ Grade/difficulty levels\n✓ Advanced recommendations\n✓ Custom app skins\n✓ Cloud sync & sharing\n✓ No ads anywhere',
+  },
+  {
+    id: 'price_1U3SEKBbnDObsY4usDGDFNPQ', // NoteSnap Pro — Yearly $39.99
+    name: 'Pro Yearly',
+    price: '$39.99 / year',
+    savings: 'Save 33% vs monthly',
+    feature: 'All Pro features, billed annually.',
+    highlight: true,
+  },
+  {
+    id: 'price_1U3SEKBbnDObsY4uVrnJDIyg', // NoteSnap Family/Teacher $9.99
+    name: 'Family / Teacher',
+    price: '$9.99 / month',
+    feature:
+      '✓ Up to 5 accounts\n✓ Shared History libraries\n✓ All Pro features included\n✓ Perfect for families & music teachers',
+  },
+] as const;
 
-type LoadingLink = string | null;
+const POLL_INTERVAL_MS = 2000;
+const POLL_MAX_MS = 30000;
+
+const PLAN_LABELS: Record<string, string> = {
+  'pro-monthly': 'NoteSnap Pro',
+  'pro-yearly': 'NoteSnap Pro',
+  family: 'NoteSnap Family',
+};
+
+type LoadingPlan = string | null;
 
 export const SettingsScreen: React.FC = () => {
-  const [loadingLink, setLoadingLink] = useState<LoadingLink>(null);
-  const [currentPlan] = useState<'free' | 'pro' | 'family'>('free');
+  const [loadingPlan, setLoadingPlan] = useState<LoadingPlan>(null);
+  const [proState, setProState] = useState<ProState>({
+    isPro: false,
+    plan: null,
+    currentPeriodEnd: null,
+  });
+  const [checking, setChecking] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   useEffect(() => {
     getNotificationEnabled().then(setNotificationsEnabled);
+    (async () => {
+      try {
+        const cached = await getProState();
+        setProState(cached);
+        // Refresh entitlement from the server (webhook may have landed since).
+        const deviceId = await getDeviceId();
+        const fresh = await checkEntitlement(deviceId);
+        setProState({ isPro: fresh.pro, plan: fresh.plan, currentPeriodEnd: fresh.currentPeriodEnd });
+        await saveProState({ isPro: fresh.pro, plan: fresh.plan, currentPeriodEnd: fresh.currentPeriodEnd });
+      } catch {
+        // Offline or server hiccup — keep the cached state.
+      } finally {
+        setChecking(false);
+      }
+    })();
   }, []);
 
   const toggleNotifications = useCallback(async () => {
@@ -46,23 +101,45 @@ export const SettingsScreen: React.FC = () => {
     else await cancelStreakNudge();
   }, [notificationsEnabled]);
 
-  const handleUpgrade = useCallback(async (paymentLink: string) => {
-    setLoadingLink(paymentLink);
-    try {
-      const result = await WebBrowser.openBrowserAsync(paymentLink);
+  const refreshEntitlement = useCallback(async (deviceId: string): Promise<boolean> => {
+    const fresh = await checkEntitlement(deviceId);
+    setProState({ isPro: fresh.pro, plan: fresh.plan, currentPeriodEnd: fresh.currentPeriodEnd });
+    await saveProState({ isPro: fresh.pro, plan: fresh.plan, currentPeriodEnd: fresh.currentPeriodEnd });
+    return fresh.pro;
+  }, []);
 
-      if (result.type === 'cancel') {
-        // User closed the browser without completing — no action needed
+  const handleUpgrade = useCallback(async (priceId: string) => {
+    setLoadingPlan(priceId);
+    try {
+      const deviceId = await getDeviceId();
+      const checkoutUrl = await createCheckoutSession(priceId, deviceId);
+      await WebBrowser.openBrowserAsync(checkoutUrl);
+
+      // User is back — poll the server until the webhook grants the entitlement
+      // (webhooks usually land within seconds; give it up to 30s).
+      const startedAt = Date.now();
+      let pro = false;
+      while (!pro && Date.now() - startedAt < POLL_MAX_MS) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        try {
+          pro = await refreshEntitlement(deviceId);
+        } catch {
+          // transient failure — keep polling
+        }
       }
-      // On success, Stripe redirects to success_url which closes the browser.
+      if (pro) {
+        Alert.alert('Welcome to Pro!', 'Your subscription is active. Enjoy unlimited recognitions.');
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Something went wrong.';
       Alert.alert('Checkout Error', message);
     } finally {
-      setLoadingLink(null);
+      setLoadingPlan(null);
     }
-  }, []);
+  }, [refreshEntitlement]);
+
+  const planLabel = proState.plan ? PLAN_LABELS[proState.plan] ?? 'NoteSnap Pro' : null;
 
   return (
     <ScrollView
@@ -73,26 +150,33 @@ export const SettingsScreen: React.FC = () => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Your Plan</Text>
         <View style={styles.planCard}>
-          <Text style={styles.planEmoji}>
-            {currentPlan === 'pro' ? '⭐' : currentPlan === 'family' ? '👨‍👩‍👧‍👦' : '🎵'}
-          </Text>
-          <Text style={styles.planName}>
-            {currentPlan === 'pro'
-              ? 'NoteSnap Pro'
-              : currentPlan === 'family'
-              ? 'NoteSnap Family'
-              : 'NoteSnap Free'}
-          </Text>
-          <Text style={styles.planStatus}>
-            {currentPlan === 'free'
-              ? '5 recognitions / month'
-              : 'Unlimited recognitions'}
-          </Text>
+          {checking ? (
+            <ActivityIndicator color="#e94560" size="small" />
+          ) : (
+            <>
+              <Text style={styles.planEmoji}>
+                {proState.isPro ? '⭐' : '🎵'}
+              </Text>
+              <Text style={styles.planName}>
+                {proState.isPro ? planLabel ?? 'NoteSnap Pro' : 'NoteSnap Free'}
+              </Text>
+              <Text style={styles.planStatus}>
+                {proState.isPro
+                  ? 'Unlimited recognitions'
+                  : '5 recognitions / month'}
+              </Text>
+              {proState.isPro && proState.currentPeriodEnd && (
+                <Text style={styles.planRenews}>
+                  Renews {new Date(proState.currentPeriodEnd).toLocaleDateString()}
+                </Text>
+              )}
+            </>
+          )}
         </View>
       </View>
 
       {/* ── Upgrade Options (shown for free users) ── */}
-      {currentPlan === 'free' && (
+      {!checking && !proState.isPro && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Upgrade</Text>
           <Text style={styles.sectionSubtitle}>
@@ -100,86 +184,38 @@ export const SettingsScreen: React.FC = () => {
             Upgrade anytime for unlimited access.
           </Text>
 
-          {/* Pro Monthly */}
-          <TouchableOpacity
-            style={styles.upgradeCard}
-            onPress={() => handleUpgrade(PAYMENT_LINKS.proMonthly)}
-            disabled={loadingLink !== null}
-            activeOpacity={0.7}
-          >
-            <View style={styles.upgradeInfo}>
-              <Text style={styles.upgradeName}>Pro Monthly</Text>
-              <Text style={styles.upgradePrice}>$4.99 / month</Text>
-              <Text style={styles.upgradeFeature}>
-                ✓ Unlimited recognitions{'\n'}
-                ✓ Grade/difficulty levels{'\n'}
-                ✓ Advanced recommendations{'\n'}
-                ✓ Custom app skins{'\n'}
-                ✓ Cloud sync & sharing{'\n'}
-                ✓ No ads anywhere
-              </Text>
-            </View>
-            {loadingLink === PAYMENT_LINKS.proMonthly ? (
-              <ActivityIndicator color="#e94560" size="small" />
-            ) : (
-              <View style={styles.upgradeBtn}>
-                <Text style={styles.upgradeBtnText}>Subscribe</Text>
+          {PLANS.map((plan) => (
+            <TouchableOpacity
+              key={plan.id}
+              style={[styles.upgradeCard, plan.highlight && styles.upgradeCardHighlight]}
+              onPress={() => handleUpgrade(plan.id)}
+              disabled={loadingPlan !== null}
+              activeOpacity={0.7}
+            >
+              {plan.highlight && (
+                <View style={styles.bestValueBadge}>
+                  <Text style={styles.bestValueText}>BEST VALUE</Text>
+                </View>
+              )}
+              <View style={styles.upgradeInfo}>
+                <Text style={styles.upgradeName}>{plan.name}</Text>
+                <Text style={styles.upgradePrice}>{plan.price}</Text>
+                {plan.savings && (
+                  <Text style={styles.upgradeSavings}>{plan.savings}</Text>
+                )}
+                <Text style={styles.upgradeFeature}>{plan.feature}</Text>
               </View>
-            )}
-          </TouchableOpacity>
-
-          {/* Pro Yearly */}
-          <TouchableOpacity
-            style={[styles.upgradeCard, styles.upgradeCardHighlight]}
-            onPress={() => handleUpgrade(PAYMENT_LINKS.proYearly)}
-            disabled={loadingLink !== null}
-            activeOpacity={0.7}
-          >
-            <View style={styles.bestValueBadge}>
-              <Text style={styles.bestValueText}>BEST VALUE</Text>
-            </View>
-            <View style={styles.upgradeInfo}>
-              <Text style={styles.upgradeName}>Pro Yearly</Text>
-              <Text style={styles.upgradePrice}>$39.99 / year</Text>
-              <Text style={styles.upgradeSavings}>Save 33% vs monthly</Text>
-              <Text style={styles.upgradeFeature}>
-                All Pro features, billed annually.
-              </Text>
-            </View>
-            {loadingLink === PAYMENT_LINKS.proYearly ? (
-              <ActivityIndicator color="#e94560" size="small" />
-            ) : (
-              <View style={[styles.upgradeBtn, styles.upgradeBtnPrimary]}>
-                <Text style={styles.upgradeBtnTextPrimary}>Subscribe</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-
-          {/* Family Plan */}
-          <TouchableOpacity
-            style={styles.upgradeCard}
-            onPress={() => handleUpgrade(PAYMENT_LINKS.family)}
-            disabled={loadingLink !== null}
-            activeOpacity={0.7}
-          >
-            <View style={styles.upgradeInfo}>
-              <Text style={styles.upgradeName}>Family / Teacher</Text>
-              <Text style={styles.upgradePrice}>$9.99 / month</Text>
-              <Text style={styles.upgradeFeature}>
-                ✓ Up to 5 accounts{'\n'}
-                ✓ Shared History libraries{'\n'}
-                ✓ All Pro features included{'\n'}
-                ✓ Perfect for families & music teachers
-              </Text>
-            </View>
-            {loadingLink === PAYMENT_LINKS.family ? (
-              <ActivityIndicator color="#e94560" size="small" />
-            ) : (
-              <View style={styles.upgradeBtn}>
-                <Text style={styles.upgradeBtnText}>Subscribe</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+              {loadingPlan === plan.id ? (
+                <ActivityIndicator color="#e94560" size="small" />
+              ) : (
+                <View style={[styles.upgradeBtn, plan.highlight && styles.upgradeBtnPrimary]}>
+                  <Text style={[styles.upgradeBtnText, plan.highlight && styles.upgradeBtnTextPrimary]}>
+                    Subscribe
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ))}
         </View>
       )}
 
@@ -257,6 +293,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#0f3460',
+    minHeight: 110,
+    justifyContent: 'center',
   },
   planEmoji: {
     fontSize: 40,
@@ -271,6 +309,12 @@ const styles = StyleSheet.create({
   planStatus: {
     fontSize: 14,
     color: '#a0a0b8',
+  },
+  planRenews: {
+    fontSize: 13,
+    color: '#4ecdc4',
+    marginTop: 6,
+    fontWeight: '600',
   },
 
   // Upgrade Cards
