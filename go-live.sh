@@ -46,12 +46,22 @@ ENV_ARGS=()
 if [ -n "${DATABASE_URL:-}" ]; then ENV_ARGS=(-e "DATABASE_URL=$DATABASE_URL"); fi
 
 echo "==> deploying${VERCEL_SCOPE:+ (scope: $VERCEL_SCOPE)}"
-DEPLOY_OUT="$($VERCEL deploy --prebuilt --yes --token "$VERCEL_TOKEN" \
+# --prod promotes this deployment to the project's canonical production URL,
+# so the STABLE_URL below never changes between deploys.
+DEPLOY_OUT="$($VERCEL deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN" \
   --name "$PROJECT_NAME" "${SCOPE_ARGS[@]}" "${ENV_ARGS[@]}" 2>&1)" || {
   printf '%s\n' "$DEPLOY_OUT" >&2
   exit 1
 }
 LIVE_URL="$(printf '%s\n' "$DEPLOY_OUT" | grep -oE 'https://[a-zA-Z0-9._-]+\.vercel\.app' | tail -1)"
+
+# Canonical production URL for this project (e.g. site-notesnap.vercel.app).
+# Same on every deploy because Vercel aliases the --prod deployment to it.
+if [ -n "${VERCEL_SCOPE:-}" ]; then
+  STABLE_URL="https://${PROJECT_NAME}-${VERCEL_SCOPE}.vercel.app"
+else
+  STABLE_URL="https://${PROJECT_NAME}.vercel.app"
+fi
 
 if [ -z "$LIVE_URL" ]; then
   echo "deploy finished but no live URL was parsed — output above" >&2
@@ -68,3 +78,4 @@ curl -sf -X PATCH "https://api.vercel.com/v9/projects/${PROJECT_NAME}${TEAM_QS}"
   echo "warning: could not disable SSO protection (site may show a login wall)" >&2
 
 echo "LIVE: $LIVE_URL"
+echo "STABLE: $STABLE_URL"

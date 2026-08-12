@@ -21,9 +21,9 @@ export const Route = createFileRoute("/")({
 
 // Live Stripe Payment Links — no API keys needed
 const PAYMENT_LINKS = {
-  proMonthly: "https://buy.stripe.com/3cI28tfBL0ZJ8h7gIX04804",
-  proYearly: "https://buy.stripe.com/00wdRb1KV37RfJz64j04803",
-  family: "https://buy.stripe.com/00wdRb4X7fUDdBr50f04805",
+  proMonthly: "https://buy.stripe.com/fZufZg3S1e3m8lo7cyefC00",
+  proYearly: "https://buy.stripe.com/5kQ28q9cl7EYeJM1SeefC01",
+  family: "https://buy.stripe.com/00wfZgcox8J20SW1SeefC02",
 } as const;
 
 function Home() {
