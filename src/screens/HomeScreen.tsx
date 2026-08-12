@@ -34,6 +34,7 @@ import {
   saveRecognition,
   getRecognitionCount,
   getTodayPracticeMinutes,
+  getProState,
 } from '../services/storage';
 import { checkAndAwardBadges } from '../services/achievements';
 import { getTodayChallenge } from '../services/dailyChallenge';
@@ -76,6 +77,7 @@ export const HomeScreen: React.FC = () => {
     useState<RecognitionPhase | null>(null);
   const [showRecognitionResults, setShowRecognitionResults] = useState(false);
   const [freeRecognitions, setFreeRecognitions] = useState(0);
+  const [isPro, setIsPro] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Pulsing animation for the mic indicator
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -99,6 +101,7 @@ export const HomeScreen: React.FC = () => {
     setDailyChallenge(dc);
     setPracticeMinutes(minutes);
     setFreeRecognitions(await getRecognitionCount());
+    setIsPro((await getProState()).isPro);
   };
 
   const onRefresh = useCallback(async () => {
@@ -144,6 +147,13 @@ export const HomeScreen: React.FC = () => {
   // ── Demo recognition (skips mic, injects mock results) ──
 
   const handleDemo = useCallback(async () => {
+    // Dev-only. The button below is already gated behind __DEV__; this guard
+    // makes the handler itself inert in production builds (Metro compiles
+    // __DEV__ to false in release bundles, so this returns immediately and
+    // the mock path can never execute even if invoked programmatically).
+    if (!__DEV__) {
+      return;
+    }
     // Brief loading phase
     setRecognitionPhase({ type: 'loading' });
     setShowRecognitionResults(true);
@@ -441,7 +451,9 @@ export const HomeScreen: React.FC = () => {
           <Text style={styles.recognitionDesc}>
             {recorder.isRecording
               ? 'Recording audio — move closer to the music source for best results.'
-              : `Hear a song you want to play? Tap to identify it and get the sheet music instantly. (${freeRecognitions}/5 free recognitions)`}
+              : isPro
+                ? 'Hear a song you want to play? Tap to identify it and get the sheet music instantly. Unlimited recognitions.'
+                : `Hear a song you want to play? Tap to identify it and get the sheet music instantly. (${freeRecognitions}/5 free recognitions)`}
           </Text>
 
           {/* Mic permission error inline */}

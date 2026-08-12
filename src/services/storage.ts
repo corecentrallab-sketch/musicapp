@@ -21,7 +21,35 @@ const KEYS = {
   DAILY_CHALLENGE_DONE: '@notesnap/dailyChallengeDone',
   PRACTICE_MINUTES: '@notesnap/practiceMinutes',
   NOTIFICATIONS_ENABLED: '@notesnap/notificationsEnabled',
+  PRO_STATE: '@notesnap/proState',
 } as const;
+
+// ─── Pro / subscription state ─────────────────────────────────
+
+export interface ProState {
+  isPro: boolean;
+  plan: string | null;
+  currentPeriodEnd: string | null;
+}
+
+const DEFAULT_PRO_STATE: ProState = {
+  isPro: false,
+  plan: null,
+  currentPeriodEnd: null,
+};
+
+export async function getProState(): Promise<ProState> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.PRO_STATE);
+    return raw ? { ...DEFAULT_PRO_STATE, ...JSON.parse(raw) } : DEFAULT_PRO_STATE;
+  } catch {
+    return DEFAULT_PRO_STATE;
+  }
+}
+
+export async function saveProState(state: ProState): Promise<void> {
+  await AsyncStorage.setItem(KEYS.PRO_STATE, JSON.stringify(state));
+}
 
 // ─── Onboarding ───────────────────────────────────────────────
 

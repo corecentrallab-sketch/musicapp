@@ -5,6 +5,7 @@
  * The base URL defaults to the production site; override for local dev.
  */
 import type { RecognitionResponse, RecognitionError } from "../types";
+import { getDeviceId } from "./device";
 
 /** Production NoteSnap site URL (stable — the Vercel production alias; every deploy lands here). Set EXPO_PUBLIC_API_URL to override for local dev. */
 let BASE_URL =
@@ -21,6 +22,8 @@ export function getApiBaseUrl(): string {
 
 /**
  * Upload an audio recording for recognition.
+ * Sends the anonymous device id as x-user-id so the server can apply
+ * subscription-based (Pro) limits instead of per-IP limits.
  */ export async function recognizeAudio(
   audioUri: string,
 ): Promise<RecognitionResponse> {
@@ -31,10 +34,12 @@ export function getApiBaseUrl(): string {
     type: "audio/ogg",
   } as unknown as Blob);
 
+  const deviceId = await getDeviceId();
+
   const response = await fetch(`${BASE_URL}/api/recognize`, {
     method: "POST",
     body: formData,
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", "x-user-id": deviceId },
   });
 
   const json: RecognitionResponse | RecognitionError = await response.json();
@@ -44,4 +49,54 @@ export function getApiBaseUrl(): string {
   }
 
   return json;
+}
+
+/**
+ * Start a Stripe Checkout session for the given plan (price id) and device.
+ * Returns the hosted checkout URL to open in a browser.
+ */
+export async function createCheckoutSession(
+  priceId: string,
+  deviceId: string,
+): Promise<string> {
+  const response = await fetch(`${BASE_URL}/api/create-checkout-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      priceId,
+      deviceId,
+      successUrl: `${BASE_URL}/subscription/success`,
+      cancelUrl: `${BASE_URL}/subscription/cancel`,
+    }),
+  });
+
+  const json = (await response.json()) as { url?: string; error?: string };
+  if (!response.ok || !json.url) {
+    throw new Error(json.error || "Could not start checkout.");
+  }
+  return json.url;
+}
+
+/** Entitlement state returned by GET /api/entitlement. */
+export interface EntitlementStatus {
+  pro: boolean;
+  plan: string | null;
+  currentPeriodEnd: string | null;
+}
+
+/** Check whether the device currently has an active (Pro) subscription. */
+export async function checkEntitlement(
+  deviceId: string,
+): Promise<EntitlementStatus> {
+  const response = await fetch(
+    `${BASE_URL}/api/entitlement?device=${encodeURIComponent(deviceId)}`,
+    { headers: { Accept: "application/json" } },
+  );
+  const json = (await response.json()) as EntitlementStatus & {
+    error?: string;
+  };
+  if (!response.ok) {
+    throw new Error(json.error || "Could not check subscription status.");
+  }
+  return { pro: !!json.pro, plan: json.plan ?? null, currentPeriodEnd: json.currentPeriodEnd ?? null };
 }
