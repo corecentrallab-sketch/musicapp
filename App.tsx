@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, Text, ActivityIndicator } from 'react-native';
+import { View, Text, ActivityIndicator, Dimensions } from 'react-native';
 import { TabNavigator } from './src/navigation/TabNavigator';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { PdfViewerScreen } from './src/screens/PdfViewerScreen';
@@ -34,6 +35,25 @@ export default function App() {
       const completed = await hasCompletedOnboarding();
       setShowOnboarding(!completed);
       setLoading(false);
+    })();
+  }, []);
+  // Tablet support: devices >=600dp (tablets) get full rotation so sheet music
+  // can be read in landscape; phones stay portrait for the tuned one-handed UX.
+  useEffect(() => {
+    const { width, height } = Dimensions.get('window');
+    const isTablet = Math.min(width, height) >= 600;
+    (async () => {
+      try {
+        if (isTablet) {
+          await ScreenOrientation.unlockAsync();
+        } else {
+          await ScreenOrientation.lockAsync(
+            ScreenOrientation.OrientationLock.PORTRAIT_UP
+          );
+        }
+      } catch {
+        // Orientation lock is best-effort; never block startup on it.
+      }
     })();
   }, []);
   const handleOnboardingComplete = async (answers: OnboardingAnswers) => {
