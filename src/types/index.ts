@@ -75,9 +75,48 @@ export interface CheckoutSessionResponse {
 export type RootTabParamList = {
   Home: undefined;
   History: undefined;
+  Library: undefined;
   Editor: undefined;
   Settings: undefined;
 };
+
+/** Navigation param list for the root stack (tabs + full-screen readers). */
+export type RootStackParamList = {
+  Tabs: undefined;
+  PdfViewer: { itemId: string };
+  ScannedViewer: { itemId: string };
+  ScanScore: undefined;
+};
+
+// ─── Library (Phase 4a: import + local sheet music library) ──
+
+/** Supported kinds of items in the local library. */
+export type LibraryKind =
+  | 'pdf'
+  | 'musicxml'
+  | 'midi'
+  | 'guitarpro'
+  | 'scanned';
+
+/** A persistent entry in the local sheet music library. */
+export interface LibraryItem {
+  id: string;
+  kind: LibraryKind;
+  /** Display title (derived from filename, or user-supplied). */
+  title: string;
+  /** Single file (pdf/musicxml/midi/guitarpro), stored in app documents. */
+  fileUri?: string;
+  /** Ordered page images for a scanned score. */
+  pageUris?: string[];
+  /** PDF page count or scanned page count. 0 until known (pdf). */
+  pageCount: number;
+  /** First page thumbnail (scanned scores). */
+  thumbnailUri?: string;
+  /** Total file size in bytes. */
+  sizeBytes: number;
+  /** ISO date string when the item was imported. */
+  createdAt: string;
+}
 
 /** Represents a music recommendation shown in the Home feed. */
 export interface Recommendation {

@@ -3,6 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { HomeScreen } from '../screens/HomeScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
+import { LibraryScreen } from '../screens/LibraryScreen';
 import { EditorScreen } from '../screens/EditorScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import type { RootTabParamList } from '../types';
@@ -49,6 +50,16 @@ export const TabNavigator: React.FC = () => {
           title: 'History',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="book" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Library"
+        component={LibraryScreen}
+        options={{
+          title: 'Library',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="library" size={size} color={color} />
           ),
         }}
       />
