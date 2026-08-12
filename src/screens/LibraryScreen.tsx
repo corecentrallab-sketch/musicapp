@@ -23,6 +23,11 @@ import {
   removeLibraryItem,
   renameLibraryItem,
 } from '../services/libraryStore';
+import {
+  friendlyCloudError,
+  sendItemToCloud,
+  shareLibraryItem,
+} from '../services/cloudSync';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -139,6 +144,37 @@ export const LibraryScreen: React.FC = () => {
           onPress: () => {
             setRenameValue(item.title);
             setRenameTarget(item);
+          },
+        },
+        {
+          text: 'Send to cloud',
+          onPress: async () => {
+            try {
+              const queued = await sendItemToCloud(item.id);
+              if (!queued) {
+                Alert.alert(
+                  'No cloud service connected',
+                  'Connect Dropbox or Google Drive first — tap the cloud icon at the top of the Library to open Cloud Sync.'
+                );
+                return;
+              }
+              Alert.alert(
+                'Queued for upload',
+                `"${item.title}" will upload on the next Sync Now (open Cloud Sync from the cloud icon above).`
+              );
+            } catch (e) {
+              Alert.alert('Could not queue item', friendlyCloudError(e));
+            }
+          },
+        },
+        {
+          text: 'Share',
+          onPress: async () => {
+            try {
+              await shareLibraryItem(item);
+            } catch (e) {
+              Alert.alert('Share failed', friendlyCloudError(e));
+            }
           },
         },
         {

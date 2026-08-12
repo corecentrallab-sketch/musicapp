@@ -1,14 +1,36 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { HomeScreen } from '../screens/HomeScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
 import { LibraryScreen } from '../screens/LibraryScreen';
 import { EditorScreen } from '../screens/EditorScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
-import type { RootTabParamList } from '../types';
+import type { RootTabParamList, RootStackParamList } from '../types';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
+
+/** Header button on the Library tab that opens the Cloud Sync screen. */
+const LibraryHeaderButton: React.FC = () => {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  return (
+    <Pressable
+      onPress={() => navigation.getParent()?.navigate('CloudSync')}
+      accessibilityRole="button"
+      accessibilityLabel="Cloud sync"
+      style={({ pressed }) => ({
+        marginRight: 14,
+        opacity: pressed ? 0.6 : 1,
+      })}
+      hitSlop={8}
+    >
+      <Ionicons name="cloud-upload" size={22} color="#e94560" />
+    </Pressable>
+  );
+};
 
 export const TabNavigator: React.FC = () => {
   return (
@@ -61,6 +83,7 @@ export const TabNavigator: React.FC = () => {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="library" size={size} color={color} />
           ),
+          headerRight: () => <LibraryHeaderButton />,
         }}
       />
       <Tab.Screen
