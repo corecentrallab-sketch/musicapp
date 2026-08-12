@@ -13,7 +13,7 @@ This guide covers the first release (version 0.1.0) for package/bundle ID `com.n
 
 ## Google Play Console
 1. Create/sign in to a Play Console developer account and pay the one-time registration fee.
-2. Create an app: name **NoteSnap**, default language English, app type **App**, free pricing. Use package ID `com.notesnap.app` when the first AAB is uploaded.
+2. Create an app: name **NoteSnap: Sheet Music**, default language English, app type **App**, free pricing. Use package ID `com.notesnap.app` when the first AAB is uploaded.
 3. Build the production Android bundle from the mobile repo with `eas build --platform android --profile production`. This produces an AAB; download it after the build completes. (This guide does not run builds.)
 4. In **Grow users > Store presence > Main store listing**, copy the title, short description, and full description from `playstore-listing.md`. Add the category Music & Audio and the feature graphic `assets/playstore/feature-graphic.png` (1024×500). Upload the three 1080×1920 phone screenshots.
 5. In **Policy > App content**, complete the privacy policy URL, ads declaration, app access instructions, target audience/content, and content rating questionnaire. Declare microphone/audio recording clearly: it is used for music recognition and requires user permission. Answer honestly based on the final build.

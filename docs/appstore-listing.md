@@ -1,7 +1,7 @@
-# NoteSnap — Apple App Store Listing
+# NoteSnap: Sheet Music — Apple App Store Listing
 
 ## App name
-NoteSnap
+NoteSnap: Sheet Music
 
 ## Subtitle (30 characters max)
 Hear it. Play it.
