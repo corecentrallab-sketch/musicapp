@@ -19,8 +19,8 @@ function ApiCheckoutInfo() {
       <h3>Request body (JSON)</h3>
       <pre>{`{
   "priceId": "price_1U3SEFBbnDObsY4ujb2zxBSs",
-  "successUrl": "https://notesnap.app/subscription/success",
-  "cancelUrl": "https://notesnap.app/pricing"
+  "successUrl": "https://site-notesnap.vercel.app/subscription/success",
+  "cancelUrl": "https://site-notesnap.vercel.app/subscription/cancel"
 }`}</pre>
       <h3>Valid price IDs</h3>
       <ul>
