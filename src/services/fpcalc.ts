@@ -36,7 +36,9 @@ export async function generateFingerprint(
   }
   if (!fingerprintRaw) throw new Error("fpcalc output missing FINGERPRINT line");
 
-  const fingerprint = fingerprintRaw.trim().split(/\s+/)
+  // fpcalc -raw prints values comma-separated (space-separated in some builds) —
+  // split on both, or the whole fingerprint collapses to its first value.
+  const fingerprint = fingerprintRaw.trim().split(/[\s,]+/)
     .map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
   if (fingerprint.length === 0) throw new Error("fpcalc produced empty fingerprint");
   return { fingerprint, duration };
