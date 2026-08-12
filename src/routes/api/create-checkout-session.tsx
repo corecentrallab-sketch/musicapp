@@ -24,9 +24,9 @@ function ApiCheckoutInfo() {
 }`}</pre>
       <h3>Valid price IDs</h3>
       <ul>
-        <li><code>price_1TyU6EBbnDObsY4u0FbZ2fui</code> — Pro Monthly ($4.99/mo)</li>
-        <li><code>price_1TyUC6BbnDObsY4uOHfB8glf</code> — Pro Yearly ($39.99/yr)</li>
-        <li><code>price_1TyUFsBbnDObsY4uXFnCubR4</code> — Family ($9.99/mo)</li>
+        <li><code>price_1TyU6EBbnDObsY4u0FbZ2fui</code> — Pro Monthly (499 AUD/mo)</li>
+        <li><code>price_1TyUC6BbnDObsY4uOHfB8glf</code> — Pro Yearly (3999 AUD/yr)</li>
+        <li><code>price_1TyUFsBbnDObsY4uXFnCubR4</code> — Family/Teacher (999 AUD/mo)</li>
       </ul>
       <h3>Response</h3>
       <pre>{`{
