@@ -8,7 +8,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "owner": "notesnap",
-    "privacyPolicyUrl": "https://0eb3ebd375af606892cd883ecc4906b1.ctonew.app/privacy",
+    "privacyPolicyUrl": "https://site-notesnap.vercel.app/privacy",
     "splash": {
       "backgroundColor": "#1a1a2e"
     },

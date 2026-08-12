@@ -46,7 +46,7 @@ Education
 4+
 
 ## Privacy policy URL
-https://0eb3ebd375af606892cd883ecc4906b1.ctonew.app/privacy
+https://site-notesnap.vercel.app/privacy
 
 ## Terms URL
-https://0eb3ebd375af606892cd883ecc4906b1.ctonew.app/terms
+https://site-notesnap.vercel.app/terms

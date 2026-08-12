@@ -37,7 +37,7 @@ Music & Audio (primary); Education (secondary)
 Everyone / PEGI 3 equivalent. Microphone is used only for music recognition with user permission.
 
 ## Privacy policy
-https://0eb3ebd375af606892cd883ecc4906b1.ctonew.app/privacy
+https://site-notesnap.vercel.app/privacy
 
 ## Support / terms
-https://0eb3ebd375af606892cd883ecc4906b1.ctonew.app/terms
+https://site-notesnap.vercel.app/terms

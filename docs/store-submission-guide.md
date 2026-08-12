@@ -6,8 +6,8 @@ This guide covers the first release (version 0.1.0) for package/bundle ID `com.n
 - Google Play Developer account: $25 one-time registration fee.
 - Apple Developer Program account: $99/year.
 - A verified developer identity, tax/payment profile where requested, and access to the NoteSnap website.
-- Privacy policy: https://0eb3ebd375af606892cd883ecc4906b1.ctonew.app/privacy
-- Terms: https://0eb3ebd375af606892cd883ecc4906b1.ctonew.app/terms
+- Privacy policy: https://site-notesnap.vercel.app/privacy
+- Terms: https://site-notesnap.vercel.app/terms
 - Store copy: `playstore-listing.md` and `appstore-listing.md`.
 - Graphics are in the mobile repo under `assets/playstore/` and `assets/appstore/`.
 
