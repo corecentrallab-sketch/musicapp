@@ -1,5 +1,4 @@
 import { sql } from "~/db";
-
 /**
  * Score represents the overlap between a query fingerprint and a stored fingerprint.
  */
@@ -20,26 +19,25 @@ interface FingerprintMatch {
   total_overlap: number;
   confidence: number;
 }
-
 /**
- * Match a raw fingerprint (int[]) against the database using PostgreSQL intarray
- * operators for fast overlap scoring.
+ * Match a raw fingerprint (number[]) against the database.
  *
- * The query:
- * 1. Computes the overlap (intersection) between the query fingerprint array
- *    and each stored fingerprint using the `&` intarray operator
- * 2. Counts the number of matching elements via `icount()`
- * 3. Orders by total_overlap DESC and returns the top 5
- * 4. Joins to pieces for metadata
+ * Fingerprints are stored as BIGINT[] because chromaprint values are unsigned
+ * 32-bit (they overflow INTEGER). PostgreSQL's intarray extension ONLY works on
+ * int4[], so we must use native bigint[] operators:
+ *
+ *   - Candidate filter: `f.fingerprint && $1::bigint[]` (native array overlap)
+ *   - Overlap count: an unnest-based count instead of `icount(f.fingerprint & ...)`
+ *   - stored_count: `cardinality(f.fingerprint)`
+ *   - query_count: `array_length($1::bigint[], 1)`
  *
  * Returns top-5 matches with confidence scores normalized to 0-1.
  */
 export async function matchFingerprint(
   queryFingerprint: number[],
 ): Promise<FingerprintMatch[]> {
-  // Convert the fingerprint array to PostgreSQL int[] literal
+  // Convert the fingerprint array to a PostgreSQL bigint[] literal
   const fpLiteral = `{${queryFingerprint.join(",")}}`;
-
   const query = await sql()`
     WITH candidates AS (
       SELECT
@@ -48,11 +46,15 @@ export async function matchFingerprint(
         f.segment_start_s,
         f.segment_end_s,
         f.fingerprint,
-        icount(f.fingerprint & ${fpLiteral}::int[]) AS overlap_count,
-        icount(f.fingerprint) AS stored_count,
-        array_length(${fpLiteral}::int[], 1) AS query_count
+        (
+          SELECT count(*)
+          FROM unnest(f.fingerprint) u
+          WHERE u = ANY(${fpLiteral}::bigint[])
+        ) AS overlap_count,
+        cardinality(f.fingerprint) AS stored_count,
+        array_length(${fpLiteral}::bigint[], 1) AS query_count
       FROM fingerprints f
-      WHERE f.fingerprint && ${fpLiteral}::int[]
+      WHERE f.fingerprint && ${fpLiteral}::bigint[]
     ),
     scored AS (
       SELECT
@@ -84,6 +86,5 @@ export async function matchFingerprint(
     ORDER BY s.overlap_count DESC, s.confidence DESC
     LIMIT 5
   `;
-
   return query as unknown as FingerprintMatch[];
 }
