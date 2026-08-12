@@ -14,10 +14,12 @@ interface CheckoutRequest {
   cancelUrl?: string;
 }
 
+// Price IDs from the OWNER's Stripe account (STRIPE_SECRET_KEY in Vercel env).
+// Currency is AUD per the owner's product definitions.
 const VALID_PRICE_IDS = new Set([
-  "price_1TwbqHReFDEYPfXjxq8vMcdV", // Pro Monthly $4.99/mo
-  "price_1TwbqHReFDEYPfXjLTbo7zgH", // Pro Yearly $39.99/yr
-  "price_1TwbqHReFDEYPfXj0oIi8bGt", // Family $9.99/mo
+  "price_1TyU6EBbnDObsY4u0FbZ2fui", // NoteSnap Pro — Monthly 499 AUD / month
+  "price_1TyUC6BbnDObsY4uOHfB8glf", // NoteSnap Pro — Yearly 3999 AUD / year
+  "price_1TyUFsBbnDObsY4uXFnCubR4", // NoteSnap Family/Teacher 999 AUD / month
 ]);
 
 /**
