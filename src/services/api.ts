@@ -9,7 +9,7 @@ import type { RecognitionResponse, RecognitionError } from "../types";
 /** Production NoteSnap site URL. Set EXPO_PUBLIC_API_URL to override (e.g. https://notesnap.app when the custom domain goes live). */
 let BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ??
-  "https://site-q5b7jjng6-notesnap.vercel.app";
+  "https://site-58iddksod-notesnap.vercel.app";
 
 export function setApiBaseUrl(url: string): void {
   BASE_URL = url.replace(/\/+$/, "");
