@@ -46,6 +46,17 @@ const EXTENSION_KINDS: Record<string, LibraryKind> = {
 /** Recognised file extensions, shown in the document picker hint. */
 export const SUPPORTED_EXTENSIONS = Object.keys(EXTENSION_KINDS);
 
+/** Image extensions that sync can pull back as single-page scanned scores. */
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png'];
+
+function extensionOf(filename: string): string | null {
+  const dot = filename.lastIndexOf('.');
+  if (dot < 0 || dot === filename.length - 1) {
+    return null;
+  }
+  return filename.slice(dot + 1).toLowerCase();
+}
+
 /** Returns the library kind for a filename, or null if unsupported. */
 export function kindFromFilename(filename: string): LibraryKind | null {
   const dot = filename.lastIndexOf('.');
@@ -189,6 +200,68 @@ export async function createScannedScore(pages: {
     sizeBytes,
     createdAt: new Date().toISOString(),
   };
+
+  const items = await getLibraryItems();
+  items.unshift(item);
+  await persistLibrary(items);
+  return item;
+}
+
+// ─── Cloud sync imports (Phase 4b) ────────────────────────────
+
+/**
+ * Imports a file that came from cloud sync (Dropbox/Drive download). Works
+ * like importDocumentAsset for score formats, and additionally imports image
+ * pages as single-page scanned scores so synced scan pages round-trip.
+ */
+export async function importCloudFileAsset(asset: {
+  name: string;
+  uri: string;
+  size?: number;
+}): Promise<LibraryItem> {
+  const ext = extensionOf(asset.name);
+  const isImage = ext != null && IMAGE_EXTENSIONS.includes(ext);
+  if (!isImage && !kindFromFilename(asset.name)) {
+    throw new Error(
+      `"${asset.name}" is not a supported score format (${SUPPORTED_EXTENSIONS.join(
+        ', '
+      )} or an image).`
+    );
+  }
+
+  const id = makeId();
+  const dir = `${LIBRARY_ROOT}${id}/`;
+  await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+
+  const destUri = `${dir}${asset.name}`;
+  await FileSystem.copyAsync({ from: asset.uri, to: destUri });
+
+  let sizeBytes = asset.size ?? 0;
+  if (!sizeBytes) {
+    const info = await FileSystem.getInfoAsync(destUri);
+    sizeBytes = info.exists ? info.size ?? 0 : 0;
+  }
+
+  const item: LibraryItem = isImage
+    ? {
+        id,
+        kind: 'scanned',
+        title: titleFromFilename(asset.name),
+        pageUris: [destUri],
+        pageCount: 1,
+        thumbnailUri: destUri,
+        sizeBytes,
+        createdAt: new Date().toISOString(),
+      }
+    : {
+        id,
+        kind: kindFromFilename(asset.name) as LibraryKind,
+        title: titleFromFilename(asset.name),
+        fileUri: destUri,
+        pageCount: kindFromFilename(asset.name) === 'pdf' ? 0 : 1,
+        sizeBytes,
+        createdAt: new Date().toISOString(),
+      };
 
   const items = await getLibraryItems();
   items.unshift(item);

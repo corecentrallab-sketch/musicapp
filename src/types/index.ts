@@ -86,6 +86,7 @@ export type RootStackParamList = {
   PdfViewer: { itemId: string };
   ScannedViewer: { itemId: string };
   ScanScore: undefined;
+  CloudSync: undefined;
 };
 
 // ─── Library (Phase 4a: import + local sheet music library) ──

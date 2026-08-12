@@ -4,6 +4,7 @@
     "slug": "notesnap",
     "version": "0.1.0",
     "orientation": "portrait",
+    "scheme": "notesnap",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "owner": "notesnap",

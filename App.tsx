@@ -9,6 +9,7 @@ import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { PdfViewerScreen } from './src/screens/PdfViewerScreen';
 import { ScannedViewerScreen } from './src/screens/ScannedViewerScreen';
 import { ScanScoreScreen } from './src/screens/ScanScoreScreen';
+import { CloudSyncScreen } from './src/screens/CloudSyncScreen';
 import {
   hasCompletedOnboarding,
   saveOnboardingAnswers,
@@ -101,6 +102,11 @@ export default function App() {
             name="ScanScore"
             component={ScanScoreScreen}
             options={{ title: 'Scan score' }}
+          />
+          <Stack.Screen
+            name="CloudSync"
+            component={CloudSyncScreen}
+            options={{ title: 'Cloud sync' }}
           />
         </Stack.Navigator>
       </NavigationContainer>
