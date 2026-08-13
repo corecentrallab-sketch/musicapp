@@ -34,6 +34,10 @@ export interface RecognitionMatch {
   sheet_music_url: string | null;
   tab_url: string | null;
   matched_at_s: number;
+  /** True for public-domain pieces — these never get a purchase redirect. */
+  is_public_domain: boolean;
+  /** True only when a quality-gated score is served (PD pieces). */
+  sheet_music_available: boolean;
   /** Null for public-domain pieces (we already serve the score). */
   purchase_url: PurchaseUrls | null;
 }
