@@ -15,6 +15,7 @@ import { handleRecognize } from "./src/services/recognize-handler";
 import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
 import { handleStripeWebhook } from "./src/services/webhook-handler";
 import { handleEntitlement } from "./src/services/entitlement";
+import { handleSheetServe } from "./src/services/sheet-handler";
 
 // --- Health check handler ---
 async function handleHealth(): Promise<Response> {
@@ -150,6 +151,22 @@ export default async function vercelHandler(
     if (pathname === "/api/entitlement") {
       const webReq = toWebRequest(req);
       const webRes = await handleEntitlement(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+    if (pathname.startsWith("/api/sheets/") && req.method === "GET") {
+      const webReq = toWebRequest(req);
+      const webRes = await handleSheetServe(webReq);
       res.statusCode = webRes.status;
       webRes.headers.forEach((value, key) => res.setHeader(key, value));
       if (webRes.body) {

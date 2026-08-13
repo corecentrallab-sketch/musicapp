@@ -13,6 +13,7 @@ interface FingerprintMatch {
   album_art_url: string | null;
   sheet_music_url: string | null;
   tab_url: string | null;
+  is_public_domain: boolean | null;
   segment_start_s: number;
   segment_end_s: number;
   overlap_count: number;
@@ -76,6 +77,7 @@ export async function matchFingerprint(
       p.album_art_url,
       p.sheet_music_url,
       p.tab_url,
+      p.is_public_domain,
       s.segment_start_s,
       s.segment_end_s,
       s.overlap_count,

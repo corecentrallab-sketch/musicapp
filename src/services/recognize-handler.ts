@@ -198,9 +198,11 @@ export async function handleRecognize(req: Request): Promise<Response> {
         bestGuessTitle = m.title;
         bestGuessComposer = m.composer;
       }
-      // Public-domain pieces (with sheet_music_url) get null purchase_url —
-      // we already serve the score. Others get affiliate search links.
-      const isPublicDomain = !!m.sheet_music_url;
+      // Public-domain pieces get null purchase_url — we already serve the score
+      // (or will: is_public_domain=true with no sheet_music_url yet means "coming
+      // soon", NOT an affiliate redirect). Everything else gets affiliate search
+      // links for the official sheet music.
+      const isPublicDomain = !!m.is_public_domain;
       return {
         piece_id: m.piece_id,
         title: m.title,
@@ -211,6 +213,10 @@ export async function handleRecognize(req: Request): Promise<Response> {
         sheet_music_url: m.sheet_music_url,
         tab_url: m.tab_url,
         matched_at_s: m.segment_start_s,
+        // Honest signal: PD pieces NEVER get a purchase redirect, even when the
+        // score itself is not curated yet. App shows a "coming soon" state.
+        is_public_domain: isPublicDomain,
+        sheet_music_available: isPublicDomain && !!m.sheet_music_url,
         purchase_url: isPublicDomain
           ? null
           : generatePurchaseUrls(m.title, m.composer),
