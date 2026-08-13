@@ -49,7 +49,7 @@ automatically on first use).
    <https://console.cloud.google.com/apis/library/drive.googleapis.com>
 3. Create an OAuth client ID:
    - **Application type**: Android
-   - **Package name**: `com.notesnap.app`
+   - **Package name**: `com.notesnap.sheetmusic`
    - **SHA-1 signing certificate**: the SHA-1 of the release/debug keystore
      used to sign the build. (`keytool -list -v -keystore <keystore>` shows it.)
    - Copy the client id to `EXPO_PUBLIC_GOOGLE_CLIENT_ID`.
