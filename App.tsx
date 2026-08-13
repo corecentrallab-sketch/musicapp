@@ -11,6 +11,7 @@ import { PdfViewerScreen } from './src/screens/PdfViewerScreen';
 import { ScannedViewerScreen } from './src/screens/ScannedViewerScreen';
 import { ScanScoreScreen } from './src/screens/ScanScoreScreen';
 import { CloudSyncScreen } from './src/screens/CloudSyncScreen';
+import { MetronomeScreen } from './src/screens/MetronomeScreen';
 import {
   hasCompletedOnboarding,
   saveOnboardingAnswers,
@@ -127,6 +128,11 @@ export default function App() {
             name="CloudSync"
             component={CloudSyncScreen}
             options={{ title: 'Cloud sync' }}
+          />
+          <Stack.Screen
+            name="Metronome"
+            component={MetronomeScreen}
+            options={{ title: 'Metronome' }}
           />
         </Stack.Navigator>
       </NavigationContainer>
