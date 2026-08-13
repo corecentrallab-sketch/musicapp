@@ -180,6 +180,8 @@ export const HomeScreen: React.FC = () => {
           sheet_music_url: demoSheetUrl,
           tab_url: null,
           matched_at_s: 12.5,
+          is_public_domain: true,
+          sheet_music_available: true,
           purchase_url: null,
         },
         {
@@ -192,6 +194,8 @@ export const HomeScreen: React.FC = () => {
           sheet_music_url: demoSheetUrl,
           tab_url: null,
           matched_at_s: 8.2,
+          is_public_domain: false,
+          sheet_music_available: false,
           purchase_url: {
             musicnotes: 'https://www.musicnotes.com/sheetmusic/mtd.asp?ppn=MN0217881',
             sheetmusicplus: 'https://www.sheetmusicplus.com/title/clair-de-lune-digital-sheet-music/19377456',

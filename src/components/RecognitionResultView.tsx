@@ -174,9 +174,15 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
 
   // ── Success Phase ──
   const topMatch = phase.response.matches[0];
+  const sheetAvailable = !!topMatch.sheet_music_url;
+  const isPublicDomain = !!topMatch.is_public_domain;
+  // PD pieces never get a purchase redirect — the backend guarantees
+  // purchase_url is null for them, and we double-guard here so a stale
+  // response can never show a buy button on a public-domain piece.
   const hasPurchaseUrl =
-    topMatch?.purchase_url?.musicnotes ||
-    phase.response.purchase_url?.musicnotes;
+    !isPublicDomain &&
+    (topMatch.purchase_url?.musicnotes ||
+      phase.response.purchase_url?.musicnotes);
 
   return (
     <Modal visible={true} transparent animationType="fade">
@@ -233,12 +239,24 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
             )}
 
             {/* Action buttons */}
-            <TouchableOpacity
-              style={styles.viewSheetBtn}
-              onPress={() => handleViewSheetMusic(topMatch)}
-            >
-              <Text style={styles.viewSheetText}>🎵 View Sheet Music</Text>
-            </TouchableOpacity>
+            {sheetAvailable ? (
+              <TouchableOpacity
+                style={styles.viewSheetBtn}
+                onPress={() => handleViewSheetMusic(topMatch)}
+              >
+                <Text style={styles.viewSheetText}>🎵 View Sheet Music</Text>
+              </TouchableOpacity>
+            ) : isPublicDomain ? (
+              /* Honest "coming soon" state: public-domain piece, score not yet
+                 curated. No broken button, no purchase redirect. */
+              <View style={styles.comingSoonCard}>
+                <Text style={styles.comingSoonTitle}>🎼 Sheet music coming soon</Text>
+                <Text style={styles.comingSoonText}>
+                  We're still curating a high-quality score for this
+                  public-domain piece — check back soon.
+                </Text>
+              </View>
+            ) : null}
 
             {/* Purchase button for copyrighted pieces */}
             {hasPurchaseUrl && (
@@ -461,6 +479,30 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  comingSoonCard: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 14,
+    padding: 16,
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    borderStyle: 'dashed',
+  },
+  comingSoonTitle: {
+    color: '#4ecdc4',
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  comingSoonText: {
+    color: '#a0a0b8',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
   },
   purchaseBtn: {
     backgroundColor: '#0f3460',
