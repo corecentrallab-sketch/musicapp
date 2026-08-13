@@ -91,6 +91,7 @@ export type RootStackParamList = {
   ScannedViewer: { itemId: string };
   ScanScore: undefined;
   CloudSync: undefined;
+  Metronome: undefined;
 };
 
 // ─── Library (Phase 4a: import + local sheet music library) ──
