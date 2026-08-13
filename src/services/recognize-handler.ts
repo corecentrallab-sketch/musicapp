@@ -165,10 +165,9 @@ export async function handleRecognize(req: Request): Promise<Response> {
   }
 
   // --- Generate fingerprint ---
-  // NOTE: fingerprintFromBuffer calls ffmpeg and fpcalc via child_process.execFile.
-  // These external processes have no timeout — if ffmpeg or fpcalc hang (e.g. on
-  // corrupted audio), the request will stall indefinitely. Post-launch, wrap in a
-  // Promise.race with a 30-second timeout to return a 408/504 instead of hanging.
+  // NOTE: fingerprintFromBuffer runs fpcalc via child_process.execFile with a
+  // 30s timeout (see fpcalc.ts) — a hang on corrupted audio is killed and
+  // surfaces as the 400 below instead of stalling the request indefinitely.
   let fingerprint: number[];
   try {
     const audioBuffer = Buffer.from(await audioFile.arrayBuffer());

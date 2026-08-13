@@ -12,17 +12,24 @@ const execFileAsync = promisify(execFile);
 // Keeping this relative is required: /usr/bin and PATH do not contain them on Vercel.
 const FUNCTION_DIR = dirname(fileURLToPath(import.meta.url));
 const FPCMD = join(FUNCTION_DIR, "fpcalc");
+/** Max time fpcalc may run before being killed (ms). Corrupted/huge audio can
+ * otherwise hang fpcalc indefinitely and stall the request. */
+const FPCALC_TIMEOUT_MS = 30_000;
 
 /** Run fpcalc and return its raw 32-bit integer fingerprint. */
 export async function generateFingerprint(
   audioPath: string,
 ): Promise<{ fingerprint: number[]; duration: number }> {
-  const { stdout, stderr } = await execFileAsync(FPCMD, [
-    "-raw",
-    "-length",
-    "120",
-    audioPath,
-  ]);
+  const { stdout, stderr } = await execFileAsync(
+    FPCMD,
+    [
+      "-raw",
+      "-length",
+      "120",
+      audioPath,
+    ],
+    { timeout: FPCALC_TIMEOUT_MS },
+  );
 
   if (stderr) console.warn("[fpcalc] stderr:", stderr);
   const output = stdout.trim();
