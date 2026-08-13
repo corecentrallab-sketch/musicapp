@@ -1,6 +1,6 @@
 # NoteSnap Store Submission Guide
 
-This guide covers the first release (version 0.1.0) for package/bundle ID `com.notesnap.app`. Do not submit until the production AAB/IPA has been tested on real devices and the store screenshots match the shipped build.
+This guide covers the first release (version 0.1.0) for Android package ID `com.notesnap.sheetmusic` / iOS bundle ID `com.notesnap.app`. Do not submit until the production AAB/IPA has been tested on real devices and the store screenshots match the shipped build.
 
 ## Owner accounts and materials
 - Google Play Developer account: $25 one-time registration fee.
@@ -13,7 +13,7 @@ This guide covers the first release (version 0.1.0) for package/bundle ID `com.n
 
 ## Google Play Console
 1. Create/sign in to a Play Console developer account and pay the one-time registration fee.
-2. Create an app: name **NoteSnap: Sheet Music**, default language English, app type **App**, free pricing. Use package ID `com.notesnap.app` when the first AAB is uploaded.
+2. Create an app: name **NoteSnap: Sheet Music**, default language English, app type **App**, free pricing. Use package ID `com.notesnap.sheetmusic` when the first AAB is uploaded.
 3. Build the production Android bundle from the mobile repo with `eas build --platform android --profile production`. This produces an AAB; download it after the build completes. (This guide does not run builds.)
 4. In **Grow users > Store presence > Main store listing**, copy the title, short description, and full description from `playstore-listing.md`. Add the category Music & Audio and the feature graphic `assets/playstore/feature-graphic.png` (1024×500). Upload the three 1080×1920 phone screenshots.
 5. In **Policy > App content**, complete the privacy policy URL, ads declaration, app access instructions, target audience/content, and content rating questionnaire. Declare microphone/audio recording clearly: it is used for music recognition and requires user permission. Answer honestly based on the final build.
@@ -33,7 +33,7 @@ This guide covers the first release (version 0.1.0) for package/bundle ID `com.n
 8. Test on physical iPhones, then click **Add for Review** and **Submit for Review**. Monitor the resolution center and release the app manually or automatically after approval.
 
 ## Final preflight
-- Verify version 0.1.0, package/bundle ID `com.notesnap.app`, icon, microphone permission text, privacy URL, and terms URL.
+- Verify version 0.1.0, Android package ID `com.notesnap.sheetmusic` / iOS bundle ID `com.notesnap.app`, icon, microphone permission text, privacy URL, and terms URL.
 - Verify all store text reflects the shipped feature set and all claims are accurate.
 - Test recognition permission denial/retry, network failure, offline saved library, navigation, and external retailer/legal links.
 - Keep source files and store metadata in version control for future releases. Never upload test builds or screenshots showing debug UI.

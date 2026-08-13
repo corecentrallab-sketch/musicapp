@@ -10,7 +10,7 @@
  *
  * OAuth notes:
  *  - Redirect URI for installed apps is `<applicationId>:/oauthredirect`
- *    (e.g. com.notesnap.app:/oauthredirect) — the same convention the
+ *    (e.g. com.notesnap.sheetmusic:/oauthredirect) — the same convention the
  *    expo-auth-session Google provider uses for native builds. It works
  *    without registering the URI in Google Cloud Console (native clients
  *    match on client id), but the app must run in a dev/standalone build —
@@ -56,13 +56,13 @@ export function isGDriveConfigured(): boolean {
   return googleConfig.isConfigured;
 }
 
-/** Android application id (com.notesnap.app) used to build the redirect URI. */
+/** Android application id (com.notesnap.sheetmusic) used to build the redirect URI. */
 function applicationId(): string {
   const cfg = Constants.expoConfig;
   const id =
     (cfg?.android as { package?: string } | undefined)?.package ??
     (cfg?.ios as { bundleIdentifier?: string } | undefined)?.bundleIdentifier;
-  return id ?? 'com.notesnap.app';
+  return id ?? 'com.notesnap.sheetmusic';
 }
 
 /** Redirect URI for the Google OAuth flow (native installed-app convention). */
