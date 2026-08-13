@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { getStreakData, getTodayPracticeMinutes, getNotificationEnabled } from './storage';
+import { getStreakData, getTodayPracticeMinutes, getNotificationEnabled, getDateStr } from './storage';
 
 const CHANNEL_ID = 'streak-nudges';
 const NUDGE_ID = 'daily-streak-nudge';
@@ -36,7 +36,7 @@ export async function scheduleDailyStreakNudge(): Promise<void> {
 
 export async function refreshStreakNudge(): Promise<void> {
   const [streak, minutes] = await Promise.all([getStreakData(), getTodayPracticeMinutes()]);
-  if (streak.lastPracticeDate === new Date().toISOString().slice(0, 10) || minutes > 0) {
+  if (streak.lastPracticeDate === getDateStr(new Date()) || minutes > 0) {
     await Notifications.cancelScheduledNotificationAsync(NUDGE_ID).catch(() => undefined);
   } else {
     await scheduleDailyStreakNudge();

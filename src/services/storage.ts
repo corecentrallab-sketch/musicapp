@@ -289,16 +289,23 @@ export async function markDailyChallengeDone(): Promise<void> {
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-/** Returns today's date as YYYY-MM-DD. */
+/** Returns today's date as YYYY-MM-DD (local calendar day). */
 export function getTodayStr(): string {
   return getDateStr(new Date());
 }
 
-function getDateStr(d: Date): string {
-  return d.toISOString().slice(0, 10);
+/**
+ * Returns a date as YYYY-MM-DD built from LOCAL date parts, so streaks,
+ * weekly goals and nudges flip at the user's local midnight — not UTC's.
+ */
+export function getDateStr(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
-/** Returns the Monday of the current week as YYYY-MM-DD. */
+/** Returns the Monday of the current week as YYYY-MM-DD (local week). */
 function getMondayStr(d: Date): string {
   const day = d.getDay(); // 0=Sun, 1=Mon...
   const diff = day === 0 ? -6 : 1 - day;

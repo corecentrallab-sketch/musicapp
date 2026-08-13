@@ -3,6 +3,7 @@
  * Selects a piece deterministically based on the current date — no server needed.
  */
 import type { DailyChallengePiece } from '../types';
+import { getDateStr } from './storage';
 
 /**
  * Static pool of ~20 pieces representing the "500 list".
@@ -189,7 +190,7 @@ function dateSeed(dateStr: string, poolSize: number): number {
  * Deterministic — same date always returns the same piece.
  */
 export function getTodayChallenge(): DailyChallengePiece {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getDateStr(new Date());
   const index = dateSeed(today, PIECE_POOL.length);
   return PIECE_POOL[index];
 }

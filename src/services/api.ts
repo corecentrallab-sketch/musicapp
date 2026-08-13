@@ -30,19 +30,50 @@ export function getApiBaseUrl(): string {
   const formData = new FormData();
   formData.append("audio", {
     uri: audioUri,
-    name: "recording.ogg",
-    type: "audio/ogg",
+    name: "recording.m4a",
+    type: "audio/mp4",
   } as unknown as Blob);
 
   const deviceId = await getDeviceId();
 
-  const response = await fetch(`${BASE_URL}/api/recognize`, {
-    method: "POST",
-    body: formData,
-    headers: { Accept: "application/json", "x-user-id": deviceId },
-  });
+  // 30s cap so a stalled server fails fast instead of hanging the spinner.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}/api/recognize`, {
+      method: "POST",
+      body: formData,
+      headers: { Accept: "application/json", "x-user-id": deviceId },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Recognition took too long. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 
-  const json: RecognitionResponse | RecognitionError = await response.json();
+  if (!response.ok) {
+    // Prefer the backend's JSON error (e.g. 400 "Could not process audio");
+    // fall back to a generic message when the body isn't JSON (502/HTML).
+    let errBody: RecognitionError | null = null;
+    try {
+      errBody = (await response.json()) as RecognitionError;
+    } catch {
+      errBody = null;
+    }
+    throw new Error(errBody?.error || "Something went wrong. Please try again.");
+  }
+
+  let json: RecognitionResponse | RecognitionError;
+  try {
+    json = await response.json();
+  } catch {
+    throw new Error("Something went wrong. Please try again.");
+  }
 
   if (!json.success) {
     throw new Error(json.error || "Recognition failed");

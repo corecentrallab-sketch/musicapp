@@ -1,8 +1,9 @@
 /**
  * Audio recording hook for NoteSnap.
  *
- * Uses expo-av to record microphone audio in Opus/OGG format
- * matching the backend recognition API's expected input.
+ * Uses expo-av with the HIGH_QUALITY preset to record microphone audio
+ * as AAC (.m4a). The uploaded filename/type in api.ts mirrors that; the
+ * backend sniffs content rather than trusting the label.
  */
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { Audio } from 'expo-av';
