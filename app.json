@@ -46,6 +46,15 @@
         {
           "cameraPermission": "NoteSnap uses your camera to scan sheet music pages into your library."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "targetSdkVersion": 35,
+            "compileSdkVersion": 35
+          }
+        }
       ]
     ],
     "extra": {
