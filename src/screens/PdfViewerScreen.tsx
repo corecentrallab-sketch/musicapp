@@ -15,14 +15,17 @@ import {
   getLibraryItem,
   updateLibraryItem,
 } from '../services/libraryStore';
+import { useAutoScroll } from '../hooks/useAutoScroll';
+import { AutoScrollControl } from '../components/AutoScrollControl';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PdfViewer'>;
 
 /**
  * Minimal PDF viewer (Phase 4a). Renders the imported PDF with swipe page
  * navigation (enablePaging), a page indicator, and prev/next + tap-to-turn
- * controls driven by the native setPage API. Full reader polish
- * (autoscroll, annotations) is a later phase.
+ * controls driven by the native setPage API. FEATURE BUILD 2 adds BPM-linked
+ * auto-scroll: a toolbar control (BPM + beats/page steppers) and pause-on-tap
+ * while auto-scrolling. Full reader polish (annotations) is a later phase.
  */
 export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
   const { itemId } = route.params;
@@ -34,11 +37,38 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
   const [failed, setFailed] = useState(false);
   const [viewWidth, setViewWidth] = useState(0);
 
+  // Auto-scroll (BPM-linked): the hook owns the timer and the toolbar renders
+  // its state; this screen only supplies the page turner.
+  const pageRef = useRef(page);
+  const goToPage = useCallback(
+    (target: number) => {
+      const clamped = Math.max(1, Math.min(target, pageCount || target));
+      pdfRef.current?.setPage(clamped);
+      setPage(clamped);
+    },
+    [pageCount]
+  );
+  const autoScroll = useAutoScroll({
+    currentPage: page,
+    pageCount,
+    onTurnPage: useCallback(() => goToPage(pageRef.current + 1), [goToPage]),
+  });
+  const {
+    status: autoScrollStatus,
+    toggle: toggleAutoScroll,
+    stop: stopAutoScroll,
+  } = autoScroll;
+
   useLayoutEffect(() => {
     navigation.setOptions({
       title: title || 'PDF',
     });
   }, [navigation, title]);
+
+  // Keep the page ref fresh for the auto-scroll page turner.
+  useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,18 +112,17 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
     );
   }, []);
 
-  const goToPage = useCallback(
-    (target: number) => {
-      const clamped = Math.max(1, Math.min(target, pageCount || target));
-      pdfRef.current?.setPage(clamped);
-      setPage(clamped);
-    },
-    [pageCount]
-  );
-
-  /** Tap on left third → previous page, right two thirds → next. */
+  /**
+   * Tap handling: while auto-scroll is active, ANY tap on the page toggles
+   * pause/resume (pause on tap, tap again to resume). When idle, the usual
+   * left-third → previous, right-two-thirds → next zones apply.
+   */
   const handleSingleTap = useCallback(
     (currentPage: number, x: number) => {
+      if (autoScrollStatus !== 'idle') {
+        toggleAutoScroll();
+        return;
+      }
       if (pageCount === 0 || viewWidth === 0) return;
       const third = viewWidth / 3;
       if (x < third) {
@@ -102,7 +131,7 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
         goToPage(currentPage + 1);
       }
     },
-    [pageCount, viewWidth, goToPage]
+    [pageCount, viewWidth, goToPage, autoScrollStatus, toggleAutoScroll]
   );
 
   if (failed) {
@@ -146,11 +175,17 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
       )}
 
+      {/* Auto-scroll control (FEATURE BUILD 2) */}
+      <AutoScrollControl autoScroll={autoScroll} disabled={pageCount < 2} />
+
       {/* Page indicator + controls */}
       <View style={styles.footer}>
         <Pressable
           style={[styles.footerButton, page <= 1 && styles.footerButtonDisabled]}
-          onPress={() => goToPage(page - 1)}
+          onPress={() => {
+            stopAutoScroll();
+            goToPage(page - 1);
+          }}
           disabled={page <= 1}
           accessibilityLabel="Previous page"
         >
@@ -164,7 +199,10 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
             styles.footerButton,
             pageCount > 0 && page >= pageCount && styles.footerButtonDisabled,
           ]}
-          onPress={() => goToPage(page + 1)}
+          onPress={() => {
+            stopAutoScroll();
+            goToPage(page + 1);
+          }}
           disabled={pageCount > 0 && page >= pageCount}
           accessibilityLabel="Next page"
         >
