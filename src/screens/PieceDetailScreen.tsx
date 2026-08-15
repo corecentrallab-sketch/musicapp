@@ -186,28 +186,33 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           </View>
         </View>
 
-        <Text style={styles.description}>{piece.description}</Text>
+        {piece.description && (
+          <Text style={styles.description}>{piece.description}</Text>
+        )}
       </View>
 
       {/* Action buttons */}
       <View style={styles.actions}>
-        <TouchableOpacity
-          style={[
-            styles.viewSheetBtn,
-            !piece.sheetMusicUrl && styles.viewSheetBtnDisabled,
-          ]}
-          onPress={handleViewSheetMusic}
-          disabled={!piece.sheetMusicUrl}
-        >
-          <Text
-            style={[
-              styles.viewSheetText,
-              !piece.sheetMusicUrl && styles.viewSheetTextDisabled,
-            ]}
+        {piece.sheetMusicUrl ? (
+          <TouchableOpacity
+            style={styles.viewSheetBtn}
+            onPress={handleViewSheetMusic}
           >
-            🎵 View Sheet Music
-          </Text>
-        </TouchableOpacity>
+            <Text style={styles.viewSheetText}>🎵 View Sheet Music</Text>
+          </TouchableOpacity>
+        ) : (
+          /* Honest "coming soon" state: piece with no curated sheet yet — no
+             broken button, no dead end. */
+          <View style={styles.comingSoonCard}>
+            <Text style={styles.comingSoonTitle}>
+              🎼 Sheet music coming soon
+            </Text>
+            <Text style={styles.comingSoonText}>
+              We're still curating a high-quality score for this piece — check
+              back soon.
+            </Text>
+          </View>
+        )}
 
         <TouchableOpacity
           style={[styles.shareBtn, sharing && styles.shareBtnDisabled]}
@@ -321,17 +326,33 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
   },
-  viewSheetBtnDisabled: {
-    backgroundColor: '#3a3a5c',
-    opacity: 0.6,
-  },
   viewSheetText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
   },
-  viewSheetTextDisabled: {
-    color: '#8888aa',
+  comingSoonCard: {
+    flex: 1,
+    backgroundColor: '#1a1a2e',
+    borderRadius: 14,
+    padding: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    borderStyle: 'dashed',
+  },
+  comingSoonTitle: {
+    color: '#4ecdc4',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  comingSoonText: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
   },
   shareBtn: {
     flex: 1,

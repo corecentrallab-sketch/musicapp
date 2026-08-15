@@ -4,7 +4,11 @@
  * Communicates with the site server for recognition and checkout.
  * The base URL defaults to the production site; override for local dev.
  */
-import type { RecognitionResponse, RecognitionError } from "../types";
+import type {
+  RecognitionResponse,
+  RecognitionError,
+  DailyChallengePiece,
+} from "../types";
 import { getDeviceId } from "./device";
 
 /** Production NoteSnap site URL (stable — the Vercel production alias; every deploy lands here). Set EXPO_PUBLIC_API_URL to override for local dev. */
@@ -80,6 +84,49 @@ export function getApiBaseUrl(): string {
   }
 
   return json;
+}
+
+/**
+ * GET /api/daily-challenge — today's deterministic featured piece from the live
+ * catalog. Returns null (never throws) when the endpoint is unreachable or the
+ * response is malformed, so the Home card can show a retry state instead of a
+ * placeholder piece.
+ */
+export async function fetchDailyChallenge(): Promise<DailyChallengePiece | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(`${BASE_URL}/api/daily-challenge`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const json: unknown = await response.json();
+    if (!json || typeof json !== "object") return null;
+    const d = json as Record<string, unknown>;
+    if (!d.piece_id || !d.title) return null;
+    return {
+      id: String(d.piece_id),
+      title: String(d.title),
+      composer: String(d.composer ?? ""),
+      genre: d.genre ? String(d.genre) : "Classical",
+      difficulty: d.difficulty_label
+        ? String(d.difficulty_label)
+        : "Intermediate",
+      sheetMusicUrl: d.sheet_music_url ? String(d.sheet_music_url) : undefined,
+      isPublicDomain: !!d.is_public_domain,
+      sheetMusicAvailable: !!d.sheet_music_available,
+      difficultyGrade:
+        typeof d.difficulty === "number" ? d.difficulty : null,
+      catalog: d.catalog ? String(d.catalog) : null,
+      challengeDate: d.date ? String(d.date) : undefined,
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**
