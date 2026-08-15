@@ -48,6 +48,7 @@ function Home() {
             <a href="#how-it-works" className="hover:text-amber-700 transition-colors">How it works</a>
             <a href="#features" className="hover:text-amber-700 transition-colors">Features</a>
             <a href="#pricing" className="hover:text-amber-700 transition-colors">Pricing</a>
+            <a href="#beta" className="hover:text-amber-700 transition-colors">Beta</a>
             <a
               href="#pricing"
               className="rounded-full bg-amber-600 px-4 py-1.5 text-white hover:bg-amber-700 transition-colors"
@@ -378,6 +379,58 @@ function Home() {
                 <p className="mt-2 text-sm text-stone-600 leading-relaxed">
                   {item.desc}
                 </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Join the beta */}
+      <section id="beta" className="bg-amber-50 py-20 sm:py-24">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6">
+          <div className="text-center">
+            <h2 className="text-3xl font-bold tracking-tight text-stone-900 sm:text-4xl">
+              Join the NoteSnap beta
+            </h2>
+            <p className="mt-4 text-lg text-stone-600">
+              Be among the first to try NoteSnap on Android — music recognition,
+              sheet music, and practice tools, free while we test.
+            </p>
+            {/* Play closed-testing opt-in link. Standard format from the package name;
+                confirm the URL on the NoteSnapBeta track page once the release is live. */}
+            <a
+              href="https://play.google.com/apps/testing/com.notesnap.sheetmusic"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-8 inline-block rounded-full bg-amber-600 px-8 py-3 text-base font-semibold text-white hover:bg-amber-700 transition-colors"
+            >
+              Join the beta on Google Play
+            </a>
+            <p className="mt-3 text-sm text-stone-500">
+              Free closed test · any Google account · leave any time
+            </p>
+          </div>
+          <div className="mt-12 grid gap-6 text-left sm:grid-cols-3">
+            {[
+              {
+                title: "What you get",
+                desc: "Early access to the Android app: listen to music and get the sheet music, plus the metronome and practice tools — while they're still being polished.",
+              },
+              {
+                title: "How to join",
+                desc: "Tap the button, sign in with any Google account, and accept the invite. Updates arrive through the Play Store like any app.",
+              },
+              {
+                title: "Why join",
+                desc: "Your feedback shapes the app. Tell us what works, what doesn't, and what you'd love to see — every report makes NoteSnap better.",
+              },
+            ].map((item) => (
+              <div
+                key={item.title}
+                className="rounded-2xl border border-amber-200 bg-white p-6"
+              >
+                <h3 className="text-lg font-semibold text-stone-900">{item.title}</h3>
+                <p className="mt-2 text-sm text-stone-600 leading-relaxed">{item.desc}</p>
               </div>
             ))}
           </div>
