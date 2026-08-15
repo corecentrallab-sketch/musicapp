@@ -182,7 +182,16 @@ export interface DailyChallengePiece {
   composer: string;
   genre: string;
   difficulty: string; // "Beginner" | "Intermediate" | "Advanced"
-  description: string;
-  /** Optional URL to sheet music PDF/MusicXML. */
+  description?: string;
+  /** Optional URL to sheet music PDF (served via the api/sheets proxy). */
   sheetMusicUrl?: string;
+  /** Honest availability signals from the catalog (never invented client-side). */
+  isPublicDomain?: boolean;
+  sheetMusicAvailable?: boolean;
+  /** Raw catalog grade (1-10) when the catalog has one. */
+  difficultyGrade?: number | null;
+  /** Catalog number, e.g. BWV 846. */
+  catalog?: string | null;
+  /** The date this piece was featured for (YYYY-MM-DD). */
+  challengeDate?: string;
 }

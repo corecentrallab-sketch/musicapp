@@ -23,6 +23,7 @@ import {
   RecognitionResultView,
   type RecognitionPhase,
 } from '../components/RecognitionResultView';
+import { ScoreViewer } from '../components/ScoreViewer';
 import { PieceDetailScreen } from './PieceDetailScreen';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { recognizeAudio } from '../services/api';
@@ -68,6 +69,7 @@ export const HomeScreen: React.FC = () => {
   const [onboarding, setOnboarding] = useState<OnboardingAnswers | null>(null);
   const [badgeToast, setBadgeToast] = useState<Badge | null>(null);
   const [showDetail, setShowDetail] = useState(false);
+  const [showScoreViewer, setShowScoreViewer] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [practiceMinutes, setPracticeMinutes] = useState(0);
 
@@ -92,7 +94,7 @@ export const HomeScreen: React.FC = () => {
       getStreakData(),
       getWeeklyGoal(),
       getOnboardingAnswers(),
-      Promise.resolve(getTodayChallenge()),
+      getTodayChallenge(), // live catalog piece (null when unreachable)
       getTodayPracticeMinutes(),
     ]);
     setStreak(s);
@@ -338,7 +340,9 @@ export const HomeScreen: React.FC = () => {
     setTimeout(() => handleStartListening(), 300);
   }, [handleStartListening]);
 
-  // ── Simulate "practice" action for daily challenge ──
+  // ── Daily challenge tap: record practice (streak framing), then open the
+  // piece's sheet music in the in-app viewer when available; otherwise show
+  // the honest "coming soon" state (PieceDetailScreen) instead of a dead end.
   const handleDailyChallengeTap = useCallback(async () => {
     const newStreak = await recordPractice();
     setStreak(newStreak);
@@ -354,8 +358,12 @@ export const HomeScreen: React.FC = () => {
       setBadgeToast(newBadges[0]);
     }
 
-    setShowDetail(true);
-  }, []);
+    if (dailyChallenge?.sheetMusicUrl) {
+      setShowScoreViewer(true);
+    } else {
+      setShowDetail(true);
+    }
+  }, [dailyChallenge]);
 
   // ── Permission denied state ──
   if (recorder.error && !recorder.isRecording) {
@@ -400,6 +408,19 @@ export const HomeScreen: React.FC = () => {
     100,
   );
   const weekComplete = weeklyGoal.current >= weeklyGoal.target;
+
+  // Full-screen sheet music viewer — the same path the recognition result flow
+  // uses for pieces that have a curated sheet.
+  if (showScoreViewer && dailyChallenge?.sheetMusicUrl) {
+    return (
+      <ScoreViewer
+        url={dailyChallenge.sheetMusicUrl}
+        title={dailyChallenge.title}
+        composer={dailyChallenge.composer}
+        onClose={() => setShowScoreViewer(false)}
+      />
+    );
+  }
 
   if (showDetail && dailyChallenge) {
     return (
@@ -563,7 +584,7 @@ export const HomeScreen: React.FC = () => {
           <Text style={styles.sectionTitle}>🌟 Today's Featured Piece</Text>
         </View>
 
-        {dailyChallenge && (
+        {dailyChallenge ? (
           <TouchableOpacity
             style={styles.challengeCard}
             onPress={handleDailyChallengeTap}
@@ -575,11 +596,20 @@ export const HomeScreen: React.FC = () => {
               {dailyChallenge.composer}
             </Text>
             <View style={styles.challengeMeta}>
-              <View style={styles.challengeTag}>
-                <Text style={styles.challengeTagText}>
-                  {dailyChallenge.genre}
-                </Text>
-              </View>
+              {dailyChallenge.genre ? (
+                <View style={styles.challengeTag}>
+                  <Text style={styles.challengeTagText}>
+                    {dailyChallenge.genre}
+                  </Text>
+                </View>
+              ) : null}
+              {dailyChallenge.catalog ? (
+                <View style={styles.challengeTag}>
+                  <Text style={styles.challengeTagText}>
+                    {dailyChallenge.catalog}
+                  </Text>
+                </View>
+              ) : null}
               <View style={styles.challengeTag}>
                 <Text style={styles.challengeTagText}>
                   {dailyChallenge.difficulty === 'Beginner'
@@ -591,11 +621,34 @@ export const HomeScreen: React.FC = () => {
                 </Text>
               </View>
             </View>
-            <Text style={styles.challengeDesc} numberOfLines={2}>
-              {dailyChallenge.description}
+            {dailyChallenge.description ? (
+              <Text style={styles.challengeDesc} numberOfLines={2}>
+                {dailyChallenge.description}
+              </Text>
+            ) : null}
+            <View style={styles.challengeCta}>
+              <Text style={styles.challengeCtaText}>
+                {dailyChallenge.sheetMusicAvailable === false
+                  ? '🎼 Sheet music coming soon'
+                  : 'View & Practice →'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.challengeCard}
+            onPress={loadData}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.challengeEmoji}>🎼</Text>
+            <Text style={styles.challengeTitle}>
+              Featured piece unavailable
+            </Text>
+            <Text style={styles.challengeComposer}>
+              Couldn't reach the piece catalog. Check your connection.
             </Text>
             <View style={styles.challengeCta}>
-              <Text style={styles.challengeCtaText}>View & Practice →</Text>
+              <Text style={styles.challengeCtaText}>Retry →</Text>
             </View>
           </TouchableOpacity>
         )}
