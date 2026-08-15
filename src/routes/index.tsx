@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { readFile } from "node:fs/promises";
 import { useState, useCallback } from "react";
+import RecognitionDemo from "~/components/RecognitionDemo";
 
 const getBusinessName = createServerFn({ method: "GET" }).handler(async () => {
   try {
@@ -87,6 +88,9 @@ function Home() {
               See how it works
             </a>
           </div>
+
+          {/* Live recognition demo — the hero's "try it now" widget */}
+          <RecognitionDemo />
         </div>
       </section>
 

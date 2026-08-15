@@ -16,6 +16,41 @@ mkdir -p .run
 # once node_modules is current.
 bun install
 bun run build
+
+# Provision the native fpcalc binary where the recognition pipeline spawns it
+# (src/services/fpcalc.ts resolves it from dirname(import.meta.url)). The preview
+# server (serve.ts) imports the API handlers from source, so it looks in
+# src/services/fpcalc; the SSR bundle (dist/server) has a bundled copy of the same
+# module, so it also gets one beside it. build-vercel.sh provisions its own copy
+# inside render.func for Vercel; without this the preview's /api/recognize can
+# never fingerprint real audio. Prefer an existing local binary, then fall back
+# to the same GitHub release build-vercel.sh uses. Idempotent.
+provision_fpcalc() {
+  local dst
+  for dst in src/services/fpcalc dist/server/fpcalc; do
+    if [ -x "$dst" ]; then continue; fi
+    local src
+    for src in /usr/local/bin/fpcalc .vercel/output/functions/render.func/fpcalc; do
+      if [ -x "$src" ]; then
+        cp "$src" "$dst" && chmod 755 "$dst" && break
+      fi
+    done
+    if [ ! -x "$dst" ]; then
+      local url="https://github.com/acoustid/chromaprint/releases/download/v1.6.1/chromaprint-fpcalc-1.6.1-linux-x86_64.tar.gz"
+      local tmp; tmp=$(mktemp -d)
+      if curl -L --fail --silent --show-error "$url" -o "$tmp/fpcalc.tgz"; then
+        tar -xzf "$tmp/fpcalc.tgz" -C "$tmp"
+        cp "$tmp/chromaprint-fpcalc-1.6.1-linux-x86_64/fpcalc" "$dst"
+        chmod 755 "$dst"
+      fi
+      rm -rf "$tmp"
+    fi
+  done
+  if [ ! -x src/services/fpcalc ]; then
+    echo "warning: could not provision fpcalc — /api/recognize will reject real audio" >&2
+  fi
+}
+provision_fpcalc
 # Load .env for the server process (setsid doesn't auto-load Bun's .env)
 export $(grep -v '^#' .env | xargs) 2>/dev/null || true
 setsid nohup env DATABASE_URL="$DATABASE_URL" bun run start > .run/server.log 2>&1 < /dev/null &
