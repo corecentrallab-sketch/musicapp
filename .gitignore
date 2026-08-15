@@ -24,3 +24,10 @@ src/routeTree.gen.ts
 # Unreferenced local assets (notesnap-profile.png) — not part of the site build.
 /assets/
 .env*
+
+# Large one-off build artifacts (hosted for downloads, never committed)
+public/play-assets/*.aab
+dist/**
+
+# Native fpcalc binary provisioned by publish.sh (downloaded from GitHub releases)
+src/services/fpcalc
