@@ -1,4 +1,9 @@
-import { fingerprintFromBuffer } from "~/services/fpcalc";
+// Explicit .ts extension: publish.sh provisions the native fpcalc binary beside
+// this module as ./fpcalc (no extension), and Bun resolves an extensionless
+// "./fpcalc" import to that binary first — which would crash startup by trying
+// to parse the ELF file as TypeScript. The explicit extension always targets
+// the module.
+import { fingerprintFromBuffer } from "~/services/fpcalc.ts";
 import { matchFingerprint } from "~/services/matching";
 import { generatePurchaseUrls } from "~/services/generate-purchase-urls";
 import { hasActiveSubscription } from "~/services/entitlement";
