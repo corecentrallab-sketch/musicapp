@@ -15,8 +15,40 @@ const getBusinessName = createServerFn({ method: "GET" }).handler(async () => {
   }
 });
 
+/** Today's piece for the homepage widget — same deterministic selection logic
+ * and catalog pool as the app's Daily Challenge (/api/daily-challenge), called
+ * directly server-side so the widget is SSR'd into the HTML. Null when the
+ * catalog is unavailable (the widget hides itself). */
+interface DailyPiece {
+  date: string;
+  piece_id: string;
+  title: string;
+  composer: string;
+  catalog: string | null;
+  difficulty_label: string | null;
+}
+
+const getDailyPiece = createServerFn({ method: "GET" }).handler(async () => {
+  try {
+    const { handleDailyChallenge } = await import("~/services/daily-challenge-handler");
+    const res = await handleDailyChallenge(
+      new Request("https://site-notesnap.vercel.app/api/daily-challenge"),
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as DailyPiece;
+    if (!data?.piece_id || !data?.title) return null;
+    return data;
+  } catch (err) {
+    console.error("[home] daily piece fetch failed:", err);
+    return null;
+  }
+});
+
 export const Route = createFileRoute("/")({
-  loader: () => getBusinessName(),
+  loader: async () => {
+    const [businessName, daily] = await Promise.all([getBusinessName(), getDailyPiece()]);
+    return { businessName, daily };
+  },
   head: () => ({
     meta: [
       {
@@ -78,7 +110,7 @@ const PAYMENT_LINKS = {
 } as const;
 
 function Home() {
-  const businessName = Route.useLoaderData();
+  const { businessName, daily } = Route.useLoaderData();
   const [loadingLink, setLoadingLink] = useState<string | null>(null);
 
   const handleSubscribe = useCallback((url: string) => {
@@ -142,6 +174,74 @@ function Home() {
 
           {/* Live recognition demo — the hero's "try it now" widget */}
           <RecognitionDemo />
+        </div>
+      </section>
+
+      {/* Daily practice — today's piece + opt-in practice-note newsletter */}
+      <section id="daily-practice" className="border-y border-stone-200 bg-white py-16 sm:py-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Today's piece — deterministic, SSR'd, same pick as the app */}
+            <div className="flex flex-col rounded-2xl border border-stone-200 bg-stone-50 p-8">
+              <span className="text-xs font-semibold uppercase tracking-wider text-amber-700">
+                Daily practice
+              </span>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-stone-900 sm:text-3xl">
+                Today's piece
+              </h2>
+              {daily ? (
+                <>
+                  <p className="mt-5 text-xl font-semibold text-stone-900">
+                    {daily.title}
+                    {daily.catalog ? (
+                      <span className="ml-2 text-sm font-normal text-stone-500">
+                        {daily.catalog}
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="mt-1 text-stone-600">
+                    {daily.composer}
+                    {daily.difficulty_label
+                      ? ` · ${daily.difficulty_label}`
+                      : ""}
+                  </p>
+                  <p className="mt-4 text-sm leading-relaxed text-stone-500">
+                    A new piece every day — identify it in the app or open the
+                    sheet music.
+                  </p>
+                  <a
+                    href={`/library/${encodeURIComponent(daily.piece_id)}`}
+                    className="mt-6 inline-flex w-fit items-center gap-1.5 rounded-full bg-amber-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 transition-colors"
+                  >
+                    Open the sheet music
+                    <span aria-hidden="true">→</span>
+                  </a>
+                </>
+              ) : (
+                <p className="mt-4 text-stone-600">
+                  A new piece every day — identify it in the app or open the
+                  sheet music.
+                </p>
+              )}
+            </div>
+
+            {/* Opt-in newsletter — no email is sent from the site; storage +
+                confirmation only (the send pipeline is owned by the lead). */}
+            <div className="flex flex-col rounded-2xl border border-amber-200 bg-amber-50 p-8">
+              <span className="text-xs font-semibold uppercase tracking-wider text-amber-700">
+                Practice note
+              </span>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-stone-900 sm:text-3xl">
+                Daily practice note
+              </h2>
+              <p className="mt-3 text-sm leading-relaxed text-stone-600">
+                One short practice tip or piece note in your inbox each day —
+                no spam, no fluff, and you can unsubscribe any time with one
+                click.
+              </p>
+              <NewsletterForm />
+            </div>
+          </div>
         </div>
       </section>
 
@@ -526,5 +626,137 @@ function Home() {
         </div>
       </footer>
     </div>
+  );
+}
+
+/** Opt-in "Daily practice note" signup form. Posts to /api/newsletter/subscribe
+ * (server-side storage + confirmation JSON; no email is sent by the site).
+ * Honest opt-in only: no pre-checked boxes, no urgency, unsubscribe-anytime
+ * copy is shown next to the form. */
+type NewsletterStatus = "idle" | "submitting" | "done" | "error";
+
+const INSTRUMENTS = [
+  "Piano",
+  "Guitar",
+  "Violin",
+  "Flute",
+  "Saxophone",
+  "Voice",
+  "Other",
+] as const;
+
+function NewsletterForm() {
+  const [email, setEmail] = useState("");
+  const [instrument, setInstrument] = useState("");
+  const [status, setStatus] = useState<NewsletterStatus>("idle");
+  const [message, setMessage] = useState("");
+
+  const handleSubmit = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (status === "submitting") return;
+      const trimmed = email.trim();
+      if (!trimmed) return;
+      setStatus("submitting");
+      setMessage("");
+      try {
+        const res = await fetch("/api/newsletter/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: trimmed,
+            instrument: instrument || undefined,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+        };
+        if (res.ok && data.ok) {
+          setStatus("done");
+          setMessage("You're in — check your inbox to confirm.");
+        } else {
+          setStatus("error");
+          setMessage(data.error ?? "Something went wrong — please try again.");
+        }
+      } catch {
+        setStatus("error");
+        setMessage("Couldn't reach the server — please try again.");
+      }
+    },
+    [email, instrument, status],
+  );
+
+  if (status === "done") {
+    return (
+      <div
+        role="status"
+        className="mt-6 rounded-xl border border-amber-300 bg-white px-4 py-3 text-sm font-medium text-amber-800"
+      >
+        ✓ {message}
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-6" noValidate>
+      <div className="flex flex-col gap-3">
+        <div>
+          <label
+            htmlFor="newsletter-email"
+            className="mb-1 block text-sm font-medium text-stone-700"
+          >
+            Email
+          </label>
+          <input
+            id="newsletter-email"
+            type="email"
+            required
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+          />
+        </div>
+        <div>
+          <label
+            htmlFor="newsletter-instrument"
+            className="mb-1 block text-sm font-medium text-stone-700"
+          >
+            Instrument <span className="font-normal text-stone-400">(optional)</span>
+          </label>
+          <select
+            id="newsletter-instrument"
+            value={instrument}
+            onChange={(e) => setInstrument(e.target.value)}
+            className="w-full rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm text-stone-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+          >
+            <option value="">Select…</option>
+            {INSTRUMENTS.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="submit"
+          disabled={status === "submitting"}
+          className="rounded-full bg-amber-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {status === "submitting" ? "Signing up…" : "Sign up"}
+        </button>
+      </div>
+      {status === "error" && message ? (
+        <p role="alert" className="mt-3 text-sm text-red-700">
+          {message}
+        </p>
+      ) : null}
+      <p className="mt-4 text-xs leading-relaxed text-stone-500">
+        We'll only send the daily practice note — a short tip or piece, no spam.
+        Unsubscribe any time with one click.
+      </p>
+    </form>
   );
 }

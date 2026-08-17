@@ -22,6 +22,10 @@ import {
   handleCatalogDetail,
 } from "./src/services/catalog-handler";
 import { handleSitemap } from "./src/services/sitemap-handler";
+import {
+  handleNewsletterSubscribe,
+  handleNewsletterUnsubscribe,
+} from "./src/services/newsletter-handler";
 
 // --- Health check handler ---
 async function handleHealth(): Promise<Response> {
@@ -237,6 +241,38 @@ export default async function vercelHandler(
     if (pathname === "/sitemap.xml") {
       const webReq = toWebRequest(req);
       const webRes = await handleSitemap(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+    if (pathname === "/api/newsletter/subscribe") {
+      const webReq = toWebRequest(req);
+      const webRes = await handleNewsletterSubscribe(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+    if (pathname === "/api/newsletter/unsubscribe") {
+      const webReq = toWebRequest(req);
+      const webRes = await handleNewsletterUnsubscribe(webReq);
       res.statusCode = webRes.status;
       webRes.headers.forEach((value, key) => res.setHeader(key, value));
       if (webRes.body) {
