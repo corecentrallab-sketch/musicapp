@@ -9,19 +9,26 @@ It will:
 2. Pick the best available Android Virtual Device (preferring `Pixel_8_Pro`)
 3. Start the emulator (or attach to one already running)
 4. Wait for Android to finish booting
-5. **First run only:** build the expo-dev-client natively (2-5 minutes)
+5. **First run only:** build the native debug APK (2-5 minutes)
 6. Launch the Expo dev server and open NoteSnap on the emulator
 
-## expo-dev-client — no more Expo Go
+## Development builds — no expo-dev-client in release
 
-NoteSnap uses **`expo-dev-client`** instead of Expo Go. This eliminates:
+NoteSnap uses **Expo Go** for quick JS-only development. Because the app includes
+native modules (react-native-pdf, react-native-blob-util) that Expo Go cannot
+load, test those features with a native build instead:
 
-- ❌ Expo Go version-mismatch prompts ("2.32.19 vs 2.32.20")
-- ❌ Uninstall-reinstall loops on every launch
-- ❌ Broken Metro connections from app reinstalls
+- Quick JS-only iteration: `npx expo start` → open in **Expo Go**
+- Full native features (PDF viewer, imports, camera scanning):
+  `npx expo run:android` — builds a debug APK with React Native's built-in dev
+  support (hot reload works: press `r` in Metro). No expo-dev-client needed.
 
-The dev client is built **natively onto the emulator** — it's a real Android APK that
-stays installed permanently. Hot reloads work exactly as before: press `r` in Metro.
+> **Why was expo-dev-client removed?** The 2026-08-17 release security audit
+> found expo-dev-client's native code (dev-launcher/dev-menu) compiled into the
+> production AAB, which also pulled the `SYSTEM_ALERT_WINDOW` and `DUMP`
+> permissions into the merged manifest. A release build must not ship the dev
+> menu, so the dependency was dropped (see PR — security audit). Restore it
+> from git history if the dev-client workflow is ever wanted again.
 
 ## Prerequisites
 
@@ -36,10 +43,10 @@ The very first launch triggers a native build (`npx expo run:android`). This:
 
 - Takes **2-5 minutes** (compiling native code)
 - Creates an `android/` directory with the native project
-- Installs the NoteSnap dev client APK on the emulator
+- Installs a debug NoteSnap APK on the emulator
 
 After that, every subsequent launch is instant — the script skips the build step
-and goes straight to `npx expo start --dev-client`.
+and goes straight to `npx expo start`.
 
 If you ever clean your build output (`android/app/build/`), the script will
 automatically rebuild on the next run.
