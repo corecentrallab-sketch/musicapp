@@ -1,6 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/subscription/cancel")({
+  head: () => ({
+    meta: [
+      { title: "Cancel Subscription \u2014 NoteSnap" },
+      { name: "description", content: "Cancel your NoteSnap Pro or Family subscription in one tap \u2014 no hoops, no retention scripts, no guilt. See what you'd lose before you cancel." },
+    ],
+    links: [{ rel: "canonical", href: "https://site-notesnap.vercel.app/subscription/cancel" }],
+  }),
   component: SubscriptionCancel,
 });
 

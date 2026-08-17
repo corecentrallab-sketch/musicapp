@@ -26,6 +26,30 @@ export const Route = createFileRoute("/library")({
     });
     return { initial };
   },
+  head: () => ({
+    meta: [
+      {
+        title:
+          "Sheet Music Library — 500+ Free Public-Domain Classical Scores | NoteSnap",
+      },
+      {
+        name: "description",
+        content:
+          "Browse NoteSnap's free sheet music library: 500+ public-domain classical scores for piano and guitar, ready to play with difficulty ratings. Download free PDFs of works by Bach, Beethoven, Mozart, Debussy, Chopin and more.",
+      },
+      {
+        property: "og:title",
+        content: "Sheet Music Library — Free Public-Domain Classical Scores | NoteSnap",
+      },
+      {
+        property: "og:description",
+        content:
+          "500+ free public-domain classical scores for piano and guitar. Browse by composer, see difficulty ratings, and open any score instantly.",
+      },
+      { property: "og:url", content: "https://site-notesnap.vercel.app/library" },
+    ],
+    links: [{ rel: "canonical", href: "https://site-notesnap.vercel.app/library" }],
+  }),
   component: LibraryPage,
 });
 

@@ -1,6 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/terms")({
+  head: () => ({
+    meta: [
+      { title: "Terms of Service \u2014 NoteSnap" },
+      { name: "description", content: "NoteSnap's terms of service: free and Pro plans, auto-renewing subscriptions with one-tap cancel, affiliate disclosure for official sheet music links, and no hosting of copyrighted scores." },
+    ],
+    links: [{ rel: "canonical", href: "https://site-notesnap.vercel.app/terms" }],
+  }),
   component: Terms,
 });
 

@@ -1,6 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/subscription/success")({
+  head: () => ({
+    meta: [
+      { title: "Subscription Confirmed \u2014 NoteSnap" },
+      { name: "description", content: "Your NoteSnap subscription is active. Unlock unlimited music recognition, cloud sync, PDF import, and more. Get back to playing." },
+    ],
+    links: [{ rel: "canonical", href: "https://site-notesnap.vercel.app/subscription/success" }],
+  }),
   component: SubscriptionSuccess,
 });
 

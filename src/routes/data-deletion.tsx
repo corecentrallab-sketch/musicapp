@@ -1,6 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/data-deletion")({
+  head: () => ({
+    meta: [
+      { title: "Data Deletion \u2014 NoteSnap" },
+      { name: "description", content: "How to delete your NoteSnap data: no account required, delete recognition history, saved scores, and practice data directly from the app, or request deletion by email." },
+    ],
+    links: [{ rel: "canonical", href: "https://site-notesnap.vercel.app/data-deletion" }],
+  }),
   component: DataDeletion,
 });
 
