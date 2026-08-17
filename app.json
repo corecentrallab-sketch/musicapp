@@ -34,7 +34,7 @@
         "android.permission.CAMERA",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
-      "versionCode": 2
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -52,8 +52,8 @@
         "expo-build-properties",
         {
           "android": {
-            "targetSdkVersion": 35,
-            "compileSdkVersion": 35
+            "targetSdkVersion": 36,
+            "compileSdkVersion": 36
           }
         }
       ]
