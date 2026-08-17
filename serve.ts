@@ -19,6 +19,7 @@ import {
   handleCatalogList,
   handleCatalogDetail,
 } from "./src/services/catalog-handler";
+import { handleSitemap } from "./src/services/sitemap-handler";
 
 // Pinned, NOT read from the environment. The published preview URL
 // (<label>.<PUBLIC_SITE_DOMAIN>) is reverse-proxied to 0.0.0.0:3000 inside the
@@ -111,6 +112,9 @@ for (let attempt = 1; ; attempt++) {
         }
         if (pathname.startsWith("/api/pieces/") && req.method === "GET") {
           return handleCatalogDetail(req);
+        }
+        if (pathname === "/sitemap.xml") {
+          return handleSitemap(req);
         }
 
         // --- Static file serving ---

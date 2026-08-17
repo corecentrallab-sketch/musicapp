@@ -77,5 +77,27 @@ curl -sf -X PATCH "https://api.vercel.com/v9/projects/${PROJECT_NAME}${TEAM_QS}"
   -d '{"ssoProtection":null}' >/dev/null ||
   echo "warning: could not disable SSO protection (site may show a login wall)" >&2
 
+echo "==> registering production domain (${STABLE_URL#https://})"
+# Without a registered project domain, Vercel serves *.vercel.app hosts with
+# `x-robots-tag: noindex` (even for --prod deployments), which blocks Google
+# entirely. Registering the stable URL as a project domain flips it to a real
+# production alias. Idempotent: 409 (already exists) is fine; 400 for an
+# invalid/foreign name is fatal, everything else is a warning.
+REG_HTTP="$(curl -s -o /tmp/vercel-register-domain.out -w '%{http_code}' \
+  -X POST "https://api.vercel.com/v10/projects/${PROJECT_NAME}/domains${TEAM_QS}" \
+  -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"name\":\"${STABLE_URL#https://}\"}")"
+if [ "$REG_HTTP" = "409" ]; then
+  echo "  domain already registered"
+elif [ "$REG_HTTP" = "400" ]; then
+  echo "error: Vercel rejected the production domain: $(cat /tmp/vercel-register-domain.out)" >&2
+  exit 1
+elif [ "$REG_HTTP" != "200" ]; then
+  echo "warning: could not register production domain (HTTP $REG_HTTP): $(cat /tmp/vercel-register-domain.out)" >&2
+else
+  echo "  registered ${STABLE_URL#https://} as a project domain"
+fi
+rm -f /tmp/vercel-register-domain.out
+
 echo "LIVE: $LIVE_URL"
 echo "STABLE: $STABLE_URL"

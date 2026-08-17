@@ -98,3 +98,12 @@ passed to the live host by `bun run go-live` — so the same code works in the p
 and in production. If you connect the database _after_ going live, re-run
 `bun run go-live` so production picks up `DATABASE_URL`. One database serves both the
 preview and the live site.
+
+## SEO (2026-08-17)
+The site ships with robots.txt (public/), a live /sitemap.xml (all static pages
++ every public-domain piece URL, DB-backed), per-page SSR titles/meta
+descriptions/canonicals, JSON-LD (MusicComposition on piece pages; WebSite +
+Organization on the home page), and OG/Twitter cards with public/og-image.png.
+The production domain is registered on the Vercel project (no more
+`x-robots-tag: noindex`). Full detail + Google Search Console owner steps:
+see SEO-NOTES.md in this repo.

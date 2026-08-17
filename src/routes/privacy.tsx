@@ -1,6 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/privacy")({
+  head: () => ({
+    meta: [
+      { title: "Privacy Policy \u2014 How NoteSnap Handles Your Data" },
+      { name: "description", content: "How NoteSnap collects, uses, and protects your data: recognition history, practice data, and preferences. No selling of personal data. Delete your history any time." },
+    ],
+    links: [{ rel: "canonical", href: "https://site-notesnap.vercel.app/privacy" }],
+  }),
   component: Privacy,
 });
 

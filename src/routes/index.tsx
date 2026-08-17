@@ -17,6 +17,56 @@ const getBusinessName = createServerFn({ method: "GET" }).handler(async () => {
 
 export const Route = createFileRoute("/")({
   loader: () => getBusinessName(),
+  head: () => ({
+    meta: [
+      {
+        title:
+          "NoteSnap — Identify Music & Find Sheet Music Instantly (Shazam for Sheet Music)",
+      },
+      {
+        name: "description",
+        content:
+          "Identify music by ear with NoteSnap — the Shazam for sheet music. Find sheet music by listening to any song: free classical sheet music, piano sheet music and guitar tabs for public-domain pieces, official scores for modern hits.",
+      },
+      { property: "og:title", content: "NoteSnap — Identify Music & Find Sheet Music Instantly" },
+      {
+        property: "og:description",
+        content:
+          "Hear a song and want to play it? NoteSnap identifies the music and finds the sheet music — free piano scores and guitar tabs for classical pieces, official sheet music for modern songs.",
+      },
+      { property: "og:url", content: "https://site-notesnap.vercel.app/" },
+      {
+        "script:ld+json": {
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "Organization",
+              "@id": "https://site-notesnap.vercel.app/#organization",
+              name: "NoteSnap",
+              url: "https://site-notesnap.vercel.app/",
+              logo: "https://site-notesnap.vercel.app/og-image.png",
+            },
+            {
+              "@type": "WebSite",
+              "@id": "https://site-notesnap.vercel.app/#website",
+              url: "https://site-notesnap.vercel.app/",
+              name: "NoteSnap — Sheet Music for Musicians",
+              publisher: { "@id": "https://site-notesnap.vercel.app/#organization" },
+              potentialAction: {
+                "@type": "SearchAction",
+                target: {
+                  "@type": "EntryPoint",
+                  urlTemplate: "https://site-notesnap.vercel.app/library?q={search_term_string}",
+                },
+                "query-input": "required name=search_term_string",
+              },
+            },
+          ],
+        },
+      },
+    ],
+    links: [{ rel: "canonical", href: "https://site-notesnap.vercel.app/" }],
+  }),
   component: Home,
 });
 

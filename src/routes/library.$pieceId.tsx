@@ -14,11 +14,67 @@ import {
   fetchCatalogPiece,
   type SheetSource,
 } from "~/lib/catalog-client";
+import { SITE_URL } from "~/services/seo";
+
+const PIECE_URL = (id: string) => `${SITE_URL}/library/${encodeURIComponent(id)}`;
 
 export const Route = createFileRoute("/library/$pieceId")({
   loader: async ({ params }) => {
     const initial = await fetchCatalogPiece(params.pieceId, CATALOG_API_BASE);
     return { initial };
+  },
+  head: ({ loaderData }) => {
+    // Dynamic per-piece SEO: title + description are built from the piece data
+    // the loader fetched server-side, so they render in the initial HTML.
+    const initial = loaderData?.initial;
+    const piece = initial?.success ? initial.piece : null;
+    const pieceId = piece?.id ?? "";
+    const composer = piece?.composer?.trim() ?? "";
+    const title = piece
+      ? `${piece.title} Sheet Music — Free PDF${composer ? ` | ${composer}` : ""} | NoteSnap`
+      : "Sheet Music | NoteSnap";
+    const description = piece
+      ? `Free ${piece.title} sheet music${composer ? ` by ${composer}` : ""} — download the score as a PDF, check the difficulty rating, and practice with NoteSnap's built-in tools.`
+      : "Browse this piece's sheet music on NoteSnap — free public-domain scores with practice tools.";
+    const ogImage =
+      piece?.album_art_url && /^https?:\/\//.test(piece.album_art_url)
+        ? piece.album_art_url
+        : `${SITE_URL}/og-image.png`;
+    const canonical = pieceId ? PIECE_URL(pieceId) : `${SITE_URL}/library`;
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:url", content: canonical },
+        { property: "og:image", content: ogImage },
+        {
+          "script:ld+json": {
+            "@context": "https://schema.org",
+            "@type": "MusicComposition",
+            name: piece?.title ?? "Sheet Music",
+            ...(composer
+              ? { composer: { "@type": "Person", name: composer } }
+              : {}),
+            url: canonical,
+            ...(piece?.is_public_domain === true
+              ? { isAccessibleForFree: true, genre: "Classical" }
+              : {}),
+            ...(piece?.difficulty != null
+              ? {
+                  additionalProperty: {
+                    "@type": "PropertyValue",
+                    name: "difficulty",
+                    value: String(piece.difficulty),
+                  },
+                }
+              : {}),
+          },
+        },
+      ],
+      links: [{ rel: "canonical", href: canonical }],
+    };
   },
   component: PieceDetailPage,
 });
