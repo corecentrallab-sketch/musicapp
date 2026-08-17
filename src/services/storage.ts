@@ -232,6 +232,18 @@ export async function saveRecognition(piece: SavedPiece): Promise<void> {
   }
 }
 
+/** Remove a single saved recognition by piece id (History tab). */
+export async function removeRecognition(pieceId: string): Promise<void> {
+  const history = await getRecognitionHistory();
+  const updated = history.filter((p) => p.id !== pieceId);
+  if (updated.length !== history.length) {
+    await AsyncStorage.setItem(
+      KEYS.RECOGNITION_HISTORY,
+      JSON.stringify(updated),
+    );
+  }
+}
+
 export async function getNotificationEnabled(): Promise<boolean> {
   const value = await AsyncStorage.getItem(KEYS.NOTIFICATIONS_ENABLED);
   return value !== 'false';
