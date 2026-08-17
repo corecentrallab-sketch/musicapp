@@ -17,6 +17,10 @@ import { handleStripeWebhook } from "./src/services/webhook-handler";
 import { handleEntitlement } from "./src/services/entitlement";
 import { handleSheetServe } from "./src/services/sheet-handler";
 import { handleDailyChallenge } from "./src/services/daily-challenge-handler";
+import {
+  handleCatalogList,
+  handleCatalogDetail,
+} from "./src/services/catalog-handler";
 
 // --- Health check handler ---
 async function handleHealth(): Promise<Response> {
@@ -184,6 +188,38 @@ export default async function vercelHandler(
     if (pathname === "/api/daily-challenge") {
       const webReq = toWebRequest(req);
       const webRes = await handleDailyChallenge(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+    if (pathname === "/api/pieces") {
+      const webReq = toWebRequest(req);
+      const webRes = await handleCatalogList(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+    if (pathname.startsWith("/api/pieces/")) {
+      const webReq = toWebRequest(req);
+      const webRes = await handleCatalogDetail(webReq);
       res.statusCode = webRes.status;
       webRes.headers.forEach((value, key) => res.setHeader(key, value));
       if (webRes.body) {

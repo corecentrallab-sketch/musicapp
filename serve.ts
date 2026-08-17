@@ -15,6 +15,10 @@ import { handleStripeWebhook } from "./src/services/webhook-handler";
 import { handleEntitlement } from "./src/services/entitlement";
 import { handleSheetServe } from "./src/services/sheet-handler";
 import { handleDailyChallenge } from "./src/services/daily-challenge-handler";
+import {
+  handleCatalogList,
+  handleCatalogDetail,
+} from "./src/services/catalog-handler";
 
 // Pinned, NOT read from the environment. The published preview URL
 // (<label>.<PUBLIC_SITE_DOMAIN>) is reverse-proxied to 0.0.0.0:3000 inside the
@@ -101,6 +105,12 @@ for (let attempt = 1; ; attempt++) {
         }
         if (pathname === "/api/daily-challenge" && req.method === "GET") {
           return handleDailyChallenge(req);
+        }
+        if (pathname === "/api/pieces" && req.method === "GET") {
+          return handleCatalogList(req);
+        }
+        if (pathname.startsWith("/api/pieces/") && req.method === "GET") {
+          return handleCatalogDetail(req);
         }
 
         // --- Static file serving ---
