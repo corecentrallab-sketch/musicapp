@@ -50,6 +50,7 @@ function Home() {
             <a href="#features" className="hover:text-amber-700 transition-colors">Features</a>
             <a href="#pricing" className="hover:text-amber-700 transition-colors">Pricing</a>
             <a href="#beta" className="hover:text-amber-700 transition-colors">Beta</a>
+            <a href="/library" className="hover:text-amber-700 transition-colors">Library</a>
             <a
               href="#pricing"
               className="rounded-full bg-amber-600 px-4 py-1.5 text-white hover:bg-amber-700 transition-colors"
@@ -457,6 +458,9 @@ function Home() {
               </a>
               <a href="#pricing" className="hover:text-amber-700 transition-colors">
                 Pricing
+              </a>
+              <a href="/library" className="hover:text-amber-700 transition-colors">
+                Library
               </a>
               <a href="/privacy" className="hover:text-amber-700 transition-colors">
                 Privacy
