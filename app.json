@@ -57,8 +57,7 @@
             "useLegacyPackaging": false
           }
         }
-      ],
-      "./plugins/withAndroid16KLibs"
+      ]
     ],
     "extra": {
       "eas": {
