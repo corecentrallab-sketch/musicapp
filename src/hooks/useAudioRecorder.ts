@@ -47,8 +47,32 @@ export function useAudioRecorder() {
     setCheckingPermissions(true);
     setError(null);
 
+    // Safety watchdog: if the permission check hangs — e.g. a redundant second
+    // native dialog never resolves, or the system dialog is lost when the app
+    // is backgrounded — force `checkingPermissions` back to false so the UI can
+    // never get stuck on "Checking...". The watchdog never starts a recording;
+    // it only unsticks the button and surfaces a clear error.
+    let watchdogFired = false;
+    const watchdog = setTimeout(() => {
+      watchdogFired = true;
+      setCheckingPermissions(false);
+      setError(
+        'Could not finish checking microphone permission. Please tap again to retry.',
+      );
+    }, 8000);
+
     try {
-      // Android requires explicit runtime permission
+      // Resolve whether the microphone is permitted, using the correct
+      // authoritative path for each platform:
+      //  - Android: the platform RECORD_AUDIO runtime permission IS the mic
+      //    permission. Asking for it again via Audio.requestPermissionsAsync()
+      //    issues a redundant second platform request that can hang or never
+      //    resolve on Android/Expo 52 builds — so we skip it entirely once
+      //    PermissionsAndroid has granted the mic. expo-av records through the
+      //    same RECORD_AUDIO permission already granted here, so nothing is lost.
+      //  - iOS: Audio.requestPermissionsAsync() is the proper request path.
+      let permitted = false;
+
       if (Platform.OS === 'android') {
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
@@ -60,31 +84,37 @@ export function useAudioRecorder() {
             buttonNegative: 'Deny',
           },
         );
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          setError(
-            'Microphone access is required to recognize music. Please grant permission in your device settings.',
-          );
-          setCheckingPermissions(false);
-          return false;
-        }
+        permitted = granted === PermissionsAndroid.RESULTS.GRANTED;
+      } else {
+        const { status } = await Audio.requestPermissionsAsync();
+        permitted = status === 'granted';
       }
 
-      // iOS and Android: expo-av permission
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        setError(
-          'Microphone access is required to recognize music. Please grant permission in your device settings.',
-        );
-        setCheckingPermissions(false);
+      // If the watchdog already fired (the check ran too long / a dialog was
+      // lost), treat this as an aborted check: return false so we never start a
+      // phantom recording based on a stale grant.
+      if (watchdogFired) {
+        setError('Microphone permission check timed out. Please tap again to retry.');
         return false;
       }
 
-      setCheckingPermissions(false);
+      if (!permitted) {
+        setError(
+          'Microphone access is required to recognize music. Please grant permission in your device settings.',
+        );
+        return false;
+      }
+
       return true;
     } catch (err) {
       setError('Failed to check microphone permissions.');
-      setCheckingPermissions(false);
       return false;
+    } finally {
+      // Fail-safe: no matter which path ran (success, denial, error, timeout,
+      // or a hung promise), clear the watchdog and guarantee `checkingPermissions`
+      // resets to false.
+      clearTimeout(watchdog);
+      setCheckingPermissions(false);
     }
   }, []);
 
