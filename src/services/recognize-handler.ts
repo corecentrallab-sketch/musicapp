@@ -47,6 +47,51 @@ function checkMonthlyLimit(userId: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// QA / internal test bypass (owner-approved QA recognition testing)
+//
+// Lets a designated internal test identity read as "has an active subscription"
+// and therefore bypass the free tier's 5/month recognition cap — so QA runs
+// and owner-device testing can issue UNLIMITED recognitions WITHOUT touching or
+// changing the real free-tier quota logic (checkMonthlyLimit is untouched, and
+// real users' counts are unaffected).
+//
+// Two independent conditions must BOTH hold, so an end user can never trigger
+// this by accident:
+//   1. The client must send `x-user-id` exactly equal to the internal identity
+//      below (a value no real app install will ever produce).
+//   2. The server must run with `RECOGNITION_QA_BYPASS=1` set in its env — only
+//      present in non-production/dev/test environments. Production (Vercel)
+//      never sets it, so even if the header value were guessed, the bypass is
+//      inert in production. It also never weakens the subscription check for
+//      any other identity.
+// ---------------------------------------------------------------------------
+const QA_TEST_IDENTITY = "qa-internal-test-device-0000";
+const QA_BYPASS_ENABLED = process.env.RECOGNITION_QA_BYPASS === "1";
+
+/** True only when the request is the designated internal QA identity AND the
+ *  non-production bypass env guard is armed. */
+function isQaTestIdentity(deviceId: string | null): boolean {
+  return QA_BYPASS_ENABLED && deviceId === QA_TEST_IDENTITY;
+}
+
+// ---------------------------------------------------------------------------
+// Application-level match confidence gate.
+//
+// Library-wide validation (2026-08) showed a clear separation between GENUINE
+// matches (confidence ~0.39–1.0, median 1.0 for correct identifications) and
+// the noise floor the landmark matcher returns for audio that is NOT in the
+// catalog (confidence ~0.02–0.11 — accidental hash collisions on common
+// material). The raw matcher's internal MIN_CONFIDENCE (0.02) is far too
+// permissive, so a non-catalog query used to come back with a handful of
+// low-confidence "matches" instead of the honest empty list.
+//
+// We therefore gate at the API layer: anything below this confidence is
+// treated as "no confident match" and returned as an EMPTY matches array
+// (`success: true`, no false positive). This is a recognition-quality decision
+// and does not touch the free-tier quota logic (checkMonthlyLimit is unchanged).
+const MIN_MATCH_CONFIDENCE = 0.3; // above noise (<=0.11), below genuine (>=0.39)
+
+// ---------------------------------------------------------------------------
 // Maximum upload size: 4 MB (Vercel's function payload hard limit is 4.5MB —
 // keep margin so the platform never rejects the request with 413 before we
 // can return a friendly error).
@@ -148,7 +193,8 @@ export async function handleRecognize(req: Request): Promise<Response> {
   const deviceId = req.headers.get("x-user-id");
   const fallbackId = req.headers.get("x-forwarded-for") || "anonymous";
   if (deviceId) {
-    const isPro = await hasActiveSubscription(deviceId);
+    // Internal QA/test identity (non-production only) reads as Pro — unlimited.
+    const isPro = isQaTestIdentity(deviceId) || (await hasActiveSubscription(deviceId));
     if (!isPro && !checkMonthlyLimit(deviceId)) {
       return corsResponse(
         {
@@ -201,7 +247,11 @@ export async function handleRecognize(req: Request): Promise<Response> {
   let bestGuessComposer: string | null = null;
   try {
     const rawMatches = await matchLandmarks(landmarks);
-    matches = rawMatches.map((m) => {
+    matches = rawMatches
+      // Gate out the low-confidence noise floor so non-catalog audio returns
+      // a clean empty list (no false positives) instead of junk at <=0.11.
+      .filter((m) => m.confidence >= MIN_MATCH_CONFIDENCE)
+      .map((m) => {
       // Keep best-guess metadata for fallback when no match found
       if (!bestGuessTitle && m.title) {
         bestGuessTitle = m.title;
