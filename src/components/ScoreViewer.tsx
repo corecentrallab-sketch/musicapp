@@ -16,6 +16,8 @@ import {
   Platform,
 } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
+import { ScorePlayer } from './ScorePlayer';
+import type { ScoreAudioSource } from '../hooks/useScoreAudio';
 
 interface ScoreViewerProps {
   /** URL to the PDF or MusicXML file. */
@@ -26,6 +28,15 @@ interface ScoreViewerProps {
   composer: string;
   /** Called when the user closes the viewer. */
   onClose: () => void;
+  /**
+   * Optional score audio (public-domain ONLY) for the practice player.
+   * Accepts a remote/local uri or a bundled asset id. When omitted, the
+   * viewer shows a subtle "practice audio coming soon" hint instead of a
+   * (fake) player — never a broken or misleading control.
+   */
+  audioSource?: ScoreAudioSource | null;
+  /** Short honest descriptor for the audio (e.g. "Score audio" / "Preview"). */
+  audioLabel?: string;
 }
 
 /** Generate the HTML that wraps PDF.js for rendering. */
@@ -287,6 +298,8 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
   title,
   composer,
   onClose,
+  audioSource,
+  audioLabel,
 }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -388,6 +401,18 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
             </View>
           )}
         </View>
+
+        {/* Practice player: score audio + loop + time-stretch. Rendered only
+          when an audio source exists; otherwise a subtle hint (no fake UI). */}
+        {audioSource ? (
+          <ScorePlayer source={audioSource} label={audioLabel} />
+        ) : (
+          <View style={styles.audioHint}>
+            <Text style={styles.audioHintText}>
+              🎧 Practice audio coming soon
+            </Text>
+          </View>
+        )}
 
         {/* Bottom bar: page indicator + tap hints */}
         <View style={styles.bottomBar}>
@@ -548,6 +573,18 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#0f3460',
     paddingBottom: Platform.OS === 'ios' ? 28 : 10,
+  },
+  audioHint: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: '#16213e',
+    borderTopWidth: 1,
+    borderTopColor: '#0f3460',
+    alignItems: 'center',
+  },
+  audioHintText: {
+    color: '#6a6a85',
+    fontSize: 13,
   },
   pageNavBtn: {
     width: 48,

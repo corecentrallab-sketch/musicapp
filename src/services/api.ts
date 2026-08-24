@@ -115,6 +115,7 @@ export async function fetchDailyChallenge(): Promise<DailyChallengePiece | null>
         ? String(d.difficulty_label)
         : "Intermediate",
       sheetMusicUrl: d.sheet_music_url ? String(d.sheet_music_url) : undefined,
+      audioUrl: d.audio_url ? String(d.audio_url) : undefined,
       isPublicDomain: !!d.is_public_domain,
       sheetMusicAvailable: !!d.sheet_music_available,
       difficultyGrade:
