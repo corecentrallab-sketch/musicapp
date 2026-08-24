@@ -36,6 +36,9 @@ const ONLY = (() => {
 const DRY_RUN = process.argv.includes("--dry-run");
 const LIMIT_ARG = process.argv.indexOf("--limit");
 const LIMIT = LIMIT_ARG >= 0 ? parseInt(process.argv[LIMIT_ARG + 1], 10) || Infinity : Infinity;
+/** Max landmark hashes stored per piece (uniform temporal sample). Chosen so
+ *  113 pieces fit Neon's 512MB project limit (full density was ~650MB). */
+const CAP_PER_PIECE = 25000;
 
 const s3 = new S3Client({
   region: "auto",
@@ -192,12 +195,28 @@ async function insertPieceLandmarks(pieceId: string, lms: Landmark[]): Promise<v
   `;
 }
 
+/** Evenly sample `lms` down to at most `cap` landmarks, preserving temporal
+ *  spread across the whole piece (keeps matching robust at any offset). */
+function capLandmarks(lms: Landmark[], cap: number): Landmark[] {
+  if (lms.length <= cap) return lms;
+  const stride = lms.length / cap;
+  const out: Landmark[] = new Array(cap);
+  for (let i = 0; i < cap; i++) {
+    out[i] = lms[Math.min(lms.length - 1, Math.floor(i * stride))];
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 async function main() {
   await ensureTable();
   console.log("[1/5] Ensuring table OK");
+  // Rebuild from scratch at capped density to stay within Neon's 512MB project
+  // limit (full-density landmark sets overflowed it — SQLSTATE 53100).
+  await SQL`TRUNCATE piece_landmarks`;
+  console.log("      TRUNCATED piece_landmarks (capped re-ingest)");
 
   const pieces = (await SQL`
     SELECT DISTINCT p.id, p.title, p.composer, p.catalog
@@ -277,9 +296,13 @@ async function main() {
       failed++;
       continue;
     }
+    // Cap per-piece landmark count via uniform temporal sampling so the whole
+    // 113-piece reference fits Neon's 512MB project limit while keeping robust
+    // Shazam-style matching (a bounded landmark set still aligns densely).
+    const capped = capLandmarks(lms, CAP_PER_PIECE);
 
     if (DRY_RUN) {
-      console.log(`   [dry] ${piece.catalog || piece.title} -> ${lms.length} landmarks`);
+      console.log(`   [dry] ${piece.catalog || piece.title} -> ${capped.length} landmarks (raw ${lms.length})`);
       coveredPieces.add(piece.id);
       succeeded++;
       continue;
@@ -289,10 +312,10 @@ async function main() {
     if (existing.c > 0) {
       await SQL`DELETE FROM piece_landmarks WHERE piece_id=${piece.id}::uuid`;
     }
-    await insertPieceLandmarks(piece.id, lms);
+    await insertPieceLandmarks(piece.id, capped);
     coveredPieces.add(piece.id);
     succeeded++;
-    console.log(`   [${i + 1}/${pieces.length}] ${piece.catalog || piece.title} -> ${lms.length} landmarks (${best.src})`);
+    console.log(`   [${i + 1}/${pieces.length}] ${piece.catalog || piece.title} -> ${capped.length} landmarks (raw ${lms.length}, ${best.src})`);
   }
 
   console.log(`\n[4/5] Summary: ${succeeded} ingested, ${failed} failed, ${skipped} skipped`);
