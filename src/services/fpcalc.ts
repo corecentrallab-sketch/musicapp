@@ -16,6 +16,34 @@ const FPCMD = join(FUNCTION_DIR, "fpcalc");
  * otherwise hang fpcalc indefinitely and stall the request. */
 const FPCALC_TIMEOUT_MS = 30_000;
 
+/**
+ * Decode any supported upload to a mono Float32Array, mixing down to a single
+ * channel at the source sample rate (the landmark extractor resamples to 16 kHz).
+ * Used by the landmark recogniser (recognize-handler.ts).
+ */
+export async function decodeToMonoSamples(audioBuffer: Buffer): Promise<{
+  mono: Float32Array;
+  sampleRate: number;
+}> {
+  const decoded = await decode(audioBuffer);
+  const channels = decoded.channelData as Float32Array[] | undefined;
+  const sourceRate = decoded.sampleRate as number;
+  if (!channels || channels.length === 0 || !channels[0] || channels[0].length === 0) {
+    throw new Error("audio contains no samples");
+  }
+  if (channels.length === 1) {
+    return { mono: channels[0], sampleRate: sourceRate };
+  }
+  const n = channels[0].length;
+  const mono = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = 0;
+    for (const ch of channels) s += ch[i] ?? 0;
+    mono[i] = s / channels.length;
+  }
+  return { mono, sampleRate: sourceRate };
+}
+
 /** Run fpcalc and return its raw 32-bit integer fingerprint. */
 export async function generateFingerprint(
   audioPath: string,
