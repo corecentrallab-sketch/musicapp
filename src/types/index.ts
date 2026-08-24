@@ -185,6 +185,12 @@ export interface DailyChallengePiece {
   description?: string;
   /** Optional URL to sheet music PDF (served via the api/sheets proxy). */
   sheetMusicUrl?: string;
+  /**
+   * Optional URL to a public-domain score audio preview for the practice
+   * player (loop + time-stretch). Populated by the backend when available;
+   * null/absent means "no curated audio yet".
+   */
+  audioUrl?: string;
   /** Honest availability signals from the catalog (never invented client-side). */
   isPublicDomain?: boolean;
   sheetMusicAvailable?: boolean;

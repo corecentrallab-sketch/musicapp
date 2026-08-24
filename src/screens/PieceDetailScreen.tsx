@@ -117,12 +117,25 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
 
   // If showing the ScoreViewer
   if (showScoreViewer && piece.sheetMusicUrl) {
+    // Practice audio: use curated score audio when the backend supplies it;
+    // otherwise fall back to a bundled public-domain preview so the
+    // loop/time-stretch player is always usable for public-domain scores.
+    // The label stays honest about which one is playing.
+    const hasCuratedAudio = !!piece.audioUrl;
+    const audioBundled = require('../../assets/audio/preview-fur-elise.wav');
+    const audioSource = hasCuratedAudio
+      ? (piece.audioUrl as string)
+      : piece.isPublicDomain !== false
+      ? audioBundled
+      : null;
     return (
       <ScoreViewer
         url={piece.sheetMusicUrl}
         title={piece.title}
         composer={piece.composer}
         onClose={handleCloseScoreViewer}
+        audioSource={audioSource}
+        audioLabel={hasCuratedAudio ? 'Score audio' : 'Preview'}
       />
     );
   }
