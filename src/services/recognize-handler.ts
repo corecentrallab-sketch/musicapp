@@ -3,8 +3,9 @@
 // "./fpcalc" import to that binary first — which would crash startup by trying
 // to parse the ELF file as TypeScript. The explicit extension always targets
 // the module.
-import { fingerprintFromBuffer } from "~/services/fpcalc.ts";
-import { matchFingerprint } from "~/services/matching";
+import { decodeToMonoSamples } from "~/services/fpcalc.ts";
+import { extractLandmarks } from "~/services/landmark";
+import { matchLandmarks } from "~/services/landmark-matching";
 import { generatePurchaseUrls } from "~/services/generate-purchase-urls";
 import { hasActiveSubscription } from "~/services/entitlement";
 
@@ -169,17 +170,20 @@ export async function handleRecognize(req: Request): Promise<Response> {
     );
   }
 
-  // --- Generate fingerprint ---
-  // NOTE: fingerprintFromBuffer runs fpcalc via child_process.execFile with a
-  // 30s timeout (see fpcalc.ts) — a hang on corrupted audio is killed and
-  // surfaces as the 400 below instead of stalling the request indefinitely.
-  let fingerprint: number[];
+  // --- Generate landmark fingerprint ---
+  // The landmark fingerprinter decodes/resamples in JS and computes spectral
+  // peak-pairs — robust to compression, mic/room noise, tempo drift and
+  // different performances (unlike the old exact-Chromaprint matcher).
+  let landmarks: ReturnType<typeof extractLandmarks>;
   try {
     const audioBuffer = Buffer.from(await audioFile.arrayBuffer());
-    const result = await fingerprintFromBuffer(audioBuffer);
-    fingerprint = result.fingerprint;
+    const { mono, sampleRate } = await decodeToMonoSamples(audioBuffer);
+    landmarks = extractLandmarks(mono, sampleRate);
+    if (landmarks.length === 0) {
+      throw new Error("no landmarks — audio may be too short or silent");
+    }
   } catch (err) {
-    console.error("[recognize] fingerprint generation failed:", err);
+    console.error("[recognize] landmark fingerprint generation failed:", err);
     return corsResponse(
       {
         success: false,
@@ -196,7 +200,7 @@ export async function handleRecognize(req: Request): Promise<Response> {
   let bestGuessTitle: string | null = null;
   let bestGuessComposer: string | null = null;
   try {
-    const rawMatches = await matchFingerprint(fingerprint);
+    const rawMatches = await matchLandmarks(landmarks);
     matches = rawMatches.map((m) => {
       // Keep best-guess metadata for fallback when no match found
       if (!bestGuessTitle && m.title) {
