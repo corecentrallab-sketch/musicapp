@@ -7,9 +7,65 @@
  */
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
 import { Platform, PermissionsAndroid, Alert, Linking } from 'react-native';
 
 export type RecordingPhase = 'idle' | 'recording' | 'processing' | 'done';
+
+/**
+ * Explicit recording options for NoteSnap recognition.
+ *
+ * We intentionally do NOT rely on the bundled HIGH_QUALITY preset here: we
+ * spell out the exact per-platform codec so it is immune to any preset drift in
+ * expo-av, and so the produced file is always an AAC (.m4a) on both platforms —
+ * which is exactly what the backend's @audio/decode-aac pipeline expects. The
+ * backend sniffs content bytes, but a correct extension/MIME keeps the upload
+ * label honest too.
+ *
+ * Android: .m4a / MPEG-4 container / AAC encoder, 44.1kHz, stereo, 128kbps.
+ * iOS:    .m4a / MPEG4AAC, high audio quality, 44.1kHz, stereo, 128kbps.
+ */
+const RECORDING_OPTIONS: Audio.RecordingOptions = {
+  isMeteringEnabled: true,
+  android: {
+    extension: '.m4a',
+    outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+    audioEncoder: Audio.AndroidAudioEncoder.AAC,
+    sampleRate: 44100,
+    numberOfChannels: 2,
+    bitRate: 128000,
+  },
+  ios: {
+    extension: '.m4a',
+    outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+    audioQuality: Audio.IOSAudioQuality.HIGH,
+    sampleRate: 44100,
+    numberOfChannels: 2,
+    bitRate: 128000,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: {
+    mimeType: 'audio/mp4',
+    bitsPerSecond: 128000,
+  },
+};
+
+/**
+ * True only if the file at `uri` currently exists on disk and is non-empty.
+ * A missing/0-byte file means the microphone delivered no audio (e.g. the
+ * recorder was stopped before any data was flushed) — such a clip would only
+ * fail downstream, so we reject it here instead of silently continuing.
+ */
+async function hasNonEmptyFile(uri: string): Promise<boolean> {
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    return !!info && info.exists && info.size > 0;
+  } catch {
+    return false;
+  }
+}
 
 export interface AudioRecorderState {
   /** Current lifecycle phase for the recording/recognition UI. */
@@ -149,9 +205,7 @@ export function useAudioRecorder() {
       });
 
       const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
-      );
+      await recording.prepareToRecordAsync(RECORDING_OPTIONS);
       await recording.startAsync();
       recordingRef.current = recording;
       setIsRecording(true);
@@ -164,37 +218,67 @@ export function useAudioRecorder() {
   }, [requestPermission]);
 
   /**
-   * Stop recording and return the audio file URI.
-   * Returns null if no recording was in progress or on failure.
+   * Stop recording and return the finalised audio file URI.
+   *
+   * Never silently succeeds with a dead end: if no clip could be produced (no
+   * recording in progress, the recorder never finalised, or the file is empty)
+   * it returns `null` AND sets a human-readable `error`. The caller is expected
+   * to surface that error to the user — it must NOT silently reset to idle.
    */
   const stopRecording = useCallback(async (): Promise<string | null> => {
-    try {
-      if (!recordingRef.current) {
-        setIsRecording(false);
-        setPhase('idle');
-        return null;
-      }
-
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      recordingRef.current = null;
+    const recording = recordingRef.current;
+    if (!recording) {
       setIsRecording(false);
-      setPhase('processing');
+      setPhase('idle');
+      setError('No recording in progress. Please try again.');
+      return null;
+    }
 
-      // Reset audio mode after recording
+    // Capture the URI BEFORE tearing the recorder down. The prepared file path
+    // is already known the moment prepareToRecordAsync() succeeded, and reading
+    // it after stopAndUnloadAsync() can return null on some Android/expo-av
+    // builds — which is exactly the silent "loop back to Tap to identify" the
+    // user was hitting. Snapshotting it first removes that whole class of bug.
+    const uri = recording.getURI();
+
+    // Stop + unload, but treat a thrown stop error as a signal to discard the
+    // clip (e.g. Android E_AUDIO_NODATA when nothing was recorded) rather than
+    // letting it abort silently. We still verify the file on disk below, so a
+    // throw that left a valid file can still be salvaged.
+    try {
+      await recording.stopAndUnloadAsync();
+    } catch {
+      // Swallowed — the on-disk existence/size check below is authoritative.
+    }
+    recordingRef.current = null;
+    setIsRecording(false);
+
+    // Always release the audio session back to normal playback mode.
+    try {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
       });
+    } catch {
+      // Non-fatal — recording is already finalised.
+    }
 
-      return uri;
-    } catch (err) {
-      setIsRecording(false);
+    if (!uri) {
       setPhase('idle');
-      recordingRef.current = null;
-      setError('Failed to stop recording.');
+      setError('Recording failed to save. Please try again.');
       return null;
     }
+
+    // The file must actually exist and contain audio. A null/0-byte clip is a
+    // real failure (mic captured nothing), not a successful stop.
+    if (!(await hasNonEmptyFile(uri))) {
+      setPhase('idle');
+      setError('Recording was empty. Please move closer to the music and try again.');
+      return null;
+    }
+
+    setPhase('processing');
+    return uri;
   }, []);
 
   return {
