@@ -24,6 +24,43 @@ export function getApiBaseUrl(): string {
   return BASE_URL;
 }
 
+/** Map a file extension to a sensible MIME type for the recognition upload. */
+const MIME_BY_EXT: Record<string, string> = {
+  m4a: 'audio/mp4',
+  mp4: 'audio/mp4',
+  aac: 'audio/aac',
+  caf: 'audio/x-caf',
+  wav: 'audio/wav',
+  webm: 'audio/webm',
+  ogg: 'audio/ogg',
+  '3gp': 'audio/3gpp',
+};
+
+/** Lower-case extension (no dot, no query string) of a local file URI. */
+function extensionOf(uri: string): string {
+  const tail = (uri.split('/').pop() ?? uri).split('?')[0];
+  const m = /\.([a-zA-Z0-9]+)$/.exec(tail);
+  return m ? m[1].toLowerCase() : '';
+}
+
+/**
+ * Build the multipart file part for a recorded clip using the REAL extension
+ * and a matching MIME type taken from the file, rather than a hardcoded label.
+ * The recorder always produces a .m4a AAC clip today, but deriving it from the
+ * actual URI keeps the label honest if that ever changes — and the backend
+ * additionally sniffs the bytes, so the label is informational, not trusted.
+ */
+function buildAudioFilePart(
+  audioUri: string,
+): { uri: string; name: string; type: string } {
+  const ext = extensionOf(audioUri);
+  const tail = (audioUri.split('/').pop() ?? 'recording').split('?')[0];
+  // Preserve the real filename if present; otherwise fall back to recording.<ext>.
+  const name = /\./.test(tail) && tail.length > 0 ? tail : `recording.${ext || 'm4a'}`;
+  const type = MIME_BY_EXT[ext] ?? 'audio/mp4';
+  return { uri: audioUri, name, type };
+}
+
 /**
  * Upload an audio recording for recognition.
  * Sends the anonymous device id as x-user-id so the server can apply
@@ -32,11 +69,8 @@ export function getApiBaseUrl(): string {
   audioUri: string,
 ): Promise<RecognitionResponse> {
   const formData = new FormData();
-  formData.append("audio", {
-    uri: audioUri,
-    name: "recording.m4a",
-    type: "audio/mp4",
-  } as unknown as Blob);
+  const filePart = buildAudioFilePart(audioUri);
+  formData.append("audio", filePart as unknown as Blob);
 
   const deviceId = await getDeviceId();
 

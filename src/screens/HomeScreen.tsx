@@ -263,7 +263,21 @@ export const HomeScreen: React.FC = () => {
     }
 
     const uri = await recorder.stopRecording();
-    if (!uri) return;
+    if (!uri) {
+      // NEVER silently drop the user back to idle. A dead recording (null URI,
+      // failed finalize, or an empty/0-byte clip) must surface an explicit
+      // error state so the flow can't loop "Listening → Tap to identify".
+      // Clear the hook's inline permission-style error too, so we don't ALSO
+      // render the "Open Settings" block under the recording card for what is
+      // a recording failure, not a permission denial.
+      recorder.clearError();
+      setRecognitionPhase({
+        type: 'error',
+        message: 'Recording failed — please try again.',
+      });
+      setShowRecognitionResults(true);
+      return;
+    }
 
     // Show loading phase
     setRecognitionPhase({ type: 'loading' });
