@@ -39,7 +39,9 @@ const MIN_ALIGN_VOTES = 20;
 // Fraction of the query's landmarks that must agree at one offset.
 const MIN_CONFIDENCE = 0.02;
 /** Cap on how many query hashes we push into a single SQL IN (bounded wire). */
-const MAX_HASHES_PER_QUERY = 40000;
+const MAX_HASHES_PER_QUERY = 4000;
+/** Bounded landmark rows per Neon response page (keeps each page small). */
+const PAGE_ROWS = 20000;
 
 interface DbRow {
   piece_id: string;
@@ -56,6 +58,48 @@ interface DbRow {
   is_public_domain: boolean | null;
   segment_start_s: number;
   segment_end_s: number;
+}
+
+/**
+ * Fetch ALL piece_landmarks rows whose hash is in `hashes`, in bounded pages so
+ * no single Neon response exceeds Neon's 64 MB cap (fixes HTTP 507 on large or
+ * common pieces where the single `WHERE l.hash = ANY(<all>)` response ballooned).
+ * Mirrors the old single-query WHERE/SELECT exactly — identical row set — so the
+ * matcher semantics below are unchanged; only the DB read is paginated
+ * (LIMIT + keyset cursor over (hash, piece_id, tc), hashes in bounded IN-list
+ * batches).
+ */
+async function fetchLandmarks(hashes: number[]): Promise<DbRow[]> {
+  const out: DbRow[] = [];
+  for (let i = 0; i < hashes.length; i += MAX_HASHES_PER_QUERY) {
+    const batch = hashes.slice(i, i + MAX_HASHES_PER_QUERY);
+    // Keyset cursor over (hash, piece_id, tc); loop until a short page.
+    let cursor: [number, string, number] | null = null;
+    for (;;) {
+      const rows = (await sql()`
+        SELECT
+          l.piece_id, l.hash, l.tc,
+          p.title, p.composer, p.catalog, p.genre, p.difficulty,
+          p.album_art_url, p.sheet_music_url, p.tab_url, p.is_public_domain,
+          0 AS segment_start_s, 0 AS segment_end_s
+        FROM piece_landmarks l
+        JOIN pieces p ON p.id = l.piece_id
+        WHERE l.hash = ANY(${batch}::int[])
+          ${
+            cursor
+              ? sql()`AND (l.hash, l.piece_id, l.tc) > (${cursor[0]}::int, ${cursor[1]}::uuid, ${cursor[2]}::int)`
+              : sql()``
+          }
+        ORDER BY l.hash, l.piece_id, l.tc
+        LIMIT ${PAGE_ROWS}
+      `) as unknown as DbRow[];
+      for (const r of rows) out.push(r);
+      if (rows.length < PAGE_ROWS) break;
+      const last = rows[rows.length - 1];
+      cursor = [last.hash, last.piece_id, last.tc];
+    }
+  }
+  return out;
 }
 
 /**
@@ -77,39 +121,28 @@ export async function matchLandmarks(
   const queryHashSet = Array.from(queryByHash.keys());
   const queryLandmarkCount = queryLandmarks.length;
 
-  // Pull candidate DB rows in bounded batches.
-  const rowCount = queryHashSet.length;
+  // Pull candidate DB rows in bounded pages (hash IN-list batches + keyset
+  // cursor over (hash, piece_id, tc)) so no single Neon response is large
+  // enough to trip the 64MB cap (fixes HTTP 507 on large/common pieces).
   const piecesById = new Map<string, number[]>(); // piece -> deltas (cs)
-  let pieceMeta: Record<string, Omit<DbRow, "piece_id" | "hash" | "tc">> = {};
+  const pieceMeta: Record<string, Omit<DbRow, "piece_id" | "hash" | "tc">> = {};
 
-  for (let i = 0; i < rowCount; i += MAX_HASHES_PER_QUERY) {
-    const batch = queryHashSet.slice(i, i + MAX_HASHES_PER_QUERY);
-    const rows = (await sql()`
-      SELECT
-        l.piece_id, l.hash, l.tc,
-        p.title, p.composer, p.catalog, p.genre, p.difficulty,
-        p.album_art_url, p.sheet_music_url, p.tab_url, p.is_public_domain,
-        0 AS segment_start_s, 0 AS segment_end_s
-      FROM piece_landmarks l
-      JOIN pieces p ON p.id = l.piece_id
-      WHERE l.hash = ANY(${batch}::int[])
-    `) as unknown as DbRow[];
+  const rows = await fetchLandmarks(queryHashSet);
 
-    for (const row of rows) {
-      pieceMeta[row.piece_id] = {
-        title: row.title, composer: row.composer, catalog: row.catalog,
-        genre: row.genre, difficulty: row.difficulty,
-        album_art_url: row.album_art_url, sheet_music_url: row.sheet_music_url,
-        tab_url: row.tab_url, is_public_domain: row.is_public_domain,
-        segment_start_s: row.segment_start_s, segment_end_s: row.segment_end_s,
-      };
-      const qTimes = queryByHash.get(row.hash);
-      if (!qTimes) continue;
-      let deltas = piecesById.get(row.piece_id);
-      if (!deltas) { deltas = []; piecesById.set(row.piece_id, deltas); }
-      for (const qt of qTimes) {
-        deltas.push(qt - row.tc);
-      }
+  for (const row of rows) {
+    pieceMeta[row.piece_id] = {
+      title: row.title, composer: row.composer, catalog: row.catalog,
+      genre: row.genre, difficulty: row.difficulty,
+      album_art_url: row.album_art_url, sheet_music_url: row.sheet_music_url,
+      tab_url: row.tab_url, is_public_domain: row.is_public_domain,
+      segment_start_s: row.segment_start_s, segment_end_s: row.segment_end_s,
+    };
+    const qTimes = queryByHash.get(row.hash);
+    if (!qTimes) continue;
+    let deltas = piecesById.get(row.piece_id);
+    if (!deltas) { deltas = []; piecesById.set(row.piece_id, deltas); }
+    for (const qt of qTimes) {
+      deltas.push(qt - row.tc);
     }
   }
 
