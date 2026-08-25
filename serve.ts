@@ -14,6 +14,7 @@ import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
 import { handleStripeWebhook } from "./src/services/webhook-handler";
 import { handleEntitlement } from "./src/services/entitlement";
 import { handleSheetServe } from "./src/services/sheet-handler";
+import { handleAudioServe } from "./src/services/audio-handler";
 import { handleDailyChallenge } from "./src/services/daily-challenge-handler";
 import {
   handleCatalogList,
@@ -107,6 +108,9 @@ for (let attempt = 1; ; attempt++) {
         }
         if (pathname.startsWith("/api/sheets/") && req.method === "GET") {
           return handleSheetServe(req);
+        }
+        if (pathname.startsWith("/api/audio/") && req.method === "GET") {
+          return handleAudioServe(req);
         }
         if (pathname === "/api/daily-challenge" && req.method === "GET") {
           return handleDailyChallenge(req);
