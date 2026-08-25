@@ -41,6 +41,14 @@ tar -xzf "$BIN_DIR/fpcalc.tgz" -C "$BIN_DIR"
 cp "$BIN_DIR/chromaprint-fpcalc-1.6.1-linux-x86_64/fpcalc" .vercel/output/functions/render.func/fpcalc
 chmod 755 .vercel/output/functions/render.func/fpcalc
 
+# Ship @audio/decode-aac's FAAD2 WASM module beside the bundled entry so the
+# runtime `createRequire(import.meta.url)('./src/aac.wasm.cjs')` dynamic import
+# (used to decode the app's real .m4a/AAC uploads) resolves at runtime. Without
+# this, the bundled index.mjs fails with "Cannot find module './src/aac.wasm.cjs'"
+# on every m4a upload, even though pure-JS WAV decodes fine locally.
+mkdir -p .vercel/output/functions/render.func/src
+cp node_modules/@audio/decode-aac/src/aac.wasm.cjs .vercel/output/functions/render.func/src/aac.wasm.cjs
+
 cat > .vercel/output/functions/render.func/.vc-config.json <<'JSON'
 { "runtime": "nodejs22.x", "handler": "index.mjs", "launcherType": "Nodejs", "supportsResponseStreaming": true }
 JSON
