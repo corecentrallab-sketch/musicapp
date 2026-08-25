@@ -54,6 +54,7 @@ interface CatalogPiece {
   difficulty: number | null;
   is_public_domain: boolean | null;
   sheet_music_url: string | null;
+  audio_url: string | null;
 }
 
 function corsJson(body: Record<string, unknown>, status = 200): Response {
@@ -77,7 +78,7 @@ export async function handleDailyChallenge(req: Request): Promise<Response> {
   try {
     pool = (await sql()`
       SELECT p.id, p.title, p.composer, p.catalog, p.genre, p.difficulty,
-             p.is_public_domain, p.sheet_music_url
+             p.is_public_domain, p.sheet_music_url, p.audio_url
       FROM pieces p
       WHERE EXISTS (SELECT 1 FROM fingerprints f WHERE f.piece_id = p.id)
         AND p.sheet_music_url IS NOT NULL AND p.sheet_music_url <> ''
@@ -94,7 +95,7 @@ export async function handleDailyChallenge(req: Request): Promise<Response> {
     try {
       pool = (await sql()`
         SELECT p.id, p.title, p.composer, p.catalog, p.genre, p.difficulty,
-               p.is_public_domain, p.sheet_music_url
+               p.is_public_domain, p.sheet_music_url, p.audio_url
         FROM pieces p
         WHERE EXISTS (SELECT 1 FROM fingerprints f WHERE f.piece_id = p.id)
         ORDER BY p.title, p.id
@@ -111,6 +112,7 @@ export async function handleDailyChallenge(req: Request): Promise<Response> {
 
   const pick = pool[djb2(date) % pool.length];
   const sheetAvailable = !!pick.sheet_music_url && pick.sheet_music_url !== "";
+  const audioAvailable = !!pick.audio_url && pick.audio_url !== "";
 
   return corsJson({
     date,
@@ -124,5 +126,9 @@ export async function handleDailyChallenge(req: Request): Promise<Response> {
     is_public_domain: !!pick.is_public_domain,
     sheet_music_available: sheetAvailable,
     sheet_music_url: sheetAvailable ? pick.sheet_music_url : null,
+    // Curated practice audio (real score render). Absent when the piece has no
+    // curated audio — the client degrades gracefully to its preview/coming-soon.
+    audio_available: audioAvailable,
+    audio_url: audioAvailable ? pick.audio_url : null,
   });
 }

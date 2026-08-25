@@ -16,6 +16,7 @@ import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
 import { handleStripeWebhook } from "./src/services/webhook-handler";
 import { handleEntitlement } from "./src/services/entitlement";
 import { handleSheetServe } from "./src/services/sheet-handler";
+import { handleAudioServe } from "./src/services/audio-handler";
 import { handleDailyChallenge } from "./src/services/daily-challenge-handler";
 import {
   handleCatalogList,
@@ -177,6 +178,22 @@ export default async function vercelHandler(
     if (pathname.startsWith("/api/sheets/") && req.method === "GET") {
       const webReq = toWebRequest(req);
       const webRes = await handleSheetServe(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+    if (pathname.startsWith("/api/audio/") && req.method === "GET") {
+      const webReq = toWebRequest(req);
+      const webRes = await handleAudioServe(webReq);
       res.statusCode = webRes.status;
       webRes.headers.forEach((value, key) => res.setHeader(key, value));
       if (webRes.body) {
