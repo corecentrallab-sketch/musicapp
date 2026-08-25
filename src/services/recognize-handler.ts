@@ -10,7 +10,7 @@ import { generatePurchaseUrls } from "~/services/generate-purchase-urls";
 import { hasActiveSubscription } from "~/services/entitlement";
 
 // ---------------------------------------------------------------------------
-// Rate limiting (simple in-memory counter for free tier — 5 per month)
+// Rate limiting (simple in-memory counter for free tier — default 5 per month)
 //
 // ** IMPORTANT — post-launch hardening needed **
 // This implementation resets on every server restart. In-memory Maps do not
@@ -20,9 +20,21 @@ import { hasActiveSubscription } from "~/services/entitlement";
 // with an index ready for rate-limit queries. Recommended approach:
 //   1. On each recognition, INSERT into recognition_history
 //   2. COUNT rows for user_identifier WHERE created_at > NOW() - INTERVAL '30 days'
-//   3. If count >= 5, reject with 429
+//   3. If count >= FREE_MONTHLY_LIMIT, reject with 429
 //   4. Consider adding a `tier` column to users for Pro unlimited bypass
 // ---------------------------------------------------------------------------
+//
+// Free-tier monthly cap. The code default is 5 (real-user quota semantics).
+// The cap can be overridden via the FREE_RECOGNITIONS_PER_MONTH env var — used
+// to raise the cap for the pre-launch on-device QA testing window. **This env
+// override is a temporary test knob: revert/unset it (or lower it back to 5)
+// before public launch so real users keep the real 5/month default.**
+// NaN guard: if the env value doesn't parse to a finite number, fall back to 5.
+// ---------------------------------------------------------------------------
+const FREE_MONTHLY_LIMIT = Number.isFinite(Number(process.env.FREE_RECOGNITIONS_PER_MONTH))
+  ? Number(process.env.FREE_RECOGNITIONS_PER_MONTH)
+  : 5;
+
 const monthlyLimits = new Map<string, { count: number; resetAt: number }>();
 
 function checkMonthlyLimit(userId: string): boolean {
@@ -38,7 +50,7 @@ function checkMonthlyLimit(userId: string): boolean {
     return true;
   }
 
-  if (entry.count >= 5) {
+  if (entry.count >= FREE_MONTHLY_LIMIT) {
     return false;
   }
 
@@ -200,7 +212,7 @@ export async function handleRecognize(req: Request): Promise<Response> {
         {
           success: false,
           error:
-            "Monthly recognition limit reached (5/month). Upgrade to Pro for unlimited.",
+            `Monthly recognition limit reached (${FREE_MONTHLY_LIMIT}/month). Upgrade to Pro for unlimited.`,
         },
         { status: 429 },
       );
@@ -210,7 +222,7 @@ export async function handleRecognize(req: Request): Promise<Response> {
       {
         success: false,
         error:
-          "Monthly recognition limit reached (5/month). Upgrade to Pro for unlimited.",
+          `Monthly recognition limit reached (${FREE_MONTHLY_LIMIT}/month). Upgrade to Pro for unlimited.`,
       },
       { status: 429 },
     );
