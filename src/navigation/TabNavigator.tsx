@@ -3,6 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { HomeScreen } from '../screens/HomeScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
@@ -33,6 +34,11 @@ const LibraryHeaderButton: React.FC = () => {
 };
 
 export const TabNavigator: React.FC = () => {
+  // Android 16 edge-to-edge (targetSdk 36) draws the tab bar under the system
+  // gesture/navigation bar. Add the safe-area bottom inset so the tab icons and
+  // labels sit above the gesture bar and stay tappable. (SafeAreaProvider is
+  // already mounted in App.tsx.)
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={{
@@ -43,9 +49,9 @@ export const TabNavigator: React.FC = () => {
           backgroundColor: '#16213e',
           borderTopColor: '#0f3460',
           borderTopWidth: 1,
-          paddingBottom: 6,
+          paddingBottom: 6 + insets.bottom,
           paddingTop: 6,
-          height: 60,
+          height: 60 + insets.bottom,
         },
         tabBarActiveTintColor: '#e94560',
         tabBarInactiveTintColor: '#a0a0b8',
