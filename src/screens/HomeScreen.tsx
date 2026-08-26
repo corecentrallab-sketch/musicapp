@@ -18,6 +18,8 @@ import {
   RefreshControl,
   Animated,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { BadgeToast } from '../components/BadgeToast';
 import {
   RecognitionResultView,
@@ -26,7 +28,10 @@ import {
 import { ScoreViewer } from '../components/ScoreViewer';
 import { PieceDetailScreen } from './PieceDetailScreen';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
-import { recognizeAudio } from '../services/api';
+import {
+  recognizeAudio,
+  isRecognitionLimitError,
+} from '../services/api';
 import {
   getStreakData,
   recordPractice,
@@ -47,6 +52,7 @@ import type {
   Badge,
   RecognitionMatch,
   RecognitionResponse,
+  RootTabParamList,
 } from '../types';
 
 /** Auto-stop recording after this many ms. Kept comfortably long so the recogniser
@@ -55,6 +61,11 @@ import type {
 const RECORDING_TIMEOUT_MS = 12000;
 
 export const HomeScreen: React.FC = () => {
+  // Tab-navigation handle (used to jump to Settings → Pro upgrade from the
+  // quota-exhausted modal).
+  const navigation =
+    useNavigation<BottomTabNavigationProp<RootTabParamList>>();
+
   // ── Core data state ──
   const [streak, setStreak] = useState<StreakData>({
     currentStreak: 0,
@@ -333,10 +344,16 @@ export const HomeScreen: React.FC = () => {
         });
       }
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Something went wrong.';
       recorder.completeRecording();
-      setRecognitionPhase({ type: 'error', message });
+      if (isRecognitionLimitError(err)) {
+        // Free-tier monthly quota exhausted (backend 429). Show the explicit,
+        // honest "limit reached" modal — never a misleading "No Match Found".
+        setRecognitionPhase({ type: 'limit', message: err.message });
+      } else {
+        const message =
+          err instanceof Error ? err.message : 'Something went wrong.';
+        setRecognitionPhase({ type: 'error', message });
+      }
     }
   }, [recorder]);
 
@@ -361,6 +378,15 @@ export const HomeScreen: React.FC = () => {
     // Auto-start listening again
     setTimeout(() => handleStartListening(), 300);
   }, [handleStartListening]);
+
+  // ── Upgrade to Pro (from the quota-exhausted modal) ──
+  // Close the modal and open the Settings tab, where the transparent upgrade
+  // flow (Stripe checkout + entitlement polling) already lives.
+  const handleUpgradePro = useCallback(() => {
+    setShowRecognitionResults(false);
+    setRecognitionPhase(null);
+    navigation.navigate('Settings');
+  }, [navigation]);
 
   // ── Daily challenge tap: record practice (streak framing), then open the
   // piece's sheet music in the in-app viewer when available; otherwise show
@@ -468,6 +494,7 @@ export const HomeScreen: React.FC = () => {
         phase={recognitionPhase}
         onClose={handleCloseRecognition}
         onRetry={handleRetryRecognition}
+        onUpgrade={handleUpgradePro}
       />
 
       <ScrollView
