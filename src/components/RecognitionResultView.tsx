@@ -85,7 +85,11 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   if (showDetail && selectedMatch && phase.type === 'success') {
     const piece = matchToDailyChallenge(selectedMatch);
     return (
-      <Modal visible={true} animationType="slide">
+      <Modal
+        visible={true}
+        animationType="slide"
+        onRequestClose={() => setShowDetail(false)}
+      >
         <PieceDetailScreen piece={piece} onBack={() => setShowDetail(false)} />
       </Modal>
     );
@@ -109,7 +113,12 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   // ── Loading Phase ──
   if (phase.type === 'loading') {
     return (
-      <Modal visible={true} transparent animationType="fade">
+      <Modal
+        visible={true}
+        transparent
+        animationType="fade"
+        onRequestClose={onClose}
+      >
         <View style={styles.overlay}>
           <View style={styles.card}>
             <ActivityIndicator size="large" color="#e94560" />
@@ -117,6 +126,12 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
             <Text style={styles.loadingSubtext}>
               Analyzing audio fingerprint
             </Text>
+            {/* Cancel affordance so a stalled/hanging request can never trap
+                the user on a full-screen spinner. Hardware back also closes
+                via onRequestClose above. */}
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -126,7 +141,12 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   // ── Error Phase ──
   if (phase.type === 'error') {
     return (
-      <Modal visible={true} transparent animationType="fade">
+      <Modal
+        visible={true}
+        transparent
+        animationType="fade"
+        onRequestClose={onClose}
+      >
         <View style={styles.overlay}>
           <View style={styles.card}>
             <Text style={styles.errorEmoji}>⚠️</Text>
@@ -149,7 +169,12 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   // ── No-Match Phase ──
   if (phase.type === 'no-match') {
     return (
-      <Modal visible={true} transparent animationType="fade">
+      <Modal
+        visible={true}
+        transparent
+        animationType="fade"
+        onRequestClose={onClose}
+      >
         <View style={styles.overlay}>
           <View style={styles.card}>
             <Text style={styles.noMatchEmoji}>🔍</Text>
@@ -185,7 +210,12 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
       phase.response.purchase_url?.musicnotes);
 
   return (
-    <Modal visible={true} transparent animationType="fade">
+    <Modal
+      visible={true}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
       <View style={styles.overlay}>
         <ScrollView
           style={styles.scrollContainer}
@@ -334,6 +364,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#a0a0b8',
     marginTop: 6,
+  },
+  cancelBtn: {
+    marginTop: 20,
+    backgroundColor: '#1a1a2e',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
+  cancelBtnText: {
+    color: '#a0a0b8',
+    fontSize: 15,
+    fontWeight: '600',
   },
 
   // Error / No-match
