@@ -36,8 +36,22 @@ const MERGE_NEIGHBORS = 1; // also count adjacent bins (tempo tolerance)
 // Hard floor on aligning votes before a piece is even considered (kills the
 // long tail of accidental 1-2 hash collisions from unrelated audio).
 const MIN_ALIGN_VOTES = 20;
-// Fraction of the query's landmarks that must agree at one offset.
+// Rejection floor on the total ID-weighted "match surface" of the query (the
+// sum of weights over ALL distinct query hashes found anywhere in the DB).
+// A query whose landmark hashes barely exist in the catalog at all is not a
+// confident signal — no matter how nicely a handful happen to align — so we
+// refuse to emit any confident match for it. Prevents tiny-denominator
+// confidence inflation on alien/low-signal audio (e.g. noise whose few stray
+// hashes collide into one offset).
+const MIN_MATCH_WEIGHT = 15;
+// Fraction of the query's matched surface that must agree at one offset.
 const MIN_CONFIDENCE = 0.02;
+// IDF damping: common hashes (present in many pieces — the "hub" problem that
+// makes e.g. Träumerei beat Für Elise on degraded audio) are down-weighted as
+// 1/sqrt(df). A hash unique to one piece contributes 1.0; one shared by 20
+// pieces contributes ~0.22. This collapses cross-piece collisions while
+// preserving the piece's own distinctive evidence.
+const IDF_POWER = 0.5;
 /** Cap on how many query hashes we push into a single SQL IN (bounded wire). */
 const MAX_HASHES_PER_QUERY = 4000;
 /** Bounded landmark rows per Neon response page (keeps each page small). */
@@ -119,16 +133,46 @@ export async function matchLandmarks(
     if (arr.length < 64) arr.push(lm.timeCs); // bound per-hash times
   }
   const queryHashSet = Array.from(queryByHash.keys());
-  const queryLandmarkCount = queryLandmarks.length;
 
   // Pull candidate DB rows in bounded pages (hash IN-list batches + keyset
   // cursor over (hash, piece_id, tc)) so no single Neon response is large
   // enough to trip the 64MB cap (fixes HTTP 507 on large/common pieces).
-  const piecesById = new Map<string, number[]>(); // piece -> deltas (cs)
+  const piecesById = new Map<string, { d: number; w: number }[]>(); // piece -> aligned (delta, weight)
   const pieceMeta: Record<string, Omit<DbRow, "piece_id" | "hash" | "tc">> = {};
 
   const rows = await fetchLandmarks(queryHashSet);
 
+  // ---- Inverse-document-frequency (IDF) weighting ---------------------------
+  // df[hash] = number of DISTINCT pieces whose DB rows contain that hash.
+  // Computed directly from the rows we already fetched (no extra query). A hash
+  // that appears in many pieces is common/weak evidence for any one of them; we
+  // weight it 1/sqrt(df) so hub pieces stop winning low-signal races on shared
+  // hashes alone (the Träumerei > Für Elise confident-wrong on device audio).
+  const dfByHash = new Map<number, number>();
+  {
+    const pieceCount = new Map<number, Set<string>>();
+    for (const r of rows) {
+      let s = pieceCount.get(r.hash);
+      if (!s) { s = new Set(); pieceCount.set(r.hash, s); }
+      s.add(r.piece_id);
+    }
+    for (const [h, ids] of pieceCount) dfByHash.set(h, ids.size);
+  }
+  const weightOf = (h: number): number => 1 / Math.pow(Math.max(1, dfByHash.get(h) ?? 1), IDF_POWER);
+
+  // Total ID-weighted "match surface" of the query: sum of weights over ALL
+  // distinct query hashes that exist in the DB (each counted once). This is the
+  // denominator for confidence. It is the matched SURFACE, not every emitted
+  // landmark, so a noisy/reverby clip with lots of spurious peaks no longer
+  // tanks the confidence of a genuine match — and a wrong piece's shared-hash
+  // evidence is simultaneously down-weighted by IDF.
+  let matchWeightTotal = 0;
+  for (const h of queryHashSet) {
+    const d = dfByHash.get(h);
+    if (d) matchWeightTotal += weightOf(h);
+  }
+
+  // Align DB rows to query by (hash -> time delta), grouped per piece.
   for (const row of rows) {
     pieceMeta[row.piece_id] = {
       title: row.title, composer: row.composer, catalog: row.catalog,
@@ -141,19 +185,26 @@ export async function matchLandmarks(
     if (!qTimes) continue;
     let deltas = piecesById.get(row.piece_id);
     if (!deltas) { deltas = []; piecesById.set(row.piece_id, deltas); }
+    const w = weightOf(row.hash);
     for (const qt of qTimes) {
-      deltas.push(qt - row.tc);
+      deltas.push({ d: qt - row.tc, w });
     }
   }
 
-  if (piecesById.size === 0) return [];
+  if (piecesById.size === 0 || matchWeightTotal <= 0) return [];
 
   // Alignment scoring per piece.
   const results: LandmarkMatch[] = [];
   for (const [pieceId, deltas] of piecesById) {
-    const best = bestCluster(deltas);
-    if (best < MIN_ALIGN_VOTES) continue;
-    const confidence = Math.min(1, best / queryLandmarkCount);
+    const best = bestClusterWeighted(deltas);
+    if (best.votes < MIN_ALIGN_VOTES) continue;
+    // Confidence = fraction of the query's ID-weighted matched surface that
+    // concentrates at this piece's best single offset. The denominator is
+    // floored at MIN_MATCH_WEIGHT so an alien query whose few stray hashes
+    // happen to collide into one offset cannot inflate confidence on a tiny
+    // match surface.
+    const denom = Math.max(matchWeightTotal, MIN_MATCH_WEIGHT);
+    const confidence = Math.min(1, best.weighted / denom);
     if (confidence < MIN_CONFIDENCE) continue;
     const meta = pieceMeta[pieceId];
     results.push({
@@ -169,8 +220,8 @@ export async function matchLandmarks(
       is_public_domain: meta.is_public_domain,
       segment_start_s: 0,
       segment_end_s: 0,
-      overlap_count: best,
-      total_overlap: best,
+      overlap_count: best.votes,
+      total_overlap: best.votes,
       confidence,
     });
   }
@@ -180,32 +231,36 @@ export async function matchLandmarks(
 }
 
 /**
- * Find the number of deltas that cluster around a single time offset using a
- * coarse histogram with neighbour-merge. Fast and memory-light (imsort not
- * needed — we histogram into a bounded integer range).
+ * Find the densest cluster of (delta -> weight) pairs around a single time
+ * offset using a coarse histogram with neighbour-merge. Returns both the raw
+ * vote count (used as the MIN_ALIGN_VOTES floor) and the ID-weighted sum
+ * (used for confidence and ranking). Fast and memory-light.
  */
-function bestCluster(deltas: number[]): number {
+function bestClusterWeighted(items: { d: number; w: number }[]): { votes: number; weighted: number } {
+  if (items.length === 0) return { votes: 0, weighted: 0 };
   let min = Infinity, max = -Infinity;
-  for (const d of deltas) {
-    if (d < min) min = d;
-    if (d > max) max = d;
+  for (const it of items) {
+    if (it.d < min) min = it.d;
+    if (it.d > max) max = it.d;
   }
-  if (deltas.length === 0) return 0;
   const span = max - min;
-  if (!isFinite(span) || span > 2_000_000) return 1; // degenerate
+  if (!isFinite(span) || span > 2_000_000) return { votes: 1, weighted: (items[0]?.w ?? 1) };
   const numBins = Math.ceil(span / DELTA_BIN_CS) + 2;
-  const hist = new Int32Array(Math.max(1, numBins));
+  const votesHist = new Int32Array(Math.max(1, numBins));
+  const weightHist = new Float64Array(Math.max(1, numBins));
   const idx = (d: number) => Math.floor((d - min) / DELTA_BIN_CS);
-  for (const d of deltas) hist[idx(d)]++;
-
-  let best = 0;
-  for (let b = 0; b < hist.length; b++) {
-    let sum = hist[b];
-    for (let m = 1; m <= MERGE_NEIGHBORS; m++) {
-      if (b - m >= 0) sum += hist[b - m];
-      if (b + m < hist.length) sum += hist[b + m];
-    }
-    if (sum > best) best = sum;
+  for (const it of items) {
+    const b = idx(it.d);
+    votesHist[b]++; weightHist[b] += it.w;
   }
-  return best;
+  let bestVotes = 0, bestWeighted = 0;
+  for (let b = 0; b < votesHist.length; b++) {
+    let v = votesHist[b]; let wt = weightHist[b];
+    for (let m = 1; m <= MERGE_NEIGHBORS; m++) {
+      if (b - m >= 0) { v += votesHist[b - m]; wt += weightHist[b - m]; }
+      if (b + m < votesHist.length) { v += votesHist[b + m]; wt += weightHist[b + m]; }
+    }
+    if (wt > bestWeighted) { bestWeighted = wt; bestVotes = v; }
+  }
+  return { votes: bestVotes, weighted: bestWeighted };
 }
