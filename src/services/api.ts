@@ -62,10 +62,33 @@ function buildAudioFilePart(
 }
 
 /**
+ * Thrown when the free-tier monthly recognition quota is exhausted
+ * (backend HTTP 429). The UI MUST surface this as an explicit "limit reached"
+ * state — never as a generic "No Match Found" or a bare network error.
+ * Backend error message (e.g. "Monthly recognition limit reached (5/month).
+ * Upgrade to Pro for unlimited.") is preserved verbatim as the message.
+ */
+export class RecognitionLimitError extends Error {
+  readonly statusCode = 429;
+  constructor(message: string) {
+    super(message);
+    this.name = "RecognitionLimitError";
+  }
+}
+
+/** Narrowing guard so callers can branch on the quota-exhausted error. */
+export function isRecognitionLimitError(
+  err: unknown,
+): err is RecognitionLimitError {
+  return err instanceof RecognitionLimitError;
+}
+
+/**
  * Upload an audio recording for recognition.
  * Sends the anonymous device id as x-user-id so the server can apply
  * subscription-based (Pro) limits instead of per-IP limits.
- */ export async function recognizeAudio(
+ */
+export async function recognizeAudio(
   audioUri: string,
 ): Promise<RecognitionResponse> {
   const formData = new FormData();
@@ -102,6 +125,15 @@ function buildAudioFilePart(
       errBody = (await response.json()) as RecognitionError;
     } catch {
       errBody = null;
+    }
+    // 429 = free-tier monthly quota exhausted. Throw the dedicated limit error
+    // so the UI can render an explicit, honest "limit reached" modal instead of
+    // a generic failure. NEVER let this path look like "No Match Found".
+    if (response.status === 429) {
+      throw new RecognitionLimitError(
+        errBody?.error ||
+          "You've reached your free recognition limit for this month. Upgrade to Pro for unlimited, or try again next month.",
+      );
     }
     throw new Error(errBody?.error || "Something went wrong. Please try again.");
   }

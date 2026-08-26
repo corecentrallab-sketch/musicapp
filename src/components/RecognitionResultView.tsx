@@ -27,6 +27,7 @@ export type RecognitionPhase =
   | { type: 'loading' }
   | { type: 'success'; response: RecognitionResponse }
   | { type: 'no-match'; message?: string }
+  | { type: 'limit'; message: string }
   | { type: 'error'; message: string };
 
 interface RecognitionResultViewProps {
@@ -34,6 +35,8 @@ interface RecognitionResultViewProps {
   phase: RecognitionPhase | null;
   onClose: () => void;
   onRetry: () => void;
+  /** Opens the Pro upgrade path (Settings tab) from the quota-exhausted modal. */
+  onUpgrade?: () => void;
 }
 
 /** Convert a RecognitionMatch to a shape the PieceDetailScreen can render. */
@@ -54,6 +57,7 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   phase,
   onClose,
   onRetry,
+  onUpgrade,
 }) => {
   const [showDetail, setShowDetail] = React.useState(false);
   const [showScoreViewer, setShowScoreViewer] = React.useState(false);
@@ -132,6 +136,43 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  // ── Limit (free-tier monthly quota exhausted) Phase ──
+  // Honest, explicit "limit reached" state — NEVER rendered as "No Match Found".
+  // No "Try Again" button: another attempt would only hit the same 429.
+  if (phase.type === 'limit') {
+    return (
+      <Modal
+        visible={true}
+        transparent
+        animationType="fade"
+        onRequestClose={onClose}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.card}>
+            <Text style={styles.limitEmoji}>🔒</Text>
+            <Text style={styles.cardTitle}>Recognition limit reached</Text>
+            <Text style={styles.limitText}>
+              {phase.message}
+              {'\n\n'}Upgrade to Pro for unlimited recognition, or try again
+              next month when your free limit resets.
+            </Text>
+            <View style={styles.buttonRow}>
+              <TouchableOpacity style={styles.secondaryBtn} onPress={onClose}>
+                <Text style={styles.secondaryBtnText}>Not Now</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={onUpgrade ?? onClose}
+              >
+                <Text style={styles.primaryBtnText}>View Pro Options</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -382,6 +423,7 @@ const styles = StyleSheet.create({
 
   // Error / No-match
   errorEmoji: { fontSize: 48, marginBottom: 12 },
+  limitEmoji: { fontSize: 48, marginBottom: 12 },
   noMatchEmoji: { fontSize: 48, marginBottom: 12 },
   cardTitle: {
     fontSize: 20,
@@ -391,6 +433,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   errorText: {
+    fontSize: 14,
+    color: '#a0a0b8',
+    textAlign: 'center',
+    lineHeight: 21,
+    marginBottom: 20,
+  },
+  limitText: {
     fontSize: 14,
     color: '#a0a0b8',
     textAlign: 'center',
