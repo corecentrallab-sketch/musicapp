@@ -50,6 +50,12 @@ export interface RecognitionResponse {
   db_available: boolean;
   /** Fallback purchase link when no matches found. */
   purchase_url?: PurchaseUrls;
+  /**
+   * Present when the server declined to name a piece (evidence existed but was
+   * ambiguous or too weak to present confidently). Empty matches + this reason
+   * = honest "no confident match", never a wrong title.
+   */
+  no_confident_match_reason?: string;
 }
 
 /** Error response from POST /api/recognize. */

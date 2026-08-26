@@ -26,7 +26,7 @@ import { ScoreViewer } from './ScoreViewer';
 export type RecognitionPhase =
   | { type: 'loading' }
   | { type: 'success'; response: RecognitionResponse }
-  | { type: 'no-match' }
+  | { type: 'no-match'; message?: string }
   | { type: 'error'; message: string };
 
 interface RecognitionResultViewProps {
@@ -180,8 +180,8 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
             <Text style={styles.noMatchEmoji}>🔍</Text>
             <Text style={styles.cardTitle}>No Match Found</Text>
             <Text style={styles.noMatchText}>
-              We couldn't identify this piece — try again closer to the speaker,
-              or in a quieter environment.
+              {phase.message ??
+                "We couldn't identify this piece — try again closer to the speaker, or in a quieter environment."}
             </Text>
             <View style={styles.buttonRow}>
               <TouchableOpacity style={styles.secondaryBtn} onPress={onClose}>

@@ -49,8 +49,10 @@ import type {
   RecognitionResponse,
 } from '../types';
 
-/** Auto-stop recording after this many ms. */
-const RECORDING_TIMEOUT_MS = 8000;
+/** Auto-stop recording after this many ms. Kept comfortably long so the recogniser
+ *  gets enough signal from a room-recorded clip — a short capture starves the
+ *  matcher and produces weak/uncertain confidence. */
+const RECORDING_TIMEOUT_MS = 12000;
 
 export const HomeScreen: React.FC = () => {
   // ── Core data state ──
@@ -320,9 +322,15 @@ export const HomeScreen: React.FC = () => {
           setBadgeToast(newBadges[0]);
         }
       } else {
-        // API returned success but no matches
+        // API returned success but no matches. If the server declined to name a
+        // piece (ambiguous / too weak), surface its honest reason instead of a
+        // generic message — the launch rule is "no confident-wrong"; an honest
+        // "play longer & clearer" is the correct UX.
         recorder.completeRecording();
-        setRecognitionPhase({ type: 'no-match' });
+        setRecognitionPhase({
+          type: 'no-match',
+          message: result.no_confident_match_reason,
+        });
       }
     } catch (err) {
       const message =
