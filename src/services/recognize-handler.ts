@@ -8,6 +8,7 @@ import { extractLandmarks } from "~/services/landmark";
 import { matchLandmarks } from "~/services/landmark-matching";
 import { generatePurchaseUrls } from "~/services/generate-purchase-urls";
 import { hasActiveSubscription } from "~/services/entitlement";
+import { applyMatchPolicy } from "~/services/match-policy";
 
 // ---------------------------------------------------------------------------
 // Rate limiting (simple in-memory counter for free tier — default 5 per month)
@@ -87,26 +88,19 @@ function isQaTestIdentity(deviceId: string | null): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Application-level match confidence gate.
+// Application-level match-confidence gate.
 //
-// Library-wide validation (2026-08) showed a clear separation between GENUINE
-// matches (confidence ~0.39–1.0, median 1.0 for correct identifications) and
-// the noise floor the landmark matcher returns for audio that is NOT in the
-// catalog (confidence ~0.02–0.11 — accidental hash collisions on common
-// material). The raw matcher's internal MIN_CONFIDENCE (0.02) is far too
-// permissive, so a non-catalog query used to come back with a handful of
-// low-confidence "matches" instead of the honest empty list.
-//
-// We therefore gate at the API layer: anything below this confidence is
-// treated as "no confident match" and returned as an EMPTY matches array
-// (`success: true`, no false positive). This is a recognition-quality decision
-// and does not touch the free-tier quota logic (checkMonthlyLimit is unchanged).
-const MIN_MATCH_CONFIDENCE = 0.3; // above noise (<=0.11), below genuine (>=0.39)
-
-// ---------------------------------------------------------------------------
-// Maximum upload size: 4 MB (Vercel's function payload hard limit is 4.5MB —
-// keep margin so the platform never rejects the request with 413 before we
-// can return a friendly error).
+// On clean synthetic renders genuine matches score ~0.39–1.0 (median 1.0) and
+// the noise floor for non-catalog audio is ~0.02–0.11, so a threshold alone
+// used to separate them. On REAL room-recorded device audio, however, the
+// correct piece can land weak (~0.33) while a wrong piece scores higher
+// (~0.57) — exactly the "confident-wrong" the launch rule forbids. A plain
+// threshold cannot split those. We therefore apply the SHARED policy in
+// `match-policy.ts`: an absolute floor PLUS a margin/ratio check against the
+// runner-up PLUS a minimum floor when there is no rival. Any ambiguous outcome
+// returns an EMPTY matches array (honest "no confident match" + a hint) — never
+// a wrong title. The policy lives in one place so the audit tooling exercises
+// the exact same numbers `/api/recognize` enforces.
 // ---------------------------------------------------------------------------
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
@@ -255,44 +249,36 @@ export async function handleRecognize(req: Request): Promise<Response> {
   // --- Match against database ---
   let matches: unknown[] = [];
   let dbAvailable = false;
-  let bestGuessTitle: string | null = null;
-  let bestGuessComposer: string | null = null;
+  let noConfidentMatch: string | null = null;
   try {
     const rawMatches = await matchLandmarks(landmarks);
-    matches = rawMatches
-      // Gate out the low-confidence noise floor so non-catalog audio returns
-      // a clean empty list (no false positives) instead of junk at <=0.11.
-      .filter((m) => m.confidence >= MIN_MATCH_CONFIDENCE)
-      .map((m) => {
-      // Keep best-guess metadata for fallback when no match found
-      if (!bestGuessTitle && m.title) {
-        bestGuessTitle = m.title;
-        bestGuessComposer = m.composer;
-      }
-      // Public-domain pieces get null purchase_url — we already serve the score
-      // (or will: is_public_domain=true with no sheet_music_url yet means "coming
-      // soon", NOT an affiliate redirect). Everything else gets affiliate search
-      // links for the official sheet music.
-      const isPublicDomain = !!m.is_public_domain;
-      return {
-        piece_id: m.piece_id,
-        title: m.title,
-        composer: m.composer,
-        catalog: m.catalog,
-        confidence: Math.round(m.confidence * 100) / 100,
-        album_art_url: m.album_art_url,
-        sheet_music_url: m.sheet_music_url,
-        tab_url: m.tab_url,
-        matched_at_s: m.segment_start_s,
-        // Honest signal: PD pieces NEVER get a purchase redirect, even when the
-        // score itself is not curated yet. App shows a "coming soon" state.
-        is_public_domain: isPublicDomain,
-        sheet_music_available: isPublicDomain && !!m.sheet_music_url,
-        purchase_url: isPublicDomain
-          ? null
-          : generatePurchaseUrls(m.title, m.composer),
-      };
-    });
+    // Apply the shared "no confident-wrong" gate (threshold + margin + single
+    // fallback). An ambiguous/weak result yields NO match (honest no-match),
+    // never a possibly-wrong title.
+    const policy = applyMatchPolicy(rawMatches);
+    if (policy.ok) {
+      matches = [
+        {
+          ...(Object.fromEntries(
+            Object.entries(policy.top).filter(([k]) => k !== "confidence"),
+          ) as Record<string, unknown>),
+          // Public-domain pieces get null purchase_url — we already serve the score
+          // (or will: is_public_domain=true with no sheet_music_url yet means "coming
+          // soon", NOT an affiliate redirect). Everything else gets affiliate search
+          // links for the official sheet music.
+          is_public_domain: !!policy.top.is_public_domain,
+          sheet_music_available: !!policy.top.is_public_domain && !!policy.top.sheet_music_url,
+          purchase_url: policy.top.is_public_domain
+            ? null
+            : generatePurchaseUrls(policy.top.title as string, policy.top.composer as string),
+          confidence: Math.round((policy.top.confidence as number) * 100) / 100,
+        },
+      ];
+    } else if (policy.reason !== "below-threshold") {
+      // There WAS music-like evidence but it was ambiguous or too weak to be
+      // a confident match. Tell the user plainly, instead of guessing.
+      noConfidentMatch = policy.hint;
+    }
     dbAvailable = true;
   } catch (err) {
     console.error(
@@ -310,23 +296,16 @@ export async function handleRecognize(req: Request): Promise<Response> {
 
   const queryDurationMs = Math.round(performance.now() - startTime);
 
-  // Build response. When there are no matches, include a top-level
-  // purchase_url ONLY if we have a best-guess title (the DB returned
-  // close-but-below-threshold candidates) — never a hardcoded empty-query
-  // search link.
   const response: Record<string, unknown> = {
     success: true,
     matches,
     query_duration_ms: queryDurationMs,
     db_available: dbAvailable,
   };
-
-  if (matches.length === 0 && bestGuessTitle) {
-    response.purchase_url = generatePurchaseUrls(
-      bestGuessTitle,
-      bestGuessComposer || "",
-    );
-  }
+  // When the gate declined to name a piece (ambiguous / borderline), give the
+  // app a human-readable reason it can surface — still `success: true` with an
+  // empty matches array (honest no-match), never a wrong title.
+  if (noConfidentMatch) response.no_confident_match_reason = noConfidentMatch;
 
   return corsResponse(response as Record<string, unknown>);
 }

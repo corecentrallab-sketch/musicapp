@@ -19,12 +19,12 @@ import { tmpdir } from "node:os";
 import decode from "audio-decode";
 import { extractLandmarks } from "../src/services/landmark";
 import { matchLandmarks } from "../src/services/landmark-matching";
+import { applyMatchPolicy } from "../src/services/match-policy";
 
 const SQL = neon(process.env.DATABASE_URL!);
 const MUTOPIA = "/home/team/shared/mutopia-data";
 const SF2 = "/usr/share/sounds/sf2/FluidR3_GM.sf2";
 const SEGMENT_SECS = 22;
-const MIN_CONF = 0.3;
 
 // Correct public-domain Mutopia source per fingerprinted piece (catalog -> rel path).
 // Raw-byte md5 recorded. Verified (PR53/56) sources marked *.
@@ -94,7 +94,7 @@ async function main() {
   const pieces = (await SQL`SELECT DISTINCT p.id, p.title, p.composer, p.catalog
     FROM piece_landmarks pl JOIN pieces p ON p.id=pl.piece_id ORDER BY p.title`) as unknown as any[];
   const results: any[] = [];
-  let pass=0, wrong=0, crossFp=0, miss=0, notSourced=0, err=0;
+  let pass=0, wrong=0, ambiguous=0, miss=0, notSourced=0, err=0;
   for (const p of pieces) {
     const rel = SRC[p.catalog || ""];
     const rec: any = { catalog: p.catalog, composer: p.composer, title: p.title, id: p.id };
@@ -107,33 +107,34 @@ async function main() {
       const lms = extractLandmarks(mono, 16000);
       rec.queryLms = lms.length;
       const raw = await matchLandmarks(lms);
-      const gated = raw.filter(m => m.confidence >= MIN_CONF);
-      rec.gated = gated.map(m => ({ piece_id: m.piece_id, catalog: m.catalog, title: m.title, conf: Math.round(m.confidence*1000)/1000 }));
-      const self = gated.find(m => m.piece_id === p.id);
-      const top = gated[0] ?? null;
-      if (self && top && top.piece_id === p.id) {
-        const others = gated.filter(m => m.piece_id !== p.id);
-        if (others.length > 0) { rec.status = "CROSS_FP"; rec.selfConf = self.confidence; crossFp++; }
-        else { rec.status = "PASS"; rec.selfConf = self.confidence; pass++; }
-      } else if (top) {
-        rec.status = "WRONG"; rec.got = top.catalog; rec.gotConf = top.confidence; wrong++;
+      // Classify through the EXACT production gate (threshold + margin + single).
+      const policy = applyMatchPolicy(raw);
+      const top = policy.ok ? policy.top : null;
+      rec.raw = raw.slice(0, 5).map(m => ({ cat: m.catalog, conf: Math.round(m.confidence*1000)/1000, votes: m.overlap_count }));
+      rec.gate = policy.ok ? "CONFIDENT" : policy.reason;
+      if (policy.ok && top && top.piece_id === p.id) {
+        rec.status = "PASS"; rec.conf = top.confidence; pass++;
+      } else if (policy.ok && top) {
+        rec.status = "WRONG"; rec.got = top.catalog; rec.conf = top.confidence; wrong++;
         console.log(`  ** CONFIDENT WRONG: ${p.catalog} -> ${top.catalog} conf=${top.confidence}`);
+      } else if (!policy.ok && !["below-threshold"].includes(policy.reason)) {
+        rec.status = "AMBIGUOUS"; rec.reason = policy.reason; ambiguous++;
       } else { rec.status = "MISS"; miss++; }
-      console.log(`${rec.status} ${p.catalog}\t${p.title}\t srcMd5=${rec.src_md5.slice(0,10)} conf=${rec.selfConf ?? "-"} gated=${gated.length}`);
+      console.log(`${rec.status} ${p.catalog}\t${p.title}\t srcMd5=${rec.src_md5.slice(0,10)} gate=${rec.gate} top=${top ? top.catalog + "@" + top.confidence.toFixed(3) : "-"}`);
     } catch (e:any) { rec.status = "ERR"; rec.error = String(e?.message||e); err++; console.log(`ERR ${p.catalog}\t${e?.message||e}`); }
     results.push(rec);
   }
 
-  // Controls: non-catalog audio must return EMPTY (no false positives at >=0.3)
+  // Controls: non-catalog audio must return EMPTY under the policy (no false positives)
   const controls: any[] = [];
   const noise = new Float32Array(SEGMENT_SECS*16000); let s1=7; const rnd1=()=>{s1=(s1*1103515245+12345)&0x7fffffff; return s1/0x7fffffff-0.5;};
   for (let i=0;i<noise.length;i++) noise[i]=rnd1()*0.5;
-  controls.push({ label:"white-noise", gated:(await matchLandmarks(extractLandmarks(noise,16000))).filter(m=>m.confidence>=MIN_CONF).map(m=>m.catalog) });
+  controls.push({ label:"white-noise", policy: applyMatchPolicy(await matchLandmarks(extractLandmarks(noise,16000))).ok });
   const sine=new Float32Array(SEGMENT_SECS*16000); for(let i=0;i<sine.length;i++){const f=200+(i/sine.length)*3000; sine[i]=0.5*Math.sin(2*Math.PI*f*i/16000);}
-  controls.push({ label:"sine-sweep", gated:(await matchLandmarks(extractLandmarks(sine,16000))).filter(m=>m.confidence>=MIN_CONF).map(m=>m.catalog) });
-  const ctrlFps = controls.filter(c=>c.gated.length>0).length;
+  controls.push({ label:"sine-sweep", policy: applyMatchPolicy(await matchLandmarks(extractLandmarks(sine,16000))).ok });
+  const ctrlFps = controls.filter(c=>c.policy).length;
 
-  const summary = { total: pieces.length, pass, wrong, crossFp, miss, notSourced, err, controlFalsePositives: ctrlFps };
+  const summary = { total: pieces.length, pass, wrong, ambiguous, miss, notSourced, err, controlFalsePositives: ctrlFps };
   console.log("\n=========== SUMMARY ==========="); console.log(summary);
   writeFileSync("/tmp/audit_full.json", JSON.stringify({ summary, controls, results }, null, 2));
 }
