@@ -34,8 +34,8 @@
         "android.permission.CAMERA",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
-      "versionCode": 8,
-      "versionName": "0.1.3"
+      "versionCode": 9,
+      "versionName": "0.1.4"
     },
     "web": {
       "favicon": "./assets/favicon.png"
