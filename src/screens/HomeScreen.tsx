@@ -275,8 +275,8 @@ export const HomeScreen: React.FC = () => {
       timeoutRef.current = null;
     }
 
-    const uri = await recorder.stopRecording();
-    if (!uri) {
+    const stopped = await recorder.stopRecording();
+    if (!stopped) {
       // NEVER silently drop the user back to idle. A dead recording (null URI,
       // failed finalize, or an empty/0-byte clip) must surface an explicit
       // error state so the flow can't loop "Listening → Tap to identify".
@@ -291,6 +291,7 @@ export const HomeScreen: React.FC = () => {
       setShowRecognitionResults(true);
       return;
     }
+    const { uri, diagnostics } = stopped;
 
     // Show loading phase
     setRecognitionPhase({ type: 'loading' });
@@ -299,9 +300,20 @@ export const HomeScreen: React.FC = () => {
     try {
       const result = await recognizeAudio(uri);
 
+      // Attach capture-path telemetry to the first result phase (whichever it
+      // is) so the owner can read off what the mic recorded next to the result.
+      const outcome =
+        result.matches && result.matches.length > 0
+          ? ({ type: 'success', response: result } as const)
+          : ({
+              type: 'no-match',
+              message: result.no_confident_match_reason,
+              server: result.received_audio,
+            } as const);
+      setRecognitionPhase({ ...outcome, diagnostics });
+
       // Handle success: check for matches
       if (result.matches && result.matches.length > 0) {
-        setRecognitionPhase({ type: 'success', response: result });
         recorder.completeRecording();
 
         // Save top match to history
@@ -338,22 +350,17 @@ export const HomeScreen: React.FC = () => {
         // generic message — the launch rule is "no confident-wrong"; an honest
         // "play longer & clearer" is the correct UX.
         recorder.completeRecording();
-        setRecognitionPhase({
-          type: 'no-match',
-          message: result.no_confident_match_reason,
-        });
       }
     } catch (err) {
       recorder.completeRecording();
-      if (isRecognitionLimitError(err)) {
-        // Free-tier monthly quota exhausted (backend 429). Show the explicit,
-        // honest "limit reached" modal — never a misleading "No Match Found".
-        setRecognitionPhase({ type: 'limit', message: err.message });
-      } else {
-        const message =
-          err instanceof Error ? err.message : 'Something went wrong.';
-        setRecognitionPhase({ type: 'error', message });
-      }
+      const errPhase = isRecognitionLimitError(err)
+        ? ({ type: 'limit', message: err.message } as const)
+        : ({
+            type: 'error',
+            message:
+              err instanceof Error ? err.message : 'Something went wrong.',
+          } as const);
+      setRecognitionPhase({ ...errPhase, diagnostics });
     }
   }, [recorder]);
 

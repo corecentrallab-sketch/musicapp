@@ -9,8 +9,15 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { Platform, PermissionsAndroid, Alert, Linking } from 'react-native';
+import {
+  buildCaptureTelemetry,
+  type CaptureDiagnostics,
+} from '../services/captureTelemetry';
 
 export type RecordingPhase = 'idle' | 'recording' | 'processing' | 'done';
+
+/** How often we sample the recorder's live metering (dB) while capturing. */
+const METERING_INTERVAL_MS = 200;
 
 /**
  * Explicit recording options for NoteSnap recognition.
@@ -78,16 +85,28 @@ export interface AudioRecorderState {
   checkingPermissions: boolean;
 }
 
+export interface StoppedRecording {
+  uri: string;
+  /** Capture-path diagnostics collected at stop time (see captureTelemetry). */
+  diagnostics: CaptureDiagnostics;
+}
+
 export function useAudioRecorder() {
   const recordingRef = useRef<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [phase, setPhase] = useState<RecordingPhase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
+  // Live dB metering samples collected while recording (for peak/RMS dBFS).
+  const meteringRef = useRef<number[]>([]);
+  const meteringTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Durations captured before final teardown (expo-av may lose this after unload).
+  const durationMsRef = useRef<number | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (meteringTimerRef.current) clearInterval(meteringTimerRef.current);
       if (recordingRef.current) {
         recordingRef.current.stopAndUnloadAsync().catch(() => {});
         recordingRef.current = null;
@@ -210,6 +229,31 @@ export function useAudioRecorder() {
       recordingRef.current = recording;
       setIsRecording(true);
       setPhase('recording');
+
+      // Start sampling the live metering (dB) so we can report peak/RMS level of
+      // the captured buffer. Best-effort — a recorder that doesn't support
+      // metering simply yields no samples.
+      meteringRef.current = [];
+      durationMsRef.current = null;
+      if (meteringTimerRef.current) clearInterval(meteringTimerRef.current);
+      meteringTimerRef.current = setInterval(() => {
+        recording
+          .getStatusAsync()
+          .then((status) => {
+            if (status && typeof (status as { metering?: number }).metering === 'number') {
+              const m = (status as { metering: number }).metering;
+              if (Number.isFinite(m)) meteringRef.current.push(m);
+            }
+            if (
+              status &&
+              typeof (status as { durationMillis?: number }).durationMillis === 'number'
+            ) {
+              durationMsRef.current = (status as { durationMillis: number }).durationMillis;
+            }
+          })
+          .catch(() => {});
+      }, METERING_INTERVAL_MS);
+
       return true;
     } catch (err) {
       setError('Failed to start recording. Please try again.');
@@ -240,6 +284,16 @@ export function useAudioRecorder() {
     // builds — which is exactly the silent "loop back to Tap to identify" the
     // user was hitting. Snapshotting it first removes that whole class of bug.
     const uri = recording.getURI();
+
+    // Stop the metering sampler before tearing the recorder down.
+    if (meteringTimerRef.current) {
+      clearInterval(meteringTimerRef.current);
+      meteringTimerRef.current = null;
+    }
+    const metering = meteringRef.current.slice();
+    // Capture the recorded duration from the last status read (expo-av loses
+    // durationMillis after unload).
+    const durationMs = durationMsRef.current;
 
     // Stop + unload, but treat a thrown stop error as a signal to discard the
     // clip (e.g. Android E_AUDIO_NODATA when nothing was recorded) rather than
@@ -278,7 +332,33 @@ export function useAudioRecorder() {
     }
 
     setPhase('processing');
-    return uri;
+
+    // Build capture-path telemetry (format, sample rate, channels, dBFS, bytes)
+    // from the finalised clip so the next test can read off exactly what the
+    // mic recorded. Never throws on an unparseable clip.
+    let diagnostics: CaptureDiagnostics;
+    try {
+      diagnostics = await buildCaptureTelemetry(uri, { durationMs, metering });
+    } catch {
+      diagnostics = {
+        durationMs,
+        sampleRate: null,
+        channels: null,
+        peakDbFS: null,
+        rmsDbFS: null,
+        bytes: null,
+        format: null,
+      };
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      `[recognition] capture done: dur=${String(diagnostics.durationMs)}ms ` +
+        `rate=${String(diagnostics.sampleRate)}Hz ch=${String(diagnostics.channels)} ` +
+        `peak=${String(diagnostics.peakDbFS)}dB rms=${String(diagnostics.rmsDbFS)}dB ` +
+        `bytes=${String(diagnostics.bytes)} fmt=${String(diagnostics.format)}`,
+    );
+
+    return { uri, diagnostics };
   }, []);
 
   return {
