@@ -227,9 +227,38 @@ export async function handleRecognize(req: Request): Promise<Response> {
   // peak-pairs — robust to compression, mic/room noise, tempo drift and
   // different performances (unlike the old exact-Chromaprint matcher).
   let landmarks: ReturnType<typeof extractLandmarks>;
+  let receivedAudio: { bytes: number; duration_s: number; sample_rate: number; channels: number; format: string | null } | null = null;
   try {
     const audioBuffer = Buffer.from(await audioFile.arrayBuffer());
-    const { mono, sampleRate } = await decodeToMonoSamples(audioBuffer);
+    const { mono, sampleRate, channels, durationS } = await decodeToMonoSamples(audioBuffer);
+    // Sniff container brand from leading bytes for the diagnostic echo.
+    let format: string | null = null;
+    try {
+      const magic = audioBuffer.subarray(0, 12).toString("latin1");
+      if (magic.length >= 8 && magic.slice(4, 8) === "ftyp") {
+        format = magic.slice(8, 12).startsWith("M4A") ? "m4a" : `mp4(${magic.slice(8, 12)})`;
+      } else if (magic.startsWith("RIFF")) {
+        format = "wav";
+      } else if (magic.startsWith("OggS")) {
+        format = "ogg";
+      } else {
+        format = "unknown";
+      }
+    } catch {
+      format = null;
+    }
+    receivedAudio = {
+      bytes: audioFile.size,
+      duration_s: Math.round(durationS * 100) / 100,
+      sample_rate: sampleRate,
+      channels,
+      format,
+    };
+    // eslint-disable-next-line no-console
+    console.log(
+      `[recognize] received ${audioFile.size}B fmt=${String(format)} ` +
+        `rate=${sampleRate}Hz ch=${channels} dur=${Math.round(durationS * 1000)}ms`,
+    );
     landmarks = extractLandmarks(mono, sampleRate);
     if (landmarks.length === 0) {
       throw new Error("no landmarks — audio may be too short or silent");
@@ -241,6 +270,7 @@ export async function handleRecognize(req: Request): Promise<Response> {
         success: false,
         error:
           "Could not process audio — ensure it contains audible music",
+        received_audio: receivedAudio,
       },
       { status: 400 },
     );
@@ -301,6 +331,7 @@ export async function handleRecognize(req: Request): Promise<Response> {
     matches,
     query_duration_ms: queryDurationMs,
     db_available: dbAvailable,
+    received_audio: receivedAudio,
   };
   // When the gate declined to name a piece (ambiguous / borderline), give the
   // app a human-readable reason it can surface — still `success: true` with an
