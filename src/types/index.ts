@@ -56,6 +56,18 @@ export interface RecognitionResponse {
    * = honest "no confident match", never a wrong title.
    */
   no_confident_match_reason?: string;
+  /**
+   * Diagnostic echo from the server describing the audio it actually received
+   * and decoded. Lets us compare what the phone uploaded vs what the server got
+   * (byte size, decoded duration, decoded sample rate) to localise capture-path
+   * defects. Absent on older/error responses.
+   */
+  received_audio?: {
+    bytes: number;
+    duration_s: number;
+    sample_rate: number;
+    format: string | null;
+  };
 }
 
 /** Error response from POST /api/recognize. */

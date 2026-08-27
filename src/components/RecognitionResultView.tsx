@@ -20,15 +20,20 @@ import {
   Linking,
 } from 'react-native';
 import type { RecognitionMatch, RecognitionResponse } from '../types';
+import type { CaptureDiagnostics } from '../services/captureTelemetry';
 import { PieceDetailScreen } from '../screens/PieceDetailScreen';
 import { ScoreViewer } from './ScoreViewer';
 
 export type RecognitionPhase =
   | { type: 'loading' }
-  | { type: 'success'; response: RecognitionResponse }
-  | { type: 'no-match'; message?: string }
-  | { type: 'limit'; message: string }
-  | { type: 'error'; message: string };
+  | {
+      type: 'success';
+      response: RecognitionResponse;
+      diagnostics?: CaptureDiagnostics;
+    }
+  | { type: 'no-match'; message?: string; diagnostics?: CaptureDiagnostics; server?: RecognitionResponse['received_audio'] }
+  | { type: 'limit'; message: string; diagnostics?: CaptureDiagnostics }
+  | { type: 'error'; message: string; diagnostics?: CaptureDiagnostics };
 
 interface RecognitionResultViewProps {
   visible: boolean;
@@ -50,6 +55,73 @@ function matchToDailyChallenge(match: RecognitionMatch) {
     description: `Recognized with ${Math.round(match.confidence * 100)}% confidence`,
     sheetMusicUrl: match.sheet_music_url ?? undefined,
   };
+}
+
+/**
+ * Diagnostic readout for capture-path debugging. Renders whatever was measured
+ * on-device (dur/rate/channels/dBFS/bytes/format) plus the server's echo of what
+ * it received (bytes/duration/sample rate). Values that are null render as "—".
+ * This is the telemetry the owner reads off the phone to localise the defect.
+ */
+function TelemetryReadout({
+  diagnostics,
+  server,
+}: {
+  diagnostics?: CaptureDiagnostics | null;
+  server?: RecognitionResponse['received_audio'] | null;
+}) {
+  const hasClient = !!diagnostics;
+  const hasServer = !!server;
+  if (!hasClient && !hasServer) return null;
+
+  const f = (v: number | null | undefined, unit = ''): string =>
+    v === null || v === undefined ? '—' : `${Math.round(v * 100) / 100}${unit}`;
+  // dB metering: -inf/near -160 means silence, ~0 means clipping-loud.
+  const dbuf = (v: number | null | undefined): string =>
+    v === null || v === undefined
+      ? '—'
+      : v < -100
+        ? `${Math.round(v)}dB (≈silent)`
+        : `${Math.round(v)}dB`;
+
+  const rows: { label: string; val: string }[] = [];
+  if (hasClient) {
+    rows.push(
+      { label: '⏱ Recorded', val: f(diagnostics!.durationMs, 'ms') },
+      { label: 'Hz', val: f(diagnostics!.sampleRate, '') },
+      { label: 'Ch', val: f(diagnostics!.channels, '') },
+      { label: 'Peak', val: dbuf(diagnostics!.peakDbFS) },
+      { label: 'RMS', val: dbuf(diagnostics!.rmsDbFS) },
+      { label: 'Bytes', val: f(diagnostics!.bytes, '') },
+      { label: 'Format', val: diagnostics!.format ?? '—' },
+    );
+  }
+  if (hasServer) {
+    rows.push(
+      { label: 'Server bytes', val: f(server!.bytes, '') },
+      { label: 'Server dur', val: f(Math.round(server!.duration_s * 1000), 'ms') },
+      { label: 'Server Hz', val: f(server!.sample_rate, '') },
+      { label: 'Server fmt', val: server!.format ?? '—' },
+    );
+  }
+
+  return (
+    <View style={styles.telemetryCard}>
+      <Text style={styles.telemetryTitle}>🔧 Capture telemetry</Text>
+      <View style={styles.telemetryGrid}>
+        {rows.map((r) => (
+          <View key={r.label} style={styles.telemetryRow}>
+            <Text style={styles.telemetryLabel}>{r.label}</Text>
+            <Text style={styles.telemetryValue}>{r.val}</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={styles.telemetryHint}>
+        Compare recorded vs server: if both ≈12s and loud, the capture is fine
+        and the defect is elsewhere; if short/silent, capture is the problem.
+      </Text>
+    </View>
+  );
 }
 
 export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
@@ -193,6 +265,7 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
             <Text style={styles.errorEmoji}>⚠️</Text>
             <Text style={styles.cardTitle}>Something went wrong</Text>
             <Text style={styles.errorText}>{phase.message}</Text>
+            <TelemetryReadout diagnostics={phase.diagnostics} />
             <View style={styles.buttonRow}>
               <TouchableOpacity style={styles.secondaryBtn} onPress={onClose}>
                 <Text style={styles.secondaryBtnText}>Cancel</Text>
@@ -224,6 +297,10 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
               {phase.message ??
                 "We couldn't identify this piece — try again closer to the speaker, or in a quieter environment."}
             </Text>
+            <TelemetryReadout
+              diagnostics={phase.diagnostics}
+              server={phase.server}
+            />
             <View style={styles.buttonRow}>
               <TouchableOpacity style={styles.secondaryBtn} onPress={onClose}>
                 <Text style={styles.secondaryBtnText}>Cancel</Text>
@@ -293,6 +370,11 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
             {topMatch.catalog && (
               <Text style={styles.catalogText}>{topMatch.catalog}</Text>
             )}
+
+            <TelemetryReadout
+              diagnostics={phase.diagnostics}
+              server={phase.response.received_audio}
+            />
 
             {/* More matches */}
             {phase.response.matches.length > 1 && (
@@ -620,5 +702,48 @@ const styles = StyleSheet.create({
     color: '#a0a0b8',
     fontSize: 14,
     fontWeight: '600',
+  },
+
+  // Capture telemetry readout
+  telemetryCard: {
+    width: '100%',
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
+  telemetryTitle: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  telemetryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  telemetryRow: {
+    width: '50%',
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
+  telemetryLabel: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    width: 78,
+  },
+  telemetryValue: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  telemetryHint: {
+    color: '#707090',
+    fontSize: 10,
+    lineHeight: 14,
+    marginTop: 6,
   },
 });
