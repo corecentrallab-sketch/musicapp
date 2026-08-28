@@ -9,6 +9,8 @@ import { matchLandmarks } from "~/services/landmark-matching";
 import { generatePurchaseUrls } from "~/services/generate-purchase-urls";
 import { hasActiveSubscription } from "~/services/entitlement";
 import { applyMatchPolicy } from "~/services/match-policy";
+import { uploadScore } from "~/services/storage";
+import { createHash } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Rate limiting (simple in-memory counter for free tier — default 5 per month)
@@ -103,6 +105,38 @@ function isQaTestIdentity(deviceId: string | null): boolean {
 // the exact same numbers `/api/recognize` enforces.
 // ---------------------------------------------------------------------------
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+// ---------------------------------------------------------------------------
+// Debug-gated persistence of the raw received recognition audio.
+//
+// When PERSIST_RECOGNIZE_AUDIO=true (default OFF, so normal operation never pays
+// for storage), each successful upload to /api/recognize is ALSO written to
+// Cloudflare R2 under a `debug/` prefix — `debug/recognize-<unixms>-<hash8>.m4a` —
+// so genuine phone-mic captures can be reviewed post-hoc to validate the matcher
+// against real device audio. This is what closes the loop on PR #67: the robust
+// matcher was verified on synthetic harsh reproductions but never on an actual
+// phone-mic capture, because the server never kept the upload. We keep it
+// enabled for closed-test builds/servers so the owner's next capture is saved.
+//
+// A failed debug write never breaks recognition: it is logged and swallowed.
+// The audio bytes are written only to the object storage key above — never
+// logged or echoed back in any response.
+// ---------------------------------------------------------------------------
+const PERSIST_RECOGNIZE_AUDIO = process.env.PERSIST_RECOGNIZE_AUDIO === "true";
+/** Write the raw received audio to R2 under debug/ (best-effort, never throws). */
+async function persistRecognitionAudio(audioBuffer: Buffer): Promise<void> {
+  if (!PERSIST_RECOGNIZE_AUDIO) return;
+  try {
+    const hash = createHash("sha256").update(audioBuffer).digest("hex").slice(0, 8);
+    // `.m4a` because the app uploads m4a (AAC) and the container is mp4-family.
+    const key = `debug/recognize-${Date.now()}-${hash}.m4a`;
+    await uploadScore(key, audioBuffer, "audio/mp4");
+    console.log(`[recognize] persisted received audio -> ${key} (${audioBuffer.length}B)`);
+  } catch (err) {
+    // Debug write must never degrade the recognition path — log and continue.
+    // (audioBuffer is intentionally NOT logged.)
+    console.error("[recognize] failed to persist received audio (continuing):", err);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // CORS headers — required for cross-origin requests from the mobile app
@@ -230,6 +264,8 @@ export async function handleRecognize(req: Request): Promise<Response> {
   let receivedAudio: { bytes: number; duration_s: number; sample_rate: number; channels: number; format: string | null } | null = null;
   try {
     const audioBuffer = Buffer.from(await audioFile.arrayBuffer());
+    // Debug-gated: persist the raw upload to R2 (best-effort, never blocks/breaks).
+    await persistRecognitionAudio(audioBuffer);
     const { mono, sampleRate, channels, durationS } = await decodeToMonoSamples(audioBuffer);
     // Sniff container brand from leading bytes for the diagnostic echo.
     let format: string | null = null;
