@@ -25,6 +25,7 @@ import {
   handleNewsletterSubscribe,
   handleNewsletterUnsubscribe,
 } from "./src/services/newsletter-handler";
+import { handleExport } from "./src/services/export-handler";
 
 // Pinned, NOT read from the environment. The published preview URL
 // (<label>.<PUBLIC_SITE_DOMAIN>) is reverse-proxied to 0.0.0.0:3000 inside the
@@ -129,6 +130,9 @@ for (let attempt = 1; ; attempt++) {
         }
         if (pathname === "/api/newsletter/unsubscribe") {
           return handleNewsletterUnsubscribe(req);
+        }
+        if (pathname === "/api/export" && req.method === "POST") {
+          return handleExport(req);
         }
 
         // --- Static file serving ---
