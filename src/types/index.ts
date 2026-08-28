@@ -110,6 +110,9 @@ export type RootStackParamList = {
   ScanScore: undefined;
   CloudSync: undefined;
   Metronome: undefined;
+  /** Notation editor (transpose). `sourcePieceId` = bundled PD piece id;
+   *  `itemId` = an ABC library item to open for further editing. */
+  NotationEditor: { sourcePieceId?: string; itemId?: string } | undefined;
 };
 
 // ─── Library (Phase 4a: import + local sheet music library) ──
@@ -120,6 +123,7 @@ export type LibraryKind =
   | 'musicxml'
   | 'midi'
   | 'guitarpro'
+  | 'abc'
   | 'scanned';
 
 /** A persistent entry in the local sheet music library. */
