@@ -13,6 +13,11 @@ import {
   buildCaptureTelemetry,
   type CaptureDiagnostics,
 } from '../services/captureTelemetry';
+import {
+  evaluateLoudness,
+  gateFromMetering,
+  type LoudnessMetrics,
+} from '../services/loudnessGate';
 
 export type RecordingPhase = 'idle' | 'recording' | 'processing' | 'done';
 
@@ -89,6 +94,26 @@ export interface StoppedRecording {
   uri: string;
   /** Capture-path diagnostics collected at stop time (see captureTelemetry). */
   diagnostics: CaptureDiagnostics;
+  /** Pre-upload loudness/quality gate verdict for the actual captured buffer. */
+  gate: LoudnessMetrics;
+}
+
+/**
+ * Hermes-safe AAC -> PCM decode seam.
+ *
+ * The authoritative loudness gate must run on the DECODED audio of the uploaded
+ * buffer (the expo-av AGC meter cannot measure real loudness — see
+ * loudnessGate.ts). Hermes has no WebAssembly and Android MediaRecorder cannot
+ * emit raw PCM, and a bundled pure-JS AAC decoder is not yet available, so this
+ * seam returns null today and the recorder falls back to `gateFromMetering`,
+ * which blocks only unambiguous dead captures. Wire a native MediaCodec / JSC-WASM
+ * decode here to enable full decoded-PCM gating (block silent, too-short and
+ * not-spread, per the validated `evaluateLoudness` thresholds).
+ */
+async function decodeCaptureToPcm(
+  _uri: string,
+): Promise<{ samples: Float32Array; sampleRate: number } | null> {
+  return null;
 }
 
 export function useAudioRecorder() {
@@ -269,7 +294,7 @@ export function useAudioRecorder() {
    * it returns `null` AND sets a human-readable `error`. The caller is expected
    * to surface that error to the user — it must NOT silently reset to idle.
    */
-  const stopRecording = useCallback(async (): Promise<string | null> => {
+  const stopRecording = useCallback(async (): Promise<StoppedRecording | null> => {
     const recording = recordingRef.current;
     if (!recording) {
       setIsRecording(false);
@@ -358,7 +383,33 @@ export function useAudioRecorder() {
         `bytes=${String(diagnostics.bytes)} fmt=${String(diagnostics.format)}`,
     );
 
-    return { uri, diagnostics };
+    // ── Pre-upload loudness/quality gate ──
+    // Prefer the authoritative decoded-PCM gate when a Hermes-safe AAC decode is
+    // available; otherwise fall back to the conservative metering+metadata gate.
+    // On a "block" verdict the caller must NOT upload a useless/silent clip.
+    let gate: LoudnessMetrics;
+    try {
+      const decoded = await decodeCaptureToPcm(uri);
+      if (decoded) {
+        gate = evaluateLoudness(decoded.samples, decoded.sampleRate);
+      } else {
+        gate = gateFromMetering(
+          metering,
+          durationMs,
+          diagnostics.bytes,
+        );
+      }
+    } catch {
+      gate = gateFromMetering(metering, durationMs, diagnostics.bytes);
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      `[recognition] gate: ${gate.verdict} (${gate.reason}) ` +
+        `peak=${String(gate.peakDb)}dB rms=${String(gate.rmsDb)}dB ` +
+        `active=${String(Math.round((gate.activeFraction ?? 0) * 100))}%`,
+    );
+
+    return { uri, diagnostics, gate };
   }, []);
 
   return {
