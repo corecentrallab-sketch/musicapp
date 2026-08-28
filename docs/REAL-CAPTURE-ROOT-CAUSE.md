@@ -91,10 +91,72 @@ which the current pipeline already returns.
    pipeline locally (stats + classic/robust + policy) so the next owner capture
    is validated in one command before any matcher change is contemplated.
 
-## Files / evidence
+---
 
-- Real captures: R2 `notesnapscores`, `debug/recognize-*.m4a` (11 objects listed above).
-- Diagnostic harness: `scripts/analyze-real-capture.ts` (this PR) — decode stats
-  + classic/robust live-DB match + policy for any capture.
+# ADDENDUM — vc13 (2026-08-28): loudness gate shipped, still "No Match found"
+The vc13 pre-upload loudness gate (PR #70) was shipped and the owner reran the
+on-device test with healthy telemetry (peak −3 dB / RMS −27 dB reported on-device).
+Three captures were persisted from live `/api/recognize` at 05:06 / 05:09 / 05:10
+(bucket `notesnapscores`, `debug/`):
+`...1787893598230-70dc76b0`, `...1787893798069-be9e0825`, `...1787893821070-9cd8db4f`.
+
+## Bottom line
+**The loudness gate worked — all three vc13 captures are genuinely LOUD and
+non-silent (no more 8/11-silent problem). But the audio content is NOT the
+fingerprinted Für Elise reference.** Every capture produces a full landmark set
+(1960–2790 query landmarks) yet converges on nothing (top confidence 0.15–0.29,
+below the 0.45 policy floor) and has **zero Für Elise overlap**. The matcher and
+the Für Elise reference are proven correct by control: the engineer's genuine
+Für Elise capture (`e2cc8a05`) still scores **conf 1.000 (robust) / 0.855
+(classic) → OK** through the exact same pipeline. No matcher/preprocessing
+change can name these captures as Für Elise without a false positive → **no safe
+fix exists**; this is an evidence + recommendation outcome, not a code change.
+
+## The three vc13 captures (healthy, non-silent, but not Für Elise)
+| File (suffix) | Peak / RMS / crest | active | q-landmarks (classic/robust) | Top candidate (robust conf) | Für Elise |
+|---|---|---|---|---|---|
+| `70dc76b0` (05:06) | −1.4 / −18.0 / 16.6 dB | 27.5% (18/24) | 2719 / 2006 | Nocturne E min 0.180 | **0 entries** |
+| `be9e0825` (05:09) | −0.9 / −19.8 / 19.0 dB | 18.3% (9/24) | 2714 / 1964 | Nocturne E min 0.273 | **0 entries** |
+| `9cd8db4f` (05:10) | −1.7 / −19.3 / 17.6 dB | 22.5% (13/24) | 2712 / 1962 | Minute Waltz 0.289 | **0 entries** |
+
+All three show the classic "audio is not in the fingerprinted library" signature:
+plenty of real landmarks but no piece reaches confidence, and the low random
+top-candidate differs across captures (Nocturne / Black-Key & Minute Waltz /
+Träumerei) — i.e. hash coincidences land on different pieces each time because
+none of the fingerprinted references is actually present. The `70dc76b0` capture
+is additionally dominant in the **low register (~40–260 Hz** fundamental), which
+is not compatible with Für Elise's high-register theme.
+
+## Control (proves matcher + reference are healthy)
+`e2cc8a05` (engineer, genuine Für Elise, 132 s) through the SAME
+`analyze-real-capture.ts --window 12`:
+- CLASSIC: **Bagatelle in A Minor (Für Elise) conf 0.855** (votes 1812) → OK
+- ROBUST: **Für Elise conf 1.000** (votes 1491) → OK
+
+So a faithful Für Elise capture DOES match at high confidence. The vc13 captures
+do not match because they do not contain that fingerprint.
+
+## Recommendation (no code change)
+1. **Play the exact fingerprinted reference.** The app only recognizes the Für
+   Elise rendering that was fingerprinted (the one verified at conf 1.000). For
+   the next on-device test, play **that same reference audio** (not a different
+   recording/live performance/arrangement) from a second speaker ~0.5–1 m away,
+   audible for the whole 12 s window.
+2. **Verify before shipping another cycle:** after each test, run
+   `bun scripts/analyze-real-capture.ts /path/capture.m4a` and confirm the top
+   candidate is **Für Elise conf > 0.8**. If it isn't, the capture content is the
+   issue — do not tap Identify / do not rebuild.
+3. This is the expected behaviour of a fingerprint matcher: it matches the piece
+   **rendering** it was fingerprinted against, not arbitrary performances of the
+   same title. Broadening to "any real performance of Für Elise" is a
+   *future* workstream (more reference renditions per piece), out of scope here.
+
+## Files / evidence (vc13)
+- Persisted captures: R2 `notesnapscores`, `debug/recognize-1787893{598230,798069,821070}-*.m4a`.
+- Local copies + decoded WAV of the primary: `/home/team/shared/realcaptures-vc13/`
+  (`vc13_70dc76b0.wav` is the listenable 16 kHz decode of the 05:06 capture).
+- Diagnostics were produced with `scripts/analyze-real-capture.ts` (unchanged).
+
+## Files / evidence
 - A/B tooling already committed: `scripts/ab-extract.ts`, `scripts/device-harsh-repro.ts`,
   `scripts/dia-rvb.ts`, `scripts/fp-control.ts`; synthetic baselines in `/tmp/repro`.
