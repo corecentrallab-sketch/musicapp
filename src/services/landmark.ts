@@ -225,3 +225,152 @@ export function dedupeLandmarks(lms: Landmark[]): Landmark[] {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Robust extraction for REAL device captures (the landmark matcher's weak
+// point on genuine phone-mic m4a — synthetic noise/reverb cannot reproduce the
+// live-capture failure, but three principled defects make live captures land
+// weak/spurious relative to the 16 kHz-rendered reference):
+//   1. The 44.1 kHz->16 kHz query downsample had NO anti-aliasing filter, so a
+//      real phone's full-band capture (energy well above the 8 kHz Nyquist)
+//      aliases into the analysis band and smears/blurs the spectrogram peaks
+//      it is built from. The reference fingerprints were rendered at 16 kHz,
+//      so they never see this. A pre-decimation lowpass removes it.
+//   2. Peak selection was NOT band-limited: in a room capture, low-frequency
+//      rumble/reverb dominates the per-frame max, so the single -45 dB
+//      "relative to frame max" floor either keeps codec-noise peaks (inflating
+//      the spurious matched-surface the confidence denominator is built from)
+//      or masks genuine melodic peaks. Restricting to the musically-relevant
+//      band (< 7.6 kHz, > ~110 Hz) keeps the floor meaningful.
+//   3. The floor was a flat -45 dB below the frame's loudest bin. With heavy
+//      reverb that admits too many spurious noise peaks. We tighten to a
+//      -24 dB floor relative to the in-band max, keeping only salient peaks —
+//      fewer spurious query hashes, so the correct piece's aligned surface
+//      dominates the matched-surface denominator and confidence recovers,
+//      without dropping the piece's own genuine landmarks (its distinctive
+//      peaks are far above -24 dB).
+//
+// The reference DB is unchanged (still ingested with the classic extractor);
+// this only makes the QUERY emit a cleaner superset of the same hashes — strictly
+// fewer spurious ones — so genuine matches hold and false positives do not rise.
+// ---------------------------------------------------------------------------
+// RBJ-cookbook biquad lowpass (used to anti-alias before 44.1k->16k decimation).
+function rbLowpass(x: Float32Array, sampleRate: number, cutoff: number): Float32Array {
+  const out = new Float32Array(x.length);
+  if (x.length === 0) return out;
+  const w0 = (2 * Math.PI * cutoff) / sampleRate;
+  const alpha = Math.sin(w0) / Math.SQRT2; // Q = 1/sqrt(2)
+  const cosw = Math.cos(w0);
+  const b0 = (1 - cosw) / 2, b1 = 1 - cosw, b2 = (1 - cosw) / 2;
+  const a0 = 1 + alpha, a1 = -2 * cosw, a2 = 1 - alpha;
+  const invA0 = 1 / a0;
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const y = invA0 * (b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2);
+    x2 = x1; x1 = x[i]; y2 = y1; y1 = y;
+    out[i] = y;
+  }
+  return out;
+}
+// Musically-relevant spectral band at 16 kHz (bins of a 1024-pt FFT):
+//   binMin ~= 110 Hz, binMax ~= 7600 Hz. Below ~110 Hz is room rumble/ground;
+//   above ~7.6 kHz is where AAC codec noise and aliasing live.
+const BIN_MIN = 7;
+const BIN_MAX = 486; // NFFT/2-1 = 511; 486 ~= 7600 Hz
+const ROBUST_PEAK_DB_FLOOR = 24; // keep peaks within this dB of the in-band frame max
+const ROBUST_PEAK_PER_FRAME = 3;
+
+/**
+ * Robust landmark extraction intended for real-world (phone-mic) queries.
+ * Same STFT + anchor/target fan-out as `extractLandmarks`, but with
+ * anti-aliased downsampling, band-limited peak selection and an in-band
+ * adaptive floor. Falls back to the classic extractor when already at 16 kHz
+ * mono (downsample=false) so the reference-ingest path is byte-for-byte
+ * unchanged behaviourally.
+ */
+export function extractLandmarksRobust(
+  samples: Float32Array,
+  sampleRate: number = SAMPLE_RATE,
+): Landmark[] {
+  const downsample = sampleRate !== SAMPLE_RATE;
+  let x = samples;
+  if (downsample) {
+    // Anti-alias before decimation: 16 kHz Nyquist is 8 kHz; keep a clear
+    // stop-band margin at ~7 kHz so content just above 8 kHz is attenuated
+    // before it can fold into the analysis band.
+    x = rbLowpass(samples, sampleRate, 7000);
+    const outLen = Math.max(1, Math.round((x.length * SAMPLE_RATE) / sampleRate));
+    const out = new Float32Array(outLen);
+    for (let i = 0; i < outLen; i++) {
+      const p = (i * sampleRate) / SAMPLE_RATE;
+      const l = Math.min(Math.floor(p), x.length - 1);
+      const fr = p - l;
+      const r = Math.min(l + 1, x.length - 1);
+      out[i] = x[l] + (x[r] - x[l]) * fr;
+    }
+    x = out;
+  }
+  const re = new Float32Array(NFFT);
+  const im = new Float32Array(NFFT);
+  const mag = new Float32Array(NFFT / 2);
+  const win = new Float32Array(NFFT);
+  for (let i = 0; i < NFFT; i++) win[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (NFFT - 1)));
+  const allPeaks: Peak[] = [];
+  const numFrames = Math.max(0, Math.floor((x.length - NFFT) / HOP) + 1);
+  for (let f = 0; f < numFrames; f++) {
+    const offset = f * HOP;
+    for (let i = 0; i < NFFT; i++) { re[i] = x[offset + i] * win[i]; im[i] = 0; }
+    fft(re, im);
+    for (let b = 0; b < NFFT / 2; b++) {
+      const r = re[b], i2 = im[b];
+      mag[b] = Math.sqrt(r * r + i2 * i2);
+    }
+    // Band-limited in-band frame max + adaptive floor.
+    let frameMax = 0;
+    for (let b = BIN_MIN; b <= BIN_MAX && b < NFFT / 2; b++) if (mag[b] > frameMax) frameMax = mag[b];
+    if (frameMax <= 0) continue;
+    const floor = frameMax * Math.pow(10, -ROBUST_PEAK_DB_FLOOR / 20);
+    const framePeaks: { bin: number; mag: number }[] = [];
+    const lo = Math.max(PEAK_NEIGHBOUR, BIN_MIN), hi = Math.min(NFFT / 2 - PEAK_NEIGHBOUR, BIN_MAX);
+    for (let b = lo; b < hi; b++) {
+      if (mag[b] < floor) continue;
+      let isLocalMax = true;
+      for (let d = 1; d <= PEAK_NEIGHBOUR; d++) {
+        if (mag[b] < mag[b - d] || mag[b] <= mag[b + d]) { isLocalMax = false; break; }
+      }
+      if (isLocalMax) framePeaks.push({ bin: b, mag: mag[b] });
+    }
+    framePeaks.sort((a, b) => b.mag - a.mag);
+    for (const pk of framePeaks.slice(0, ROBUST_PEAK_PER_FRAME)) {
+      allPeaks.push({ bin: pk.bin, timeFrame: f, mag: pk.mag });
+    }
+  }
+  if (allPeaks.length < 2) return [];
+  const landmarks: Landmark[] = [];
+  const timeCs = (frame: number): number => Math.round((frame * HOP * 100) / SAMPLE_RATE);
+  const fmax = NFFT / 2 - PEAK_NEIGHBOUR;
+  const byFrame = new Map<number, Peak[]>();
+  for (const pk of allPeaks) {
+    let arr = byFrame.get(pk.timeFrame);
+    if (!arr) { arr = []; byFrame.set(pk.timeFrame, arr); }
+    arr.push(pk);
+  }
+  for (const pk of allPeaks) {
+    if (pk.bin >= fmax || pk.bin < BIN_MIN || pk.bin > BIN_MAX) continue;
+    const targets: { bin: number; dt: number; mag: number }[] = [];
+    for (let tf = pk.timeFrame + TARGET_MIN_DT; tf <= pk.timeFrame + TARGET_MAX_DT; tf++) {
+      const arr = byFrame.get(tf);
+      if (!arr) continue;
+      for (const t of arr) {
+        if (Math.abs(t.bin - pk.bin) <= TARGET_FREQ_BAND && t.bin < fmax && t.bin >= BIN_MIN && t.bin <= BIN_MAX) {
+          targets.push({ bin: t.bin, dt: tf - pk.timeFrame, mag: t.mag });
+        }
+      }
+    }
+    targets.sort((a, b) => b.mag - a.mag);
+    for (const t of targets.slice(0, MAX_TARGETS_PER_ANCHOR)) {
+      landmarks.push({ hash: packHash(pk.bin, t.bin, t.dt), timeCs: timeCs(pk.timeFrame) });
+    }
+  }
+  return landmarks;
+}

@@ -4,7 +4,7 @@
 // to parse the ELF file as TypeScript. The explicit extension always targets
 // the module.
 import { decodeToMonoSamples } from "~/services/fpcalc.ts";
-import { extractLandmarks } from "~/services/landmark";
+import { extractLandmarksRobust } from "~/services/landmark";
 import { matchLandmarks } from "~/services/landmark-matching";
 import { generatePurchaseUrls } from "~/services/generate-purchase-urls";
 import { hasActiveSubscription } from "~/services/entitlement";
@@ -259,7 +259,7 @@ export async function handleRecognize(req: Request): Promise<Response> {
       `[recognize] received ${audioFile.size}B fmt=${String(format)} ` +
         `rate=${sampleRate}Hz ch=${channels} dur=${Math.round(durationS * 1000)}ms`,
     );
-    landmarks = extractLandmarks(mono, sampleRate);
+    landmarks = extractLandmarksRobust(mono, sampleRate);
     if (landmarks.length === 0) {
       throw new Error("no landmarks — audio may be too short or silent");
     }
