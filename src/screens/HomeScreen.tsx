@@ -32,6 +32,7 @@ import {
   recognizeAudio,
   isRecognitionLimitError,
 } from '../services/api';
+import { gateMessage } from '../services/loudnessGate';
 import {
   getStreakData,
   recordPractice,
@@ -291,7 +292,19 @@ export const HomeScreen: React.FC = () => {
       setShowRecognitionResults(true);
       return;
     }
-    const { uri, diagnostics } = stopped;
+    const { uri, diagnostics, gate } = stopped;
+
+    // Pre-upload loudness/quality gate (vc13): if the captured buffer is
+    // essentially silent / too short / music only in a corner of the window, do
+    // NOT burn a recognition on it — tell the user what to change and retry.
+    // This is the fix for the on-device "no audio detected" captures that
+    // previously wasted recognitions and returned a confusing No Match.
+    if (gate && gate.verdict === 'block') {
+      recorder.completeRecording();
+      setRecognitionPhase({ type: 'error', message: gateMessage(gate) });
+      setShowRecognitionResults(true);
+      return;
+    }
 
     // Show loading phase
     setRecognitionPhase({ type: 'loading' });
