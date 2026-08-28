@@ -40,6 +40,10 @@ import {
   transposeAbc,
   transposeKeyLabel,
 } from '../services/abcTranspose';
+import {
+  exportAndShare,
+  type ExportFormat,
+} from '../services/exportPiece';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NotationEditor'>;
 
@@ -63,6 +67,7 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
 
   const sourcePieceId = route.params?.sourcePieceId;
   const itemId = route.params?.itemId;
@@ -157,6 +162,37 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
       setSaving(false);
     }
   }, [offsetZero, selected, keyLabels, offset, transposedAbc]);
+
+  /**
+   * Export the current (possibly transposed) public-domain score as MIDI /
+   * MusicXML and share it via the native share sheet. Export (like transpose/
+   * save) is gated to public-domain pieces — enforced here with the same
+   * `isPublicDomain` check the backend mirrors.
+   */
+  const handleExport = useCallback(
+    async (format: ExportFormat) => {
+      if (selected.isPublicDomain !== true) return;
+      setExporting(format);
+      try {
+        await exportAndShare(
+          {
+            abc: transposedAbc,
+            title: selected.title,
+            isPublicDomain: selected.isPublicDomain === true,
+          },
+          format,
+        );
+      } catch (e) {
+        Alert.alert(
+          'Could not export',
+          e instanceof Error ? e.message : 'The file could not be exported.'
+        );
+      } finally {
+        setExporting(null);
+      }
+    },
+    [selected, transposedAbc]
+  );
 
   if (loading) {
     return (
@@ -267,6 +303,57 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
           </View>
         )}
         <AbcScoreView abc={transposedAbc} />
+      </View>
+
+      {/* Export / Share — public-domain only */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Export / Share</Text>
+        <View style={styles.exportRow}>
+          <Pressable
+            style={[
+              styles.exportBtn,
+              (selected.isPublicDomain !== true || exporting !== null) &&
+                styles.saveBtnDisabled,
+            ]}
+            onPress={() => handleExport('midi')}
+            disabled={selected.isPublicDomain !== true || exporting !== null}
+            accessibilityLabel="Export as MIDI"
+          >
+            <Ionicons name="musical-notes" size={18} color="#4ecdc4" />
+            <Text style={styles.exportBtnText}>
+              {exporting === 'midi' ? 'Exporting…' : 'MIDI'}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.exportBtn,
+              (selected.isPublicDomain !== true || exporting !== null) &&
+                styles.saveBtnDisabled,
+            ]}
+            onPress={() => handleExport('musicxml')}
+            disabled={selected.isPublicDomain !== true || exporting !== null}
+            accessibilityLabel="Export as MusicXML"
+          >
+            <Ionicons name="musical-note" size={18} color="#4ecdc4" />
+            <Text style={styles.exportBtnText}>
+              {exporting === 'musicxml' ? 'Exporting…' : 'MusicXML'}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.exportBtn, styles.saveBtnDisabled]}
+            disabled
+            accessibilityLabel="PDF export needs a curated score"
+          >
+            <Ionicons name="document-text" size={18} color="#8a8ab0" />
+            <Text style={[styles.exportBtnText, styles.exportBtnTextDisabled]}>
+              PDF
+            </Text>
+          </Pressable>
+        </View>
+        <Text style={styles.exportNote}>
+          Export and share this public-domain score as a file. PDF is available
+          for pieces with a curated score (recognized/library pieces).
+        </Text>
       </View>
 
       {/* Save transposed copy */}
@@ -467,6 +554,36 @@ const styles = StyleSheet.create({
   },
   saveBtnDisabled: {
     opacity: 0.45,
+  },
+  exportRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  exportBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  exportBtnText: {
+    color: '#4ecdc4',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  exportBtnTextDisabled: {
+    color: '#8a8ab0',
+  },
+  exportNote: {
+    color: '#8a8ab0',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 8,
   },
   saveBtnText: {
     color: '#ffffff',
