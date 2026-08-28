@@ -36,6 +36,7 @@ const KIND_ICONS: Record<LibraryItem['kind'], keyof typeof Ionicons.glyphMap> = 
   musicxml: 'musical-note',
   midi: 'musical-notes',
   guitarpro: 'albums',
+  abc: 'create',
   scanned: 'images',
 };
 
@@ -123,6 +124,10 @@ export const LibraryScreen: React.FC = () => {
         navigation.navigate('PdfViewer', { itemId: item.id });
       } else if (item.kind === 'scanned') {
         navigation.navigate('ScannedViewer', { itemId: item.id });
+      } else if (item.kind === 'abc') {
+        // Open an ABC item (e.g. a transposed copy) back in the notation
+        // editor so it can be viewed or transposed/saved again.
+        navigation.navigate('NotationEditor', { itemId: item.id });
       } else {
         // Rendering/playback of these formats arrives later; the file is
         // stored and will be openable via the share/export path.

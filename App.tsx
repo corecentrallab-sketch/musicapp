@@ -12,6 +12,7 @@ import { ScannedViewerScreen } from './src/screens/ScannedViewerScreen';
 import { ScanScoreScreen } from './src/screens/ScanScoreScreen';
 import { CloudSyncScreen } from './src/screens/CloudSyncScreen';
 import { MetronomeScreen } from './src/screens/MetronomeScreen';
+import { NotationEditorScreen } from './src/screens/NotationEditorScreen';
 import {
   hasCompletedOnboarding,
   saveOnboardingAnswers,
@@ -133,6 +134,11 @@ export default function App() {
             name="Metronome"
             component={MetronomeScreen}
             options={{ title: 'Metronome' }}
+          />
+          <Stack.Screen
+            name="NotationEditor"
+            component={NotationEditorScreen}
+            options={{ title: 'Notation editor' }}
           />
         </Stack.Navigator>
       </NavigationContainer>

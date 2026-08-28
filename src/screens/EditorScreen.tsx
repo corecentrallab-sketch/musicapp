@@ -2,7 +2,8 @@
  * EditorScreen — practice-tools hub.
  *
  * The tab hosts NoteSnap's practice tools. The metronome is live; the notation
- * editor (correcting/transposing scores) is still in the works.
+ * editor (Notation Editor v1: transpose) is now a working entry point that
+ * opens the NotationEditor screen.
  */
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -42,25 +43,22 @@ export const EditorScreen: React.FC = () => {
       </Pressable>
 
       <Pressable
-        style={({ pressed }) => [
-          styles.card,
-          styles.cardDisabled,
-          pressed && styles.cardPressed,
-        ]}
+        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+        onPress={() => navigation.navigate('NotationEditor', {})}
         accessibilityRole="button"
-        accessibilityState={{ disabled: true }}
-        accessibilityLabel="Notation editor — coming soon"
+        accessibilityLabel="Notation editor — transpose public-domain scores and save to library"
       >
-        <View style={[styles.cardIcon, styles.cardIconDisabled]}>
-          <Ionicons name="create" size={26} color="#5a5a80" />
+        <View style={styles.cardIcon}>
+          <Ionicons name="create" size={26} color="#e94560" />
         </View>
         <View style={styles.cardBody}>
           <Text style={styles.cardTitle}>Notation editor</Text>
           <Text style={styles.cardSubtitle}>
-            Correct and transpose sheet music — coming soon.
+            Transpose a public-domain score into a new key and save the copy
+            to your library.
           </Text>
         </View>
-        <Text style={styles.comingSoon}>SOON</Text>
+        <Ionicons name="chevron-forward" size={18} color="#4a4a6a" />
       </Pressable>
     </View>
   );
@@ -95,9 +93,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#0f3460',
   },
-  cardDisabled: {
-    opacity: 0.75,
-  },
   cardPressed: {
     backgroundColor: '#1f2b52',
   },
@@ -111,9 +106,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14,
-  },
-  cardIconDisabled: {
-    borderColor: '#2a2a4a',
   },
   cardBody: {
     flex: 1,
@@ -129,11 +121,5 @@ const styles = StyleSheet.create({
     color: '#a0a0b8',
     fontSize: 13,
     lineHeight: 19,
-  },
-  comingSoon: {
-    color: '#5a5a80',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
   },
 });

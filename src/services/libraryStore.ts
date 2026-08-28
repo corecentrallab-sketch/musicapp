@@ -41,6 +41,7 @@ const EXTENSION_KINDS: Record<string, LibraryKind> = {
   gp5: 'guitarpro',
   gpx: 'guitarpro',
   gp: 'guitarpro',
+  abc: 'abc',
 };
 
 /** Recognised file extensions, shown in the document picker hint. */
@@ -78,6 +79,8 @@ export function kindLabel(kind: LibraryKind): string {
       return 'MIDI';
     case 'guitarpro':
       return 'Guitar Pro';
+    case 'abc':
+      return 'ABC';
     case 'scanned':
       return 'Scanned score';
   }
@@ -263,6 +266,39 @@ export async function importCloudFileAsset(asset: {
         createdAt: new Date().toISOString(),
       };
 
+  const items = await getLibraryItems();
+  items.unshift(item);
+  await persistLibrary(items);
+  return item;
+}
+
+// ─── Transposed ABC save (notation editor) ─────────────────────
+/**
+ * Saves an ABC score (typically a transposed copy produced by the notation
+ * editor) into the user's local library as an `abc` item, distinctly labeled
+ * from the original. PUBLIC-DOMAIN only — callers must gate on the piece's
+ * public-domain status before invoking (the notation editor only offers this
+ * for PD pieces).
+ */
+export async function addAbcToLibrary(input: {
+  title: string;
+  abc: string;
+}): Promise<LibraryItem> {
+  const id = makeId();
+  const dir = `${LIBRARY_ROOT}${id}/`;
+  await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  const fileUri = `${dir}${id}.abc`;
+  await FileSystem.writeAsStringAsync(fileUri, input.abc);
+  const info = await FileSystem.getInfoAsync(fileUri);
+  const item: LibraryItem = {
+    id,
+    kind: 'abc',
+    title: input.title,
+    fileUri,
+    pageCount: 1,
+    sizeBytes: info.exists ? info.size ?? 0 : 0,
+    createdAt: new Date().toISOString(),
+  };
   const items = await getLibraryItems();
   items.unshift(item);
   await persistLibrary(items);
