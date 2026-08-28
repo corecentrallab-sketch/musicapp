@@ -27,6 +27,7 @@ import {
   handleNewsletterSubscribe,
   handleNewsletterUnsubscribe,
 } from "./src/services/newsletter-handler";
+import { handleExport } from "./src/services/export-handler";
 
 // --- Health check handler ---
 async function handleHealth(): Promise<Response> {
@@ -290,6 +291,28 @@ export default async function vercelHandler(
     if (pathname === "/api/newsletter/unsubscribe") {
       const webReq = toWebRequest(req);
       const webRes = await handleNewsletterUnsubscribe(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+    if (pathname === "/api/export") {
+      if (req.method !== "POST") {
+        res.statusCode = 405;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: "Method not allowed. Use POST." }));
+        return;
+      }
+      const webReq = toWebRequest(req);
+      const webRes = await handleExport(webReq);
       res.statusCode = webRes.status;
       webRes.headers.forEach((value, key) => res.setHeader(key, value));
       if (webRes.body) {

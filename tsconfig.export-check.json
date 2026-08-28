@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "baseUrl": ".",
+    "paths": { "~/*": ["./src/*"] },
+    "esModuleInterop": true,
+    "resolveJsonModule": true
+  },
+  "include": [
+    "src/services/export-handler.ts",
+    "src/services/export-s3.ts",
+    "src/services/abc/abc-parser.ts",
+    "src/services/abc/abc-to-midi.ts",
+    "src/services/abc/abc-to-musicxml.ts",
+    "src/db.ts"
+  ]
+}
