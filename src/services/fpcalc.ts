@@ -24,6 +24,10 @@ const FPCALC_TIMEOUT_MS = 30_000;
 export async function decodeToMonoSamples(audioBuffer: Buffer): Promise<{
   mono: Float32Array;
   sampleRate: number;
+  /** Original channel count before downmix (for capture-path diagnostics). */
+  channels: number;
+  /** Decoded length in seconds (durationS = mono.length / sampleRate). */
+  durationS: number;
 }> {
   const decoded = await decode(audioBuffer);
   const channels = decoded.channelData as Float32Array[] | undefined;
@@ -32,7 +36,12 @@ export async function decodeToMonoSamples(audioBuffer: Buffer): Promise<{
     throw new Error("audio contains no samples");
   }
   if (channels.length === 1) {
-    return { mono: channels[0], sampleRate: sourceRate };
+    return {
+      mono: channels[0],
+      sampleRate: sourceRate,
+      channels: channels.length,
+      durationS: channels[0].length / sourceRate,
+    };
   }
   const n = channels[0].length;
   const mono = new Float32Array(n);
@@ -41,7 +50,12 @@ export async function decodeToMonoSamples(audioBuffer: Buffer): Promise<{
     for (const ch of channels) s += ch[i] ?? 0;
     mono[i] = s / channels.length;
   }
-  return { mono, sampleRate: sourceRate };
+  return {
+    mono,
+    sampleRate: sourceRate,
+    channels: channels.length,
+    durationS: n / sourceRate,
+  };
 }
 
 /** Run fpcalc and return its raw 32-bit integer fingerprint. */
