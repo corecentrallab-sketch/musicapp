@@ -10,6 +10,7 @@
 // the takeover works across user boundaries.
 import handler from "./dist/server/server.js";
 import { handleRecognize } from "./src/services/recognize-handler";
+import { handleModernRecognize } from "./src/services/modern-recognize-handler";
 import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
 import { handleStripeWebhook } from "./src/services/webhook-handler";
 import { handleEntitlement } from "./src/services/entitlement";
@@ -97,6 +98,9 @@ for (let attempt = 1; ; attempt++) {
         }
         if (pathname === "/api/recognize" && req.method === "POST") {
           return handleRecognize(req);
+        }
+        if (pathname === "/api/recognize-modern" && req.method === "POST") {
+          return handleModernRecognize(req);
         }
         if (pathname === "/api/create-checkout-session") {
           return handleCreateCheckoutSession(req);
