@@ -12,6 +12,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import handler from "./dist/server/server.js";
 import { handleRecognize } from "./src/services/recognize-handler";
+import { handleModernRecognize } from "./src/services/modern-recognize-handler";
 import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
 import { handleStripeWebhook } from "./src/services/webhook-handler";
 import { handleEntitlement } from "./src/services/entitlement";
@@ -108,6 +109,29 @@ export default async function vercelHandler(
       }
       const webReq = toWebRequest(req);
       const webRes = await handleRecognize(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+
+    if (pathname === "/api/recognize-modern") {
+      if (req.method !== "POST") {
+        res.statusCode = 405;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: "Method not allowed. Use POST." }));
+        return;
+      }
+      const webReq = toWebRequest(req);
+      const webRes = await handleModernRecognize(webReq);
       res.statusCode = webRes.status;
       webRes.headers.forEach((value, key) => res.setHeader(key, value));
       if (webRes.body) {
