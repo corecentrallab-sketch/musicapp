@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": { "~/*": ["./src/*"] },
+    "esModuleInterop": true
+  },
+  "include": [
+    "src/services/hum/f0.ts",
+    "src/services/hum/contour.ts",
+    "src/services/hum/skeleton.ts",
+    "src/services/hum/melody-seeds.ts",
+    "src/services/hum/dtw.ts",
+    "src/services/hum/matcher.ts",
+    "src/services/hum/store.ts",
+    "src/services/hum/hum-handler.ts",
+    "src/services/abc/abc-parser.ts",
+    "src/services/fpcalc.ts",
+    "src/db.ts"
+  ]
+}
