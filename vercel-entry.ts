@@ -30,6 +30,7 @@ import {
   handleNewsletterUnsubscribe,
 } from "./src/services/newsletter-handler";
 import { handleExport } from "./src/services/export-handler";
+import { handleCost } from "./src/services/cost-handler";
 
 // --- Health check handler ---
 async function handleHealth(): Promise<Response> {
@@ -359,6 +360,28 @@ export default async function vercelHandler(
       }
       const webReq = toWebRequest(req);
       const webRes = await handleExport(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+
+    if (pathname === "/cost") {
+      if (req.method !== "GET") {
+        res.statusCode = 405;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: "Method not allowed. Use GET." }));
+        return;
+      }
+      const webRes = await handleCost();
       res.statusCode = webRes.status;
       webRes.headers.forEach((value, key) => res.setHeader(key, value));
       if (webRes.body) {

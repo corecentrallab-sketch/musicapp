@@ -29,6 +29,13 @@ export default function SiteFooter() {
             <a href="/terms" className="transition-colors hover:text-amber-700">
               Terms
             </a>
+            <a
+              href="/cost"
+              className="transition-colors hover:text-amber-700"
+              download="notesnap-services-cost.csv"
+            >
+              Cost breakdown (CSV)
+            </a>
           </div>
           <p className="text-xs text-stone-400">
             &copy; {new Date().getFullYear()} NoteSnap. Sheet music for musicians.

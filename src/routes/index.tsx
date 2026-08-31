@@ -618,6 +618,13 @@ function Home() {
               <a href="/terms" className="hover:text-amber-700 transition-colors">
                 Terms
               </a>
+              <a
+                href="/cost"
+                className="hover:text-amber-700 transition-colors"
+                download="notesnap-services-cost.csv"
+              >
+                Cost breakdown (CSV)
+              </a>
             </div>
             <p className="text-xs text-stone-400">
               &copy; {new Date().getFullYear()} {businessName || "NoteSnap"}. Sheet music for musicians.
