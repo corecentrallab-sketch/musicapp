@@ -8,7 +8,10 @@ import type {
   RecognitionResponse,
   RecognitionError,
   DailyChallengePiece,
+  HumResponse,
+  ModernResponse,
 } from "../types";
+import { parseHumResponse, parseModernResponse } from "./tier1";
 import { getDeviceId } from "./device";
 
 /** Production NoteSnap site URL (stable — the Vercel production alias; every deploy lands here). Set EXPO_PUBLIC_API_URL to override for local dev. */
@@ -150,6 +153,106 @@ export async function recognizeAudio(
   }
 
   return json;
+}
+
+/**
+ * Shared multipart upload for the Tier-1 endpoints (/api/hum and
+ * /api/recognize-modern). Builds the same audio file part and device-id header
+ * as recognizeAudio, POSTs to `path` with the given multipart `fieldName`, then
+ * returns the parsed JSON body (raw) or throws a user-facing Error. A 429 is
+ * surfaced as a RecognitionLimitError so the UI can show the honest free-tier
+ * limit state for these flows too.
+ */
+async function postAudioMultipart(
+  audioUri: string,
+  path: string,
+  fieldName: string,
+): Promise<unknown> {
+  const formData = new FormData();
+  const filePart = buildAudioFilePart(audioUri);
+  formData.append(fieldName, filePart as unknown as Blob);
+
+  const deviceId = await getDeviceId();
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      method: "POST",
+      body: formData,
+      headers: { Accept: "application/json", "x-user-id": deviceId },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Request took too long. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!response.ok) {
+    let errBody: RecognitionError | null = null;
+    try {
+      errBody = (await response.json()) as RecognitionError;
+    } catch {
+      errBody = null;
+    }
+    if (response.status === 429) {
+      throw new RecognitionLimitError(
+        errBody?.error ||
+          "You've reached your free recognition limit for this month. Upgrade to Pro for unlimited, or try again next month.",
+      );
+    }
+    throw new Error(errBody?.error || "Something went wrong. Please try again.");
+  }
+
+  let json: unknown;
+  try {
+    json = await response.json();
+  } catch {
+    throw new Error("Something went wrong. Please try again.");
+  }
+  return json;
+}
+
+/**
+ * POST /api/hum — hum/whistle/sing-to-search (the SoundHound-style Tier-1
+ * differentiator). Uploads the recorded clip as multipart field `audio` (the
+ * same field name as /api/recognize) and returns the normalized response. The
+ * honest match/no-match decision lives in tier1.ts.
+ */
+export async function humToSearch(audioUri: string): Promise<HumResponse> {
+  const json = await postAudioMultipart(audioUri, "/api/hum", "audio");
+  const parsed = parseHumResponse(json);
+  if (!parsed) {
+    throw new Error("Couldn't read the hum-to-search result. Please try again.");
+  }
+  return parsed;
+}
+
+/**
+ * POST /api/recognize-modern — modern-song recognition (the Tier-1
+ * recognize→buy funnel). IMPORTANT GOTCHA: this endpoint expects the multipart
+ * field named `file` (NOT `audio`). Returns normalized metadata for a
+ * recognized copyrighted song (or an honest no-match). We never host or
+ * provide any copyrighted file — only identity + metadata + a retailer link.
+ */
+export async function recognizeModernSong(
+  audioUri: string,
+): Promise<ModernResponse> {
+  const json = await postAudioMultipart(
+    audioUri,
+    "/api/recognize-modern",
+    "file",
+  );
+  const parsed = parseModernResponse(json);
+  if (!parsed) {
+    throw new Error("Couldn't read the recognition result. Please try again.");
+  }
+  return parsed;
 }
 
 /**

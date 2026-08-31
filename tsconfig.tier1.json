@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2020",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": "/tmp/tier1-test",
+    "types": []
+  },
+  "include": [
+    "src/services/tier1.ts",
+    "src/types/index.ts",
+    "scripts/tier1.test.ts"
+  ]
+}
