@@ -27,17 +27,28 @@ export interface SubsequenceDtwResult {
   alignmentLength: number;
 }
 
-/** Cost of matching one query delta against one reference delta (semitones). */
-function matchCost(q: number, r: number): number {
-  return Math.abs(q - r);
-}
-
 /**
  * Default gap penalty (per inserted/deleted note), in the same units as a
  * one-semitone mismatch. Kept modest so skipping/adding a note costs roughly a
  * single semitone of local error.
  */
 export const GAP_PENALTY = 1.0;
+
+/**
+ * Saturation cap on a single |query−reference| semitone error. A real whistle
+ * occasionally produces one flat-octave / spurious pitch estimate (a gross
+ * error of 6–40 semitones). Capping the per-delta cost means one such outlier
+ * costs at most `SATURATED_ERROR_COST` instead of flooring the whole match,
+ * while a genuinely unrelated melody still accumulates cost across MANY
+ * mismatches. `cap` is placed just above the largest legitimate melodic
+ * interval (a true octave = 12) so genuine big steps are never clipped.
+ */
+export const SATURATED_ERROR_COST = 12 as const;
+
+/** Cost of matching one query delta against one reference delta (semitones). */
+function matchCost(q: number, r: number): number {
+  return Math.min(Math.abs(q - r), SATURATED_ERROR_COST);
+}
 
 /**
  * Subsequence DTW: find the best local alignment of `query` (length m) within

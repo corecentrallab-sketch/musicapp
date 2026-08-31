@@ -48,11 +48,8 @@ export type HumPolicyResult =
 export function matchMelody(queryDeltas: number[], skeletons: MelodySkeleton[]): MelodyMatch[] {
   const scored: MelodyMatch[] = [];
   for (const sk of skeletons) {
-    // Query may be shorter than the skeleton (hum the opening motif of a full
-    // tune) — dtwSubsequence requires query.length <= reference.length.
-    if (queryDeltas.length > sk.deltas.length) continue;
     if (sk.deltas.length === 0) continue;
-    const { normalizedCost } = dtwSubsequence(queryDeltas, sk.deltas);
+    const { normalizedCost } = subsequenceMatch(queryDeltas, sk.deltas);
     scored.push({
       piece_id: sk.pieceId,
       title: sk.title,
@@ -65,6 +62,36 @@ export function matchMelody(queryDeltas: number[], skeletons: MelodySkeleton[]):
   }
   scored.sort((a, b) => b.confidence - a.confidence);
   return scored;
+}
+
+/**
+ * Subsequence match that works in BOTH directions (returns the better of the
+ * two). Previously the matcher required queryLength <= referenceLength and
+ * SKIPPED the skeleton entirely when the query was longer. A real whistle can
+ * easily be LONGER than the (short) seed within which it sits for two reasons:
+ *   1. the user whistles the FULL opening phrase, which extends well past the
+ *      9-note seed, or
+ *   2. vibrato / breath dropout fragments one held note into several small
+ *      notes, inflating the extracted query length.
+ * In both cases we now align the *shorter* contour as a subsequence of the
+ * *longer* one, so Für Elise (and any skeleton) is always scored rather than
+ * silently dropped. DTW's free-start + insert/delete already absorb the extra
+ * spurious notes. Verified not to increase false positives (gate still rejects
+ * unrelated melodies — see tests).
+ */
+export function subsequenceMatch(queryDeltas: number[], referenceDeltas: number[]): { normalizedCost: number; reverse: boolean } {
+  const forward =
+    queryDeltas.length <= referenceDeltas.length
+      ? dtwSubsequence(queryDeltas, referenceDeltas).normalizedCost
+      : Infinity;
+  const reversed =
+    queryDeltas.length >= referenceDeltas.length
+      ? dtwSubsequence(referenceDeltas, queryDeltas).normalizedCost
+      : Infinity;
+  // Take the better (lower normalized cost) direction; prefer forward on ties
+  // so the historical query-inside-reference interpretation is unchanged.
+  if (reversed < forward - 1e-9) return { normalizedCost: reversed, reverse: true };
+  return { normalizedCost: forward, reverse: false };
 }
 
 /** Apply the "no confident-wrong" gate to ranked melody candidates. */

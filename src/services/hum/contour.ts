@@ -38,6 +38,95 @@ export const MIN_NOTE_FRAMES = 2;
 export const SMOOTH_WINDOW = 3;
 
 /**
+ * If the ratio of voiced frames falls below this, the input is likely a
+ * whistled/hummed phrase with heavy VIBRATO. Vibrato makes the instantaneous
+ * frequency drift within YIN's 60 ms window, so its dimensionless confidence
+ * collapses below the voiced threshold and the f0 track fragments into many
+ * short voiced runs (a real whistle can drop to ~15% voiced versus ~98% for a
+ * clean hum). We then need the vibrato-recovery pass below; dense input (a
+ * clean hum or un-decorated melody) keeps the original clean pipeline.
+ */
+export const VIBRATO_SPARSE_THRESHOLD = 0.6;
+
+/**
+ * Vibrato is a fast (≈6 Hz) micro-oscillation of pitch around a note's center,
+ * typically a few tenths of a semitone — the SAME scale as Für Elise's E↔D♯
+ * alternation. The only reliable discriminator is TIME: vibrato oscillates far
+ * faster than even a quick melodic note. This recovery pass, used only on
+ * fragmented (vibrato-y) tracks, therefore:
+ *   1. re-medians over a wider window (kills per-frame octave spikes),
+ *   2. low-passes with a short moving average over about one vibrato period
+ *      (≈180 ms) to cancel the oscillation back to the note's mean,
+ *   3. quantizes to the nearest semitone to kill residual ripple,
+ * so one held, vibrato'd note collapses back into ONE note instead of several
+ * spurious ones. Appliedgated by the voiced-density check so dense/clean input
+ * (which would otherwise be blurred at its faster tempo) is untouched.
+ */
+export function recoverVibratoPitches(
+  midi: number[],
+  voiced: boolean[],
+  medWin = 7,
+  maWin = 9,
+): number[] {
+  const n = midi.length;
+  // 1) wider median filter over voiced neighbours (kills octave spikes)
+  const med = midi.slice();
+  const hw = Math.floor(medWin / 2);
+  for (let k = 0; k < n; k++) {
+    if (!voiced[k] || midi[k] <= 0) { med[k] = 0; continue; }
+    const vals: number[] = [];
+    for (let d = -hw; d <= hw; d++) {
+      const idx = k + d;
+      if (idx >= 0 && idx < n && voiced[idx] && midi[idx] > 0) vals.push(midi[idx]);
+    }
+    med[k] = vals.length ? medSort(vals) : midi[k];
+  }
+  // 2) moving average within voiced frames (cancels vibrato oscillation)
+  let out = med;
+  if (maWin > 0) {
+    out = med.slice();
+    const h = Math.floor(maWin / 2);
+    for (let k = 0; k < n; k++) {
+      if (!voiced[k] || med[k] <= 0) { out[k] = 0; continue; }
+      let sum = 0, cnt = 0;
+      for (let d = -h; d <= h; d++) {
+        const idx = k + d;
+        if (idx >= 0 && idx < n && voiced[idx] && med[idx] > 0) { sum += med[idx]; cnt++; }
+      }
+      out[k] = cnt ? sum / cnt : 0;
+    }
+  }
+  // 3) quantize to nearest semitone
+  return out.map((p) => (p > 0 ? Math.round(p) : 0));
+}
+
+/** Median of a small numeric array (avoids per-call re-alloc readability cost). */
+function medSort(v: number[]): number {
+  const s = v.slice().sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)];
+}
+
+/**
+ * Convenience: run the whole "audio contour" pipeline from an extracted f0
+ * track (already median-smoothed) into a delta contour.
+ */
+export function f0TrackToContour(
+  midi: number[],
+  voiced: boolean[],
+  hopS: number,
+): { deltas: number[]; pitches: number[]; notes: Note[] } {
+  // Adaptive vibrato handling: fragmented voiced track (real whistle with
+  // vibrato/breath dropout) — recover note centers before segmenting. Dense
+  // input (clean hum / un-decorated melody) — original path, no blurring.
+  const voicedRate = voiced.filter(Boolean).length / Math.max(1, voiced.length);
+  const effective = voicedRate < VIBRATO_SPARSE_THRESHOLD ? recoverVibratoPitches(midi, voiced) : midi;
+  const effectiveVoiced = effective.map((p) => p > 0);
+  const notes = segmentMidiToNotes(effective, effectiveVoiced, hopS);
+  const { deltas, pitches } = notesToPolyline(notes);
+  return { deltas, pitches, notes };
+}
+
+/**
  * Segment a smoothed MIDI pitch track (with an unvoiced flag per frame) into a
  * note sequence. `midi` may contain 0 for unvoiced frames.
  * `hopS` is the frame period in seconds (for computing onsets/durations).
@@ -99,18 +188,4 @@ export function notesToPolyline(notes: Note[]): {
     deltas.push(pitches[i] - pitches[i - 1]);
   }
   return { deltas, pitches };
-}
-
-/**
- * Convenience: run the whole "audio contour" pipeline from an extracted f0
- * track (already median-smoothed) into a delta contour.
- */
-export function f0TrackToContour(
-  midi: number[],
-  voiced: boolean[],
-  hopS: number,
-): { deltas: number[]; pitches: number[]; notes: Note[] } {
-  const notes = segmentMidiToNotes(midi, voiced, hopS);
-  const { deltas, pitches } = notesToPolyline(notes);
-  return { deltas, pitches, notes };
 }

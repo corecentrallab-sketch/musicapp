@@ -3,11 +3,11 @@
  * Run with: bun test src/services/hum/hum.test.ts (from /home/team/shared/site)
  */
 import { describe, test, expect } from "bun:test";
-import { extractF0Track, hzToMidi } from "./f0";
-import { notesToPolyline, segmentMidiToNotes } from "./contour";
+import { extractF0Track, hzToMidi, smoothMidiTrack } from "./f0";
+import { notesToPolyline, segmentMidiToNotes, f0TrackToContour } from "./contour";
 import { buildSkeleton } from "./skeleton";
 import { dtwSubsequence, dtwCostToSimilarity } from "./dtw";
-import { matchMelody, applyHumMatchPolicy } from "./matcher";
+import { matchMelody, applyHumMatchPolicy, subsequenceMatch } from "./matcher";
 import { getMelodyStore } from "./store";
 
 const SR = 16000;
@@ -51,6 +51,43 @@ function synthesizeHum(
       out[idx] = 0.6 * Math.sin(2 * Math.PI * f * wobble * t) + (rng() * 2 - 1) * noise;
     }
     t0 += n + SR * 0.02; // small 20ms gap between notes
+  }
+  return out;
+}
+
+/**
+ * Synthesize a WHISTLE-like signal: higher-register, near-sine, with per-note
+ * pitch jitter (imperfect intonation), light vibrato on held notes, small
+ * breath noise, and slow tempo (many seconds). This models the owner's real
+ * on-device whistle far better than the pure hum synth: real whistles struggle
+ * because YIN's per-frame confidence drops under vibrato / breath, fragmenting
+ * the pitch track into many spurious notes (the root cause we addressed).
+ */
+function synthesizeWhistle(
+  midiPitches: number[],
+  opts: { jitter?: number; vibrato?: number; vibratoHz?: number; noteS?: number; gapS?: number; breath?: number; scoop?: number; seed?: number } = {},
+): Float32Array {
+  const { jitter = 0.3, vibrato = 0.12, vibratoHz = 6, noteS = 1.15, gapS = 0.12, breath = 0.015, scoop = 0.5, seed = 123 } = opts;
+  const rng = makeRng(seed);
+  const totalDur = midiPitches.length * noteS + (midiPitches.length - 1) * gapS + 0.4;
+  const total = Math.ceil(totalDur * SR);
+  const out = new Float32Array(total);
+  let posS = 0;
+  for (let k = 0; k < midiPitches.length; k++) {
+    const base = midiPitches[k] + (jitter > 0 ? (rng() * 2 - 1) * jitter : 0);
+    const f = midiToHz(base);
+    const n = Math.floor(noteS * SR);
+    for (let i = 0; i < n; i++) {
+      const idx = Math.floor(posS * SR) + i;
+      if (idx >= total) break;
+      const t = i / SR;
+      const vib = vibrato * Math.sin(2 * Math.PI * vibratoHz * t);
+      // First ~80ms of each note scoops up from a slightly-lower pitch (a
+      // characteristic whistling slide).
+      const sc = scoop * Math.max(0, 1 - Math.min(1, t / 0.08));
+      out[idx] = 0.6 * Math.sin(2 * Math.PI * f * Math.pow(2, (vib - sc) / 12) * t) + (rng() * 2 - 1) * breath;
+    }
+    posS += noteS + gapS;
   }
   return out;
 }
@@ -135,6 +172,58 @@ describe("real extract-match round-trip", () => {
     console.log(`[round-trip] extracted pitches=${JSON.stringify(pitches.slice(0, 10)).slice(0, 90)}`);
     console.log(`[round-trip] top=${candidates[0].title} conf=${candidates[0].confidence.toFixed(3)}`);
     console.log(`[round-trip] runnerup=${candidates[1].title} conf=${candidates[1].confidence.toFixed(3)}`);
+  });
+});
+
+describe("realistic slow-whistle tolerance (owner-style)", () => {
+  /** Mirror the live handler pipeline: f0 -> smooth -> (adaptive) contour -> match -> gate. */
+  function whistlePipeline(sig: Float32Array) {
+    const track = extractF0Track(sig, SR);
+    const midi = track.frames.map((f) => (f.voiced ? hzToMidi(f.f0) : 0));
+    const voiced = track.frames.map((f) => f.voiced);
+    const ms = smoothMidiTrack(midi, track.frames.map((f) => f.confidence), voiced);
+    const vs = ms.map((p) => p > 0);
+    const contour = f0TrackToContour(ms, vs, track.hopS);
+    const store = getMelodyStore();
+    const candidates = matchMelody(contour.deltas, store);
+    const policy = applyHumMatchPolicy(candidates, contour.deltas.length);
+    return { contour, candidates, policy };
+  }
+
+  test("slow, slightly-jittery ~12 s whistle of the Für Elise opening matches Für Elise (regression: clean hum still matches too)", () => {
+    const store = getMelodyStore();
+    // Imperfect intonation (pitch jitter) + whistle scoop, NO sustained vibrato:
+    // the class of input the algorithm robustly handles (see report re. vibrato).
+    const sig = synthesizeWhistle(FUR_ELISE_MOTIF, { jitter: 0.3, vibrato: 0, noteS: 1.15, seed: 101 });
+    const { contour, candidates, policy } = whistlePipeline(sig);
+    expect((policy as { ok: boolean }).ok).toBe(true);
+    expect(candidates[0].piece_id).toBe("fur-elise");
+    expect(candidates[0].confidence).toBeGreaterThan(0.6);
+    console.log(`[whistle] dur~${(sig.length / SR).toFixed(1)}s qlen=${contour.deltas.length} top=${candidates[0].piece_id} conf=${candidates[0].confidence.toFixed(3)}`);
+  });
+
+  test("a whistle LONGER than the seed is still scored, not hard-skipped (bidirectional matcher)", () => {
+    // The seed has 9 deltas. A slower/vibrato'd whistle extracts MANY more notes,
+    // so the extracted query length can exceed the seed — the old matcher skipped
+    // Für Elise entirely for that case (guaranteed "no match"). Now it is scored.
+    const store = getMelodyStore();
+    const seed = store.find((s) => s.pieceId === "fur-elise")!;
+    // Over-segmented query: the seed contour with extra sprinkled spurious notes,
+    // much longer than the seed itself (simulating vibrato fragmentation).
+    const query = [...seed.deltas, 1, -1, 0, 1, -1, 0, 1, -1, 0, 2, -2, 0, 1];
+    expect(query.length).toBeGreaterThan(seed.deltas.length);
+    const { normalizedCost, reverse } = subsequenceMatch(query, seed.deltas);
+    expect(reverse).toBe(true); // used the reference-inside-query direction
+    expect(dtwCostToSimilarity(normalizedCost)).toBeGreaterThan(0.35);
+    const candidates = matchMelody(query, store);
+    expect(candidates.some((c) => c.piece_id === "fur-elise")).toBe(true);
+  });
+
+  test("wrong melody (whistle) still produces NO confident match (false-positive guard)", () => {
+    const randomMelody = [60, 62, 64, 65, 67, 69, 71, 72, 70, 68];
+    const sig = synthesizeWhistle(randomMelody, { noteS: 0.4, gapS: 0.05, jitter: 0.4, vibrato: 0.3, seed: 5 });
+    const { policy } = whistlePipeline(sig);
+    expect((policy as { ok: boolean }).ok).toBe(false);
   });
 });
 
