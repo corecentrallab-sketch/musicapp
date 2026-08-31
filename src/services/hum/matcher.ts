@@ -36,8 +36,17 @@ export const HUM_MATCH_POLICY = {
   RATIO: 1.35,
   /** When only ONE candidate clears the floor, it must be this strong alone. */
   SINGLE_MATCH_CONFIDENCE: 0.7,
+  /** Queries with at most this many deltas are "short" — inherently ambiguous. */
+  SHORT_QUERY_DELTAS: 12,
+  /** Short queries must be much stronger to be named (false positives cluster
+   *  in short, scale-like runs — an adversarial short run quantizes to a clean
+   *  coincidental contour at ~0.80 even when it is not the piece). The owner's
+   *  real whistle is a LONG query (34 deltas) so it uses the normal 0.70 floor;
+   *  a short coincidental run is gated harder at 0.85. */
+  SINGLE_MATCH_CONFIDENCE_SHORT: 0.85,
   HINT_AMBIGUOUS: "That hum sounds like several pieces — try humming a longer, clearer phrase.",
   HINT_SINGLE_WEAK: "That wasn't a confident melody match — try humming a longer, clearer phrase.",
+  HINT_SHORT_WEAK: "That short phrase was too ambiguous to name — try humming or whistling it a little longer.",
 } as const;
 
 export type HumPolicyResult =
@@ -111,6 +120,17 @@ export function applyHumMatchPolicy(matches: MelodyMatch[], queryDeltaCount: num
     }
   } else if (top.confidence < HUM_MATCH_POLICY.SINGLE_MATCH_CONFIDENCE) {
     return { ok: false, reason: "single-weak", hint: HUM_MATCH_POLICY.HINT_SINGLE_WEAK };
+  }
+  // Short queries (few deltas) carry too little contour evidence to safely name
+  // even when one candidate leads — false positives cluster here (a short
+  // scale-like run can quantize to a clean coincidental contour near 0.80).
+  // Apply a higher absolute floor independent of single-vs-margin, so a real
+  // short melody must be near-exact to be named.
+  const requiredFloor = queryDeltaCount <= HUM_MATCH_POLICY.SHORT_QUERY_DELTAS
+    ? HUM_MATCH_POLICY.SINGLE_MATCH_CONFIDENCE_SHORT
+    : HUM_MATCH_POLICY.SINGLE_MATCH_CONFIDENCE;
+  if (top.confidence < requiredFloor) {
+    return { ok: false, reason: "single-weak", hint: HUM_MATCH_POLICY.HINT_SHORT_WEAK };
   }
   return { ok: true, top, matches: [top] };
 }

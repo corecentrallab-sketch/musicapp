@@ -159,7 +159,21 @@ export function segmentMidiToNotes(
     runConf.fill(1);
     if (run.length >= MIN_NOTE_FRAMES) {
       const sorted = run.slice().sort((a, b) => a - b);
-      const pitch = sorted[Math.floor(sorted.length / 2)];
+      // Quantize the note's pitch to the nearest whole semitone. The melody
+      // contour is defined on a RELATIVE-INTERVAL semitone grid (see header),
+      // so a sub-semitone f0 estimate must not leak in as a spurious fractional
+      // delta. A real whistle/hum carries small intonation error (fractional
+      // MIDI) that was fragmenting each held note into noise and dragging DTW
+      // similarity down ~5 points — enough to sink a true match below the
+      // confidence gate (verified on the owner's real on-device Für Elise
+      // whistle: 0.661 -> 0.717). Rounding the note CENTER (after the run is
+      // merged) collapses that jitter to the correct semitone without ever
+      // splitting/merging a run. The vibrato path already quantizes; this makes
+      // the dense path consistent with it. NOTE: this alone slightly boosts
+      // coincidental short-run matches too, so the policy pairs it with a
+      // stricter floor for SHORT queries (see matcher.ts) to keep false
+      // positives out.
+      const pitch = Math.round(sorted[Math.floor(sorted.length / 2)]);
       notes.push({
         pitch,
         onsetS: start * hopS,

@@ -227,6 +227,34 @@ describe("realistic slow-whistle tolerance (owner-style)", () => {
   });
 });
 
+describe("owner's real on-device whistle (regression: quantization gate)", () => {
+  test("real fractional Für Elise whistle contour, quantized to semitones, matches Für Elise (closed-test gate)", () => {
+    const store = getMelodyStore();
+    // The owner's actual whistled Für Elise (extracted median note pitches from
+    // the live /api/hum capture debug/hum-1788157288331-*.m4a). These carry real
+    // human intonation error (fractional MIDI) that previously produced a noisy
+    // 34-delta contour scoring only 0.661 — just under the 0.70 gate. Quantizing
+    // the note centers to whole semitones (now done in segmentMidiToNotes) lifts
+    // it to 0.717 and clears the gate, without a false positive.
+    const ownerPitches = [77.67, 78.42, 77.51, 78.70, 73.38, 74.31, 71.40, 75.31, 76.48, 70.42, 70.76, 73.46, 63.54, 75.56, 68.80, 73.59, 74.68, 67.66, 62.63, 58.76, 48.60, 79.15, 77.46, 78.37, 77.24, 78.52, 74.34, 77.04, 75.05, 71.63, 64.77, 76.59, 68.53, 71.23, 73.21];
+    // Build a piecewise-constant voiced MIDI track holding each median for a few
+    // frames, so segmentMidiToNotes sees the owner's real note centers.
+    const midi: number[] = [];
+    const voiced: boolean[] = [];
+    for (const p of ownerPitches) { for (let k = 0; k < 4; k++) { midi.push(p); voiced.push(true); } }
+    const notes = segmentMidiToNotes(midi, voiced, 0.02);
+    const { deltas } = notesToPolyline(notes);
+    // Every note pitch must now be a whole semitone (quantization is the fix).
+    expect(notes.every((n) => Number.isInteger(n.pitch))).toBe(true);
+    const candidates = matchMelody(deltas, store);
+    expect(candidates[0].piece_id).toBe("fur-elise");
+    expect(candidates[0].confidence).toBeGreaterThanOrEqual(0.7);
+    const policy = applyHumMatchPolicy(candidates, deltas.length);
+    expect(policy.ok).toBe(true);
+    if (policy.ok) expect(policy.top.piece_id).toBe("fur-elise");
+  });
+});
+
 describe("/api/hum handler (end-to-end, decode path included)", () => {
   function pcmToWav(samples: Float32Array, sampleRate: number): Uint8Array {
     const buf = new ArrayBuffer(44 + samples.length * 2);
