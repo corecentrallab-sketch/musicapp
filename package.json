@@ -9,7 +9,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "eslint .",
-    "ts:check": "tsc --noEmit"
+    "ts:check": "tsc --noEmit",
+    "test:tier1": "tsc -p tsconfig.tier1.json && node /tmp/tier1-test/scripts/tier1.test.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.0",

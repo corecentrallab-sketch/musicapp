@@ -269,7 +269,7 @@ export function useAudioRecorder() {
    * it returns `null` AND sets a human-readable `error`. The caller is expected
    * to surface that error to the user — it must NOT silently reset to idle.
    */
-  const stopRecording = useCallback(async (): Promise<string | null> => {
+  const stopRecording = useCallback(async (): Promise<StoppedRecording | null> => {
     const recording = recordingRef.current;
     if (!recording) {
       setIsRecording(false);

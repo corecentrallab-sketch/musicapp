@@ -27,6 +27,8 @@ import {
 } from '../components/RecognitionResultView';
 import { ScoreViewer } from '../components/ScoreViewer';
 import { PieceDetailScreen } from './PieceDetailScreen';
+import { HumSearchScreen } from './HumSearchScreen';
+import { ModernSearchScreen } from './ModernSearchScreen';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import {
   recognizeAudio,
@@ -93,6 +95,10 @@ export const HomeScreen: React.FC = () => {
   const [showRecognitionResults, setShowRecognitionResults] = useState(false);
   const [freeRecognitions, setFreeRecognitions] = useState(0);
   const [isPro, setIsPro] = useState(false);
+  // Tier-1 full-screen flows (hum/whistle/sing and modern-song search). Each
+  // owns its own recorder so they never collide with the audio-recognize flow.
+  const [showHumSearch, setShowHumSearch] = useState(false);
+  const [showModernSearch, setShowModernSearch] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Pulsing animation for the mic indicator
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -395,6 +401,29 @@ export const HomeScreen: React.FC = () => {
     navigation.navigate('Settings');
   }, [navigation]);
 
+  // ── Tier-1 full-screen flows ──
+  // Hum/whistle/sing-to-search: opens HumSearchScreen (its own recorder).
+  const handleOpenHumSearch = useCallback(() => {
+    setShowHumSearch(true);
+  }, []);
+
+  // Modern-song search: opens ModernSearchScreen (its own recorder).
+  const handleOpenModernSearch = useCallback(() => {
+    setShowModernSearch(true);
+  }, []);
+
+  // From the modern interstitial: jump to the hum flow (find a free PD piece).
+  const handleHumItFromModern = useCallback(() => {
+    setShowModernSearch(false);
+    setShowHumSearch(true);
+  }, []);
+
+  // From the modern interstitial: open the free public-domain Library.
+  const handleBrowseLibraryFromModern = useCallback(() => {
+    setShowModernSearch(false);
+    navigation.navigate('Library');
+  }, [navigation]);
+
   // ── Daily challenge tap: record practice (streak framing), then open the
   // piece's sheet music in the in-app viewer when available; otherwise show
   // the honest "coming soon" state (PieceDetailScreen) instead of a dead end.
@@ -463,6 +492,21 @@ export const HomeScreen: React.FC = () => {
     100,
   );
   const weekComplete = weeklyGoal.current >= weeklyGoal.target;
+
+  // Full-screen Tier-1 flows (owned recorders; rendered in place like the rest
+  // of the app's full-screen readers).
+  if (showHumSearch) {
+    return <HumSearchScreen onClose={() => setShowHumSearch(false)} />;
+  }
+  if (showModernSearch) {
+    return (
+      <ModernSearchScreen
+        onClose={() => setShowModernSearch(false)}
+        onHumIt={handleHumItFromModern}
+        onBrowseLibrary={handleBrowseLibraryFromModern}
+      />
+    );
+  }
 
   // Full-screen sheet music viewer — the same path the recognition result flow
   // uses for pieces that have a curated sheet.
@@ -589,6 +633,32 @@ export const HomeScreen: React.FC = () => {
             >
               <Text style={styles.demoBtnText}>🧪 Try Demo</Text>
             </TouchableOpacity>
+          )}
+
+          {/* Tier-1 secondary modes (distinct from audio-recognize above) */}
+          {!recorder.isRecording && !recorder.checkingPermissions && (
+            <View style={styles.tier1Row}>
+              <TouchableOpacity
+                style={styles.tier1Btn}
+                onPress={handleOpenHumSearch}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.tier1BtnEmoji}>🎤</Text>
+                <Text style={styles.tier1BtnText}>
+                  Hum, whistle or sing the melody
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.tier1Btn}
+                onPress={handleOpenModernSearch}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.tier1BtnEmoji}>💿</Text>
+                <Text style={styles.tier1BtnText}>
+                  Find any song & get the sheet music
+                </Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
 
@@ -1012,6 +1082,35 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',
+  },
+
+  // Tier-1 secondary modes (hum / modern-song)
+  tier1Row: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+    marginTop: 14,
+  },
+  tier1Btn: {
+    flex: 1,
+    backgroundColor: '#0f3460',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1a1a2e',
+  },
+  tier1BtnEmoji: {
+    fontSize: 22,
+    marginBottom: 4,
+  },
+  tier1BtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 16,
   },
 
   // Recording indicator
