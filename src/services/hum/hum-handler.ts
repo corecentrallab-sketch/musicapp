@@ -17,6 +17,7 @@ import { extractF0Track, hzToMidi, smoothMidiTrack } from "./f0";
 import { f0TrackToContour } from "./contour";
 import { matchMelody, applyHumMatchPolicy } from "./matcher";
 import { getMelodyStore, loadSkeletonsFromNeon } from "./store";
+import { evaluateCaptureQuality, QUALITY_REASONS } from "./hum-quality";
 import { uploadScore } from "~/services/storage";
 import { createHash } from "node:crypto";
 import type { MelodySkeleton } from "./skeleton";
@@ -111,6 +112,39 @@ export async function handleHum(req: Request): Promise<Response> {
   const voicedSmoothed = midiSmooth.map((p) => p > 0);
   const contour = f0TrackToContour(midiSmooth, voicedSmoothed, track.hopS);
   const queryDeltas = contour.deltas;
+
+  // --- Capture-quality guard ---
+  // A bad take (over-driven mic, room noise, continuous pitch-glide, mains-hum
+  // bleed) does not carry a clean stepped melody; no matcher threshold can
+  // recover it. When the guard trips we short-circuit BEFORE matching and tell
+  // the user the input was unclear and how to fix it — and we never name a
+  // piece. A clean-but-simply-weak take passes through untouched to the normal
+  // single-match/no-match gate below. All signals use data already extracted
+  // here (the delta/note contour + the per-frame f0 track) — no extra compute.
+  const quality = evaluateCaptureQuality(contour, track);
+  if (quality.inputUnclear) {
+    const reason = quality.reasons.includes(QUALITY_REASONS.WIDE_PITCH_RANGE)
+      ? quality.reasons.includes(QUALITY_REASONS.UNSTABLE_PITCH)
+        ? "Your recording captured unstable, jumping pitch — please move closer to the mic, head to a quieter room, and record a steady, slower, clearly-phrased melody, then try again."
+        : "Your recording's pitch wandered too widely to be a steady melody — please move closer to the mic, head to a quieter room, and record a steady, slower phrase, then try again."
+      : "Your recording didn't capture a clear melody — please move closer, find a quieter room, and record a steady, slower phrase, then try again.";
+    return corsResponse({
+      success: true,
+      matches: [],
+      input_unclear: true,
+      input_unclear_reasons: quality.reasons,
+      message: reason,
+      hint: reason,
+      query_duration_ms: Math.round(performance.now() - startTime),
+      quality: {
+        notes: quality.notes,
+        max_abs_delta: quality.maxAbsDelta,
+        voiced_frames: quality.voicedFrames,
+        voiced_f0_span_octaves: quality.voicedF0SpanOctaves,
+        low_f0_ratio: quality.lowF0Ratio,
+      },
+    });
+  }
 
   // --- Load skeletons (DB-backed when available, else bundled seeds) ---
   let store: MelodySkeleton[] = getMelodyStore();
