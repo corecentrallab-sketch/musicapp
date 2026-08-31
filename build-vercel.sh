@@ -17,7 +17,11 @@ echo "[1/3] vite build (light — safe under the sandbox memory cap)"
 # The workspace starts as sources only (deps live with the image's pre-built
 # placeholder copy); no-op once node_modules is current.
 bun install
-bun run build
+# Memory-safe client build: cap the JS heap and skip minification/sourcemaps so
+# rollup's chunking phase fits the sandbox memory cap (plain `vite build` here
+# was OOM-killed during "rendering chunks").
+NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=300"
+bunx vite build --minify=false --sourcemap=false
 
 echo "[2/3] assemble .vercel/output (Build Output API v3)"
 rm -rf .vercel/output
