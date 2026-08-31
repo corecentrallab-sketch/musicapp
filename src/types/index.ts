@@ -78,6 +78,68 @@ export interface RecognitionError {
 
 export type RecognitionResult = RecognitionResponse | RecognitionError;
 
+// ─── Tier-1: Hum/whistle/sing-to-search (POST /api/hum) ───────
+
+/** A single matched piece from the hum/whistle/sing-to-search API. The backend
+ *  gates on "no confident-wrong": an empty matches array is an honest no-match,
+ *  never a fabricated title. */
+export interface HumMatch {
+  piece_id: string;
+  title: string;
+  composer: string;
+  /** 0-1 rounded confidence. */
+  confidence: number;
+}
+
+/** Diagnostic contour stats echoed by POST /api/hum (how much melody was heard). */
+export interface HumContourStats {
+  notes: number;
+  deltas: number;
+  voiced_frames: number;
+  total_frames: number;
+  extracted_pitches?: number[];
+  extracted_deltas?: number[];
+}
+
+/** Successful response from POST /api/hum. */
+export interface HumResponse {
+  success: true;
+  matches: HumMatch[];
+  query_duration_ms: number;
+  db_available: boolean;
+  contour_stats?: HumContourStats;
+  /** Present when the server declined to name a piece (too weak/short) — the
+   *  honest "hum a longer/clearer phrase" reason. */
+  no_confident_match_reason?: string;
+}
+
+// ─── Tier-1: Modern-song recognition (POST /api/recognize-modern) ──
+
+/** A recognized copyrighted song, with a retailer purchase URL for the
+ *  official sheet music. We never host/provide a copyrighted file — only
+ *  identity + metadata + a licensed-retailer link. */
+export interface ModernMatch {
+  song: string;
+  artist: string;
+  album?: string;
+  isrc?: string;
+  albumArtUrl?: string;
+  composer?: string;
+  matchConfidence: number;
+  source: string;
+  retailerUrl?: string;
+}
+
+/** Successful response from POST /api/recognize-modern.
+ *  `modern` is null and `recognized` is "none" when no song was matched. */
+export interface ModernResponse {
+  success: true;
+  modern: ModernMatch | null;
+  recognized: "modern" | "none";
+  source: string;
+  query_duration_ms: number;
+}
+
 /** The states a recognition session can be in. */
 export type RecognitionState =
   | "idle"
