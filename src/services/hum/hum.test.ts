@@ -3,6 +3,7 @@
  * Run with: bun test src/services/hum/hum.test.ts (from /home/team/shared/site)
  */
 import { describe, test, expect } from "bun:test";
+import { readFile } from "node:fs/promises";
 import { extractF0Track, hzToMidi, smoothMidiTrack } from "./f0";
 import { notesToPolyline, segmentMidiToNotes, f0TrackToContour } from "./contour";
 import { buildSkeleton } from "./skeleton";
@@ -285,5 +286,58 @@ describe("/api/hum handler (end-to-end, decode path included)", () => {
     console.log(`[endpoint] contour_stats=${JSON.stringify(json.contour_stats)}`);
     expect(json.matches[0].title).toContain("Für Elise");
     expect(json.matches[0].confidence).toBeGreaterThan(0.6);
+  });
+});
+
+describe("capture-quality guard", () => {
+  /** Minimal 16-bit mono WAV encoder (local copy so this block is self-contained). */
+  function pcmToWavLocal(samples: Float32Array, sampleRate: number): Uint8Array {
+    const buf = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buf);
+    const w = (o: number, s: string) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, "RIFF"); view.setUint32(4, 36 + samples.length * 2, true); w(8, "WAVE");
+    w(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    w(36, "data"); view.setUint32(40, samples.length * 2, true);
+    for (let i = 0; i < samples.length; i++) {
+      const v = Math.max(-1, Math.min(1, samples[i]));
+      view.setInt16(44 + i * 2, v < 0 ? v * 32768 : v * 32767, true);
+    }
+    return new Uint8Array(buf);
+  }
+
+  test("owner's real degraded on-device capture (this m4a) returns input_unclear=true, never a match", async () => {
+    const { handleHum } = await import("./hum-handler");
+    // Decode exactly as the handler does (audio-decode via decodeToMonoSamples),
+    // but feed the raw m4a bytes straight through handleHum so the whole decode +
+    // extraction + guard path is exercised end-to-end.
+    const bytes = await readFile("/home/team/shared/gate-test/ondevice-0719-43373e94.m4a");
+    const form = new FormData();
+    form.append("audio", new File([bytes], "ondevice-0719-43373e94.m4a", { type: "audio/mp4" }));
+    const res = await handleHum(new Request("http://localhost/api/hum", { method: "POST", body: form }));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.input_unclear).toBe(true);
+    expect(json.matches.length).toBe(0); // never name a piece it isn't confident about
+    expect(typeof json.message).toBe("string");
+    expect(json.message.length).toBeGreaterThan(0);
+    console.log(`[quality-bad] reasons=${JSON.stringify(json.input_unclear_reasons)} quality=${JSON.stringify(json.quality)}`);
+  });
+
+  test("a clean synthesized whistle still matches and does NOT set input_unclear", async () => {
+    const { handleHum } = await import("./hum-handler");
+    const sig = synthesizeWhistle(FUR_ELISE_MOTIF, { jitter: 0.3, vibrato: 0, noteS: 1.15, seed: 101 });
+    const wav = pcmToWavLocal(sig, SR);
+    const form = new FormData();
+    form.append("audio", new File([wav], "clean-whistle.wav", { type: "audio/wav" }));
+    const res = await handleHum(new Request("http://localhost/api/hum", { method: "POST", body: form }));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.input_unclear).toBeFalsy();
+    expect(json.matches.length).toBeGreaterThan(0);
+    expect(json.matches[0].title).toContain("Für Elise");
+    console.log(`[quality-clean] top=${JSON.stringify(json.matches[0] ?? null)}`);
   });
 });
