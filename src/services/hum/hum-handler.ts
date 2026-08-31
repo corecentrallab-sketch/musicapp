@@ -17,9 +17,45 @@ import { extractF0Track, hzToMidi, smoothMidiTrack } from "./f0";
 import { f0TrackToContour } from "./contour";
 import { matchMelody, applyHumMatchPolicy } from "./matcher";
 import { getMelodyStore, loadSkeletonsFromNeon } from "./store";
+import { uploadScore } from "~/services/storage";
+import { createHash } from "node:crypto";
 import type { MelodySkeleton } from "./skeleton";
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+
+// ---------------------------------------------------------------------------
+// Debug-gated persistence of the raw received hum/whistle upload.
+//
+// Mirrors /api/recognize (see recognize-handler.ts): when
+// PERSIST_RECOGNIZE_AUDIO=true (default OFF, so normal operation never pays for
+// storage), each successful upload to /api/hum is ALSO written to Cloudflare R2
+// under a `debug/` prefix — `debug/hum-<unixms>-<hash8>.m4a` — so genuine
+// phone-mic whistle/hum recordings can be reviewed post-hoc to inspect the
+// extracted pitch contour versus the reference seed (closed-test gate: the
+// owner's real whistle isn't landing on the Für Elise seed; we need the actual
+// bytes to tune the matcher).
+//
+// A failed debug write never breaks the hum path: it is logged and swallowed.
+// The audio bytes are written only to the object storage key above — never
+// logged or echoed back in any response.
+// ---------------------------------------------------------------------------
+const PERSIST_HUM_AUDIO = process.env.PERSIST_RECOGNIZE_AUDIO === "true";
+/** Write the raw received audio to R2 under debug/ (best-effort, never throws). */
+async function persistHumAudio(audioBuffer: Buffer): Promise<void> {
+  if (!PERSIST_HUM_AUDIO) return;
+  try {
+    const hash = createHash("sha256").update(audioBuffer).digest("hex").slice(0, 8);
+    // `.m4a` because the app uploads m4a (AAC) and the container is mp4-family
+    // (same convention as /api/recognize's debug captures).
+    const key = `debug/hum-${Date.now()}-${hash}.m4a`;
+    await uploadScore(key, audioBuffer, "audio/mp4");
+    console.log(`[hum] persisted received audio -> ${key} (${audioBuffer.length}B)`);
+  } catch (err) {
+    // Debug write must never degrade the hum path — log and continue.
+    // (audioBuffer is intentionally NOT logged.)
+    console.error("[hum] failed to persist received audio (continuing):", err);
+  }
+}
 
 function corsResponse(body: unknown, init?: { status?: number }): Response {
   return Response.json(body, {
@@ -49,6 +85,9 @@ export async function handleHum(req: Request): Promise<Response> {
   }
 
   const audioBuffer = Buffer.from(await audioFile.arrayBuffer());
+  // Debug-gated: persist the raw upload to R2 (best-effort, never blocks/breaks)
+  // BEFORE decoding, so the original bytes are preserved for offline tuning.
+  await persistHumAudio(audioBuffer);
 
   // --- Decode to mono PCM ---
   let mono: Float32Array;
