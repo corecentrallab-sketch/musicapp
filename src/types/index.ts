@@ -111,6 +111,18 @@ export interface HumResponse {
   /** Present when the server declined to name a piece (too weak/short) — the
    *  honest "hum a longer/clearer phrase" reason. */
   no_confident_match_reason?: string;
+  /** Capture-quality guard: true when the recording was degraded (unstable
+   *  pitch, wide pitch range, over-driven, etc.) and the server returned
+   *  coaching guidance instead of a bare miss. */
+  input_unclear?: boolean;
+  /** Machine-readable reasons for the input-unclear flag, e.g.
+   *  ["unstable-pitch", "wide-pitch-range"]. */
+  input_unclear_reasons?: string[];
+  /** Human-facing coaching message (same as hint) telling the user how to
+   *  record a better take. */
+  message?: string;
+  /** Short human-facing hint for the input-unclear case. */
+  hint?: string;
 }
 
 // ─── Tier-1: Modern-song recognition (POST /api/recognize-modern) ──

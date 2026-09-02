@@ -91,6 +91,63 @@ assert (/longer phrase/.test(noMatch.reason ?? ''), 'server reason preserved');
 const noReason = humOutcome(parseHumResponse({ success: true, matches: [] })!);
 assert(/longer/.test(noReason.reason ?? ''), 'default reason used when absent');
 
+console.log('\n— hum input-unclear (capture-quality guard) handling —');
+const unclearResp = parseHumResponse({
+  success: true,
+  matches: [],
+  input_unclear: true,
+  input_unclear_reasons: ['unstable-pitch', 'wide-pitch-range'],
+  message: 'Your recording captured unstable, jumping pitch — please move closer to the mic, head to a quieter room, and record a steady, slower, clearly-phrased melody, then try again.',
+  hint: 'Your recording captured unstable, jumping pitch — please move closer to the mic, head to a quieter room, and record a steady, slower, clearly-phrased melody, then try again.',
+});
+assert(
+  unclearResp?.input_unclear === true,
+  'input_unclear flag parsed',
+);
+assertEq(
+  unclearResp?.input_unclear_reasons?.length,
+  2,
+  'input_unclear_reasons parsed',
+);
+assertEq(
+  unclearResp?.message === undefined ? 'no-message' : 'has-message',
+  'has-message',
+  'server coaching message parsed',
+);
+const unclearOutcome = humOutcome(unclearResp!);
+assert(
+  unclearOutcome.ok === false,
+  'input-unclear capture is an honest no-match (ok=false)',
+);
+assert(
+  unclearOutcome.inputUnclear === true,
+  'inputUnclear marker set on outcome',
+);
+assert(
+  /unstable, jumping pitch/.test(unclearOutcome.reason ?? ''),
+  'server coaching message surfaced as the reason (not generic no-match text)',
+);
+const unclearNoMessage = humOutcome(
+  parseHumResponse({ success: true, matches: [], input_unclear: true })!,
+);
+assert(
+  unclearNoMessage.inputUnclear === true &&
+    /clear melody/.test(unclearNoMessage.reason ?? ''),
+  'sensible default coaching used when server sends no message',
+);
+const matchedUnclear = humOutcome(
+  parseHumResponse({
+    success: true,
+    matches: [{ piece_id: 'p1' }],
+    input_unclear: true,
+    message: 'ignored when a match exists',
+  })!,
+);
+assert(
+  matchedUnclear.ok === true && matchedUnclear.inputUnclear !== true,
+  'a real match wins even if input_unclear flag is present',
+);
+
 console.log('\n— hum short-phrase hint —');
 assert(
   humPhraseHint(parseHumResponse({ success: true, matches: [], contour_stats: { notes: 2, deltas: 1, voiced_frames: 5, total_frames: 10 } })!) !== undefined,

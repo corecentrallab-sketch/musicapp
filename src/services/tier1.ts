@@ -66,6 +66,16 @@ export function parseHumResponse(raw: unknown): HumResponse | null {
     };
   }
 
+  const unclearReasons: string[] = [];
+  if (Array.isArray(r.input_unclear_reasons)) {
+    for (const reason of r.input_unclear_reasons) {
+      if (typeof reason === "string" && reason) unclearReasons.push(reason);
+    }
+  }
+  const message =
+    typeof r.message === "string" && r.message ? r.message : undefined;
+  const hint = typeof r.hint === "string" && r.hint ? r.hint : undefined;
+
   return {
     success: true,
     matches,
@@ -77,6 +87,10 @@ export function parseHumResponse(raw: unknown): HumResponse | null {
       typeof r.no_confident_match_reason === "string"
         ? r.no_confident_match_reason
         : undefined,
+    input_unclear: r.input_unclear === true,
+    input_unclear_reasons: unclearReasons,
+    message,
+    hint,
   };
 }
 
@@ -86,14 +100,30 @@ export interface HumOutcome {
   matches: HumMatch[];
   topMatch?: HumMatch;
   reason?: string;
+  /** true when the server flagged the capture as degraded (unstable pitch etc.)
+   *  and sent coaching guidance — the reason then holds the server's message. */
+  inputUnclear?: boolean;
   contourStats?: HumContourStats;
 }
 
 /** The honest match-vs-no-match decision for a hum search. NEVER fabricates a
  *  title: empty matches (the server's "no confident-wrong" gate) → no-match
- *  with the server's reason (or a sensible default). */
+ *  with the server's reason (or a sensible default). When the server flagged
+ *  the recording as unclear (input_unclear:true), that reason is surfaced
+ *  verbatim so the UI can coach instead of showing a bare miss. */
 export function humOutcome(resp: HumResponse): HumOutcome {
   if (resp.matches.length === 0) {
+    if (resp.input_unclear) {
+      return {
+        ok: false,
+        matches: [],
+        inputUnclear: true,
+        reason:
+          resp.message ??
+          resp.hint ??
+          "We couldn't hear a clear melody — move closer to the mic, find a quieter room, and record a steady, slower, clearly-phrased tune, then try again.",
+      };
+    }
     return {
       ok: false,
       matches: [],
