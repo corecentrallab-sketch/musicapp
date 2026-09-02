@@ -215,8 +215,28 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({ onClose }) => 
           </View>
         )}
 
+        {/* Unclear capture — the server heard unstable/weak audio and sent
+            coaching guidance. Never shown as a bare miss. */}
+        {stage === 'no-match' && outcome && outcome.inputUnclear && (
+          <View style={[styles.resultCard, styles.unclearCard]}>
+            <Text style={styles.resultEmoji}>🎙️</Text>
+            <Text style={styles.resultTitle}>Your recording was unclear</Text>
+            <Text style={styles.resultText}>
+              {outcome.reason ??
+                "We couldn't hear a clear melody — move closer to the mic, find a quieter room, and record a steady, slower, clearly-phrased tune, then try again."}
+            </Text>
+            <Text style={styles.hintText}>
+              Tip: keep the mic close, stay still, and whistle one clear, steady
+              phrase.
+            </Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={handleRetry}>
+              <Text style={styles.primaryBtnText}>Hum Again</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* No match — honest, with retry */}
-        {stage === 'no-match' && outcome && (
+        {stage === 'no-match' && outcome && !outcome.inputUnclear && (
           <View style={styles.resultCard}>
             <Text style={styles.resultEmoji}>🔍</Text>
             <Text style={styles.resultTitle}>No match for that hum</Text>
@@ -402,6 +422,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#0f3460',
+  },
+  unclearCard: {
+    borderColor: '#e9c46a',
+    borderWidth: 1.5,
   },
   resultEmoji: {
     fontSize: 44,
