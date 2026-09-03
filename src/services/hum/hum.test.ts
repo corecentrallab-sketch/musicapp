@@ -289,7 +289,7 @@ describe("/api/hum handler (end-to-end, decode path included)", () => {
   });
 });
 
-describe("capture-quality guard", () => {
+describe("real on-device whistle — matcher gate only (owner directive 09-02: delete coaching fix)", () => {
   /** Minimal 16-bit mono WAV encoder (local copy so this block is self-contained). */
   function pcmToWavLocal(samples: Float32Array, sampleRate: number): Uint8Array {
     const buf = new ArrayBuffer(44 + samples.length * 2);
@@ -306,11 +306,28 @@ describe("capture-quality guard", () => {
     return new Uint8Array(buf);
   }
 
-  test("owner's real degraded on-device capture (this m4a) returns input_unclear=true, never a match", async () => {
+  test("THE CLOSED-TEST GATE: owner's newest real on-device Für Elise whistle returns Für Elise ≥ 0.70 (no guard short-circuit)", async () => {
     const { handleHum } = await import("./hum-handler");
-    // Decode exactly as the handler does (audio-decode via decodeToMonoSamples),
-    // but feed the raw m4a bytes straight through handleHum so the whole decode +
-    // extraction + guard path is exercised end-to-end.
+    // The owner's real whistle capture (09-02 04:53Z). The capture-quality guard
+    // used to reject this take BEFORE matching (raw-f0 span 2.47 octaves, max
+    // delta 20), which is why the owner saw no match. Without the guard the
+    // matcher scores it Für Elise 0.895 (verified via the guardless pipeline).
+    const bytes = await readFile("/home/team/shared/gate-test/hum-1788324792666-a9e3ccf1.m4a");
+    const form = new FormData();
+    form.append("audio", new File([bytes], "hum-1788324792666-a9e3ccf1.m4a", { type: "audio/mp4" }));
+    const res = await handleHum(new Request("http://localhost/api/hum", { method: "POST", body: form }));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.input_unclear).toBeFalsy(); // guard removed — no coaching short-circuit
+    expect(json.matches.length).toBeGreaterThan(0);
+    expect(json.matches[0].title).toContain("Für Elise");
+    expect(json.matches[0].confidence).toBeGreaterThanOrEqual(0.7);
+    console.log(`[gate] newest real whistle top=${JSON.stringify(json.matches[0] ?? null)}`);
+  });
+
+  test("owner's degraded on-device take (0719) still returns NO match — no false positive", async () => {
+    const { handleHum } = await import("./hum-handler");
     const bytes = await readFile("/home/team/shared/gate-test/ondevice-0719-43373e94.m4a");
     const form = new FormData();
     form.append("audio", new File([bytes], "ondevice-0719-43373e94.m4a", { type: "audio/mp4" }));
@@ -318,14 +335,14 @@ describe("capture-quality guard", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.success).toBe(true);
-    expect(json.input_unclear).toBe(true);
-    expect(json.matches.length).toBe(0); // never name a piece it isn't confident about
-    expect(typeof json.message).toBe("string");
-    expect(json.message.length).toBeGreaterThan(0);
-    console.log(`[quality-bad] reasons=${JSON.stringify(json.input_unclear_reasons)} quality=${JSON.stringify(json.quality)}`);
+    expect(json.input_unclear).toBeFalsy(); // guard removed — no coaching short-circuit
+    expect(json.matches.length).toBe(0); // matcher gate still refuses to name a bad take
+    expect(typeof json.no_confident_match_reason).toBe("string");
+    expect(json.no_confident_match_reason.length).toBeGreaterThan(0);
+    console.log(`[degraded] no_match_reason=${JSON.stringify(json.no_confident_match_reason)}`);
   });
 
-  test("a clean synthesized whistle still matches and does NOT set input_unclear", async () => {
+  test("a clean synthesized whistle still matches Für Elise through /api/hum", async () => {
     const { handleHum } = await import("./hum-handler");
     const sig = synthesizeWhistle(FUR_ELISE_MOTIF, { jitter: 0.3, vibrato: 0, noteS: 1.15, seed: 101 });
     const wav = pcmToWavLocal(sig, SR);
@@ -338,6 +355,7 @@ describe("capture-quality guard", () => {
     expect(json.input_unclear).toBeFalsy();
     expect(json.matches.length).toBeGreaterThan(0);
     expect(json.matches[0].title).toContain("Für Elise");
-    console.log(`[quality-clean] top=${JSON.stringify(json.matches[0] ?? null)}`);
+    expect(json.matches[0].confidence).toBeGreaterThanOrEqual(0.7);
+    console.log(`[clean] top=${JSON.stringify(json.matches[0] ?? null)}`);
   });
 });
