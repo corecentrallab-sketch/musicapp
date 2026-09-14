@@ -359,3 +359,89 @@ describe("real on-device whistle — matcher gate only (owner directive 09-02: d
     console.log(`[clean] top=${JSON.stringify(json.matches[0] ?? null)}`);
   });
 });
+
+describe("no-match closest-match feedback (honest, banded, additive)", () => {
+  /** Minimal 16-bit mono WAV encoder (module-scope copies are private to their
+   *  describe blocks — this one is local so this block stays self-contained). */
+  function pcmToWav(samples: Float32Array, sampleRate: number): Uint8Array {
+    const buf = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buf);
+    const w = (o: number, s: string) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, "RIFF"); view.setUint32(4, 36 + samples.length * 2, true); w(8, "WAVE");
+    w(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    w(36, "data"); view.setUint32(40, samples.length * 2, true);
+    for (let i = 0; i < samples.length; i++) {
+      const v = Math.max(-1, Math.min(1, samples[i]));
+      view.setInt16(44 + i * 2, v < 0 ? v * 32768 : v * 32767, true);
+    }
+    return new Uint8Array(buf);
+  }
+
+  /** Assert the shared no-match contract. */
+  function expectNoMatchContract(json: Record<string, unknown>) {
+    expect(json.success).toBe(true);
+    expect(Array.isArray(json.matches)).toBe(true);
+    expect((json.matches as unknown[]).length).toBe(0); // matches:[] as before
+    // no_confident_match_reason stays exactly as before: present only when the
+    // policy produced a hint (below-threshold has none — unchanged behavior).
+    if (json.no_confident_match_reason !== undefined) {
+      expect(typeof json.no_confident_match_reason).toBe("string");
+      expect((json.no_confident_match_reason as string).length).toBeGreaterThan(0);
+    }
+  }
+  /** Assert the additive closest_match_confidence field (bare score, no title). */
+  function expectClosestScore(json: Record<string, unknown>) {
+    expect(typeof json.closest_match_confidence).toBe("number");
+    const v = json.closest_match_confidence as number;
+    expect(v).toBeGreaterThanOrEqual(0);
+    expect(v).toBeLessThanOrEqual(1);
+    // Never name the candidate: the field must be a bare number, not a title.
+    expect(typeof json.closest_match_candidate_title).toBe("undefined");
+  }
+
+  test("SYNTH no-match (unrelated melody) includes closest_match_confidence in [0,1] and keeps matches:[]", async () => {
+    const { handleHum } = await import("./hum-handler");
+    const sig = synthesizeWhistle([60, 62, 64, 65, 67, 69, 71, 72, 70, 68], { noteS: 0.4, gapS: 0.05, jitter: 0.4, vibrato: 0.3, seed: 5 });
+    const wav = pcmToWav(sig, SR);
+    const form = new FormData();
+    form.append("audio", new File([wav], "unrelated-melody.wav", { type: "audio/wav" }));
+    const res = await handleHum(new Request("http://localhost/api/hum", { method: "POST", body: form }));
+    expect(res.status).toBe(200);
+    const json = await res.json() as Record<string, unknown>;
+    expectNoMatchContract(json);
+    expectClosestScore(json);
+    console.log(`[synth-no-match] closest_match_confidence=${JSON.stringify(json.closest_match_confidence)} reason=${JSON.stringify(json.no_confident_match_reason ?? null)}`);
+  });
+
+  test("REAL degraded no-match (owner's 0719 take) includes closest_match_confidence AND keeps its reason", async () => {
+    const { handleHum } = await import("./hum-handler");
+    const bytes = await readFile("/home/team/shared/gate-test/ondevice-0719-43373e94.m4a");
+    const form = new FormData();
+    form.append("audio", new File([bytes], "ondevice-0719-43373e94.m4a", { type: "audio/mp4" }));
+    const res = await handleHum(new Request("http://localhost/api/hum", { method: "POST", body: form }));
+    expect(res.status).toBe(200);
+    const json = await res.json() as Record<string, unknown>;
+    expectNoMatchContract(json);
+    expect(typeof json.no_confident_match_reason).toBe("string");
+    expect((json.no_confident_match_reason as string).length).toBeGreaterThan(0);
+    expectClosestScore(json);
+    console.log(`[degraded-closest] closest_match_confidence=${JSON.stringify(json.closest_match_confidence)} reason=${JSON.stringify(json.no_confident_match_reason)}`);
+  });
+
+  test("a REAL Für Elise match does NOT include closest_match_confidence (absent or null only on no-match)", async () => {
+    const { handleHum } = await import("./hum-handler");
+    const sig = synthesizeHum(FUR_ELISE_MOTIF, { shift: 0, jitter: 0.3 });
+    const wav = pcmToWav(sig, SR);
+    const form = new FormData();
+    form.append("audio", new File([wav], "furelise-match.wav", { type: "audio/wav" }));
+    const res = await handleHum(new Request("http://localhost/api/hum", { method: "POST", body: form }));
+    expect(res.status).toBe(200);
+    const json = await res.json() as Record<string, unknown>;
+    expect(json.success).toBe(true);
+    expect((json.matches as unknown[]).length).toBeGreaterThan(0);
+    expect((json.matches[0] as { title: string }).title).toContain("Für Elise");
+    expect(json.closest_match_confidence).toBeUndefined();
+    console.log(`[match-no-closest] matches=${JSON.stringify(json.matches)}`);
+  });
+});

@@ -140,6 +140,19 @@ export async function handleHum(req: Request): Promise<Response> {
       extracted_deltas: queryDeltas.slice(0, 16),
     },
   };
-  if (!policy.ok && policy.hint) response.no_confident_match_reason = policy.hint;
+  if (!policy.ok) {
+    // Honest "how close were we" feedback for the no-match path: report the
+    // SINGLE best similarity against ANY skeleton (the top scored candidate
+    // BEFORE the policy gate), so the app can band its copy ("we were close"
+    // vs "we're not sure") without ever quoting a threshold. Per the
+    // "no confident-wrong" rule we NEVER name the candidate piece — this field
+    // is a bare 0..1 score, never a title. Deliberately ABSENT on a successful
+    // match (the old fields are unchanged, so old clients stay compatible).
+    const best = candidates[0];
+    response.closest_match_confidence = best
+      ? Math.min(1, Math.max(0, Math.round(best.confidence * 100) / 100))
+      : 0; // degenerate: nothing scored (empty store) — app treats as "not sure"
+    if (policy.hint) response.no_confident_match_reason = policy.hint;
+  }
   return corsResponse(response);
 }
