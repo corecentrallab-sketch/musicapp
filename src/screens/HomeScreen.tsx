@@ -658,12 +658,12 @@ export const HomeScreen: React.FC = () => {
                   Find any song & get the sheet music
                 </Text>
               </TouchableOpacity>
+              {/* Honest beta note — recognition library is small and growing. */}
+              <Text style={styles.tier1BetaNote}>
+                Beta: our recognition library is still growing — well-known
+                classical melodies match best; not every song will match yet.
+              </Text>
             </View>
-            {/* Honest beta note — recognition library is small and growing. */}
-            <Text style={styles.tier1BetaNote}>
-              Beta: our recognition library is still growing — well-known
-              classical melodies match best; not every song will match yet.
-            </Text>
           )}
         </View>
 
