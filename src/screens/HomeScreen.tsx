@@ -659,6 +659,11 @@ export const HomeScreen: React.FC = () => {
                 </Text>
               </TouchableOpacity>
             </View>
+            {/* Honest beta note — recognition library is small and growing. */}
+            <Text style={styles.tier1BetaNote}>
+              Beta: our recognition library is still growing — well-known
+              classical melodies match best; not every song will match yet.
+            </Text>
           )}
         </View>
 
@@ -1111,6 +1116,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     lineHeight: 16,
+  },
+  tier1BetaNote: {
+    color: '#8a8aa3',
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+    marginTop: 10,
+    marginBottom: 2,
   },
 
   // Recording indicator

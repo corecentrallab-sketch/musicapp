@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { humToSearch } from '../services/api';
-import { humOutcome, humPhraseHint, type HumOutcome } from '../services/tier1';
+import { humOutcome, humPhraseHint, humNoMatchMessage, type HumOutcome } from '../services/tier1';
 import { saveRecognition } from '../services/storage';
 import { PieceDetailScreen } from './PieceDetailScreen';
 import type { DailyChallengePiece, HumMatch } from '../types';
@@ -196,9 +196,14 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({ onClose }) => 
           </Text>
         )}
         {!recorder.isRecording && stage === 'idle' && (
-          <Text style={styles.recordingHint}>
-            Tap the mic, hum a phrase (8–12s is ideal), then stop.
-          </Text>
+          <>
+            <Text style={styles.recordingHint}>
+              Tap the mic, hum a phrase (8–12s is ideal), then stop.
+            </Text>
+            <Text style={styles.idleBetaNote}>
+              Library is still growing — try a well-known melody (Für Elise, Ode to Joy).
+            </Text>
+          </>
         )}
 
         {/* Error */}
@@ -215,15 +220,15 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({ onClose }) => 
           </View>
         )}
 
-        {/* No match — honest, with retry */}
+        {/* No match — honest, banded, with retry. The copy comes from
+            humNoMatchMessage(): "we were close" (best candidate near/above the
+            server's floor) vs "we're not sure — library still growing". Never
+            a raw percentage, never a fabricated title. */}
         {stage === 'no-match' && outcome && (
           <View style={styles.resultCard}>
             <Text style={styles.resultEmoji}>🔍</Text>
             <Text style={styles.resultTitle}>No match for that hum</Text>
-            <Text style={styles.resultText}>
-              {outcome.reason ??
-                "We couldn't identify that melody — hum or whistle a longer, clearer phrase and try again."}
-            </Text>
+            <Text style={styles.resultText}>{humNoMatchMessage(outcome)}</Text>
             {hub && <Text style={styles.hintText}>{hub}</Text>}
             <TouchableOpacity style={styles.primaryBtn} onPress={handleRetry}>
               <Text style={styles.primaryBtnText}>Hum Again</Text>
@@ -349,6 +354,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#a0a0b8',
     textAlign: 'center',
+    marginBottom: 20,
+  },
+  idleBetaNote: {
+    fontSize: 12,
+    color: '#7d7d99',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    marginTop: -12,
     marginBottom: 20,
   },
   errorCard: {

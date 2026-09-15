@@ -12,6 +12,9 @@ import {
   parseHumResponse,
   humOutcome,
   humPhraseHint,
+  humNoMatchMessage,
+  HUM_CLOSE_MESSAGE,
+  HUM_NOT_SURE_MESSAGE,
   parseModernResponse,
   modernOutcome,
 } from '../src/services/tier1';
@@ -101,6 +104,70 @@ assert(
   'long contour yields no hint',
 );
 assert(humPhraseHint(parseHumResponse({ success: true, matches: [] })!) === undefined, 'no contour yields no hint');
+
+console.log('\n— hum closest-match banded feedback (no raw percentages) —');
+// Server no-match WITH a close candidate AND the server's specific reason:
+// the reason wins (more specific), but only because we were close.
+const closeRaw = {
+  success: true,
+  matches: [],
+  no_confident_match_reason:
+    "That hum sounds like several pieces — try humming a longer, clearer phrase.",
+  closest_match_confidence: 0.61,
+};
+const closeParsed = parseHumResponse(closeRaw);
+assertEq(closeParsed?.closestMatchConfidence, 0.61, 'closest_match_confidence parsed from no-match payload');
+assertEq(closeParsed?.matches.length, 0, 'no-match payload keeps empty matches');
+const closeOutcome = humOutcome(closeParsed!);
+assert(closeOutcome.ok === false, 'close-but-no-match is still an honest no-match');
+assertEq(closeOutcome.closestMatchConfidence, 0.61, 'closestMatchConfidence passed through humOutcome');
+assert(
+  humNoMatchMessage(closeOutcome) === closeRaw.no_confident_match_reason,
+  'close band prefers the server\u2019s specific reason',
+);
+assert(!/\d+%/.test(humNoMatchMessage(closeOutcome)), 'no raw percentage in close-band copy when reason shown');
+
+// Close candidate, no server reason → the default close copy (banded words).
+const closeNoReason = humOutcome(
+  parseHumResponse({ success: true, matches: [], closest_match_confidence: 0.58 })!,
+);
+assertEq(humNoMatchMessage(closeNoReason), HUM_CLOSE_MESSAGE, 'close band uses "we were close" default copy');
+assert(/We were close/.test(humNoMatchMessage(closeNoReason)), 'close band leads with "We were close"');
+assert(!/\d+%/.test(humNoMatchMessage(closeNoReason)), 'no raw percentage in close-band copy');
+
+// Boundary: exactly the server floor (0.55) counts as close.
+const atFloor = humOutcome(
+  parseHumResponse({ success: true, matches: [], closest_match_confidence: 0.55 })!,
+);
+assert(/We were close/.test(humNoMatchMessage(atFloor)), '0.55 boundary counts as close (banded words only)');
+
+// Weak candidate (below floor, even if a reason exists) → honest library copy.
+const notSure = humOutcome(
+  parseHumResponse({ success: true, matches: [], closest_match_confidence: 0.3 })!,
+);
+assertEq(humNoMatchMessage(notSure), HUM_NOT_SURE_MESSAGE, 'low confidence → "not sure / library growing" copy');
+assert(/library is still growing/.test(humNoMatchMessage(notSure)), '“library is still growing” present');
+assert(!/\d+%/.test(humNoMatchMessage(notSure)), 'no raw percentage in not-sure copy');
+
+// Field absent (older server) → same honest library band, no crash.
+const missing = humOutcome(parseHumResponse({ success: true, matches: [], no_confident_match_reason: 'x' })!);
+assertEq(humNoMatchMessage(missing), HUM_NOT_SURE_MESSAGE, 'missing confidence degrades to the library band');
+
+// Successful match: the server sends NO closest field → undefined end-to-end.
+const matchedParsed = parseHumResponse(humRaw);
+assertEq(matchedParsed?.closestMatchConfidence, undefined, 'match response has no closestMatchConfidence');
+assertEq(humOutcome(matchedParsed!).closestMatchConfidence, undefined, 'match outcome has no closestMatchConfidence');
+
+// Out-of-range / garbage server values normalize to [0,1].
+const clampedHi = parseHumResponse({ success: true, matches: [], closest_match_confidence: 1.7 });
+assertEq(clampedHi?.closestMatchConfidence, 1, 'out-of-range high confidence clamped to 1');
+const clampedLo = parseHumResponse({ success: true, matches: [], closest_match_confidence: -0.4 });
+assertEq(clampedLo?.closestMatchConfidence, 0, 'out-of-range low confidence clamped to 0');
+assertEq(
+  parseHumResponse({ success: true, matches: [], closest_match_confidence: '0.6' })?.closestMatchConfidence,
+  undefined,
+  'non-number confidence ignored',
+);
 
 console.log('\n— /api/recognize-modern response parsing —');
 const modRaw = {
