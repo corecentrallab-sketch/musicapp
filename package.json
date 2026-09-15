@@ -44,7 +44,6 @@
     "react-native-screens": "~4.4.0",
     "react-native-view-shot": "^5.1.1",
     "react-native-webview": "^13.12.5",
-    "undefined": "/opt/npm-cache"
   },
   "devDependencies": {
     "@types/react": "~18.3.0",
