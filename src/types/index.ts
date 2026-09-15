@@ -111,6 +111,12 @@ export interface HumResponse {
   /** Present when the server declined to name a piece (too weak/short) — the
    *  honest "hum a longer/clearer phrase" reason. */
   no_confident_match_reason?: string;
+  /** On a NO-MATCH ONLY: the single best pre-gate similarity (0..1) against
+   *  any skeleton, so the UI can band its feedback ("we were close" vs "we're
+   *  not sure") WITHOUT a raw percentage. A bare score, never a title — the
+   *  server never names a candidate it wouldn't confidently match. Absent on
+   *  a successful match. */
+  closestMatchConfidence?: number;
 }
 
 // ─── Tier-1: Modern-song recognition (POST /api/recognize-modern) ──

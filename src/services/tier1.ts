@@ -23,6 +23,25 @@ import type {
  */
 export const MIN_HUM_PHRASE_DELTAS = 3;
 
+/**
+ * No-match band threshold: a no-match where the best candidate still scored
+ * at/above this (the server's absolute floor) means "we were close" — the copy
+ * becomes a retry nudge. Below it (or absent — e.g. an older server) the copy
+ * becomes the honest "library still growing" message. NEVER quote this number
+ * to users: banded words only, no raw percentages.
+ */
+export const HUM_CLOSE_BAND_MIN = 0.55;
+
+/** No-match copy when the best candidate was near/above the floor. */
+export const HUM_CLOSE_MESSAGE =
+  'We were close — hum or whistle a longer, clearer phrase and try again.';
+/** No-match copy when no candidate came close (or the score is unknown). */
+export const HUM_NOT_SURE_MESSAGE =
+  "We're not sure — try a more well-known melody (our recognition library is still growing).";
+/** Fallback reason used when the server sent no no_confident_match_reason. */
+export const HUM_DEFAULT_NO_MATCH_REASON =
+  "We couldn't identify that melody — hum or whistle a longer, clearer phrase and try again.";
+
 // ─── /api/hum — validate + normalize ─────────────────────────
 
 /** Validate + normalize a POST /api/hum JSON payload. Returns null when the
@@ -77,6 +96,11 @@ export function parseHumResponse(raw: unknown): HumResponse | null {
       typeof r.no_confident_match_reason === "string"
         ? r.no_confident_match_reason
         : undefined,
+    closestMatchConfidence:
+      typeof r.closest_match_confidence === "number" &&
+      Number.isFinite(r.closest_match_confidence)
+        ? Math.min(1, Math.max(0, r.closest_match_confidence))
+        : undefined,
   };
 }
 
@@ -87,6 +111,9 @@ export interface HumOutcome {
   topMatch?: HumMatch;
   reason?: string;
   contourStats?: HumContourStats;
+  /** On no-match only: the best pre-gate similarity (0..1) from the server,
+   *  used to band the retry copy. Never a percentage shown to the user. */
+  closestMatchConfidence?: number;
 }
 
 /** The honest match-vs-no-match decision for a hum search. NEVER fabricates a
@@ -98,8 +125,8 @@ export function humOutcome(resp: HumResponse): HumOutcome {
       ok: false,
       matches: [],
       reason:
-        resp.no_confident_match_reason ??
-        "We couldn't identify that melody — hum or whistle a longer, clearer phrase and try again.",
+        resp.no_confident_match_reason ?? HUM_DEFAULT_NO_MATCH_REASON,
+      closestMatchConfidence: resp.closestMatchConfidence,
     };
   }
   return {
@@ -122,6 +149,27 @@ export function humPhraseHint(resp: HumResponse): string | undefined {
     return "That phrase was quite short — hum or whistle a longer melody for a more confident match.";
   }
   return undefined;
+}
+
+/**
+ * Novice-first BANDED copy for the no-match card (never a raw percentage, never
+ * a fabricated title):
+ *  - the best candidate was near/above the server's floor → "we were close",
+ *    preferring the server's own more-specific reason when it exists;
+ *  - otherwise (weak candidate, or the server didn't send a score) → the
+ *    honest "library is still growing" message.
+ */
+export function humNoMatchMessage(outcome: HumOutcome): string {
+  const close =
+    outcome.closestMatchConfidence !== undefined &&
+    outcome.closestMatchConfidence >= HUM_CLOSE_BAND_MIN;
+  // The server's own more-specific reason wins — but only when it is a REAL
+  // server reason, not our fallback (humOutcome always fills one in).
+  if (close && outcome.reason && outcome.reason !== HUM_DEFAULT_NO_MATCH_REASON) {
+    return outcome.reason;
+  }
+  if (close) return HUM_CLOSE_MESSAGE;
+  return HUM_NOT_SURE_MESSAGE;
 }
 
 // ─── /api/recognize-modern — validate + normalize ────────────
