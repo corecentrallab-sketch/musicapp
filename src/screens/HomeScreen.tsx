@@ -637,27 +637,29 @@ export const HomeScreen: React.FC = () => {
 
           {/* Tier-1 secondary modes (distinct from audio-recognize above) */}
           {!recorder.isRecording && !recorder.checkingPermissions && (
-            <View style={styles.tier1Row}>
-              <TouchableOpacity
-                style={styles.tier1Btn}
-                onPress={handleOpenHumSearch}
-                activeOpacity={0.6}
-              >
-                <Text style={styles.tier1BtnEmoji}>🎤</Text>
-                <Text style={styles.tier1BtnText}>
-                  Hum, whistle or sing the melody
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.tier1Btn}
-                onPress={handleOpenModernSearch}
-                activeOpacity={0.6}
-              >
-                <Text style={styles.tier1BtnEmoji}>💿</Text>
-                <Text style={styles.tier1BtnText}>
-                  Find any song & get the sheet music
-                </Text>
-              </TouchableOpacity>
+            <View style={styles.tier1Block}>
+              <View style={styles.tier1Row}>
+                <TouchableOpacity
+                  style={styles.tier1Btn}
+                  onPress={handleOpenHumSearch}
+                  activeOpacity={0.6}
+                >
+                  <Text style={styles.tier1BtnEmoji}>🎤</Text>
+                  <Text style={styles.tier1BtnText}>
+                    Hum, whistle or sing the melody
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.tier1Btn}
+                  onPress={handleOpenModernSearch}
+                  activeOpacity={0.6}
+                >
+                  <Text style={styles.tier1BtnEmoji}>💿</Text>
+                  <Text style={styles.tier1BtnText}>
+                    Find any song & get the sheet music
+                  </Text>
+                </TouchableOpacity>
+              </View>
               {/* Honest beta note — recognition library is small and growing. */}
               <Text style={styles.tier1BetaNote}>
                 Beta: our recognition library is still growing — well-known
@@ -1090,11 +1092,17 @@ const styles = StyleSheet.create({
   },
 
   // Tier-1 secondary modes (hum / modern-song)
+  // Block = full-width column: buttons row on top, beta note on its own line below.
+  // (The note must NOT be a child of the row — its intrinsic width squeezed the
+  //  two flex:1 buttons to slivers on device. v17 fix.)
+  tier1Block: {
+    width: '100%',
+    marginTop: 14,
+  },
   tier1Row: {
     flexDirection: 'row',
     gap: 10,
     width: '100%',
-    marginTop: 14,
   },
   tier1Btn: {
     flex: 1,
