@@ -2,7 +2,7 @@
   "expo": {
     "name": "NoteSnap: Sheet Music",
     "slug": "notesnap",
-    "version": "0.1.10",
+    "version": "0.1.11",
     "orientation": "default",
     "scheme": "notesnap",
     "icon": "./assets/icon.png",
