@@ -11,7 +11,10 @@
   },
   "include": [
     "src/services/tier1.ts",
+    "src/services/practiceCoach.ts",
+    "src/services/practiceHistory.ts",
     "src/types/index.ts",
-    "scripts/tier1.test.ts"
+    "scripts/tier1.test.ts",
+    "scripts/practiceCoach.test.ts"
   ]
 }
