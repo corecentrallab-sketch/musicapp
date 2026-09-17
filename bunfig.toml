@@ -1,0 +1,11 @@
+# bun test configuration.
+#
+# Timeout raised from the 5000 ms default: the real-audio tests decode the
+# owner's genuine on-device 12 s .m4a/AAC takes and run the full pitch-contour +
+# DTW matcher over the whole melody store, which lands at 2–5.5 s depending on
+# how loaded this shared sandbox box is (adding a test file that also decodes
+# audio pushes those same tests past the 5 s default — they then fail as
+# "timed out" even though every assertion passes). Assertions and coverage are
+# unchanged; only the ceiling on wall-clock time is.
+[test]
+timeout = 20000
