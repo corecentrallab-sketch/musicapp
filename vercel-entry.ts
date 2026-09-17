@@ -14,6 +14,7 @@ import handler from "./dist/server/server.js";
 import { handleRecognize } from "./src/services/recognize-handler";
 import { handleModernRecognize } from "./src/services/modern-recognize-handler";
 import { handleHum } from "./src/services/hum/hum-handler";
+import { handleCoachPcm } from "./src/services/coach-pcm-handler";
 import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
 import { handleStripeWebhook } from "./src/services/webhook-handler";
 import { handleEntitlement } from "./src/services/entitlement";
@@ -155,6 +156,24 @@ export default async function vercelHandler(
       }
       const webReq = toWebRequest(req);
       const webRes = await handleHum(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+    if (pathname === "/api/coach/pcm") {
+      // The handler answers 405 for non-POST itself (the app treats 405 as the
+      // honest "decoder not available" state, so a GET must never return 200).
+      const webReq = toWebRequest(req);
+      const webRes = await handleCoachPcm(webReq);
       res.statusCode = webRes.status;
       webRes.headers.forEach((value, key) => res.setHeader(key, value));
       if (webRes.body) {
