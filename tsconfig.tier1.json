@@ -16,9 +16,13 @@
     "src/services/pitchDetection.ts",
     "src/services/abcToReference.ts",
     "src/services/coachRecording.ts",
+    "src/services/wavCapture.ts",
+    "src/services/pieceAbc.ts",
+    "src/services/coachRun.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
     "scripts/practiceCoach.test.ts",
-    "scripts/coachPipeline.test.ts"
+    "scripts/coachPipeline.test.ts",
+    "scripts/coachRun.test.ts"
   ]
 }

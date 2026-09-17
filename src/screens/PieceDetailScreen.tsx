@@ -14,10 +14,12 @@ import {
   Share,
   Platform,
   Alert,
+  ScrollView,
 } from 'react-native';
 import type { DailyChallengePiece, StreakData } from '../types';
 import { ScoreViewer } from '../components/ScoreViewer';
 import { ShareCard } from '../components/ShareCard';
+import { CoachPracticeCard } from '../components/CoachPracticeCard';
 import {
   addPracticeMinutes,
   recordPractice,
@@ -177,6 +179,7 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
 
   return (
     <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       {/* Header */}
       <TouchableOpacity style={styles.backBtn} onPress={onBack}>
         <Text style={styles.backText}>← Back</Text>
@@ -238,6 +241,19 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
         </TouchableOpacity>
       </View>
 
+      {/* Coached practice — the practice-coach MVP surface (slice 3).
+          Lives on the piece screen (not Home): the sheet music, the loop/
+          time-stretch player and this coach all belong to the piece in hand.
+          The reference melody resolves from the catalog's abc when present,
+          otherwise from the bundled public-domain seeds; a piece with neither
+          gets an honest "coming soon" line instead of a dead button. */}
+      <CoachPracticeCard
+        pieceId={piece.id}
+        title={piece.title}
+        composer={piece.composer}
+        abc={piece.abc}
+      />
+
       {/* Share card preview */}
       <View style={styles.shareCard}>
         <Text style={styles.shareCardLabel}>Share Preview</Text>
@@ -262,6 +278,7 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
         practiceMinutes={shareCardData.practiceMinutes}
         onClose={handleCloseShareCard}
       />
+      </ScrollView>
     </View>
   );
 };
@@ -270,8 +287,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
+  },
+  scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 60,
+    paddingBottom: 48,
   },
   backBtn: {
     marginBottom: 16,

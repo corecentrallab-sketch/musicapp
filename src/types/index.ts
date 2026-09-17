@@ -272,6 +272,13 @@ export interface DailyChallengePiece {
   /** Optional URL to sheet music PDF (served via the api/sheets proxy). */
   sheetMusicUrl?: string;
   /**
+   * Optional ABC reference melody for the practice coach (slice 3). Populated
+   * by the backend when the catalog has note-level data for the piece
+   * (`melody_skeletons.abc`); when absent the coach falls back to the bundled
+   * public-domain seeds and, failing that, says so honestly.
+   */
+  abc?: string | null;
+  /**
    * Optional URL to a public-domain score audio preview for the practice
    * player (loop + time-stretch). Populated by the backend when available;
    * null/absent means "no curated audio yet".

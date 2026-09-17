@@ -284,6 +284,9 @@ export async function fetchDailyChallenge(): Promise<DailyChallengePiece | null>
         ? String(d.difficulty_label)
         : "Intermediate",
       sheetMusicUrl: d.sheet_music_url ? String(d.sheet_music_url) : undefined,
+      // Practice-coach reference melody (slice 3). Absent from the catalog
+      // today; the coach falls back to its bundled public-domain seeds.
+      abc: d.abc ? String(d.abc) : null,
       audioUrl: d.audio_url ? String(d.audio_url) : undefined,
       isPublicDomain: !!d.is_public_domain,
       sheetMusicAvailable: !!d.sheet_music_available,
