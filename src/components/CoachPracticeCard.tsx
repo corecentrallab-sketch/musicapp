@@ -19,11 +19,13 @@
  *  - A piece with no reference melody gets an honest "coming soon" line instead
  *    of a record button that could only ever fail.
  */
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useCoachRun } from '../hooks/useCoachRun';
 import { resolvePieceAbc } from '../services/pieceAbc';
 import { coachNoReferenceOutcome, MIN_COACH_RUN_SECONDS } from '../services/coachRun';
+import { buildReinforcementMoment } from '../services/practiceReinforcementView';
+import { ReinforcementMomentCard } from './ReinforcementMomentCard';
 import type { SamplesProvider } from '../services/coachCapture';
 
 interface CoachPracticeCardProps {
@@ -38,6 +40,12 @@ interface CoachPracticeCardProps {
   tempoBpm?: number;
   /** Inject a different capture path (tests / a future in-app decoder). */
   samplesProvider?: SamplesProvider;
+  /**
+   * True while this card is recording/scoring. The screen uses it to keep
+   * outside-play surfaces (the streak nudge card) hidden during a run — the
+   * reinforcement engine's nudge is `playSafeOnly`.
+   */
+  onSessionActiveChange?: (active: boolean) => void;
 }
 
 export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
@@ -47,6 +55,7 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
   abc,
   tempoBpm,
   samplesProvider,
+  onSessionActiveChange,
 }) => {
   // The piece's reference melody: catalog abc → bundled public-domain seed → none.
   const resolved = useMemo(
@@ -76,6 +85,19 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
   const isProcessing = phase === 'processing';
   const showResult = phase === 'result' && outcome != null;
   const canRecord = coach.hasReference && !isProcessing;
+
+  // Practice-reinforcement moment (retention layer, slice 2): built from the
+  // engine's payload for the run that was just saved. Null when the run crossed
+  // nothing and there is no streak to report — the card then shows nothing extra.
+  const moment = useMemo(
+    () => buildReinforcementMoment(coach.reinforcement, { durationSec: outcome?.durationSec }),
+    [coach.reinforcement, outcome?.durationSec],
+  );
+
+  // Tell the screen when a run/capture is live, so outside-play surfaces stay off.
+  useEffect(() => {
+    onSessionActiveChange?.(isRecording || isProcessing);
+  }, [isRecording, isProcessing, onSessionActiveChange]);
 
   const recordLabel = (() => {
     if (isProcessing) return 'Scoring your take…';
@@ -189,6 +211,18 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
                 </View>
               )}
             </View>
+          )}
+
+          {/* Reinforcement moment — what this run built (streak / minutes /
+              personal best), straight after the score. Renders nothing when the
+              run crossed nothing and there is no streak to report. */}
+          {showResult && moment && (
+            <ReinforcementMomentCard
+              moment={moment}
+              title={title}
+              composer={composer}
+              onDismiss={coach.dismissReinforcement}
+            />
           )}
 
           {/* Last/best for this piece when nothing has been played this session */}

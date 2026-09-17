@@ -21,7 +21,7 @@ import {
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
 import { getNotificationEnabled, setNotificationEnabled, getProState, saveProState, type ProState } from '../services/storage';
-import { scheduleDailyStreakNudge, cancelStreakNudge } from '../services/notifications';
+import { scheduleStreakNudge, cancelStreakNudge } from '../services/notifications';
 import { createCheckoutSession, checkEntitlement } from '../services/api';
 import { getDeviceId } from '../services/device';
 
@@ -105,7 +105,7 @@ export const SettingsScreen: React.FC = () => {
     const next = !notificationsEnabled;
     setNotificationsEnabled(next);
     await setNotificationEnabled(next);
-    if (next) await scheduleDailyStreakNudge();
+    if (next) await scheduleStreakNudge();
     else await cancelStreakNudge();
   }, [notificationsEnabled]);
 
