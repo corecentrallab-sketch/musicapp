@@ -13,8 +13,12 @@
     "src/services/tier1.ts",
     "src/services/practiceCoach.ts",
     "src/services/practiceHistory.ts",
+    "src/services/pitchDetection.ts",
+    "src/services/abcToReference.ts",
+    "src/services/coachRecording.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
-    "scripts/practiceCoach.test.ts"
+    "scripts/practiceCoach.test.ts",
+    "scripts/coachPipeline.test.ts"
   ]
 }
