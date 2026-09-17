@@ -2,7 +2,8 @@
  * Achievement badge system for NoteSnap.
  * Badges are checked and awarded based on user activity.
  */
-import { getBadges, saveBadges, getStreakData } from './storage';
+import { getBadges, saveBadges } from './storage';
+import { getDisplayStreakLocal } from './reinforcementStore';
 import type { Badge } from '../types';
 
 // ─── Badge Definitions ────────────────────────────────────────
@@ -70,7 +71,10 @@ export async function checkAndAwardBadges(context: {
 }): Promise<Badge[]> {
   const existing = await getBadges();
   const earnedIds = new Set(existing.filter((b) => b.earnedAt).map((b) => b.id));
-  const streak = await getStreakData();
+  // Streak badges read the SAME engine streak the app displays (practice history
+  // derived — see reinforcementStore.ts), so a badge can never disagree with the
+  // streak number on screen.
+  const streakDays = (await getDisplayStreakLocal()).currentDays;
 
   const newlyEarned: Badge[] = [];
   const now = new Date().toISOString();
@@ -87,13 +91,13 @@ export async function checkAndAwardBadges(context: {
         earned = (context.totalRecognitions ?? 0) >= 10;
         break;
       case 'streak-7':
-        earned = streak.currentStreak >= 7;
+        earned = streakDays >= 7;
         break;
       case '50-pieces':
         earned = (context.totalSavedPieces ?? 0) >= 50;
         break;
       case 'perfect-week':
-        earned = streak.currentStreak >= 7;
+        earned = streakDays >= 7;
         break;
       case 'genre-explorer':
         earned = (context.genresPlayed ?? []).length >= 3;

@@ -32,6 +32,19 @@ interface ShareCardProps {
   practiceMinutes: number;
   /** Called when user dismisses the modal without sharing. */
   onClose: () => void;
+  /**
+   * Celebration headline to show above the piece (e.g. "🏆 New personal best!").
+   * Optional: the progress-share flow leaves it out entirely.
+   */
+  headline?: string;
+  /**
+   * Ready-to-share sentence. The reinforcement moment passes the engine's own
+   * `shareText` so a celebration is shared in the engine's words; when omitted
+   * the card keeps its original progress wording.
+   */
+  shareMessage?: string;
+  /** Label under the minutes stat (default "min today"). */
+  minutesLabel?: string;
 }
 
 export const ShareCard: React.FC<ShareCardProps> = ({
@@ -42,13 +55,17 @@ export const ShareCard: React.FC<ShareCardProps> = ({
   streak,
   practiceMinutes,
   onClose,
+  headline,
+  shareMessage,
+  minutesLabel,
 }) => {
   const cardRef = useRef<View>(null);
   const [capturing, setCapturing] = useState(false);
 
   const roundedMinutes = Math.round(practiceMinutes);
 
-  const shareText = `I'm learning "${title}" by ${composer} on NoteSnap! Day ${streak} streak 🔥`;
+  const shareText =
+    shareMessage ?? `I'm learning "${title}" by ${composer} on NoteSnap! Day ${streak} streak 🔥`;
 
   const handleShare = useCallback(async () => {
     setCapturing(true);
@@ -119,6 +136,9 @@ export const ShareCard: React.FC<ShareCardProps> = ({
               {/* Logo */}
               <Text style={styles.logo}>🎵 NoteSnap</Text>
 
+              {/* Celebration headline (reinforcement moment only) */}
+              {headline ? <Text style={styles.headline}>{headline}</Text> : null}
+
               {/* Piece title & composer — the focus */}
               <Text style={styles.pieceTitle} numberOfLines={3}>
                 {title}
@@ -139,7 +159,7 @@ export const ShareCard: React.FC<ShareCardProps> = ({
                   <Text style={styles.statEmoji}>⏱️</Text>
                   <Text style={styles.statValue}>{roundedMinutes}</Text>
                   <Text style={styles.statLabel}>
-                    min today
+                    {minutesLabel ?? 'min today'}
                   </Text>
                 </View>
               </View>
@@ -250,6 +270,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#e94560',
     marginBottom: 20,
+  },
+
+  // Celebration headline — only rendered by the reinforcement moment
+  headline: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#4ecdc4',
+    textAlign: 'center',
+    marginBottom: 10,
+    lineHeight: 24,
   },
 
   // Piece info — the focus

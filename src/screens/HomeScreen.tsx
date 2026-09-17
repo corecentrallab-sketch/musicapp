@@ -35,7 +35,6 @@ import {
   isRecognitionLimitError,
 } from '../services/api';
 import {
-  getStreakData,
   recordPractice,
   getWeeklyGoal,
   getOnboardingAnswers,
@@ -44,10 +43,18 @@ import {
   getTodayPracticeMinutes,
   getProState,
 } from '../services/storage';
+import {
+  getDisplayStreakLocal,
+  type DisplayStreak,
+} from '../services/reinforcementStore';
+import {
+  EMPTY_STREAK_SUMMARY,
+  streakLine,
+} from '../services/practiceReinforcementView';
+import { StreakNudgeCard } from '../components/StreakNudgeCard';
 import { checkAndAwardBadges } from '../services/achievements';
 import { getTodayChallenge } from '../services/dailyChallenge';
 import type {
-  StreakData,
   WeeklyGoal,
   DailyChallengePiece,
   OnboardingAnswers,
@@ -69,11 +76,9 @@ export const HomeScreen: React.FC = () => {
     useNavigation<BottomTabNavigationProp<RootTabParamList>>();
 
   // ── Core data state ──
-  const [streak, setStreak] = useState<StreakData>({
-    currentStreak: 0,
-    lastPracticeDate: null,
-    bestStreak: 0,
-  });
+  // Streak numbers come from the practice-reinforcement engine (see
+  // services/reinforcementStore.ts) — ONE source for every streak surface.
+  const [streak, setStreak] = useState<DisplayStreak>(EMPTY_STREAK_SUMMARY);
   const [weeklyGoal, setWeeklyGoal] = useState<WeeklyGoal>({
     target: 5,
     current: 0,
@@ -110,7 +115,7 @@ export const HomeScreen: React.FC = () => {
 
   const loadData = async () => {
     const [s, wg, ob, dc, minutes] = await Promise.all([
-      getStreakData(),
+      getDisplayStreakLocal(),
       getWeeklyGoal(),
       getOnboardingAnswers(),
       getTodayChallenge(), // live catalog piece (null when unreachable)
@@ -237,9 +242,10 @@ export const HomeScreen: React.FC = () => {
       genre: topMatch.catalog ?? undefined,
     });
 
-    // Increment streak
-    const newStreak = await recordPractice();
-    setStreak(newStreak);
+    // Recognition still records the legacy activity counter, but the streak the
+    // user sees is the engine's (practice history) — see reinforcementStore.ts.
+    await recordPractice();
+    setStreak(await getDisplayStreakLocal());
 
     // Refresh weekly goal
     const wg = await getWeeklyGoal();
@@ -332,9 +338,9 @@ export const HomeScreen: React.FC = () => {
           genre: topMatch.catalog ?? undefined,
         });
 
-        // Increment streak (recognition counts as practice)
-        const newStreak = await recordPractice();
-        setStreak(newStreak);
+        // Record the practice day (legacy counter) and re-read the engine streak
+        await recordPractice();
+        setStreak(await getDisplayStreakLocal());
 
         // Refresh weekly goal
         const wg = await getWeeklyGoal();
@@ -428,8 +434,8 @@ export const HomeScreen: React.FC = () => {
   // piece's sheet music in the in-app viewer when available; otherwise show
   // the honest "coming soon" state (PieceDetailScreen) instead of a dead end.
   const handleDailyChallengeTap = useCallback(async () => {
-    const newStreak = await recordPractice();
-    setStreak(newStreak);
+    await recordPractice();
+    setStreak(await getDisplayStreakLocal());
 
     const wg = await getWeeklyGoal();
     setWeeklyGoal(wg);
@@ -475,16 +481,16 @@ export const HomeScreen: React.FC = () => {
       : 'All genres';
 
   const streakText =
-    streak.currentStreak > 0
-      ? `🔥 ${streak.currentStreak}-day streak`
+    streak.currentDays > 0
+      ? `🔥 ${streak.currentDays}-day streak`
       : 'Start your streak today!';
 
+  // Positive framing only (owner rule, 2026-09-17): the streak line celebrates
+  // what the streak is, it never threatens the user with losing it. Copy comes
+  // from the reinforcement view layer so every surface phrases it the same way.
   const streakNudge =
-    streak.currentStreak > 0 && streak.currentStreak < 7
-      ? "Keep it going — don't break your streak!"
-      : streak.currentStreak >= 7
-        ? "Amazing consistency! You're on fire! 🔥"
-        : 'Practice today to start your streak!';
+    streakLine(streak)?.text ??
+    'A few minutes of practice today starts your streak.';
 
   const weekProgress = `${weeklyGoal.current}/${weeklyGoal.target} days practiced`;
   const weekPercent = Math.min(
@@ -677,12 +683,25 @@ export const HomeScreen: React.FC = () => {
             <View style={styles.streakInfo}>
               <Text style={styles.streakCount}>{streakText}</Text>
               <Text style={styles.streakBest}>
-                Best: {streak.bestStreak} days
+                Best: {streak.longestDays} days
               </Text>
             </View>
           </View>
           <Text style={styles.streakNudge}>{streakNudge}</Text>
         </View>
+
+        {/* Outside-play streak nudge (slice 2): quiet, dismissible, and never
+            rendered while the mic is live or a result is on screen. */}
+        <StreakNudgeCard
+          surface="home"
+          hidden={
+            recorder.isRecording ||
+            showRecognitionResults ||
+            showScoreViewer ||
+            showHumSearch ||
+            showModernSearch
+          }
+        />
 
         <View style={styles.practiceCard}>
           <Text style={styles.practiceTitle}>⏱️ Practice today</Text>

@@ -16,16 +16,17 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
-import type { DailyChallengePiece, StreakData } from '../types';
+import type { DailyChallengePiece } from '../types';
 import { ScoreViewer } from '../components/ScoreViewer';
 import { ShareCard } from '../components/ShareCard';
 import { CoachPracticeCard } from '../components/CoachPracticeCard';
+import { StreakNudgeCard } from '../components/StreakNudgeCard';
 import {
   addPracticeMinutes,
   recordPractice,
-  getStreakData,
   getTodayPracticeMinutes,
 } from '../services/storage';
+import { getDisplayStreakLocal } from '../services/reinforcementStore';
 import { refreshStreakNudge } from '../services/notifications';
 
 interface PieceDetailScreenProps {
@@ -50,6 +51,10 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
 
   // Track whether share prompt was already shown this session
   const sharePromptShown = useRef(false);
+
+  // True while the coach is recording/scoring — keeps the outside-play nudge
+  // card off the screen during a run (the engine's Nudge is playSafeOnly).
+  const [coachActive, setCoachActive] = useState(false);
 
   useEffect(() => {
     if (!showScoreViewer) return;
@@ -83,8 +88,10 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
 
       // Small delay to let the modal dismiss animation finish
       setTimeout(async () => {
+        // Streak comes from the practice-reinforcement engine (practice history),
+        // never from the legacy counter — one source for every streak number.
         const [streakData, todayMinutes] = await Promise.all([
-          getStreakData(),
+          getDisplayStreakLocal(),
           getTodayPracticeMinutes(),
         ]);
 
@@ -100,7 +107,7 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
               text: 'Share',
               onPress: () => {
                 setShareCardData({
-                  streak: streakData.currentStreak,
+                  streak: streakData.currentDays,
                   practiceMinutes: todayMinutes,
                 });
                 setShowShareCard(true);
@@ -252,7 +259,13 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
         title={piece.title}
         composer={piece.composer}
         abc={piece.abc}
+        onSessionActiveChange={setCoachActive}
       />
+
+      {/* Outside-play streak nudge (slice 2): low-weight, dismissible, hidden
+          while a run is being recorded or scored. Copy comes from the engine's
+          nudge payload — positive framing only. */}
+      <StreakNudgeCard surface="piece-detail" hidden={coachActive} />
 
       {/* Share card preview */}
       <View style={styles.shareCard}>

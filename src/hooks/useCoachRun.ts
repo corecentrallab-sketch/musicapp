@@ -16,7 +16,7 @@
  * and the card's history numbers are then read back from the same store, so the
  * coach's accuracy/best always matches the practice history on the device.
  */
-import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useAudioRecorder } from './useAudioRecorder';
 import {
   coachRunReducer,
@@ -40,6 +40,11 @@ import {
   getPracticeHistoryLocal,
   savePracticeSessionLocal,
 } from '../services/practiceHistoryStore';
+import {
+  evaluateReinforcement,
+  type Reinforcement,
+} from '../services/practiceReinforcement';
+import type { PracticeSession } from '../services/practiceHistory';
 
 export interface UseCoachRunOptions {
   /** Stable piece id — the key practice history is stored under. */
@@ -66,9 +71,17 @@ export interface CoachRunController {
   hasReference: boolean;
   /** True while the last measured run can be shown/saved. */
   scored: boolean;
+  /**
+   * Practice-reinforcement result for the run that was just saved (streak /
+   * minutes / personal best + the gentle nudge payload), or null when no scored
+   * run has finished since the last reset. The card renders it after the score.
+   */
+  reinforcement: Reinforcement | null;
   start: () => Promise<void>;
   stopAndScore: () => Promise<void>;
   reset: () => void;
+  /** Hide the reinforcement moment without touching the stored run. */
+  dismissReinforcement: () => void;
   clearError: () => void;
   openSettings: () => void;
 }
@@ -78,6 +91,9 @@ export function useCoachRun(options: UseCoachRunOptions): CoachRunController {
 
   const recorder = useAudioRecorder();
   const [state, dispatch] = useReducer(coachRunReducer, initialCoachRunState);
+  // Reinforce what the run built (retention layer, slice 2). Kept outside the
+  // reducer: it is derived from storage, not from the run state machine.
+  const [reinforcement, setReinforcement] = useState<Reinforcement | null>(null);
 
   // The provider is resolved once: swapping it mid-recording would be a bug.
   const providerRef = useRef<SamplesProvider | null>(null);
@@ -105,6 +121,8 @@ export function useCoachRun(options: UseCoachRunOptions): CoachRunController {
 
   const start = useCallback(async () => {
     if (!hasReference) return;
+    // A new take replaces the previous result — and its moment.
+    setReinforcement(null);
     dispatch({ type: 'record-started', at: Date.now() });
     const started = await recorder.startRecording();
     if (!started) {
@@ -171,6 +189,16 @@ export function useCoachRun(options: UseCoachRunOptions): CoachRunController {
     dispatch({ type: 'finished', outcome });
 
     if (isScorableOutcome(outcome) && outcome.accuracyPct != null) {
+      // Read the FULL history for this device BEFORE the run is saved: the
+      // reinforcement engine wants the history the run is about to join (it
+      // appends the run itself — see practiceReinforcement.ts).
+      let historyBeforeRun: PracticeSession[] = [];
+      try {
+        historyBeforeRun = await getPracticeHistoryLocal();
+      } catch {
+        historyBeforeRun = [];
+      }
+
       try {
         await savePracticeSessionLocal({
           pieceId,
@@ -180,11 +208,34 @@ export function useCoachRun(options: UseCoachRunOptions): CoachRunController {
       } catch {
         // Storage failure must not hide the result the user just earned.
       }
+
+      // What did this run build? Streak / minutes milestones / personal best.
+      // Storage or clock problems must never break the score screen, so a
+      // failure here simply means "no reinforcement moment".
+      try {
+        setReinforcement(
+          evaluateReinforcement({
+            history: historyBeforeRun,
+            completedSession: {
+              pieceId,
+              accuracyPct: outcome.accuracyPct,
+              durationSec: outcome.durationSec,
+            },
+            now: new Date(),
+          }),
+        );
+      } catch {
+        setReinforcement(null);
+      }
+
       await reloadHistory();
     }
   }, [abc, pieceId, pieceTitle, provider, recorder, reloadHistory, tempoBpm]);
 
-  const reset = useCallback(() => dispatch({ type: 'reset' }), []);
+  const reset = useCallback(() => {
+    setReinforcement(null);
+    dispatch({ type: 'reset' });
+  }, []);
 
   const error = useMemo(() => recorder.error ?? state.error, [recorder.error, state.error]);
 
@@ -197,9 +248,11 @@ export function useCoachRun(options: UseCoachRunOptions): CoachRunController {
     checkingPermissions: recorder.checkingPermissions,
     hasReference,
     scored: isScorableOutcome(state.outcome),
+    reinforcement,
     start,
     stopAndScore,
     reset,
+    dismissReinforcement: () => setReinforcement(null),
     clearError: () => {
       recorder.clearError();
       dispatch({ type: 'reset' });

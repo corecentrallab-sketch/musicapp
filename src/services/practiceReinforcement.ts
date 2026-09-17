@@ -1,6 +1,8 @@
 /**
  * practiceReinforcement.ts — the single pure entry point of the practice
- * reinforcement layer (retention build, slice 1: engine only, no UI).
+ * reinforcement layer (retention build; slice 1 shipped the engine, slice 2
+ * added evaluateNudge() + the UI wiring — see ./practiceReinforcementView.ts for
+ * the rules about what the UI may show and where).
  *
  * One call answers everything the UI needs after a finished practice run:
  *
@@ -10,6 +12,10 @@
  *     → personalBest   (beat-last-time framing, per piece)
  *     → celebrations[] (structured payloads for the share cards)
  *     → nudge          (gentle at-risk-streak prompt, or null)
+ *
+ *   evaluateNudge({ history, now, tz })
+ *     → the SAME nudge payload with no finished run — the "quiet card outside
+ *       practice" path.
  *
  * Design rules baked in here (all testable, all in the tier-1 suite):
  *   • Pure: no storage, no clock, no react-native. `now` and `tz` are injected,
@@ -199,6 +205,11 @@ function firstSessionCelebration(): Celebration {
   };
 }
 
+/** The nudge a streak summary implies, or null (alive-but-not-today only). */
+function nudgeFromStreaks(streaks: StreakSummary): ReinforcementNudge | null {
+  return streaks.atRisk && streaks.currentDays >= 1 ? atRiskNudge(streaks) : null;
+}
+
 function atRiskNudge(streaks: StreakSummary): ReinforcementNudge {
   return {
     kind: 'at-risk-streak',
@@ -287,8 +298,7 @@ export function evaluateReinforcement(input: ReinforcementInput): Reinforcement 
 
   for (const threshold of crossed) celebrations.push(minutesCelebration(threshold));
 
-  const nudge =
-    streaks.atRisk && streaks.currentDays >= 1 ? atRiskNudge(streaks) : null;
+  const nudge = nudgeFromStreaks(streaks);
 
   return {
     streaks,
@@ -302,6 +312,22 @@ export function evaluateReinforcement(input: ReinforcementInput): Reinforcement 
     celebrations,
     nudge,
   };
+}
+
+/**
+ * The at-risk nudge for a history, with no finished run to evaluate — the
+ * "quiet card on the home screen" path (slice 2). Same copy and same contract as
+ * the nudge returned by evaluateReinforcement, so the UI has ONE source for it.
+ */
+export function evaluateNudge(input: {
+  /** Completed practice runs (any order). */
+  history?: readonly PracticeSession[];
+  /** Injected "now" — Date, ISO string or epoch ms. */
+  now: Date | string | number;
+  /** Calendar to use; undefined = device local. */
+  tz?: TimeZoneSpec;
+}): ReinforcementNudge | null {
+  return nudgeFromStreaks(computeStreak(input.history ?? [], input.now, input.tz));
 }
 
 // ─── re-exports so the UI slice imports from one place ─────────

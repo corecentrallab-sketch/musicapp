@@ -21,15 +21,16 @@ import { useFocusEffect } from '@react-navigation/native';
 import {
   getRecognitionHistory,
   removeRecognition,
-  getStreakData,
 } from '../services/storage';
-import type { SavedPiece, StreakData } from '../types';
+import {
+  getDisplayStreakLocal,
+  type DisplayStreak,
+} from '../services/reinforcementStore';
+import { EMPTY_STREAK_SUMMARY, streakLine } from '../services/practiceReinforcementView';
+import type { SavedPiece } from '../types';
 
-const EMPTY_STREAK: StreakData = {
-  currentStreak: 0,
-  lastPracticeDate: null,
-  bestStreak: 0,
-};
+/** Zeroed streak (engine-derived) used until the first read resolves. */
+const EMPTY_STREAK: DisplayStreak = EMPTY_STREAK_SUMMARY;
 
 /** Format an ISO savedAt timestamp as a short local date, e.g. "Aug 17, 2026". */
 function formatSavedDate(iso: string): string {
@@ -44,14 +45,16 @@ function formatSavedDate(iso: string): string {
 
 export const HistoryScreen: React.FC = () => {
   const [items, setItems] = useState<SavedPiece[]>([]);
-  const [streak, setStreak] = useState<StreakData>(EMPTY_STREAK);
+  const [streak, setStreak] = useState<DisplayStreak>(EMPTY_STREAK);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const reload = useCallback(async () => {
+    // Streak from the reinforcement engine (practice history) — same number as
+    // Home and the coach card show.
     const [history, streakData] = await Promise.all([
       getRecognitionHistory(),
-      getStreakData(),
+      getDisplayStreakLocal(),
     ]);
     setItems(history);
     setStreak(streakData);
@@ -100,13 +103,14 @@ export const HistoryScreen: React.FC = () => {
   );
 
   const streakText =
-    streak.currentStreak > 0
-      ? `🔥 ${streak.currentStreak}-day streak`
+    streak.currentDays > 0
+      ? `🔥 ${streak.currentDays}-day streak`
       : 'Start your streak today!';
+  // Positive framing only — no "don't break it" pressure (owner rule 09-17).
   const streakBest =
-    streak.bestStreak > 0
-      ? `Best: ${streak.bestStreak} days`
-      : 'Recognize a song to start your streak';
+    streak.longestDays > 0
+      ? `Best: ${streak.longestDays} days`
+      : streakLine(streak)?.text ?? 'A coached practice run starts your streak';
 
   const renderItem = ({ item }: { item: SavedPiece }) => (
     <View style={styles.itemCard}>
