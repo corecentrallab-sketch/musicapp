@@ -579,16 +579,6 @@ export default function RecognitionDemo() {
                 >
                   Get the official sheet music
                 </a>
-                {purchaseUrl.sheetmusicplus ? (
-                  <a
-                    href={purchaseUrl.sheetmusicplus}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex min-h-11 items-center rounded-full border border-stone-300 px-5 py-2.5 text-sm font-semibold text-stone-700 transition-colors hover:border-amber-400 hover:text-amber-700"
-                  >
-                    Sheet Music Plus
-                  </a>
-                ) : null}
               </div>
             ) : null}
           </div>

@@ -2,11 +2,22 @@
  * /library/:pieceId — public-domain piece detail with curated sheet-music
  * sources. The route loader fetches the detail server-side (SSR) so metadata
  * is in the HTML. Honesty rules from the plan: never render a link without a
- * URL, and show a "coming soon" state instead of broken links when no
- * quality-checked score is available yet. No audio previews (the catalog has
- * none).
+ * URL, show a "coming soon" state instead of broken links when no
+ * quality-checked score is available yet, and never use urgency or scarcity
+ * copy. No audio previews (the catalog has none).
+ *
+ * Monetization (owner direction 09-18 — the site must make consistent money,
+ * practice engagement -> affiliate purchases): EVERY piece page carries a
+ * "Get the official sheet music" CTA to Sheet Music Direct (affiliate ID 67650,
+ * primary) — rendered with the same visual weight whether or not we hold a score
+ * of our own, because the ~85% of pieces without one are exactly where the
+ * official edition is the only thing we can honestly offer. The URL comes from
+ * the catalog API's shared `affiliate_url` field when present, else from the same
+ * pure builder (`piece-affiliate.ts`) the API uses — one attribution path.
  */
 import { createFileRoute } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
+import PieceOfTheDay, { type DailyPiece } from "~/components/PieceOfTheDay";
 import SiteFooter from "~/components/SiteFooter";
 import SiteNav from "~/components/SiteNav";
 import {
@@ -14,14 +25,53 @@ import {
   fetchCatalogPiece,
   type SheetSource,
 } from "~/lib/catalog-client";
+import {
+  SMD_RETAILER_NAME,
+  pieceAffiliateLink,
+  pieceAffiliateQuery,
+} from "~/services/piece-affiliate";
 import { SITE_URL } from "~/services/seo";
 
 const PIECE_URL = (id: string) => `${SITE_URL}/library/${encodeURIComponent(id)}`;
 
+/** Today's piece for the page's daily-practice widget — the same deterministic
+ * selection logic and catalog pool as the homepage and the app's Daily Challenge
+ * (/api/daily-challenge), called directly server-side so the widget is SSR'd into
+ * the HTML (the pattern the homepage already uses). Null when the catalog is
+ * unavailable; the widget then shows its honest empty state. */
+const getDailyPiece = createServerFn({ method: "GET" }).handler(async () => {
+  try {
+    const { handleDailyChallenge } = await import(
+      "~/services/daily-challenge-handler"
+    );
+    const res = await handleDailyChallenge(
+      new Request("https://site-notesnap.vercel.app/api/daily-challenge"),
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as DailyPiece;
+    if (!data?.piece_id || !data?.title) return null;
+    return data;
+  } catch (err) {
+    console.error("[piece] daily piece fetch failed:", err);
+    return null;
+  }
+});
+
 export const Route = createFileRoute("/library/$pieceId")({
   loader: async ({ params }) => {
-    const initial = await fetchCatalogPiece(params.pieceId, CATALOG_API_BASE);
-    return { initial };
+    const [initial, daily] = await Promise.all([
+      fetchCatalogPiece(params.pieceId, CATALOG_API_BASE),
+      getDailyPiece(),
+    ]);
+    // The API carries `affiliate_url` for every piece (one attribution path,
+    // shared with the app); this local build is the fallback for an API that
+    // predates the field and uses the same pure builder, so the URL is identical.
+    const piece = initial.success ? initial.piece : null;
+    return {
+      initial,
+      daily,
+      affiliate: piece ? pieceAffiliateLink(piece.title, piece.composer) : null,
+    };
   },
   head: ({ loaderData }) => {
     // Dynamic per-piece SEO: title + description are built from the piece data
@@ -89,6 +139,58 @@ function formatScore(value: number | null): string | null {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+/**
+ * Affiliate purchase CTA — the site's direct money path. Sheet Music Direct
+ * (affiliate ID 67650) is the primary retailer; the link opens in a new tab so
+ * the visitor keeps their place on the piece page. Copy states the commission
+ * plainly (no urgency, no scarcity) and the label is descriptive for screen
+ * readers.
+ */
+function AffiliateCta({
+  url,
+  retailer,
+  query,
+  hasOwnScore,
+}: {
+  url: string;
+  retailer: string;
+  query: string;
+  hasOwnScore: boolean;
+}) {
+  return (
+    <section
+      aria-labelledby="official-sheet-music-heading"
+      className="mt-8 rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:p-6"
+    >
+      <h2
+        id="official-sheet-music-heading"
+        className="text-lg font-semibold text-stone-900"
+      >
+        Get the official sheet music
+      </h2>
+      <p className="mt-2 text-sm leading-relaxed text-stone-700">
+        {hasOwnScore
+          ? "Prefer a published edition to practise from? Search the licensed catalogue for this piece — printed and digital editions from the publishers."
+          : "Our quality-checked score for this piece isn't ready yet, but the official published edition is available to buy — search the licensed catalogue by title and composer."}
+      </p>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer sponsored"
+        aria-label={`Search ${retailer} for ${query} — official sheet music (opens in a new tab)`}
+        className="mt-4 inline-flex min-h-12 items-center rounded-full bg-amber-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-amber-700"
+      >
+        Get the official sheet music →
+      </a>
+      <p className="mt-3 text-xs text-stone-500">
+        Opens {retailer} in a new tab, searching for &ldquo;{query}&rdquo;.
+        NoteSnap earns a commission on purchases — it never changes the price you
+        pay, and never affects which pieces we show you.
+      </p>
+    </section>
+  );
+}
+
 function SourceRow({ source }: { source: SheetSource }) {
   const hasUrl = source.source_url !== "";
   return (
@@ -137,7 +239,7 @@ function SourceRow({ source }: { source: SheetSource }) {
 }
 
 function PieceDetailPage() {
-  const { initial } = Route.useLoaderData();
+  const { initial, daily, affiliate } = Route.useLoaderData();
 
   if (!initial.success) {
     const error = initial.error;
@@ -183,6 +285,15 @@ function PieceDetailPage() {
   const viewableSources = piece.sheet_music_sources.filter(
     (source) => source.source_url !== "",
   );
+
+  // Shared attribution path: the API's affiliate_url wins when present; otherwise
+  // the identical link is rebuilt locally by the same pure builder.
+  const affiliateUrl = piece.affiliate_url ?? affiliate?.url ?? null;
+  const affiliateRetailer = piece.affiliate_url
+    ? SMD_RETAILER_NAME
+    : (affiliate?.retailer ?? SMD_RETAILER_NAME);
+  const affiliateQuery =
+    affiliate?.query ?? pieceAffiliateQuery(piece.title, piece.composer);
 
   return (
     <div className="min-h-dvh bg-stone-50 text-stone-800 antialiased">
@@ -256,6 +367,17 @@ function PieceDetailPage() {
           )}
         </div>
 
+        {/* Affiliate purchase CTA — every piece page, same weight with or
+            without a score of our own (the money lever). */}
+        {affiliateUrl ? (
+          <AffiliateCta
+            url={affiliateUrl}
+            retailer={affiliateRetailer}
+            query={affiliateQuery}
+            hasOwnScore={primarySheetUrl !== null}
+          />
+        ) : null}
+
         {/* Curated sources */}
         <section className="mt-12">
           <h2 className="text-xl font-bold tracking-tight text-stone-900">
@@ -279,6 +401,15 @@ function PieceDetailPage() {
             </p>
           )}
         </section>
+
+        {/* Daily practice: the same piece in the app, one step from here. */}
+        <div className="mt-12">
+          <PieceOfTheDay
+            daily={daily}
+            currentPieceId={piece.id}
+            variant="compact"
+          />
+        </div>
       </main>
 
       <SiteFooter />

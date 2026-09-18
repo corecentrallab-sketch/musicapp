@@ -22,6 +22,13 @@ export interface CatalogPiece {
   sheet_music_available: boolean;
   sheet_music_url: string | null;
   album_art_url: string | null;
+  /**
+   * Sheet Music Direct search link for the piece (affiliate ID 67650), built by
+   * the API through the same shared builder the piece pages use — one
+   * attribution path for app and site (WAVE 1a). Null when the API omits it or
+   * there is nothing to search for; the piece page then builds the link locally.
+   */
+  affiliate_url: string | null;
 }
 
 export interface SheetSource {
@@ -80,6 +87,8 @@ function toPiece(value: unknown): CatalogPiece | null {
     sheet_music_available: value.sheet_music_available === true,
     sheet_music_url: typeof value.sheet_music_url === "string" ? value.sheet_music_url : null,
     album_art_url: typeof value.album_art_url === "string" ? value.album_art_url : null,
+    affiliate_url:
+      typeof value.affiliate_url === "string" ? value.affiliate_url : null,
   };
 }
 

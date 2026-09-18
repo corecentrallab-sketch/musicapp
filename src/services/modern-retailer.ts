@@ -32,6 +32,26 @@ function smdUrl(query: string): string {
   );
 }
 
+/**
+ * SMD deep link for a free-text query (title / composer / "title composer"),
+ * or undefined when there is nothing to search for. Exported so every surface
+ * that links to a retailer — the modern-song route and the catalog/piece pages —
+ * builds the URL through this one function and therefore always carries the
+ * affiliate ID (one attribution path, WAVE 1a).
+ */
+export function sheetMusicDirectSearchUrl(query: string): string | undefined {
+  const q = query.trim();
+  return q === "" ? undefined : smdUrl(q);
+}
+
+/** Musicnotes search link for a free-text query — the backup retailer path. */
+export function musicnotesSearchUrl(query: string): string | undefined {
+  const q = query.trim();
+  return q === ""
+    ? undefined
+    : `https://www.musicnotes.com/search/go?q=${encodeURIComponent(q)}&w=NoteSnap`;
+}
+
 export function modernRetailerUrls(
   title: string,
   artist: string,
@@ -40,9 +60,8 @@ export function modernRetailerUrls(
   if (!title || !artist) return {};
   const byIsrc = isrc ? smdUrl(isrc) : undefined;
   const byQuery = smdUrl(`${title} ${artist}`.trim());
-  const q = encodeURIComponent(`${title} ${artist}`.trim());
   return {
     primary: byIsrc || byQuery,
-    musicnotes: `https://www.musicnotes.com/search/go?q=${q}&w=NoteSnap`,
+    musicnotes: musicnotesSearchUrl(`${title} ${artist}`),
   };
 }
