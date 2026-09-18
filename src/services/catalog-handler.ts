@@ -23,6 +23,12 @@
  * sheet_music_sources list (the curation table keyed by piece_id), ordered with
  * the primary arrangement first.
  *
+ * Both endpoints also carry `affiliate_url` — the Sheet Music Direct search link
+ * for the piece (affiliate ID 67650), built by the shared pure builder in
+ * `piece-affiliate.ts`. The site's piece pages use the same builder, so app and
+ * site share one attributable CTA path; the field is populated for every piece,
+ * including those with no score of our own (`sheet_music_available: false`).
+ *
  * Both endpoints use the same field conventions as /api/daily-challenge:
  * difficulty_label is derived from the catalog's 1-10 grade, and
  * sheet_music_available / sheet_music_url are computed from the actual row —
@@ -30,6 +36,7 @@
  */
 import { sql } from "~/db";
 import { difficultyLabel } from "./daily-challenge-handler";
+import { pieceAffiliateUrl } from "./piece-affiliate";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -151,6 +158,13 @@ function serializePiece(row: PieceRow): Record<string, unknown> {
     sheet_music_available: sheetAvailable,
     sheet_music_url: sheetAvailable ? row.sheet_music_url : null,
     album_art_url: row.album_art_url ?? null,
+    // Retailing (WAVE 1a, owner direction 09-18): the Sheet Music Direct search
+    // link for this piece, built by the same shared builder the piece pages use,
+    // so the app and the site carry one attributable CTA path. Present for every
+    // piece — including the ~85% with no score of our own, which is exactly where
+    // "get the official sheet music" is the only thing we can honestly offer.
+    // Null only when there is nothing to search for.
+    affiliate_url: pieceAffiliateUrl(row.title, row.composer),
   };
 }
 

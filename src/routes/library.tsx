@@ -4,9 +4,17 @@
  * The route loader fetches the first page server-side (SSR) so the initial
  * results are in the HTML; search and "load more" run client-side against the
  * same public API (same-origin /api/pieces in the browser).
+ *
+ * The page also opens with the Piece of the Day widget (WAVE 1a, P1): the same
+ * deterministic pick the homepage and the app use, fetched server-side through
+ * the handler itself (no HTTP hop), so a visitor has one concrete piece to
+ * practise — and one path toward the app and the official sheet music — before
+ * they search.
  */
 import { createFileRoute } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
 import { useCallback, useRef, useState, type FormEvent } from "react";
+import PieceOfTheDay, { type DailyPiece } from "~/components/PieceOfTheDay";
 import SiteFooter from "~/components/SiteFooter";
 import SiteNav from "~/components/SiteNav";
 import {
@@ -17,14 +25,38 @@ import {
 
 const PAGE_SIZE = 20;
 
+/** Today's piece — same deterministic selection logic and catalog pool as the
+ * homepage and the app's Daily Challenge (/api/daily-challenge). Null when the
+ * catalog is unavailable; the widget then shows its honest empty state. */
+const getDailyPiece = createServerFn({ method: "GET" }).handler(async () => {
+  try {
+    const { handleDailyChallenge } = await import(
+      "~/services/daily-challenge-handler"
+    );
+    const res = await handleDailyChallenge(
+      new Request("https://site-notesnap.vercel.app/api/daily-challenge"),
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as DailyPiece;
+    if (!data?.piece_id || !data?.title) return null;
+    return data;
+  } catch (err) {
+    console.error("[library] daily piece fetch failed:", err);
+    return null;
+  }
+});
+
 export const Route = createFileRoute("/library")({
   loader: async () => {
-    const initial = await fetchCatalogList({
-      limit: PAGE_SIZE,
-      offset: 0,
-      base: CATALOG_API_BASE,
-    });
-    return { initial };
+    const [initial, daily] = await Promise.all([
+      fetchCatalogList({
+        limit: PAGE_SIZE,
+        offset: 0,
+        base: CATALOG_API_BASE,
+      }),
+      getDailyPiece(),
+    ]);
+    return { initial, daily };
   },
   head: () => ({
     meta: [
@@ -54,7 +86,7 @@ export const Route = createFileRoute("/library")({
 });
 
 function LibraryPage() {
-  const { initial } = Route.useLoaderData();
+  const { initial, daily } = Route.useLoaderData();
   const [pieces, setPieces] = useState<CatalogPiece[]>(
     initial.success ? initial.pieces : [],
   );
@@ -143,6 +175,11 @@ function LibraryPage() {
           Search by title or composer — every score is hosted by NoteSnap and
           free to view.
         </p>
+
+        {/* Piece of the Day — one concrete piece to practise before searching */}
+        <div className="mt-8">
+          <PieceOfTheDay daily={daily} />
+        </div>
 
         {/* Search */}
         <form
