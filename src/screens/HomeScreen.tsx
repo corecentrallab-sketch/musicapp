@@ -56,9 +56,14 @@ import {
 import { StreakNudgeCard } from '../components/StreakNudgeCard';
 import {
   FOR_YOU_CTA,
+  WEEK_CTA,
+  featuredPieceCta,
   forYouAccessibilityLabel,
   forYouByline,
   practiceTodayDestination,
+  streakAccessibilityLabel,
+  streakCta,
+  streakDestination,
   weekProgressCopy,
 } from '../services/homeCards';
 import { checkAndAwardBadges } from '../services/achievements';
@@ -461,6 +466,22 @@ export const HomeScreen: React.FC = () => {
     }
   }, [dailyChallenge]);
 
+  // ── 🔥 Streak card tap (the last owner-reported dead card, v19 bug) ──
+  // Same honesty rule as the other cards: this is navigation, not a practice
+  // session, so it never calls recordPractice() — a streak day comes from an
+  // actual coached run, recorded when the piece's score is opened.
+  //   0 days → today's featured piece, through the SAME mapping as
+  //            "⏱️ Practice today" (sheet reader → piece page → Find-a-Piece),
+  //            so the card is a way to START the streak it is showing.
+  //   N days → the practice-week view — the same surface "📋 This Week" opens.
+  const handleStreakCardTap = useCallback(() => {
+    if (streakDestination(streak.currentDays) === 'week') {
+      setShowPracticeWeek(true);
+      return;
+    }
+    handlePracticeTodayTap();
+  }, [streak.currentDays, handlePracticeTodayTap]);
+
   // ── "📋 This Week" tap ──
   // Opens the practice-week surface in place (see PracticeWeekScreen): the days
   // practised this week, minutes per day, and this week's coached takes.
@@ -772,7 +793,21 @@ export const HomeScreen: React.FC = () => {
 
 
         {/* ── Streak Card ── */}
-        <View style={styles.streakCard}>
+        {/* Tappable (v19 bug: "Start your streak today!" and the button did
+            nothing). 0 days → today's featured piece, the SAME destination as
+            "⏱️ Practice today"; an active streak → the practice-week view. The
+            copy above the CTA keeps its positive framing — this only adds where
+            the tap goes. */}
+        <TouchableOpacity
+          style={styles.streakCard}
+          onPress={handleStreakCardTap}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={streakAccessibilityLabel(
+            streak.currentDays,
+            dailyChallenge,
+          )}
+        >
           <View style={styles.streakRow}>
             <Text style={styles.streakEmoji}>🔥</Text>
             <View style={styles.streakInfo}>
@@ -783,7 +818,10 @@ export const HomeScreen: React.FC = () => {
             </View>
           </View>
           <Text style={styles.streakNudge}>{streakNudge}</Text>
-        </View>
+          <Text style={styles.cardCta}>
+            {streakCta(streak.currentDays, dailyChallenge)}
+          </Text>
+        </TouchableOpacity>
 
         {/* Outside-play streak nudge (slice 2): quiet, dismissible, and never
             rendered while the mic is live or a result is on screen. */}
@@ -816,11 +854,7 @@ export const HomeScreen: React.FC = () => {
         >
           <Text style={styles.practiceTitle}>⏱️ Practice today</Text>
           <Text style={styles.practiceValue}>You practiced {Math.round(practiceMinutes)} minutes today</Text>
-          <Text style={styles.cardCta}>
-            {dailyChallenge
-              ? "Open today's featured piece →"
-              : 'Find a piece to practice →'}
-          </Text>
+          <Text style={styles.cardCta}>{featuredPieceCta(dailyChallenge)}</Text>
         </TouchableOpacity>
 
         {/* ── Weekly Goals ── */}
@@ -852,7 +886,7 @@ export const HomeScreen: React.FC = () => {
               You crushed your goal this week!
             </Text>
           )}
-          <Text style={styles.cardCta}>See your week →</Text>
+          <Text style={styles.cardCta}>{WEEK_CTA}</Text>
         </TouchableOpacity>
 
         {/* ── Daily Challenge ── */}

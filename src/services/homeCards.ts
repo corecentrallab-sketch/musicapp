@@ -12,6 +12,9 @@
  *   • 📋 This Week      → the practice-week surface: which days were practised,
  *                        minutes per day, and this week's coached takes.
  *   • 🎯 For You        → Find-a-Piece (catalog browse / search by title).
+ *   • 🔥 Streak card    → 0 days: today's featured piece (the SAME destination
+ *                        as Practice today, so the card is a way to START the
+ *                        streak it shows); an active streak: the week view.
  *
  * No react-native / expo imports here (deliberately): this file is listed in
  * tsconfig.tier1.json and compiled with no node_modules present.
@@ -31,6 +34,8 @@ export type PracticeTodayDestination = 'sheet' | 'piece' | 'find-piece';
 /** The slice of DailyChallengePiece this mapping reads. */
 export interface PracticeTodayChallenge {
   sheetMusicUrl?: string | null;
+  /** Piece name — only used for the accessibility label, never for routing. */
+  title?: string | null;
 }
 
 /**
@@ -48,6 +53,89 @@ export function practiceTodayDestination(
   if (!challenge) return 'find-piece';
   const url = challenge.sheetMusicUrl;
   return typeof url === 'string' && url.trim().length > 0 ? 'sheet' : 'piece';
+}
+
+// ─── Shared tap affordances (one wording, every card) ──────────
+
+/** "⏱️ Practice today" CTA (also the 0-day streak card's): the featured piece. */
+export const OPEN_FEATURED_CTA = "Open today's featured piece →";
+/** The same CTA when no featured piece loaded — Find-a-Piece is the way in. */
+export const FIND_PIECE_CTA = 'Find a piece to practice →';
+/** "📋 This Week" CTA (also the streak card's while a streak is live). */
+export const WEEK_CTA = 'See your week →';
+
+/**
+ * The CTA line on a card whose tap opens today's featured piece. It follows the
+ * same mapping as the tap itself, so the card can never promise a sheet reader
+ * the app would not open (a piece with no curated score says "Open today's
+ * featured piece" too — that is the piece page, where the coach lives).
+ */
+export function featuredPieceCta(
+  challenge: PracticeTodayChallenge | null | undefined,
+): string {
+  return practiceTodayDestination(challenge) === 'find-piece'
+    ? FIND_PIECE_CTA
+    : OPEN_FEATURED_CTA;
+}
+
+// ─── Streak card (Home) ────────────────────────────────────────
+
+/**
+ * Where tapping Home's streak card lands.
+ *
+ *  • `practice` → today's featured piece, through the SAME mapping as
+ *                 "⏱️ Practice today" (sheet reader → piece page → Find-a-Piece)
+ *  • `week`     → the practice-week surface: which days were practised
+ */
+export type StreakDestination = 'practice' | 'week';
+
+/**
+ * 0 days → there is nothing to look back on, and the card is the way to START:
+ * it opens today's featured piece exactly like "⏱️ Practice today" does. A live
+ * streak → the week view, where the days behind the number are visible.
+ *
+ * Junk counts (NaN, negative, null, a streak that did not load) read as 0 — the
+ * same honest default as the card's own "Start your streak today!" line, which
+ * is exactly what `streakText` renders for those values.
+ */
+export function streakDestination(
+  currentDays: number | null | undefined,
+): StreakDestination {
+  return typeof currentDays === 'number' &&
+    Number.isFinite(currentDays) &&
+    currentDays > 0
+    ? 'week'
+    : 'practice';
+}
+
+/** The streak card's CTA line: where this tap really goes. */
+export function streakCta(
+  currentDays: number | null | undefined,
+  challenge: PracticeTodayChallenge | null | undefined,
+): string {
+  return streakDestination(currentDays) === 'week'
+    ? WEEK_CTA
+    : featuredPieceCta(challenge);
+}
+
+/**
+ * The streak card's accessibility label — it states the streak AND the real
+ * destination, so a screen-reader user is told the same thing the CTA line
+ * shows. When no featured piece is loaded the label says so instead of naming a
+ * piece that will not open.
+ */
+export function streakAccessibilityLabel(
+  currentDays: number | null | undefined,
+  challenge: PracticeTodayChallenge | null | undefined,
+): string {
+  if (streakDestination(currentDays) === 'week') {
+    const days = Math.round(currentDays as number);
+    return `${days}-day streak — see your practice week`;
+  }
+  const title = typeof challenge?.title === 'string' ? challenge.title.trim() : '';
+  return title
+    ? `Start your streak today — open ${title}`
+    : 'Start your streak today — find a piece to practice';
 }
 
 // ─── Week view (This Week) ─────────────────────────────────────

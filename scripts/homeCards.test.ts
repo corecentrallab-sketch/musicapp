@@ -10,25 +10,34 @@
  *   • the Monday→Sunday week view behind "This Week" (days, minutes, totals)
  *   • this week's coached-take summary + the copy shown for it
  *   • the For You copy reformulation (no promise of a feed that does not exist)
+ *   • the streak card's destination (0 days → today's featured piece, through
+ *     the same mapping as Practice today; a live streak → the week view)
  *
  * Pure module, plain Node, no react-native, no network — same convention as the
  * other scripts/*.test.ts. Run with: npm run test:tier1
  */
 import {
+  FIND_PIECE_CTA,
   FOR_YOU_BYLINE_DEFAULT,
   FOR_YOU_BYLINE_PERSONALISED,
   FOR_YOU_CTA,
   NO_PRACTICE_TODAY,
+  OPEN_FEATURED_CTA,
+  WEEK_CTA,
   WEEK_DAY_FUTURE,
   buildWeekView,
   coachedTakeCopy,
   coachedTakeSummary,
+  featuredPieceCta,
   forYouAccessibilityLabel,
   forYouByline,
   localDateKey,
   mondayOf,
   practiceTodayDestination,
   practiceWeekCta,
+  streakAccessibilityLabel,
+  streakCta,
+  streakDestination,
   weekPercent,
   weekProgressCopy,
   weekDayStatusText,
@@ -446,10 +455,83 @@ function weekRowCopyTests(): void {
   assertEq(weekTotalCopy(-3), 'No minutes logged this week yet', 'a negative total says so');
 }
 
+// ─── Streak card (Home) — the last dead card ───────────────────
+
+function streakTests(): void {
+  console.log('\nstreak card destination');
+
+  // 0 / junk counts → the card is the way to START, so it opens today's
+  // featured piece exactly like "⏱️ Practice today" does.
+  assertEq(streakDestination(0), 'practice', 'no streak yet → open today’s featured piece');
+  assertEq(streakDestination(-1), 'practice', 'a negative count is not a streak');
+  assertEq(streakDestination(Number.NaN), 'practice', 'a junk count reads as no streak');
+  assertEq(streakDestination(null), 'practice', 'an unloaded streak reads as no streak');
+  assertEq(streakDestination(undefined), 'practice', 'a missing streak reads as no streak');
+  // A live streak → the week view, where the days behind it are visible.
+  assertEq(streakDestination(1), 'week', 'a 1-day streak already has a week to show');
+  assertEq(streakDestination(37), 'week', 'a long streak → the week view');
+
+  console.log('\nstreak card CTA + accessibility label');
+
+  // The 0-day CTA mirrors Practice today's, from the SAME mapping.
+  assertEq(
+    streakCta(0, { sheetMusicUrl: 'https://example.test/score.pdf' }),
+    OPEN_FEATURED_CTA,
+    'a featured piece with a score → the Practice-today CTA',
+  );
+  assertEq(
+    streakCta(0, { sheetMusicUrl: '   ' }),
+    OPEN_FEATURED_CTA,
+    'a blank sheet URL still opens the piece page (coach), not Find-a-Piece',
+  );
+  assertEq(
+    streakCta(0, { sheetMusicUrl: null }),
+    OPEN_FEATURED_CTA,
+    'a piece with no score → the piece page, same CTA',
+  );
+  assertEq(
+    streakCta(0, null),
+    FIND_PIECE_CTA,
+    'no featured piece loaded → the Find-a-Piece CTA',
+  );
+  assertEq(streakCta(4, { sheetMusicUrl: 'x' }), WEEK_CTA, 'an active streak → see your week');
+  assertEq(streakCta(4, null), WEEK_CTA, 'an active streak ignores the featured piece');
+  assertEq(streakCta(Number.NaN, null), FIND_PIECE_CTA, 'a junk count takes the 0-day path');
+
+  // Owner-visible copy is pinned here: the two cards must not drift apart, and
+  // the Practice-today / This Week wording is unchanged by this fix.
+  assertEq(OPEN_FEATURED_CTA, "Open today's featured piece →", 'Practice-today CTA reads as before');
+  assertEq(FIND_PIECE_CTA, 'Find a piece to practice →', 'the Find-a-Piece CTA reads as before');
+  assertEq(WEEK_CTA, 'See your week →', 'the This Week CTA reads as before');
+  assertEq(featuredPieceCta({ sheetMusicUrl: 'x' }), OPEN_FEATURED_CTA, 'featuredPieceCta is the shared source');
+  assertEq(featuredPieceCta(null), FIND_PIECE_CTA, 'featuredPieceCta falls back when the catalog is empty');
+
+  assertEq(
+    streakAccessibilityLabel(0, { title: 'Für Elise' }),
+    'Start your streak today — open Für Elise',
+    'screen reader: the 0-day card names the piece it opens',
+  );
+  assertEq(
+    streakAccessibilityLabel(0, { title: '  Für Elise  ' }),
+    'Start your streak today — open Für Elise',
+    'the label trims the title it is given',
+  );
+  assertEq(
+    streakAccessibilityLabel(0, null),
+    'Start your streak today — find a piece to practice',
+    'screen reader: no featured piece → says Find-a-Piece, names no piece',
+  );
+  assertEq(
+    streakAccessibilityLabel(6, { title: 'Für Elise' }),
+    '6-day streak — see your practice week',
+    'screen reader: an active streak states the streak and the week view',
+  );
+}
+
 // ─── run ────────────────────────────────────────────────────────
 
 function main(): void {
-  console.log('\n=== home cards (Practice today / This Week / For You) ===');
+  console.log('\n=== home cards (Practice today / This Week / For You / Streak) ===');
   practiceTodayTests();
   weekViewTests();
   progressTests();
@@ -457,6 +539,7 @@ function main(): void {
   forYouTests();
   practiceWeekTests();
   weekRowCopyTests();
+  streakTests();
   console.log(`\n${passes} passed, ${failures} failed\n`);
   process.exit(failures === 0 ? 0 : 1);
 }
