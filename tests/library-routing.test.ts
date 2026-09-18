@@ -25,8 +25,11 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 
-const ROUTES_DIR = join(import.meta.dir, "..", "src", "routes");
-const GENERATED_TREE = join(import.meta.dir, "..", "src", "routeTree.gen.ts");
+// Paths resolved from this file's URL (not Bun's import.meta.dir) so the file
+// type-checks under the project's tsconfig like everything else in src/.
+const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
+const ROUTES_DIR = join(HERE, "..", "src", "routes");
+const GENERATED_TREE = join(HERE, "..", "src", "routeTree.gen.ts");
 
 /** Every route file under src/routes (excluding the root layout and any
  * colocated helper, which TanStack Router ignores by the `-` prefix rule). */
