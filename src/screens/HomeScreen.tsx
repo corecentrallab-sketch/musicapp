@@ -781,7 +781,7 @@ export const HomeScreen: React.FC = () => {
             <View style={styles.challengeCta}>
               <Text style={styles.challengeCtaText}>
                 {dailyChallenge.sheetMusicAvailable === false
-                  ? '🎼 Sheet music coming soon'
+                  ? 'View piece ▶ — sheet music coming soon'
                   : 'View & Practice →'}
               </Text>
             </View>

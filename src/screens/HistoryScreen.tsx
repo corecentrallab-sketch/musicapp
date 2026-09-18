@@ -5,8 +5,13 @@
  * @notesnap/recognitionHistory), newest first, with per-item removal,
  * a streak header card, and pull-to-refresh. Refreshes whenever the tab
  * gains focus so a recognition on the Discover tab shows up immediately.
+ *
+ * Tapping a row opens the piece page (PieceDetailScreen, rendered in place) —
+ * the sheet, the coach and the share card all live there. The row opens from the
+ * saved record immediately, then fills in the catalog's curated sheet URL via
+ * /api/pieces/:id (see services/historyPiece.ts for the pure mapping).
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -27,7 +32,13 @@ import {
   type DisplayStreak,
 } from '../services/reinforcementStore';
 import { EMPTY_STREAK_SUMMARY, streakLine } from '../services/practiceReinforcementView';
-import type { SavedPiece } from '../types';
+import { fetchPieceById } from '../services/api';
+import {
+  mergeCatalogIntoDetail,
+  savedPieceToDetail,
+} from '../services/historyPiece';
+import { PieceDetailScreen } from './PieceDetailScreen';
+import type { DailyChallengePiece, SavedPiece } from '../types';
 
 /** Zeroed streak (engine-derived) used until the first read resolves. */
 const EMPTY_STREAK: DisplayStreak = EMPTY_STREAK_SUMMARY;
@@ -48,6 +59,11 @@ export const HistoryScreen: React.FC = () => {
   const [streak, setStreak] = useState<DisplayStreak>(EMPTY_STREAK);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Full-screen piece page for a tapped row — the app renders PieceDetailScreen
+  // in place (like Home and the hum flow) rather than as a tab route.
+  const [showDetail, setShowDetail] = useState<DailyChallengePiece | null>(null);
+  // Guards the catalog lookup against a stale response (tap A, back, tap B).
+  const detailRequestRef = useRef(0);
 
   const reload = useCallback(async () => {
     // Streak from the reinforcement engine (practice history) — same number as
@@ -102,6 +118,34 @@ export const HistoryScreen: React.FC = () => {
     [reload],
   );
 
+  /**
+   * Open a saved recognition on the piece page (the v18 fix: rows were inert).
+   *
+   * The saved record carries identity + date only, so the page opens instantly
+   * from what we hold and then — best effort — fills in the catalog's record for
+   * the piece (curated sheet URL, honest difficulty/public-domain signals). A
+   * failed lookup leaves the page's honest "Sheet music coming soon" state; it
+   * never blocks the tap and never shows an error.
+   */
+  const handleOpenPiece = useCallback((piece: SavedPiece) => {
+    const token = ++detailRequestRef.current;
+    setShowDetail(savedPieceToDetail(piece));
+    void fetchPieceById(piece.id).then((info) => {
+      if (!info || token !== detailRequestRef.current) return;
+      setShowDetail((current) =>
+        current && current.id === piece.id
+          ? mergeCatalogIntoDetail(current, info)
+          : current,
+      );
+    });
+  }, []);
+
+  const handleCloseDetail = useCallback(() => {
+    // Invalidate any in-flight lookup so a late response can't reopen the page.
+    detailRequestRef.current++;
+    setShowDetail(null);
+  }, []);
+
   const streakText =
     streak.currentDays > 0
       ? `🔥 ${streak.currentDays}-day streak`
@@ -113,7 +157,16 @@ export const HistoryScreen: React.FC = () => {
       : streakLine(streak)?.text ?? 'A coached practice run starts your streak';
 
   const renderItem = ({ item }: { item: SavedPiece }) => (
-    <View style={styles.itemCard}>
+    /* The whole card opens the piece page (fix: the row used to be inert).
+       The ✕ keeps its own press — a nested Touchable wins the responder, so
+       removing a piece never opens it. */
+    <TouchableOpacity
+      style={styles.itemCard}
+      onPress={() => handleOpenPiece(item)}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${item.title} by ${item.composer}`}
+    >
       <View style={styles.itemInfo}>
         <Text style={styles.itemTitle} numberOfLines={1}>
           {item.title}
@@ -141,8 +194,14 @@ export const HistoryScreen: React.FC = () => {
       >
         <Text style={styles.removeBtnText}>✕</Text>
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
+
+  // Full-screen piece page for a tapped row — PieceDetailScreen is not a tab
+  // route, so it is rendered in place exactly like Home / the hum flow do.
+  if (showDetail) {
+    return <PieceDetailScreen piece={showDetail} onBack={handleCloseDetail} />;
+  }
 
   if (loading) {
     return (
@@ -172,7 +231,7 @@ export const HistoryScreen: React.FC = () => {
         ListHeaderComponent={
           items.length > 0 ? (
             <Text style={styles.listHeader}>
-              Saved recognitions ({items.length})
+              Saved recognitions ({items.length}) · tap a piece to open it
             </Text>
           ) : null
         }
