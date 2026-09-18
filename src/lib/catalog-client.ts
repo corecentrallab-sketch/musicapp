@@ -123,12 +123,23 @@ function toSheetSource(value: unknown): SheetSource | null {
  */
 export async function fetchCatalogList(opts: {
   q?: string;
+  /**
+   * Composer substring filter — the live API has supported `?composer=` since the
+   * 2026-09-18 diacritic-tolerance change (accent/case-folded, same as `q`). WAVE
+   * 1b's "More by <composer>" block uses it; nothing else changed on the wire.
+   */
+  composer?: string;
   limit?: number;
   offset?: number;
   base?: string;
 }): Promise<CatalogListResult> {
   const base = opts.base ?? "";
-  const query = buildQuery({ q: opts.q, limit: opts.limit, offset: opts.offset });
+  const query = buildQuery({
+    q: opts.q,
+    composer: opts.composer,
+    limit: opts.limit,
+    offset: opts.offset,
+  });
   let json: unknown;
   try {
     const res = await fetch(`${base}/api/pieces${query}`, {

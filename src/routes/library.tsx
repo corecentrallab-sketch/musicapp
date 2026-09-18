@@ -10,10 +10,15 @@
  * the handler itself (no HTTP hop), so a visitor has one concrete piece to
  * practise — and one path toward the app and the official sheet music — before
  * they search.
+ *
+ * WAVE 1b (P4) adds the app CTA loop to the header: the library is where practice
+ * engagement starts, so the route into the app (recognition, coach, offline
+ * sheets) sits with the rest of the header rather than at the foot of the page.
  */
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { useCallback, useRef, useState, type FormEvent } from "react";
+import AppCta from "~/components/AppCta";
 import PieceOfTheDay, { type DailyPiece } from "~/components/PieceOfTheDay";
 import SiteFooter from "~/components/SiteFooter";
 import SiteNav from "~/components/SiteNav";
@@ -179,6 +184,12 @@ function LibraryPage() {
         {/* Piece of the Day — one concrete piece to practise before searching */}
         <div className="mt-8">
           <PieceOfTheDay daily={daily} />
+        </div>
+
+        {/* App CTA loop (WAVE 1b, P4) — the same block the piece pages carry, in
+            its header variant, so the promise and the link cannot drift. */}
+        <div className="mt-8">
+          <AppCta variant="inline" />
         </div>
 
         {/* Search */}

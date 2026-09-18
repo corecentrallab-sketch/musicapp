@@ -14,17 +14,35 @@
  * official edition is the only thing we can honestly offer. The URL comes from
  * the catalog API's shared `affiliate_url` field when present, else from the same
  * pure builder (`piece-affiliate.ts`) the API uses — one attribution path.
+ *
+ * WAVE 1b adds the practice/engagement layer around that CTA: the reference-melody
+ * player (P2 — interactive for the eight seeded pieces only, honest "coming soon"
+ * everywhere else), the related-piece paths (P3 — same composer + same level), and
+ * the app CTA loop (P4). All three are server-rendered from data the loader
+ * fetches, so they are in the HTML for crawlers and work without client JS.
  */
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import AppCta from "~/components/AppCta";
+import MelodyPlayer from "~/components/MelodyPlayer";
 import PieceOfTheDay, { type DailyPiece } from "~/components/PieceOfTheDay";
+import RelatedPieces from "~/components/RelatedPieces";
 import SiteFooter from "~/components/SiteFooter";
 import SiteNav from "~/components/SiteNav";
 import {
   CATALOG_API_BASE,
+  fetchCatalogList,
   fetchCatalogPiece,
   type SheetSource,
 } from "~/lib/catalog-client";
+import { resolvePieceMelody } from "~/services/piece-melody";
+import {
+  MORE_BY_COMPOSER_LIMIT,
+  SAME_LEVEL_SAMPLE_LIMIT,
+  pickMoreByComposer,
+  pickSameLevel,
+  type RelatedPieceLike,
+} from "~/services/related-pieces";
 import {
   SMD_RETAILER_NAME,
   pieceAffiliateLink,
@@ -67,10 +85,65 @@ export const Route = createFileRoute("/library/$pieceId")({
     // shared with the app); this local build is the fallback for an API that
     // predates the field and uses the same pure builder, so the URL is identical.
     const piece = initial.success ? initial.piece : null;
+    const affiliate = piece
+      ? pieceAffiliateLink(piece.title, piece.composer)
+      : null;
+
+    // Related-piece paths (P3). The public API answers two questions — "pieces by
+    // this composer" and "a page of the catalog" (no difficulty filter, no
+    // similarity ranking) — so both questions are asked in parallel, once, and the
+    // filtering happens below in pure, tested helpers. A failure returns [] and
+    // the block simply does not render: the page never waits on a nicety.
+    let moreByComposer: RelatedPieceLike[] = [];
+    let sameLevel: RelatedPieceLike[] = [];
+    if (piece) {
+      const [byComposer, levelSample] = await Promise.all([
+        piece.composer.trim() === ""
+          ? null
+          : fetchCatalogList({
+              composer: piece.composer,
+              limit: MORE_BY_COMPOSER_LIMIT + 1,
+              base: CATALOG_API_BASE,
+            }),
+        piece.difficulty_label
+          ? fetchCatalogList({
+              limit: SAME_LEVEL_SAMPLE_LIMIT,
+              base: CATALOG_API_BASE,
+            })
+          : null,
+      ]);
+      moreByComposer =
+        byComposer && byComposer.success
+          ? pickMoreByComposer(byComposer.pieces, {
+              currentId: piece.id,
+              composer: piece.composer,
+            })
+          : [];
+      sameLevel =
+        levelSample && levelSample.success
+          ? pickSameLevel(levelSample.pieces, {
+              currentId: piece.id,
+              difficultyLabel: piece.difficulty_label,
+              excludeIds: moreByComposer.map((related) => related.id),
+            })
+          : [];
+    }
+
+    // Reference melody (P2): resolved by normalised title + composer — the seeds
+    // carry slugs, the page carries a UUID, so an id join is impossible. Null
+    // means this piece is not one of the eight seeded melodies.
+    const melody = piece
+      ? resolvePieceMelody({ title: piece.title, composer: piece.composer })
+      : null;
+
     return {
       initial,
       daily,
-      affiliate: piece ? pieceAffiliateLink(piece.title, piece.composer) : null,
+      affiliate,
+      moreByComposer,
+      sameLevel,
+      melodyTitle: melody?.seed.title ?? null,
+      melodyAbc: melody?.abc ?? null,
     };
   },
   head: ({ loaderData }) => {
@@ -239,7 +312,15 @@ function SourceRow({ source }: { source: SheetSource }) {
 }
 
 function PieceDetailPage() {
-  const { initial, daily, affiliate } = Route.useLoaderData();
+  const {
+    initial,
+    daily,
+    affiliate,
+    moreByComposer,
+    sameLevel,
+    melodyTitle,
+    melodyAbc,
+  } = Route.useLoaderData();
 
   if (!initial.success) {
     const error = initial.error;
@@ -377,6 +458,30 @@ function PieceDetailPage() {
             hasOwnScore={primarySheetUrl !== null}
           />
         ) : null}
+
+        {/* Play the melody (P2) — the engagement step: hear it, then play it.
+            Interactive for the eight seeded melodies; the honest "coming soon"
+            state for every other piece (no player, no placeholder tune). */}
+        <MelodyPlayer
+          abc={melodyAbc}
+          pieceTitle={piece.title}
+          seedTitle={melodyTitle ?? undefined}
+        />
+
+        {/* Related-piece paths (P3) — same composer, same level. Renders nothing
+            when there is nothing honest to show. */}
+        <RelatedPieces
+          composer={piece.composer}
+          moreByComposer={moreByComposer}
+          difficultyLabel={piece.difficulty_label}
+          sameLevel={sameLevel}
+        />
+
+        {/* App CTA loop (P4) — the site's practice engagement hands off to the
+            app, where recognition, the coach and offline sheets live. */}
+        <div className="mt-12">
+          <AppCta />
+        </div>
 
         {/* Curated sources */}
         <section className="mt-12">
