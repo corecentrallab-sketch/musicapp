@@ -1,10 +1,22 @@
 /**
  * ShareCard — full-screen modal that renders a shareable progress card.
  *
- * Captures the card as an image via react-native-view-shot,
- * then opens the native share sheet with the image + text message.
+ * Captures the card as an image via react-native-view-shot, then opens the
+ * native share sheet with the PNG (expo-sharing) — falling back to a text-only
+ * share when capture is unavailable.
+ *
+ * Owner-reported defect on v21 (0.1.16): "the share preview card is dead".
+ * On Android the image was silently dropped, because React Native's
+ * `Share.share` only sends `{ title, message }` to the OS intent and ignores a
+ * `file://` `url` — the two Platform branches here used to be byte-identical,
+ * so the iOS/Android split was a no-op and every Android share lost the card.
+ * `expo-sharing`'s `shareAsync` is the path that actually delivers a file, and
+ * it is already the pattern in src/services/cloudSync.ts.
+ *
+ * Failure paths are no longer silent: a failed capture logs + tells the user
+ * the share is text-only, and the Share button always re-enables afterwards.
  */
-import React, { useRef, useCallback, useState } from 'react';
+import React, { useRef, useCallback, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +28,21 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+import {
+  SHARE_CARD_FAILED_HINT,
+  SHARE_CARD_IMAGE_UNAVAILABLE_HINT,
+  buildShareCardPayload,
+} from '../services/shareCardShare';
+
+/** Is sharing a *file* (not just text) possible on this device? */
+async function isImageSharingAvailable(): Promise<boolean> {
+  try {
+    return await Sharing.isAvailableAsync();
+  } catch {
+    return false;
+  }
+}
 
 interface ShareCardProps {
   /** Whether the modal is visible. */
@@ -61,14 +88,25 @@ export const ShareCard: React.FC<ShareCardProps> = ({
 }) => {
   const cardRef = useRef<View>(null);
   const [capturing, setCapturing] = useState(false);
+  // Honest, non-blocking status line: which form the share actually took, or
+  // that the share sheet did not open at all.
+  const [notice, setNotice] = useState<string | null>(null);
 
   const roundedMinutes = Math.round(practiceMinutes);
 
   const shareText =
     shareMessage ?? `I'm learning "${title}" by ${composer} on NoteSnap! Day ${streak} streak 🔥`;
 
+  // A reopened modal starts clean — no stale notice from the last attempt.
+  useEffect(() => {
+    if (!visible) {
+      setNotice(null);
+    }
+  }, [visible]);
+
   const handleShare = useCallback(async () => {
     setCapturing(true);
+    setNotice(null);
     try {
       // Try to capture the card as an image
       let imageUri: string | undefined;
@@ -79,34 +117,50 @@ export const ShareCard: React.FC<ShareCardProps> = ({
             quality: 1.0,
           });
         }
-      } catch {
-        // view-shot may fail in some environments — fall back to text-only
+      } catch (e) {
+        // view-shot can fail (unsupported runtime, off-screen view, low memory).
+        // Do not swallow it: log it and tell the user the share is text-only.
+        console.warn('[share] capture failed', e);
+        imageUri = undefined;
+        setNotice(SHARE_CARD_IMAGE_UNAVAILABLE_HINT);
       }
 
-      if (imageUri) {
-        await Share.share(
-          Platform.OS === 'ios'
-            ? {
-                message: shareText,
-                url: imageUri,
-              }
-            : {
-                message: shareText,
-                url: imageUri,
-              },
-        );
-      } else {
-        // Text-only fallback
-        await Share.share({
-          message: `${shareText}\n\nhttps://notesnap.app`,
+      const imageSharingAvailable =
+        !!imageUri && (await isImageSharingAvailable());
+
+      const payload = buildShareCardPayload({
+        shareText,
+        imageUri,
+        imageSharingAvailable,
+      });
+
+      if (payload.mode === 'image') {
+        // The captured PNG — shared as a file. On Android this is the only
+        // path that reaches the share sheet with the artwork attached.
+        await Sharing.shareAsync(payload.imageUri, {
+          mimeType: payload.mimeType,
+          dialogTitle: payload.dialogTitle,
+          UTI: undefined,
         });
+      } else {
+        // Text-only fallback (no PNG, or this platform cannot share files).
+        // The brand link is already printed on the card artwork, so an
+        // image-only share still carries it.
+        if (imageUri) {
+          setNotice(SHARE_CARD_IMAGE_UNAVAILABLE_HINT);
+        }
+        await Share.share({ message: payload.message });
       }
-    } catch {
-      // User cancelled — no action needed
+    } catch (e) {
+      // Dismissing the sheet resolves without throwing; getting here means the
+      // sheet genuinely failed — say so rather than looking tapped-dead.
+      console.warn('[share] share sheet failed', e);
+      setNotice(SHARE_CARD_FAILED_HINT);
     } finally {
+      // Always re-enable the button, including every error path above.
       setCapturing(false);
     }
-  }, [title, composer, streak, shareText]);
+  }, [shareText]);
 
   return (
     <Modal
@@ -179,10 +233,21 @@ export const ShareCard: React.FC<ShareCardProps> = ({
 
         {/* Action buttons */}
         <View style={styles.actions}>
+          {notice ? (
+            <Text
+              style={styles.noticeText}
+              accessibilityLiveRegion="polite"
+            >
+              {notice}
+            </Text>
+          ) : null}
           <TouchableOpacity
             style={[styles.shareBtn, capturing && styles.shareBtnDisabled]}
             onPress={handleShare}
             disabled={capturing}
+            accessibilityRole="button"
+            accessibilityLabel="Share progress card"
+            accessibilityState={{ busy: capturing, disabled: capturing }}
           >
             {capturing ? (
               <ActivityIndicator size="small" color="#ffffff" />
@@ -369,6 +434,13 @@ const styles = StyleSheet.create({
   },
   shareBtnDisabled: {
     opacity: 0.7,
+  },
+  noticeText: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginBottom: 4,
   },
   shareBtnText: {
     color: '#ffffff',

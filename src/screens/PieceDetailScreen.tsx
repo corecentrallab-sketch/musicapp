@@ -28,6 +28,10 @@ import {
 } from '../services/storage';
 import { getDisplayStreakLocal } from '../services/reinforcementStore';
 import { refreshStreakNudge } from '../services/notifications';
+import {
+  resolveShareCardPreviewData,
+  sharePreviewAccessibilityLabel,
+} from '../services/shareCardShare';
 
 interface PieceDetailScreenProps {
   piece: DailyChallengePiece;
@@ -122,6 +126,35 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
 
   const handleCloseShareCard = useCallback(() => {
     setShowShareCard(false);
+  }, []);
+
+  /**
+   * The Share Preview card is tappable (owner rule: a card that looks tappable
+   * must act). It opens the SAME full-screen ShareCard modal the post-practice
+   * alert and the coach celebration use, populated from the same two sources —
+   * it previews exactly the card that gets shared. Tapping never records
+   * practice, never moves the streak, and never fires a share sheet by itself.
+   */
+  const handleOpenSharePreview = useCallback(async () => {
+    // Honest fallbacks: a failed/no-history read still opens a truthful card
+    // (0 days, 0 min today) rather than a dead tap or a NaN on the artwork.
+    let streakDays: number | undefined;
+    let todayMinutes: number | undefined;
+    try {
+      const [streakData, minutes] = await Promise.all([
+        getDisplayStreakLocal(),
+        getTodayPracticeMinutes(),
+      ]);
+      streakDays = streakData.currentDays;
+      todayMinutes = minutes;
+    } catch (e) {
+      console.warn('[share] preview data unavailable', e);
+    }
+
+    setShareCardData(
+      resolveShareCardPreviewData({ streakDays, todayMinutes }),
+    );
+    setShowShareCard(true);
   }, []);
 
   // If showing the ScoreViewer
@@ -267,8 +300,17 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           nudge payload — positive framing only. */}
       <StreakNudgeCard surface="piece-detail" hidden={coachActive} />
 
-      {/* Share card preview */}
-      <View style={styles.shareCard}>
+      {/* Share card preview — tappable. Opens the real ShareCard modal (the
+          same one the post-practice alert and the coach celebration use), so
+          the preview shows exactly the card that gets shared. It never fires a
+          share sheet on its own. */}
+      <TouchableOpacity
+        style={styles.shareCard}
+        onPress={handleOpenSharePreview}
+        accessibilityRole="button"
+        accessibilityLabel={sharePreviewAccessibilityLabel(piece.title)}
+        accessibilityHint="Opens the share card so you can share it"
+      >
         <Text style={styles.shareCardLabel}>Share Preview</Text>
         <View style={styles.shareCardInner}>
           <Text style={styles.shareCardPiece}>{piece.title}</Text>
@@ -279,7 +321,8 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           </Text>
           <Text style={styles.shareCardApp}>notesnap.app</Text>
         </View>
-      </View>
+        <Text style={styles.shareCardCta}>Tap to open the share card →</Text>
+      </TouchableOpacity>
 
       {/* Share progress card modal */}
       <ShareCard
@@ -463,5 +506,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#e94560',
     fontWeight: '700',
+  },
+  shareCardCta: {
+    marginTop: 10,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4ecdc4',
+    textAlign: 'center',
   },
 });
