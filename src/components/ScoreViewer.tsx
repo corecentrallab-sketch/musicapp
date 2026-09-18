@@ -507,6 +507,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
+    // Above the loading/error overlays (zIndex 10): an error inside immersive
+    // mode must never hide the only way out of it.
+    zIndex: 20,
   },
   floatingButton: {
     backgroundColor: 'rgba(22, 33, 62, 0.72)',
