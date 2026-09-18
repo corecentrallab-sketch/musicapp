@@ -23,12 +23,14 @@
     "src/services/practiceMilestones.ts",
     "src/services/practiceReinforcement.ts",
     "src/services/practiceReinforcementView.ts",
+    "src/services/historyPiece.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
     "scripts/practiceCoach.test.ts",
     "scripts/coachPipeline.test.ts",
     "scripts/coachRun.test.ts",
     "scripts/practiceReinforcement.test.ts",
-    "scripts/practiceReinforcementView.test.ts"
+    "scripts/practiceReinforcementView.test.ts",
+    "scripts/historyPiece.test.ts"
   ]
 }

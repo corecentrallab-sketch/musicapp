@@ -12,6 +12,7 @@ import type {
   ModernResponse,
 } from "../types";
 import { parseHumResponse, parseModernResponse } from "./tier1";
+import type { CatalogPieceInfo } from "./historyPiece";
 import { getDeviceId } from "./device";
 
 /** Production NoteSnap site URL (stable — the Vercel production alias; every deploy lands here). Set EXPO_PUBLIC_API_URL to override for local dev. */
@@ -294,6 +295,66 @@ export async function fetchDailyChallenge(): Promise<DailyChallengePiece | null>
         typeof d.difficulty === "number" ? d.difficulty : null,
       catalog: d.catalog ? String(d.catalog) : null,
       challengeDate: d.date ? String(d.date) : undefined,
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * GET /api/pieces/:id — the catalog's own record for one piece.
+ *
+ * Used by the History tab: a saved recognition stores only identity + date, so
+ * tapping the row asks the catalog for the curated sheet URL (and the honest
+ * public-domain / difficulty / ABC signals) to fill the piece page in. The
+ * endpoint returns the SAME `sheet_music_url` the recognition response carries,
+ * which is what makes a saved piece's sheet identical to a recognised one.
+ *
+ * Returns null — never throws — when the request fails, the response is
+ * malformed, or the id is not a catalog id (modern-song saves use an ISRC or a
+ * title, so the catalog has nothing for them). A null result means "the piece
+ * page keeps its honest coming-soon/no-sheet state"; it is not an error the UI
+ * should surface.
+ */
+export async function fetchPieceById(
+  pieceId: string,
+): Promise<CatalogPieceInfo | null> {
+  if (!pieceId) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(
+      `${BASE_URL}/api/pieces/${encodeURIComponent(pieceId)}`,
+      {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      },
+    );
+    if (!response.ok) return null;
+    const json: unknown = await response.json();
+    if (!json || typeof json !== "object") return null;
+    const body = json as Record<string, unknown>;
+    if (body.success === false) return null;
+    const piece = body.piece;
+    if (!piece || typeof piece !== "object") return null;
+    const p = piece as Record<string, unknown>;
+    return {
+      sheetMusicUrl: p.sheet_music_url ? String(p.sheet_music_url) : undefined,
+      difficultyLabel: p.difficulty_label
+        ? String(p.difficulty_label)
+        : undefined,
+      difficultyGrade: typeof p.difficulty === "number" ? p.difficulty : null,
+      isPublicDomain:
+        typeof p.is_public_domain === "boolean" ? p.is_public_domain : undefined,
+      sheetMusicAvailable:
+        typeof p.sheet_music_available === "boolean"
+          ? p.sheet_music_available
+          : undefined,
+      catalog: p.catalog ? String(p.catalog) : null,
+      abc: p.abc ? String(p.abc) : null,
     };
   } catch {
     return null;
