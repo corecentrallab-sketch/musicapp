@@ -1,10 +1,21 @@
 /**
  * Public catalog API — GET /api/pieces (search) and GET /api/pieces/:id (detail).
  *
- * Search: ?q=<title-or-composer substring> (case-insensitive, matches title OR
- * composer), ?composer=<composer substring> (case-insensitive, narrows the
- * search), ?limit=<1-50> (default 20, capped at 50), ?offset=<non-negative>
- * (default 0). All filters combine with AND. The endpoint is PUBLIC — no auth or
+ * Search: ?q=<title-or-composer substring> (case-insensitive AND
+ * diacritic-insensitive, matches title OR composer), ?composer=<composer
+ * substring> (same folding, narrows the search), ?limit=<1-50> (default 20,
+ * capped at 50), ?offset=<non-negative> (default 0). All filters combine with
+ * AND.
+ *
+ * Diacritic tolerance (owner-reported discovery gap, 2026-09-18): a musician
+ * types "fur elise" and "prelude", not "Fur Elise" and "Prelude" with accents,
+ * yet before this change `?q=fur` returned nothing from a catalog whose piece is
+ * titled "Bagatelle in A Minor (Fur Elise)" — with an umlaut. Both sides of every
+ * search comparison are therefore folded with Postgres' `unaccent` extension
+ * (installed by scripts/enable-unaccent.ts). The extension is probed once per
+ * server process and cached: if a database ever lacks it the endpoint degrades to
+ * plain case-insensitive matching instead of failing, so search keeps working —
+ * it just stops being accent-tolerant until the extension is reinstalled. The endpoint is PUBLIC — no auth or
  * entitlement checks — and by the owner's standing rule it only ever returns
  * public-domain pieces (is_public_domain = true), never copyrighted works.
  *
@@ -28,6 +39,12 @@ const CORS_HEADERS: Record<string, string> = {
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
+/**
+ * Longest accepted `q` / `composer` filter. A search is a substring match, so
+ * anything past this is a client bug (or an attempt to make the ILIKE scan
+ * expensive); 200 characters is far beyond any real title or composer name.
+ */
+const MAX_QUERY_CHARS = 200;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const INT_RE = /^\d+$/;
 
@@ -70,6 +87,54 @@ function corsJson(body: Record<string, unknown>, status = 200): Response {
 /** Escape LIKE wildcards so user input matches literally, never as patterns. */
 function escapeLike(input: string): string {
   return input.replace(/[\\%_]/g, (m) => `\\${m}`);
+}
+
+/**
+ * Whether the database has Postgres' `unaccent` extension — probed once per
+ * server process, then cached (null = not probed yet). The probe is a plain
+ * read, so it is safe on a cold start; a probe failure means "no folding",
+ * never a 5xx.
+ */
+let unaccentReady: boolean | null = null;
+async function hasUnaccent(): Promise<boolean> {
+  if (unaccentReady !== null) return unaccentReady;
+  try {
+    const rows = (await sql().query(
+      `SELECT count(*)::int AS n FROM pg_extension WHERE extname = 'unaccent'`,
+    )) as unknown as Array<{ n: number }>;
+    unaccentReady = (rows[0]?.n ?? 0) > 0;
+    if (!unaccentReady) {
+      console.warn(
+        "[catalog] unaccent extension missing — search is not accent-tolerant",
+      );
+    }
+  } catch (err) {
+    console.warn("[catalog] unaccent probe failed:", err);
+    unaccentReady = false;
+  }
+  return unaccentReady;
+}
+
+/**
+ * Wrap a SQL expression (a column name) in the accent folder when the database
+ * supports it. Applied to BOTH sides of every search comparison, so an accented
+ * query and an unaccented one behave identically.
+ */
+function folded(expr: string, fold: boolean): string {
+  return fold ? `unaccent(${expr})` : expr;
+}
+
+/**
+ * A bound search parameter ($1, $2, ...), text-cast and optionally folded.
+ *
+ * The `text` cast is not optional: an untyped placeholder inside `unaccent(...)`
+ * leaves the parameter type for the serverless driver to infer, and it infers
+ * `integer`, which fails at parse time with
+ * `function unaccent(integer) does not exist` (42883) — reproduced against the
+ * live database on 2026-09-18, after which this cast was added.
+ */
+function foldedParam(index: number, fold: boolean): string {
+  return folded("$" + index + "::text", fold);
 }
 
 /** Map a DB row to the public piece shape shared by list and detail endpoints. */
@@ -140,6 +205,16 @@ export async function handleCatalogList(req: Request): Promise<Response> {
   const q = (url.searchParams.get("q") ?? "").trim();
   const composer = (url.searchParams.get("composer") ?? "").trim();
 
+  if (q.length > MAX_QUERY_CHARS || composer.length > MAX_QUERY_CHARS) {
+    return corsJson(
+      {
+        success: false,
+        error: `q and composer must be ${MAX_QUERY_CHARS} characters or fewer`,
+      },
+      400,
+    );
+  }
+
   const limitParsed = parsePageParam(
     url.searchParams.get("limit"),
     DEFAULT_LIMIT,
@@ -157,18 +232,23 @@ export async function handleCatalogList(req: Request): Promise<Response> {
   const offset = offsetParsed.value;
 
   // WHERE is built from user input but every value is a bound parameter; the
-  // only interpolated text is the fixed filter skeleton.
+  // only interpolated text is the fixed filter skeleton plus the `unaccent(...)`
+  // wrapper (a fixed function name, never user input).
+  const fold = await hasUnaccent();
   const where: string[] = ["p.is_public_domain = true"];
   const params: Array<string | number> = [];
   if (q !== "") {
     params.push(`%${escapeLike(q)}%`);
     where.push(
-      `(p.title ILIKE $${params.length} OR p.composer ILIKE $${params.length})`,
+      `(${folded("p.title", fold)} ILIKE ${foldedParam(params.length, fold)}` +
+        ` OR ${folded("p.composer", fold)} ILIKE ${foldedParam(params.length, fold)})`,
     );
   }
   if (composer !== "") {
     params.push(`%${escapeLike(composer)}%`);
-    where.push(`p.composer ILIKE $${params.length}`);
+    where.push(
+      `${folded("p.composer", fold)} ILIKE ${foldedParam(params.length, fold)}`,
+    );
   }
   const whereSql = where.join(" AND ");
 
