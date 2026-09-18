@@ -25,6 +25,8 @@
     "src/services/practiceReinforcementView.ts",
     "src/services/historyPiece.ts",
     "src/services/catalogSearch.ts",
+    "src/services/sheetViewerFit.ts",
+    "src/services/sheetViewerHtml.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
     "scripts/practiceCoach.test.ts",
@@ -33,6 +35,7 @@
     "scripts/practiceReinforcement.test.ts",
     "scripts/practiceReinforcementView.test.ts",
     "scripts/historyPiece.test.ts",
-    "scripts/catalogSearch.test.ts"
+    "scripts/catalogSearch.test.ts",
+    "scripts/sheetViewerFit.test.ts"
   ]
 }

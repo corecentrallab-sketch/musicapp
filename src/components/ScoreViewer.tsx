@@ -1,11 +1,28 @@
 /**
  * ScoreViewer — full-screen sheet music PDF/MusicXML viewer.
  *
- * Uses react-native-webview with embedded PDF.js for Expo Go compatibility.
- * Supports page turning via tap edges, swipe, and page indicator.
+ * Uses react-native-webview with embedded PDF.js (document built by
+ * src/services/sheetViewerHtml.ts) for Expo Go compatibility.
+ *
+ * v21 (owner request 2026-09-18 — the sheet was "visually hard to read"):
+ *   • IMMERSIVE MODE — the ⛶ button in the header hides the header, the audio
+ *     chrome and the bottom bar so the sheet fills the display; a small
+ *     translucent ✕/contract button floats top-right so the user can always get
+ *     back out, and the page counter stays visible as a pill inside the page.
+ *   • BIGGER PAGE — the WebView document now contain-fits the page to the whole
+ *     container (min of width/height fit, capped at 3×) instead of a width-only
+ *     fit with an 85% height cap.
+ *   • AUTO PAGE-TURN — the shared BPM-linked AutoScrollControl drives
+ *     nextPage() through injectJavaScript, pauses on a page tap, and stops
+ *     honestly at the last page.
+ *
+ * All geometry/speed/copy math lives in src/services/sheetViewerFit.ts and is
+ * unit-tested by scripts/sheetViewerFit.test.ts. This component holds none.
+ *
+ * Page turning still works via tap edges, swipe, and the bottom bar.
  */
 
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,8 +32,19 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { ScorePlayer } from './ScorePlayer';
+import { AutoScrollControl } from './AutoScrollControl';
+import { useAutoScroll, type AutoScrollStatus } from '../hooks/useAutoScroll';
+import { buildSheetViewerHtml } from '../services/sheetViewerHtml';
+import {
+  AUTO_TURN_TOGGLE_LABEL,
+  IMMERSIVE_ENTER_LABEL,
+  IMMERSIVE_EXIT_LABEL,
+  autoTurnChipLabel,
+  autoTurnEndedAtLastPage,
+} from '../services/sheetViewerFit';
 import type { ScoreAudioSource } from '../hooks/useScoreAudio';
 
 interface ScoreViewerProps {
@@ -39,260 +67,6 @@ interface ScoreViewerProps {
   audioLabel?: string;
 }
 
-/** Generate the HTML that wraps PDF.js for rendering. */
-function generatePdfHtml(pdfUrl: string): string {
-  // Escape the URL for safe embedding in HTML
-  const escapedUrl = pdfUrl.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body {
-    height: 100%;
-    width: 100%;
-    background: #1a1a2e;
-    overflow: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  }
-  #container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    width: 100%;
-    position: relative;
-    touch-action: pan-x pan-y pinch-zoom;
-  }
-  #pageCanvas {
-    max-width: 100%;
-    max-height: 85%;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    border-radius: 4px;
-    background: #fff;
-  }
-  #pageIndicator {
-    position: absolute;
-    bottom: 16px;
-    left: 0;
-    right: 0;
-    text-align: center;
-    color: #a0a0b8;
-    font-size: 13px;
-    font-weight: 600;
-    pointer-events: none;
-  }
-  #loadingOverlay {
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #1a1a2e;
-    z-index: 10;
-  }
-  .spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid #0f3460;
-    border-top-color: #e94560;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  #errorOverlay {
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    display: none;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: #1a1a2e;
-    z-index: 10;
-    padding: 32px;
-  }
-  #errorOverlay .err-icon { font-size: 48px; margin-bottom: 16px; }
-  #errorOverlay .err-title { color: #fff; font-size: 18px; font-weight: 700; margin-bottom: 8px; }
-  #errorOverlay .err-body { color: #a0a0b8; font-size: 14px; text-align: center; line-height: 1.5; margin-bottom: 20px; }
-  #errorOverlay .err-retry {
-    background: #e94560;
-    color: #fff;
-    border: none;
-    padding: 12px 28px;
-    border-radius: 12px;
-    font-size: 15px;
-    font-weight: 700;
-    cursor: pointer;
-  }
-
-  /* Tap zones */
-  .tap-zone {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 30%;
-    z-index: 5;
-  }
-  .tap-zone-left { left: 0; }
-  .tap-zone-right { right: 0; }
-</style>
-</head>
-<body>
-<div id="container">
-  <div id="loadingOverlay"><div class="spinner"></div></div>
-  <div id="errorOverlay">
-    <div class="err-icon">⚠️</div>
-    <div class="err-title">Could not load sheet music</div>
-    <div class="err-body">The PDF may be unavailable or in an unsupported format.</div>
-    <button class="err-retry" onclick="retry()">Retry</button>
-  </div>
-  <canvas id="pageCanvas"></canvas>
-  <div id="pageIndicator"></div>
-  <div class="tap-zone tap-zone-left" onclick="prevPage()"></div>
-  <div class="tap-zone tap-zone-right" onclick="nextPage()"></div>
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-  let pdfDoc = null;
-  let currentPage = 1;
-  let totalPages = 0;
-  let renderTask = null;
-
-  const canvas = document.getElementById('pageCanvas');
-  const ctx = canvas.getContext('2d');
-  const loadingEl = document.getElementById('loadingOverlay');
-  const errorEl = document.getElementById('errorOverlay');
-  const indicator = document.getElementById('pageIndicator');
-
-  function showLoading() {
-    loadingEl.style.display = 'flex';
-    errorEl.style.display = 'none';
-  }
-
-  function hideLoading() {
-    loadingEl.style.display = 'none';
-  }
-
-  function showError() {
-    loadingEl.style.display = 'none';
-    errorEl.style.display = 'flex';
-    // Notify RN about the error
-    if (window.ReactNativeWebView) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error' }));
-    }
-  }
-
-  function updateIndicator() {
-    indicator.textContent = 'Page ' + currentPage + ' of ' + totalPages;
-    // Notify RN
-    if (window.ReactNativeWebView) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({
-        type: 'pageChange',
-        page: currentPage,
-        total: totalPages
-      }));
-    }
-  }
-
-  function renderPage(num) {
-    if (renderTask) { renderTask.cancel(); }
-    showLoading();
-
-    pdfDoc.getPage(num).then(function(page) {
-      var viewport = page.getViewport({ scale: 1 });
-      var containerWidth = document.getElementById('container').clientWidth;
-      var scale = (containerWidth * 0.92) / viewport.width;
-      var scaledViewport = page.getViewport({ scale: scale });
-
-      canvas.width = scaledViewport.width;
-      canvas.height = scaledViewport.height;
-
-      renderTask = page.render({
-        canvasContext: ctx,
-        viewport: scaledViewport
-      });
-
-      renderTask.promise.then(function() {
-        hideLoading();
-        renderTask = null;
-        updateIndicator();
-      }).catch(function(err) {
-        if (err.name === 'RenderingCancelledException') return;
-        showError();
-      });
-    }).catch(function(err) {
-      showError();
-    });
-  }
-
-  function prevPage() {
-    if (currentPage <= 1) return;
-    currentPage--;
-    renderPage(currentPage);
-  }
-
-  function nextPage() {
-    if (currentPage >= totalPages) return;
-    currentPage++;
-    renderPage(currentPage);
-  }
-
-  function retry() {
-    showLoading();
-    renderPage(currentPage);
-  }
-
-  // Load the PDF
-  pdfjsLib.getDocument('${escapedUrl}').promise.then(function(pdf) {
-    pdfDoc = pdf;
-    totalPages = pdf.numPages;
-    currentPage = 1;
-    renderPage(1);
-    // Notify RN
-    if (window.ReactNativeWebView) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({
-        type: 'loaded',
-        totalPages: totalPages
-      }));
-    }
-  }).catch(function(err) {
-    showError();
-  });
-
-  // Swipe handling
-  let touchStartX = 0;
-  let touchStartY = 0;
-
-  document.addEventListener('touchstart', function(e) {
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-  }, { passive: true });
-
-  document.addEventListener('touchend', function(e) {
-    var dx = e.changedTouches[0].clientX - touchStartX;
-    var dy = e.changedTouches[0].clientY - touchStartY;
-    // Only trigger if horizontal swipe dominates
-    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
-      if (dx < 0) {
-        nextPage();
-      } else {
-        prevPage();
-      }
-    }
-  });
-</script>
-</body>
-</html>`;
-}
-
 export const ScoreViewer: React.FC<ScoreViewerProps> = ({
   url,
   title,
@@ -304,9 +78,66 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [pageInfo, setPageInfo] = useState({ page: 1, total: 0 });
+  /** Full-screen (immersive) mode: native chrome hidden, sheet fills the screen. */
+  const [immersive, setImmersive] = useState(false);
+  /** Auto-turn bar expanded by the user (it also shows while running/paused). */
+  const [autoTurnExpanded, setAutoTurnExpanded] = useState(false);
+  /** Auto-turn reached the last page and stopped itself. */
+  const [autoTurnEnded, setAutoTurnEnded] = useState(false);
   const webViewRef = useRef<WebView>(null);
 
-  const pdfHtml = useMemo(() => generatePdfHtml(url), [url]);
+  const pdfHtml = useMemo(() => buildSheetViewerHtml(url), [url]);
+
+  /** Inject one of the document's page-turn functions. */
+  const turnPage = useCallback((direction: 'next' | 'prev') => {
+    webViewRef.current?.injectJavaScript(
+      direction === 'next' ? 'nextPage();' : 'prevPage();'
+    );
+  }, []);
+
+  // Auto page-turn (BPM-linked): the shared hook owns the timer, the shared
+  // control renders its state, and the viewer supplies the page turner — the
+  // page count comes from the document's own 'loaded' message.
+  const autoScroll = useAutoScroll({
+    currentPage: pageInfo.page,
+    pageCount: pageInfo.total,
+    onTurnPage: useCallback(() => turnPage('next'), [turnPage]),
+  });
+  const {
+    status: autoScrollStatus,
+    toggle: toggleAutoScroll,
+    stop: stopAutoScroll,
+    secondsPerPage,
+  } = autoScroll;
+
+  // A tap on the page asks the viewer to decide (the document's tap zones post
+  // {type:'tapPage'} and turn nothing themselves):
+  //   • auto-turn running/paused → pause/resume and NO page turn (a tap can
+  //     never double-advance past the turn the scheduler already made);
+  //   • idle → the usual left edge = previous, right edge = next.
+  // Held in a ref so the WebView message handler stays referentially stable.
+  const tapRef = useRef<(zone: string) => void>(() => {});
+  useEffect(() => {
+    tapRef.current = (zone: string) => {
+      if (autoScrollStatus !== 'idle') {
+        toggleAutoScroll();
+        return;
+      }
+      if (loading || error || pageInfo.total <= 0) return;
+      turnPage(zone === 'left' ? 'prev' : 'next');
+    };
+  }, [
+    autoScrollStatus,
+    toggleAutoScroll,
+    loading,
+    error,
+    pageInfo.total,
+    turnPage,
+  ]);
+
+  // Re-assert immersive mode in the document after a (re)load — the ✕/⛶ state
+  // must survive a reload triggered by the retry button.
+  const immersiveRef = useRef(false);
 
   const handleMessage = useCallback((event: WebViewMessageEvent) => {
     try {
@@ -316,9 +147,15 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
           setLoading(false);
           setError(false);
           setPageInfo({ page: 1, total: data.totalPages });
+          if (immersiveRef.current) {
+            webViewRef.current?.injectJavaScript('setImmersive(true);');
+          }
           break;
         case 'pageChange':
           setPageInfo({ page: data.page, total: data.total });
+          break;
+        case 'tapPage':
+          tapRef.current(String(data.zone));
           break;
         case 'error':
           setLoading(false);
@@ -330,31 +167,91 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
     }
   }, []);
 
+  // Hide/show the native chrome in the WebView document: it re-fits the page to
+  // the taller container right away (and switches the page counter to its
+  // compact immersive form).
+  useEffect(() => {
+    if (immersiveRef.current === immersive) return;
+    immersiveRef.current = immersive;
+    webViewRef.current?.injectJavaScript(`setImmersive(${immersive});`);
+  }, [immersive]);
+
+  // "Auto-turn stopped — last page": detect the running → idle transition on
+  // the final page (the hook stops rather than overflowing), and clear the note
+  // as soon as a new run starts or the user leaves the last page.
+  const prevAutoScrollStatusRef = useRef<AutoScrollStatus>('idle');
+  useEffect(() => {
+    const previous = prevAutoScrollStatusRef.current;
+    prevAutoScrollStatusRef.current = autoScrollStatus;
+    if (
+      autoTurnEndedAtLastPage(
+        previous,
+        autoScrollStatus,
+        pageInfo.page,
+        pageInfo.total
+      )
+    ) {
+      setAutoTurnEnded(true);
+    } else if (
+      autoScrollStatus !== 'idle' ||
+      pageInfo.total <= 0 ||
+      pageInfo.page < pageInfo.total
+    ) {
+      setAutoTurnEnded(false);
+    }
+  }, [autoScrollStatus, pageInfo.page, pageInfo.total]);
+
   const handleRetry = useCallback(() => {
     setLoading(true);
     setError(false);
     webViewRef.current?.reload();
   }, []);
 
+  /** Manual page navigation cancels auto-turn (same contract as the PDF viewer). */
+  const handleManualTurn = useCallback(
+    (direction: 'next' | 'prev') => {
+      stopAutoScroll();
+      turnPage(direction);
+    },
+    [stopAutoScroll, turnPage]
+  );
+
+  const showAutoTurnBar = autoTurnExpanded || autoScrollStatus !== 'idle';
+  const atLastPage = pageInfo.total > 0 && pageInfo.page >= pageInfo.total;
+
   return (
     <Modal visible={true} animationType="slide" presentationStyle="fullScreen">
       <View style={styles.container}>
-        {/* Header bar */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-            <Text style={styles.closeBtnText}>✕</Text>
-          </TouchableOpacity>
-          <View style={styles.headerInfo}>
-            <Text style={styles.headerTitle} numberOfLines={1}>
-              {title}
-            </Text>
-            <Text style={styles.headerComposer} numberOfLines={1}>
-              {composer}
-            </Text>
+        {/* Header bar — hidden in immersive mode (the floating exit button and
+            the in-page counter take over). */}
+        {!immersive && (
+          <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close sheet music"
+            >
+              <Text style={styles.closeBtnText}>✕</Text>
+            </TouchableOpacity>
+            <View style={styles.headerInfo}>
+              <Text style={styles.headerTitle} numberOfLines={1}>
+                {title}
+              </Text>
+              <Text style={styles.headerComposer} numberOfLines={1}>
+                {composer}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => setImmersive(true)}
+              accessibilityRole="button"
+              accessibilityLabel={IMMERSIVE_ENTER_LABEL}
+            >
+              <Ionicons name="expand-outline" size={22} color="#eaeaff" />
+            </TouchableOpacity>
           </View>
-          {/* Spacer for symmetry */}
-          <View style={styles.closeBtn} />
-        </View>
+        )}
 
         {/* WebView PDF viewer */}
         <View style={styles.webviewContainer}>
@@ -389,9 +286,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
           {error && (
             <View style={styles.errorOverlay}>
               <Text style={styles.errorEmoji}>⚠️</Text>
-              <Text style={styles.errorTitle}>
-                Could not load sheet music
-              </Text>
+              <Text style={styles.errorTitle}>Could not load sheet music</Text>
               <Text style={styles.errorBody}>
                 The file may be unavailable or in an unsupported format.
               </Text>
@@ -400,56 +295,150 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
               </TouchableOpacity>
             </View>
           )}
+
+          {/* Immersive-only floating controls. The wrapper is box-none so only
+              the two buttons take a tap; everything else falls through to the
+              page (turn / pause) exactly as in normal mode. */}
+          {immersive && (
+            <View style={styles.immersiveOverlay} pointerEvents="box-none">
+              <TouchableOpacity
+                style={[styles.floatingButton, styles.floatingChip]}
+                onPress={() => setAutoTurnExpanded((expanded) => !expanded)}
+                accessibilityRole="button"
+                accessibilityLabel={AUTO_TURN_TOGGLE_LABEL}
+                accessibilityState={{ expanded: showAutoTurnBar }}
+              >
+                <Ionicons name="timer-outline" size={14} color="#eaeaff" />
+                <Text style={styles.floatingChipText}>
+                  {autoTurnChipLabel(autoScrollStatus, secondsPerPage)}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.floatingButton, styles.floatingExit]}
+                onPress={() => setImmersive(false)}
+                accessibilityRole="button"
+                accessibilityLabel={IMMERSIVE_EXIT_LABEL}
+                hitSlop={8}
+              >
+                <Ionicons name="contract-outline" size={18} color="#eaeaff" />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* Practice player: score audio + loop + time-stretch. Rendered only
-          when an audio source exists; otherwise a subtle hint (no fake UI). */}
-        {audioSource ? (
-          <ScorePlayer source={audioSource} label={audioLabel} />
-        ) : (
-          <View style={styles.audioHint}>
-            <Text style={styles.audioHintText}>
-              🎧 Practice audio coming soon
+          when an audio source exists; otherwise a subtle hint (no fake UI).
+          Hidden in immersive mode (nothing plays under the sheet). */}
+        {!immersive &&
+          (audioSource ? (
+            <ScorePlayer source={audioSource} label={audioLabel} />
+          ) : (
+            <View style={styles.audioHint}>
+              <Text style={styles.audioHintText}>
+                🎧 Practice audio coming soon
+              </Text>
+            </View>
+          ))}
+
+        {/* Auto page-turn (BPM-linked). Collapsible so it costs the sheet no
+            space until the user wants it; always visible while running. */}
+        {showAutoTurnBar && (
+          <AutoScrollControl
+            autoScroll={autoScroll}
+            disabled={pageInfo.total < 2}
+          />
+        )}
+
+        {/* Honest stop at the end of the piece. */}
+        {autoTurnEnded && (
+          <View style={styles.autoTurnEndedBar}>
+            <Ionicons name="flag-outline" size={14} color="#a0a0b8" />
+            <Text style={styles.autoTurnEndedText}>
+              Auto-turn stopped — last page ({pageInfo.page} of {pageInfo.total})
             </Text>
           </View>
         )}
 
-        {/* Bottom bar: page indicator + tap hints */}
-        <View style={styles.bottomBar}>
-          <TouchableOpacity
-            style={styles.pageNavBtn}
-            onPress={() => {
-              webViewRef.current?.injectJavaScript('prevPage();');
-            }}
-          >
-            <Text style={styles.pageNavArrow}>‹</Text>
-          </TouchableOpacity>
+        {/* Bottom bar: page nav + indicator + auto-turn toggle. Hidden in
+            immersive mode. */}
+        {!immersive && (
+          <View style={styles.bottomBar}>
+            <TouchableOpacity
+              style={styles.pageNavBtn}
+              onPress={() => handleManualTurn('prev')}
+              disabled={pageInfo.page <= 1}
+              accessibilityRole="button"
+              accessibilityLabel="Previous page"
+            >
+              <Text
+                style={[
+                  styles.pageNavArrow,
+                  pageInfo.page <= 1 && styles.pageNavArrowDisabled,
+                ]}
+              >
+                ‹
+              </Text>
+            </TouchableOpacity>
 
-          <View style={styles.pageIndicatorContainer}>
-            {!loading && !error && pageInfo.total > 0 ? (
-              <Text style={styles.pageIndicator}>
-                Page {pageInfo.page} of {pageInfo.total}
+            <View style={styles.pageIndicatorContainer}>
+              {!loading && !error && pageInfo.total > 0 ? (
+                <Text style={styles.pageIndicator}>
+                  Page {pageInfo.page} of {pageInfo.total}
+                </Text>
+              ) : (
+                <Text style={styles.pageIndicator}>
+                  {loading ? 'Loading...' : error ? 'Error' : '—'}
+                </Text>
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.autoTurnToggle, showAutoTurnBar && styles.autoTurnToggleOn]}
+              onPress={() => setAutoTurnExpanded((expanded) => !expanded)}
+              accessibilityRole="button"
+              accessibilityLabel={AUTO_TURN_TOGGLE_LABEL}
+              accessibilityState={{ expanded: showAutoTurnBar }}
+            >
+              <Ionicons
+                name="timer-outline"
+                size={16}
+                color={showAutoTurnBar ? '#ffffff' : '#a0a0b8'}
+              />
+              <Text
+                style={[
+                  styles.autoTurnToggleText,
+                  showAutoTurnBar && styles.autoTurnToggleTextOn,
+                ]}
+              >
+                Auto-turn
               </Text>
-            ) : (
-              <Text style={styles.pageIndicator}>
-                {loading ? 'Loading...' : error ? 'Error' : '—'}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.pageNavBtn}
+              onPress={() => handleManualTurn('next')}
+              disabled={atLastPage}
+              accessibilityRole="button"
+              accessibilityLabel="Next page"
+            >
+              <Text
+                style={[
+                  styles.pageNavArrow,
+                  atLastPage && styles.pageNavArrowDisabled,
+                ]}
+              >
+                ›
               </Text>
-            )}
+            </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            style={styles.pageNavBtn}
-            onPress={() => {
-              webViewRef.current?.injectJavaScript('nextPage();');
-            }}
-          >
-            <Text style={styles.pageNavArrow}>›</Text>
-          </TouchableOpacity>
-        </View>
+        )}
       </View>
     </Modal>
   );
 };
+
+const FLOATING_TOP = Platform.OS === 'ios' ? 56 : 32;
 
 const styles = StyleSheet.create({
   container: {
@@ -462,14 +451,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: Platform.OS === 'ios' ? 56 : 32,
+    paddingTop: FLOATING_TOP,
     paddingBottom: 12,
     paddingHorizontal: 16,
     backgroundColor: '#16213e',
     borderBottomWidth: 1,
     borderBottomColor: '#0f3460',
   },
-  closeBtn: {
+  headerButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -508,6 +497,37 @@ const styles = StyleSheet.create({
   webview: {
     flex: 1,
     backgroundColor: '#1a1a2e',
+  },
+
+  // Immersive floating controls
+  immersiveOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    paddingTop: FLOATING_TOP,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  floatingButton: {
+    backgroundColor: 'rgba(22, 33, 62, 0.72)',
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floatingChip: {
+    flexDirection: 'row',
+    gap: 6,
+    height: 34,
+    paddingHorizontal: 12,
+  },
+  floatingChipText: {
+    color: '#eaeaff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  floatingExit: {
+    width: 36,
+    height: 36,
   },
 
   // Loading overlay (native fallback)
@@ -568,7 +588,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     backgroundColor: '#16213e',
     borderTopWidth: 1,
     borderTopColor: '#0f3460',
@@ -586,10 +606,26 @@ const styles = StyleSheet.create({
     color: '#6a6a85',
     fontSize: 13,
   },
+  autoTurnEndedBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#16213e',
+    borderTopWidth: 1,
+    borderTopColor: '#0f3460',
+  },
+  autoTurnEndedText: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   pageNavBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#1a1a2e',
     alignItems: 'center',
     justifyContent: 'center',
@@ -600,9 +636,36 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     lineHeight: 30,
   },
+  pageNavArrowDisabled: {
+    color: '#3a3a5c',
+  },
+  autoTurnToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    height: 40,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
+  autoTurnToggleOn: {
+    backgroundColor: '#3a3a5c',
+    borderColor: '#e94560',
+  },
+  autoTurnToggleText: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  autoTurnToggleTextOn: {
+    color: '#ffffff',
+  },
   pageIndicatorContainer: {
     flex: 1,
     alignItems: 'center',
+    paddingHorizontal: 6,
   },
   pageIndicator: {
     color: '#c0c0d0',
