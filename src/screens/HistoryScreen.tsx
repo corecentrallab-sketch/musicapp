@@ -38,6 +38,7 @@ import {
   savedPieceToDetail,
 } from '../services/historyPiece';
 import { PieceDetailScreen } from './PieceDetailScreen';
+import { FindPieceScreen } from './FindPieceScreen';
 import type { DailyChallengePiece, SavedPiece } from '../types';
 
 /** Zeroed streak (engine-derived) used until the first read resolves. */
@@ -62,6 +63,10 @@ export const HistoryScreen: React.FC = () => {
   // Full-screen piece page for a tapped row — the app renders PieceDetailScreen
   // in place (like Home and the hum flow) rather than as a tab route.
   const [showDetail, setShowDetail] = useState<DailyChallengePiece | null>(null);
+  // Catalog search ("Find a piece") opened from the header — the way to reach a
+  // piece you never recognized (you knew its name), which History alone can't
+  // give you.
+  const [showFindPiece, setShowFindPiece] = useState(false);
   // Guards the catalog lookup against a stale response (tap A, back, tap B).
   const detailRequestRef = useRef(0);
 
@@ -197,6 +202,11 @@ export const HistoryScreen: React.FC = () => {
     </TouchableOpacity>
   );
 
+  // Catalog search opened from the header (rendered in place, like the piece page).
+  if (showFindPiece) {
+    return <FindPieceScreen onClose={() => setShowFindPiece(false)} />;
+  }
+
   // Full-screen piece page for a tapped row — PieceDetailScreen is not a tab
   // route, so it is rendered in place exactly like Home / the hum flow do.
   if (showDetail) {
@@ -229,11 +239,27 @@ export const HistoryScreen: React.FC = () => {
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
-          items.length > 0 ? (
-            <Text style={styles.listHeader}>
-              Saved recognitions ({items.length}) · tap a piece to open it
-            </Text>
-          ) : null
+          <View>
+            {/* Catalog search — the way to a piece you knew by name but never
+                recognized, so History isn't a dead end for discovery. */}
+            <TouchableOpacity
+              style={styles.findPieceBtn}
+              onPress={() => setShowFindPiece(true)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Find a piece by title or composer"
+            >
+              <Text style={styles.findPieceEmoji}>🔎</Text>
+              <Text style={styles.findPieceText}>
+                Find a piece — search the catalog
+              </Text>
+            </TouchableOpacity>
+            {items.length > 0 ? (
+              <Text style={styles.listHeader}>
+                Saved recognitions ({items.length}) · tap a piece to open it
+              </Text>
+            ) : null}
+          </View>
         }
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -317,6 +343,29 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 10,
+  },
+
+  // Catalog search row in the list header ("Find a piece").
+  findPieceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f3460',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#1a1a2e',
+  },
+  findPieceEmoji: {
+    fontSize: 18,
+    marginRight: 10,
+  },
+  findPieceText: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '600',
   },
   itemCard: {
     flexDirection: 'row',

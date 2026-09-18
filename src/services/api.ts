@@ -13,6 +13,13 @@ import type {
 } from "../types";
 import { parseHumResponse, parseModernResponse } from "./tier1";
 import type { CatalogPieceInfo } from "./historyPiece";
+import {
+  CATALOG_SEARCH_LIMIT,
+  SEARCH_ERROR_MESSAGE,
+  buildSearchPath,
+  parseCatalogSearchResponse,
+  type CatalogSearchResponse,
+} from "./catalogSearch";
 import { getDeviceId } from "./device";
 
 /** Production NoteSnap site URL (stable — the Vercel production alias; every deploy lands here). Set EXPO_PUBLIC_API_URL to override for local dev. */
@@ -358,6 +365,54 @@ export async function fetchPieceById(
     };
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * GET /api/pieces?q= — catalog search ("Find a piece").
+ *
+ * The query is typed by the user, so this is a plain catalog browse: no
+ * confidence, no recognition. An empty/blank query is legal and returns the
+ * catalog's own first page (the browse state).
+ *
+ * Throws a user-facing Error — carrying SEARCH_ERROR_MESSAGE — when the request
+ * fails or the body is not a usable `/api/pieces` payload, so the screen can
+ * show an honest error state with Retry. A successful response with zero rows is
+ * NOT an error: it is the honest "no pieces match" state.
+ */
+export async function searchPieces(
+  query: string,
+  limit: number = CATALOG_SEARCH_LIMIT,
+): Promise<CatalogSearchResponse> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(`${BASE_URL}${buildSearchPath(query, limit)}`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(SEARCH_ERROR_MESSAGE);
+
+    let json: unknown;
+    try {
+      json = await response.json();
+    } catch {
+      throw new Error(SEARCH_ERROR_MESSAGE);
+    }
+
+    // A malformed body is an error (Retry); an empty `pieces` array is a real
+    // zero-result answer and is returned as such.
+    const parsed = parseCatalogSearchResponse(json);
+    if (!parsed) throw new Error(SEARCH_ERROR_MESSAGE);
+    return parsed;
+  } catch (err) {
+    // Offline, DNS failure, abort/timeout and a bad body all collapse into the
+    // one honest, retryable catalog error the screen knows how to render.
+    if (err instanceof Error && err.message === SEARCH_ERROR_MESSAGE) throw err;
+    throw new Error(SEARCH_ERROR_MESSAGE);
   } finally {
     clearTimeout(timeout);
   }

@@ -210,6 +210,35 @@ export interface LibraryItem {
   createdAt: string;
 }
 
+// ─── Catalog search ("Find a piece", GET /api/pieces?q=) ──────
+
+/**
+ * One catalog row from `GET /api/pieces?q=` — the live public-domain/classical
+ * catalog search behind the "Find a piece" screen. This is a browse/search
+ * shape, not a recognition result: it carries no confidence (nothing was
+ * heard), only what the catalog knows about the piece.
+ *
+ * All fields mirror the API's own JSON one-to-one (raw snake_case is mapped in
+ * services/catalogSearch.ts). `sheetMusicUrl` is null whenever the catalog has
+ * no curated, quality-gated score — the UI must say "Coming soon" rather than
+ * offer a link.
+ */
+export interface CatalogPiece {
+  id: string;
+  title: string;
+  composer: string;
+  /** Catalog number (e.g. "WoO 59", "BWV 971"), or null when unknown. */
+  catalog: string | null;
+  /** Raw catalog grade 1-10, or null when the catalog has none. */
+  difficulty: number | null;
+  /** Human label ("Beginner" | "Intermediate" | "Advanced"), or null. */
+  difficultyLabel: string | null;
+  isPublicDomain: boolean;
+  sheetMusicAvailable: boolean;
+  sheetMusicUrl: string | null;
+  albumArtUrl: string | null;
+}
+
 /** Represents a music recommendation shown in the Home feed. */
 export interface Recommendation {
   id: string;

@@ -29,6 +29,7 @@ import { ScoreViewer } from '../components/ScoreViewer';
 import { PieceDetailScreen } from './PieceDetailScreen';
 import { HumSearchScreen } from './HumSearchScreen';
 import { ModernSearchScreen } from './ModernSearchScreen';
+import { FindPieceScreen } from './FindPieceScreen';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import {
   recognizeAudio,
@@ -104,6 +105,8 @@ export const HomeScreen: React.FC = () => {
   // owns its own recorder so they never collide with the audio-recognize flow.
   const [showHumSearch, setShowHumSearch] = useState(false);
   const [showModernSearch, setShowModernSearch] = useState(false);
+  // "Find a piece" — catalog search by title/composer (no mic involved).
+  const [showFindPiece, setShowFindPiece] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Pulsing animation for the mic indicator
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -418,6 +421,13 @@ export const HomeScreen: React.FC = () => {
     setShowModernSearch(true);
   }, []);
 
+  // "Find a piece": catalog search by title/composer — no microphone involved,
+  // so it also works for a learner who just knows the name of the piece and
+  // hasn't got the music playing (or can't hum it).
+  const handleOpenFindPiece = useCallback(() => {
+    setShowFindPiece(true);
+  }, []);
+
   // From the modern interstitial: jump to the hum flow (find a free PD piece).
   const handleHumItFromModern = useCallback(() => {
     setShowModernSearch(false);
@@ -512,6 +522,10 @@ export const HomeScreen: React.FC = () => {
         onBrowseLibrary={handleBrowseLibraryFromModern}
       />
     );
+  }
+  // Catalog search by name — its own full-screen flow, no recorder.
+  if (showFindPiece) {
+    return <FindPieceScreen onClose={() => setShowFindPiece(false)} />;
   }
 
   // Full-screen sheet music viewer — the same path the recognition result flow
@@ -666,6 +680,21 @@ export const HomeScreen: React.FC = () => {
                   </Text>
                 </TouchableOpacity>
               </View>
+              {/* Third way in: type the piece's name. No microphone — for a
+                  learner who knows what the piece is called (or who wants to
+                  browse the free public-domain catalog). */}
+              <TouchableOpacity
+                style={styles.findPieceBtn}
+                onPress={handleOpenFindPiece}
+                activeOpacity={0.6}
+                accessibilityRole="button"
+                accessibilityLabel="Find a piece by title or composer"
+              >
+                <Text style={styles.findPieceEmoji}>🔎</Text>
+                <Text style={styles.findPieceText}>
+                  Find a piece — search by title or composer
+                </Text>
+              </TouchableOpacity>
               {/* Honest beta note — recognition library is small and growing. */}
               <Text style={styles.tier1BetaNote}>
                 Beta: our recognition library is still growing — well-known
@@ -699,7 +728,8 @@ export const HomeScreen: React.FC = () => {
             showRecognitionResults ||
             showScoreViewer ||
             showHumSearch ||
-            showModernSearch
+            showModernSearch ||
+            showFindPiece
           }
         />
 
@@ -1151,6 +1181,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 10,
     marginBottom: 2,
+  },
+  // Full-width single button under the two tier-1 modes: search by name.
+  // width:'100%' (not a flex child of the row) so the text keeps its line.
+  findPieceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    backgroundColor: '#0f3460',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#1a1a2e',
+  },
+  findPieceEmoji: {
+    fontSize: 18,
+    marginRight: 10,
+  },
+  findPieceText: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '600',
   },
 
   // Recording indicator
