@@ -1051,8 +1051,8 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   streakBest: {
-    fontSize: 13,
-    color: '#a0a0b8',
+    fontSize: 14,
+    color: '#ffb347',
     marginTop: 2,
   },
   streakNudge: {
