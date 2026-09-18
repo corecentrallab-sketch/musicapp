@@ -23,11 +23,11 @@
  * SSR-safe (renders the idle state on the server).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PLAY_TEST_URL } from "~/services/app-links";
 
 const RECORD_MS = 8000; // target listening window (~8s)
 const REQUEST_TIMEOUT_MS = 20000; // widget cap; backend caps fpcalc at 30s
 const DEVICE_ID_KEY = "notesnap:web:deviceId";
-const PLAY_TEST_URL = "https://play.google.com/apps/testing/com.notesnap.sheetmusic";
 
 type Phase =
   | "idle"
