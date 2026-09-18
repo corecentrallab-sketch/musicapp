@@ -30,6 +30,7 @@ import { PieceDetailScreen } from './PieceDetailScreen';
 import { HumSearchScreen } from './HumSearchScreen';
 import { ModernSearchScreen } from './ModernSearchScreen';
 import { FindPieceScreen } from './FindPieceScreen';
+import { PracticeWeekScreen } from './PracticeWeekScreen';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import {
   recognizeAudio,
@@ -53,6 +54,13 @@ import {
   streakLine,
 } from '../services/practiceReinforcementView';
 import { StreakNudgeCard } from '../components/StreakNudgeCard';
+import {
+  FOR_YOU_CTA,
+  forYouAccessibilityLabel,
+  forYouByline,
+  practiceTodayDestination,
+  weekProgressCopy,
+} from '../services/homeCards';
 import { checkAndAwardBadges } from '../services/achievements';
 import { getTodayChallenge } from '../services/dailyChallenge';
 import type {
@@ -107,6 +115,9 @@ export const HomeScreen: React.FC = () => {
   const [showModernSearch, setShowModernSearch] = useState(false);
   // "Find a piece" — catalog search by title/composer (no mic involved).
   const [showFindPiece, setShowFindPiece] = useState(false);
+  // "📋 This Week" — the practice-week surface (which days were practised). The
+  // app has no practice-run tab, so Home renders it in place like the flows above.
+  const [showPracticeWeek, setShowPracticeWeek] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Pulsing animation for the mic indicator
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -428,6 +439,47 @@ export const HomeScreen: React.FC = () => {
     setShowFindPiece(true);
   }, []);
 
+  // ── "⏱️ Practice today" tap (owner-reported dead card, v19 bug) ──
+  // The card is a way INTO practice, so it opens today's featured piece: the
+  // in-app sheet reader when the catalog has a curated score for it, otherwise
+  // the piece page (where the practice coach lives). When the featured piece
+  // never loaded it opens Find-a-Piece, so the tap always has a real destination.
+  //
+  // It deliberately does NOT call recordPractice(): a navigation tap is not a
+  // practice session. The piece page records the run when the score is actually
+  // opened (PieceDetailScreen), which keeps streaks and minutes honest.
+  const handlePracticeTodayTap = useCallback(() => {
+    switch (practiceTodayDestination(dailyChallenge)) {
+      case 'find-piece':
+        setShowFindPiece(true);
+        return;
+      case 'sheet':
+        setShowScoreViewer(true);
+        return;
+      default:
+        setShowDetail(true);
+    }
+  }, [dailyChallenge]);
+
+  // ── "📋 This Week" tap ──
+  // Opens the practice-week surface in place (see PracticeWeekScreen): the days
+  // practised this week, minutes per day, and this week's coached takes.
+  const handleOpenPracticeWeek = useCallback(() => {
+    setShowPracticeWeek(true);
+  }, []);
+
+  // From the week view: close it, then run the same destination logic the card
+  // uses (featured piece → sheet/piece page, otherwise Find-a-Piece).
+  const handlePracticeFromWeek = useCallback(() => {
+    setShowPracticeWeek(false);
+    handlePracticeTodayTap();
+  }, [handlePracticeTodayTap]);
+
+  const handleFindPieceFromWeek = useCallback(() => {
+    setShowPracticeWeek(false);
+    setShowFindPiece(true);
+  }, []);
+
   // From the modern interstitial: jump to the hum flow (find a free PD piece).
   const handleHumItFromModern = useCallback(() => {
     setShowModernSearch(false);
@@ -502,7 +554,7 @@ export const HomeScreen: React.FC = () => {
     streakLine(streak)?.text ??
     'A few minutes of practice today starts your streak.';
 
-  const weekProgress = `${weeklyGoal.current}/${weeklyGoal.target} days practiced`;
+  const weekProgress = weekProgressCopy(weeklyGoal.current, weeklyGoal.target);
   const weekPercent = Math.min(
     (weeklyGoal.current / weeklyGoal.target) * 100,
     100,
@@ -526,6 +578,20 @@ export const HomeScreen: React.FC = () => {
   // Catalog search by name — its own full-screen flow, no recorder.
   if (showFindPiece) {
     return <FindPieceScreen onClose={() => setShowFindPiece(false)} />;
+  }
+
+  // "📋 This Week" — the practice-week surface, rendered in place. Home owns the
+  // practice destinations, so it passes them in (the week view has no recorder or
+  // navigation of its own).
+  if (showPracticeWeek) {
+    return (
+      <PracticeWeekScreen
+        onClose={() => setShowPracticeWeek(false)}
+        featuredTitle={dailyChallenge?.title ?? null}
+        onPracticeToday={handlePracticeFromWeek}
+        onFindPiece={handleFindPieceFromWeek}
+      />
+    );
   }
 
   // Full-screen sheet music viewer — the same path the recognition result flow
@@ -733,13 +799,40 @@ export const HomeScreen: React.FC = () => {
           }
         />
 
-        <View style={styles.practiceCard}>
+        {/* ⏱️ Practice today — tappable (v19 bug: this card looked tappable and
+            did nothing). Opens today's featured piece: the sheet reader when the
+            catalog has a curated score, else the piece page with the coach; when
+            no featured piece loaded it opens Find-a-Piece. */}
+        <TouchableOpacity
+          style={styles.practiceCard}
+          onPress={handlePracticeTodayTap}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={
+            dailyChallenge
+              ? `Practice today — open ${dailyChallenge.title}`
+              : 'Practice today — find a piece to practice'
+          }
+        >
           <Text style={styles.practiceTitle}>⏱️ Practice today</Text>
           <Text style={styles.practiceValue}>You practiced {Math.round(practiceMinutes)} minutes today</Text>
-        </View>
+          <Text style={styles.cardCta}>
+            {dailyChallenge
+              ? "Open today's featured piece →"
+              : 'Find a piece to practice →'}
+          </Text>
+        </TouchableOpacity>
 
         {/* ── Weekly Goals ── */}
-        <View style={styles.goalCard}>
+        {/* Tappable (v19 bug): opens the practice-week surface — the days
+            practised this week, minutes per day, this week's coached takes. */}
+        <TouchableOpacity
+          style={styles.goalCard}
+          onPress={handleOpenPracticeWeek}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`This week — ${weekProgress}. Open your practice week`}
+        >
           <View style={styles.goalHeader}>
             <Text style={styles.goalTitle}>📋 This Week</Text>
             {weekComplete && <Text style={styles.goalComplete}>🎉 Done!</Text>}
@@ -759,7 +852,8 @@ export const HomeScreen: React.FC = () => {
               You crushed your goal this week!
             </Text>
           )}
-        </View>
+          <Text style={styles.cardCta}>See your week →</Text>
+        </TouchableOpacity>
 
         {/* ── Daily Challenge ── */}
         <View style={styles.sectionHeader}>
@@ -839,12 +933,21 @@ export const HomeScreen: React.FC = () => {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>🎯 For You</Text>
         </View>
-        <Text style={styles.recoLabel}>{personalisedCopy}</Text>
-        <Text style={styles.recoByline}>
-          {onboarding
-            ? 'Based on your instrument, level, and genre preferences.'
-            : 'Complete onboarding to personalise your feed.'}
-        </Text>
+        {/* A real card now (v19 bug: this looked like a card and had no tap at
+            all). The personalised line is the title, the tap opens catalog
+            browse/search — the honest destination today — and the byline says so
+            instead of claiming a feed the app cannot show yet. */}
+        <TouchableOpacity
+          style={styles.forYouCard}
+          onPress={handleOpenFindPiece}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={forYouAccessibilityLabel(personalisedCopy)}
+        >
+          <Text style={styles.recoLabel}>{personalisedCopy}</Text>
+          <Text style={styles.recoByline}>{forYouByline(onboarding !== null)}</Text>
+          <Text style={styles.cardCta}>{FOR_YOU_CTA}</Text>
+        </TouchableOpacity>
 
 
         <View style={styles.bottomSpacer} />
@@ -936,6 +1039,16 @@ const styles = StyleSheet.create({
   },
   practiceTitle: { fontSize: 16, fontWeight: '700', color: '#ffffff', marginBottom: 6 },
   practiceValue: { fontSize: 15, color: '#c0c0d0' },
+
+  // Shared affordance line on the tappable summary cards (Practice today /
+  // This Week / For You) — the card says where the tap goes instead of only
+  // looking tappable.
+  cardCta: {
+    color: '#e94560',
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 12,
+  },
 
   // Weekly goal
   goalCard: {
@@ -1060,6 +1173,14 @@ const styles = StyleSheet.create({
   },
 
   // Recommendations
+  forYouCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 22,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
   recoLabel: {
     fontSize: 16,
     fontWeight: '600',
@@ -1069,7 +1190,7 @@ const styles = StyleSheet.create({
   recoByline: {
     fontSize: 13,
     color: '#a0a0b8',
-    marginBottom: 22,
+    marginBottom: 0,
     lineHeight: 19,
   },
 

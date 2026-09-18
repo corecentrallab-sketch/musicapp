@@ -131,7 +131,12 @@ export async function recordPractice(): Promise<StreakData> {
 
 // ─── Practice Days (for weekly goals) ─────────────────────────
 
-async function getPracticeDays(): Promise<string[]> {
+/**
+ * Every local calendar day (YYYY-MM-DD) the user has ever practised, oldest
+ * first. Exported for the Home "This Week" surface, which shows WHICH days were
+ * practised — a count alone cannot say that.
+ */
+export async function getPracticeDaysLocal(): Promise<string[]> {
   try {
     const raw = await AsyncStorage.getItem(KEYS.PRACTICE_DAYS);
     return raw ? JSON.parse(raw) : [];
@@ -141,7 +146,7 @@ async function getPracticeDays(): Promise<string[]> {
 }
 
 async function addPracticeDay(dateStr: string): Promise<void> {
-  const days = await getPracticeDays();
+  const days = await getPracticeDaysLocal();
   if (!days.includes(dateStr)) {
     days.push(dateStr);
     await AsyncStorage.setItem(KEYS.PRACTICE_DAYS, JSON.stringify(days));
@@ -163,7 +168,7 @@ export async function getWeeklyGoal(): Promise<WeeklyGoal> {
         return newGoal;
       }
       // Recalculate current from practice days
-      const practiceDays = await getPracticeDays();
+      const practiceDays = await getPracticeDaysLocal();
       const weekDays = practiceDays.filter((d) => d >= thisMonday);
       return { ...goal, current: weekDays.length };
     }
