@@ -163,11 +163,16 @@ export const ShareCard: React.FC<ShareCardProps> = ({
   }, [shareText]);
 
   return (
+    /* onRequestClose is REQUIRED on Android (same defect class as the sheet
+       viewer's dead BACK button): without it the hardware back press cannot
+       reach JS, this card stays "open" in state, and the screen behind it —
+       which renders only this modal while it is open — is left blank. */
     <Modal
       visible={visible}
       animationType="fade"
       transparent={false}
       presentationStyle="fullScreen"
+      onRequestClose={onClose}
     >
       <View style={styles.container}>
         {/* Header bar */}

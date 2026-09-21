@@ -15,6 +15,10 @@
  *   • 🔥 Streak card    → 0 days: today's featured piece (the SAME destination
  *                        as Practice today, so the card is a way to START the
  *                        streak it shows); an active streak: the week view.
+ *                        History's streak card is the same card on another tab
+ *                        and follows the same rule — with no featured piece on
+ *                        that tab, 0 days opens Find-a-Piece instead
+ *                        (historyStreakDestination).
  *
  * No react-native / expo imports here (deliberately): this file is listed in
  * tsconfig.tier1.json and compiled with no node_modules present.
@@ -116,6 +120,29 @@ export function streakCta(
   return streakDestination(currentDays) === 'week'
     ? WEEK_CTA
     : featuredPieceCta(challenge);
+}
+
+// ─── Streak card (History tab) ─────────────────────────────────
+
+/**
+ * Where History's streak card lands.
+ *
+ * History lists saved recognitions and has no featured piece of its own, so the
+ * 0-day branch cannot reuse Home's "practice today" mapping: it opens the
+ * catalog search History already renders in place ("Find a piece"), which is the
+ * only way to start practising from that tab. A live streak opens the same
+ * practice-week view Home uses — the days behind the number, not a copy of it.
+ *
+ * Same input contract as streakDestination: junk counts (NaN, negative, null, a
+ * streak that did not load) read as 0, i.e. exactly what the card's own "Start
+ * your streak today!" line shows for those values.
+ */
+export type HistoryStreakDestination = 'find-piece' | 'week';
+
+export function historyStreakDestination(
+  currentDays: number | null | undefined,
+): HistoryStreakDestination {
+  return streakDestination(currentDays) === 'week' ? 'week' : 'find-piece';
 }
 
 /**

@@ -41,14 +41,15 @@ export const EditorScreen: React.FC = () => {
         <Ionicons name="chevron-forward" size={18} color="#4a4a6a" />
       </Pressable>
 
-      <Pressable
-        style={({ pressed }) => [
-          styles.card,
-          styles.cardDisabled,
-          pressed && styles.cardPressed,
-        ]}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: true }}
+      {/* There is no notation editor yet, so this card is CONTENT, not a control.
+          It used to be a Pressable: it highlighted under the finger (cardPressed),
+          carried a button role, and then did nothing on release — a card that
+          looks tappable must act, so it must not look tappable. A plain View +
+          the SOON chip is the honest treatment: no press feedback, no button
+          role, no accessibility announcement of an action that does not exist. */}
+      <View
+        style={[styles.card, styles.cardDisabled]}
+        accessible
         accessibilityLabel="Notation editor — coming soon"
       >
         <View style={[styles.cardIcon, styles.cardIconDisabled]}>
@@ -61,7 +62,7 @@ export const EditorScreen: React.FC = () => {
           </Text>
         </View>
         <Text style={styles.comingSoon}>SOON</Text>
-      </Pressable>
+      </View>
     </View>
   );
 };

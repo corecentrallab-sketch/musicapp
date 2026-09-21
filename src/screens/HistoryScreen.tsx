@@ -37,8 +37,14 @@ import {
   mergeCatalogIntoDetail,
   savedPieceToDetail,
 } from '../services/historyPiece';
+import {
+  historyStreakDestination,
+  streakAccessibilityLabel,
+  streakCta,
+} from '../services/homeCards';
 import { PieceDetailScreen } from './PieceDetailScreen';
 import { FindPieceScreen } from './FindPieceScreen';
+import { PracticeWeekScreen } from './PracticeWeekScreen';
 import type { DailyChallengePiece, SavedPiece } from '../types';
 
 /** Zeroed streak (engine-derived) used until the first read resolves. */
@@ -67,6 +73,10 @@ export const HistoryScreen: React.FC = () => {
   // piece you never recognized (you knew its name), which History alone can't
   // give you.
   const [showFindPiece, setShowFindPiece] = useState(false);
+  // Practice-week view (v22): the destination for the streak card once a streak
+  // is live — the same screen Home's "📋 This Week" card opens, rendered in place
+  // like the app's other full-screen flows.
+  const [showPracticeWeek, setShowPracticeWeek] = useState(false);
   // Guards the catalog lookup against a stale response (tap A, back, tap B).
   const detailRequestRef = useRef(0);
 
@@ -94,6 +104,23 @@ export const HistoryScreen: React.FC = () => {
     await reload();
     setRefreshing(false);
   }, [reload]);
+
+  /**
+   * The History streak card's tap (v22). This is the SAME card Home shows (same
+   * copy, same styling) and Home's is wired, so this one must go somewhere real
+   * too — it used to be a plain View with no onPress at all. The destination
+   * comes from the tested mapping in services/homeCards.ts, so the CTA text on
+   * the card and the screen it opens can never disagree:
+   *   • 0 days → Find-a-Piece (History's own catalog flow, rendered in place)
+   *   • a live streak → the practice-week view, rendered in place
+   */
+  const handleStreakCardTap = useCallback(() => {
+    if (historyStreakDestination(streak.currentDays) === 'week') {
+      setShowPracticeWeek(true);
+      return;
+    }
+    setShowFindPiece(true);
+  }, [streak.currentDays]);
 
   const handleRemove = useCallback(
     (piece: SavedPiece) => {
@@ -207,6 +234,24 @@ export const HistoryScreen: React.FC = () => {
     return <FindPieceScreen onClose={() => setShowFindPiece(false)} />;
   }
 
+  // Practice-week view for the streak card (v22). History has no featured piece
+  // to practise, so BOTH of the week view's practice exits go to Find-a-Piece:
+  // that is the one way to start playing from this tab, and it is the same
+  // destination the card itself uses at 0 days.
+  if (showPracticeWeek) {
+    return (
+      <PracticeWeekScreen
+        onClose={() => setShowPracticeWeek(false)}
+        featuredTitle={null}
+        onPracticeToday={() => {
+          setShowPracticeWeek(false);
+          setShowFindPiece(true);
+        }}
+        onFindPiece={() => setShowFindPiece(true)}
+      />
+    );
+  }
+
   // Full-screen piece page for a tapped row — PieceDetailScreen is not a tab
   // route, so it is rendered in place exactly like Home / the hum flow do.
   if (showDetail) {
@@ -224,14 +269,27 @@ export const HistoryScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {/* Streak header card */}
-      <View style={styles.streakCard}>
-        <Text style={styles.streakEmoji}>🔥</Text>
-        <View style={styles.streakInfo}>
-          <Text style={styles.streakCount}>{streakText}</Text>
-          <Text style={styles.streakBest}>{streakBest}</Text>
+      {/* Streak header card — TAPPABLE (v22). It carried Home's exact copy and
+          styling but was a plain View: the dead card the owner reported. It now
+          reuses Home's tested mapping and affordance — same destination rule,
+          same CTA line, same accessibility label. */}
+      <TouchableOpacity
+        style={styles.streakCard}
+        onPress={handleStreakCardTap}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={streakAccessibilityLabel(streak.currentDays, null)}
+      >
+        <View style={styles.streakRow}>
+          <Text style={styles.streakEmoji}>🔥</Text>
+          <View style={styles.streakInfo}>
+            <Text style={styles.streakCount}>{streakText}</Text>
+            <Text style={styles.streakBest}>{streakBest}</Text>
+          </View>
         </View>
-      </View>
+        {/* Where the tap goes — the same cardCta treatment Home's card uses. */}
+        <Text style={styles.streakCta}>{streakCta(streak.currentDays, null)}</Text>
+      </TouchableOpacity>
 
       <FlatList
         data={items}
@@ -300,10 +358,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  // Streak header
+  // Streak header — a column card: the 🔥 row, then the CTA line saying where
+  // the tap goes (same shape as Home's streak card).
   streakCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#16213e',
     borderRadius: 16,
     padding: 18,
@@ -311,6 +368,10 @@ const styles = StyleSheet.create({
     marginTop: 16,
     borderWidth: 1,
     borderColor: '#0f3460',
+  },
+  streakRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   streakEmoji: {
     fontSize: 32,
@@ -328,6 +389,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#a0a0b8',
     marginTop: 2,
+  },
+  streakCta: {
+    marginTop: 12,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#e94560',
   },
 
   // List
