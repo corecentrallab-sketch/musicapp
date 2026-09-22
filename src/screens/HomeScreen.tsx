@@ -507,6 +507,17 @@ export const HomeScreen: React.FC = () => {
     setShowHumSearch(true);
   }, []);
 
+  // The reverse bridge (owner-approved 09-22): a hum that misses our melody
+  // catalog hands the user to the modern "Find any song" flow, which identifies
+  // the actual recording (AudD) and links the official sheet music. Same
+  // full-screen swap pattern as handleHumItFromModern — exactly one flow is
+  // mounted at a time, and the modern screen's own onClose is the BACK path
+  // back to Home.
+  const handleSwitchToModernFromHum = useCallback(() => {
+    setShowHumSearch(false);
+    setShowModernSearch(true);
+  }, []);
+
   // From the modern interstitial: open the free public-domain Library.
   const handleBrowseLibraryFromModern = useCallback(() => {
     setShowModernSearch(false);
@@ -585,7 +596,12 @@ export const HomeScreen: React.FC = () => {
   // Full-screen Tier-1 flows (owned recorders; rendered in place like the rest
   // of the app's full-screen readers).
   if (showHumSearch) {
-    return <HumSearchScreen onClose={() => setShowHumSearch(false)} />;
+    return (
+      <HumSearchScreen
+        onClose={() => setShowHumSearch(false)}
+        onSwitchToModern={handleSwitchToModernFromHum}
+      />
+    );
   }
   if (showModernSearch) {
     return (

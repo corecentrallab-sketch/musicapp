@@ -7,6 +7,18 @@
  * show the matched piece and let the user open it in the existing
  * PieceDetailScreen; on no-match we show the honest "hum a longer/clearer
  * phrase" message and invite retry. We NEVER fabricate a title.
+ *
+ * The no-match card also carries the HUM → MODERN BRIDGE (owner-approved 09-22,
+ * src/services/humBridge.ts): our melody catalog is small, so a hum miss must
+ * not be a dead end. "Play the song instead" hands the user to the modern
+ * "Find any song" flow (its own recorder, AudD fingerprinting), which identifies
+ * the actual recording and links the official sheet music through our affiliate
+ * partner. The reverse lever (modern → hum) already exists and is untouched.
+ *
+ * A failed start is NEVER silent: if startRecording() returns false the screen
+ * lands on the honest error card below (permission failures keep the hook's
+ * "Open Settings" affordance), exactly like the modern flow does — see
+ * humStartFailureOutcome().
  */
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
@@ -20,6 +32,12 @@ import {
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { humToSearch } from '../services/api';
 import { humOutcome, humPhraseHint, humNoMatchMessage, type HumOutcome } from '../services/tier1';
+import {
+  HUM_RETRY_CTA,
+  HUM_TO_MODERN_BLURB,
+  HUM_TO_MODERN_CTA,
+  humStartFailureOutcome,
+} from '../services/humBridge';
 import { saveRecognition } from '../services/storage';
 import { PieceDetailScreen } from './PieceDetailScreen';
 import type { DailyChallengePiece, HumMatch } from '../types';
@@ -37,6 +55,11 @@ type Stage =
 
 interface HumSearchScreenProps {
   onClose: () => void;
+  /** The HUM → MODERN bridge: leave this flow and open the modern "Find any
+   *  song" screen (its own recorder), which identifies the actual recording via
+   *  the licensed fingerprint service and links the official sheet music.
+   *  Offered on the no-match card so a hum miss is never a dead end. */
+  onSwitchToModern: () => void;
 }
 
 /** Build a DailyChallengePiece from a hum match for PieceDetailScreen. A hum
@@ -55,7 +78,10 @@ function matchToPiece(match: HumMatch): DailyChallengePiece {
   };
 }
 
-export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({ onClose }) => {
+export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
+  onClose,
+  onSwitchToModern,
+}) => {
   const recorder = useAudioRecorder();
   const [stage, setStage] = useState<Stage>('idle');
   const [outcome, setOutcome] = useState<HumOutcome | null>(null);
@@ -78,7 +104,17 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({ onClose }) => 
     setErrorMessage(null);
     setOutcome(null);
     const started = await recorder.startRecording();
-    if (!started) return;
+    if (!started) {
+      // NEVER a silent dead end (the PR #115 rule, now applied here too). The
+      // pre-fix code did `if (!started) return;`, which set NOTHING: no error
+      // card, no message, no retry — the screen simply sat there and ate taps.
+      // Every failed start now lands on the honest error card below.
+      const failedStart = humStartFailureOutcome(recorder.takeStartFailure());
+      if (!failedStart.keepHookError) recorder.clearError();
+      setErrorMessage(failedStart.message);
+      setStage(failedStart.stage);
+      return;
+    }
     setStage('recording');
     timeoutRef.current = setTimeout(() => handleStop(), RECORDING_TIMEOUT_MS);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -231,7 +267,21 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({ onClose }) => 
             <Text style={styles.resultText}>{humNoMatchMessage(outcome)}</Text>
             {hub && <Text style={styles.hintText}>{hub}</Text>}
             <TouchableOpacity style={styles.primaryBtn} onPress={handleRetry}>
-              <Text style={styles.primaryBtnText}>Hum Again</Text>
+              <Text style={styles.primaryBtnText}>{HUM_RETRY_CTA}</Text>
+            </TouchableOpacity>
+            {/* THE BRIDGE (owner-approved 09-22): our melody catalog is small,
+                so a hum we don't hold must not be the end of the road. This
+                hands the user to the modern "Find any song" flow, where the
+                actual recording is identified and the official sheet music is
+                linked. Honest wording — we identify the recording, and link the
+                sheet music when there is a match. */}
+            <TouchableOpacity
+              style={styles.bridgeBtn}
+              onPress={onSwitchToModern}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.bridgeBtnText}>{HUM_TO_MODERN_CTA}</Text>
+              <Text style={styles.bridgeBtnHint}>{HUM_TO_MODERN_BLURB}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -496,6 +546,31 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  /** The HUM → MODERN bridge action: bordered in the app's teal accent so it
+   *  reads as a route onward, not as a second retry. */
+  bridgeBtn: {
+    backgroundColor: '#0f3460',
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  bridgeBtnText: {
+    color: '#4ecdc4',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  bridgeBtnHint: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+    marginTop: 4,
   },
   secondaryBtn: {
     marginTop: 10,
