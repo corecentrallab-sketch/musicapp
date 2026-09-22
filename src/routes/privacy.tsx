@@ -46,7 +46,7 @@ function Privacy() {
           <section>
             <h2 className="text-xl font-semibold text-stone-900">4. Third-Party Links</h2>
             <p className="mt-2">
-              When you choose to purchase sheet music for copyrighted songs, you'll be directed to third-party retailers (such as Musicnotes or Sheet Music Plus). Those retailers have their own privacy policies. NoteSnap may earn a commission on qualifying purchases.
+              When you choose to purchase sheet music for copyrighted songs, you'll be directed to third-party retailers (such as Sheet Music Direct, with Musicnotes as a backup). Those retailers have their own privacy policies. NoteSnap may earn a commission on qualifying purchases.
             </p>
           </section>
 

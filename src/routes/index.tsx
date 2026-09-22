@@ -264,7 +264,7 @@ function Home() {
               {
                 step: "2",
                 title: "Get sheet music",
-                desc: "For public-domain works: free piano scores, guitar tabs, and album art. For copyrighted songs: one tap to buy the official sheet music from licensed retailers like Musicnotes and Sheet Music Plus.",
+                desc: "For public-domain works: free piano scores, guitar tabs, and album art. For copyrighted songs: one tap to buy the official sheet music from licensed retailers like Sheet Music Direct.",
               },
               {
                 step: "3",
