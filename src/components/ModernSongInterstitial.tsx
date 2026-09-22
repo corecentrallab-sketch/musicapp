@@ -10,7 +10,7 @@
  * library). We never host or provide any copyrighted file — only the retailer
  * link the backend supplied.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,11 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { ModernMatch } from '../types';
+import {
+  closeRetailer,
+  interstitialSurface,
+  type InterstitialViewState,
+} from '../services/modernInterstitialSurface';
 
 export interface ModernInterstitialState {
   /** true while the /api/recognize-modern request is in flight. */
@@ -61,10 +66,38 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
   // so they land back in NoteSnap. Opened only on explicit button tap.
   const [retailerUrl, setRetailerUrl] = useState<string | null>(null);
 
-  if (!visible) return null;
+  // Which surface is on screen is decided in ONE place
+  // (src/services/modernInterstitialSurface.ts) so the tier1 gate can assert the
+  // branch order — including "a retailer URL only wins when there is a
+  // recognized match to come back to" — without an emulator. This component
+  // mirrors it, one branch per surface.
+  const state: InterstitialViewState = {
+    visible,
+    loading,
+    error,
+    match,
+    recognized,
+    retailerUrl,
+  };
+  const surface = interstitialSurface(state);
+
+  // A hidden interstitial must never keep a retailer page armed (that would
+  // reopen a stale page on the next match), so closing it drops the URL.
+  useEffect(() => {
+    if (!visible && retailerUrl !== null) setRetailerUrl(null);
+  }, [visible, retailerUrl]);
+
+  // Hardware BACK and "← Back to NoteSnap" are the SAME transition: drop the
+  // retailer page and land back on the recognized-song interstitial — never out
+  // to the caller's card. closeRetailer() owns those semantics so they are
+  // tested, not remembered.
+  const handleRetailerBack = () =>
+    setRetailerUrl(closeRetailer(state).retailerUrl);
+
+  if (surface === 'hidden') return null;
 
   // ── Loading ──
-  if (loading) {
+  if (surface === 'loading') {
     return (
       <Modal visible transparent animationType="fade" onRequestClose={onClose}>
         <View style={styles.overlay}>
@@ -78,7 +111,7 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
   }
 
   // ── Error ──
-  if (error) {
+  if (surface === 'error') {
     return (
       <Modal visible transparent animationType="fade" onRequestClose={onClose}>
         <View style={styles.overlay}>
@@ -100,28 +133,41 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
     );
   }
 
-  // ── Recognized song → in-app retailer WebView ──
-  if (match && recognized && retailerUrl) {
+  // ── Recognized song → the in-app retailer page, in its OWN full-screen Modal ──
+  // Owner rule (08-24): the retailer opens inside our own app shell so the user's
+  // position is preserved. It MUST be a Modal of its own: a plain View here
+  // unmounts the interstitial's Modal, so the caller's card shows through and the
+  // page is swallowed on the way back (owner-reproduced on device, 09-22).
+  // src/services/inAppBrowserContract.ts guards this class of defect.
+  if (surface === 'retailer' && match && retailerUrl) {
     return (
-      <View style={styles.webviewContainer}>
-        <View style={styles.webviewHeader}>
-          <TouchableOpacity
-            style={styles.webviewBack}
-            onPress={() => setRetailerUrl(null)}
-          >
-            <Text style={styles.webviewBackText}>← Back to NoteSnap</Text>
-          </TouchableOpacity>
-          <Text style={styles.webviewTitle} numberOfLines={1}>
-            {match.song} — official sheet music
-          </Text>
+      <Modal
+        visible={!!retailerUrl}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        transparent={false}
+        onRequestClose={handleRetailerBack}
+      >
+        <View style={styles.webviewContainer}>
+          <View style={styles.webviewHeader}>
+            <TouchableOpacity
+              style={styles.webviewBack}
+              onPress={handleRetailerBack}
+            >
+              <Text style={styles.webviewBackText}>← Back to NoteSnap</Text>
+            </TouchableOpacity>
+            <Text style={styles.webviewTitle} numberOfLines={1}>
+              {match.song} — official sheet music
+            </Text>
+          </View>
+          <WebView source={{ uri: retailerUrl }} style={styles.webview} />
         </View>
-        <WebView source={{ uri: retailerUrl }} style={styles.webview} />
-      </View>
+      </Modal>
     );
   }
 
   // ── Recognized song → interstitial (no auto-redirect) ──
-  if (match && recognized) {
+  if (surface === 'recognized' && match) {
     const canBuy = !!match.retailerUrl;
     return (
       <Modal visible transparent animationType="slide" onRequestClose={onClose}>
