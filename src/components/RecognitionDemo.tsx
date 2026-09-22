@@ -24,6 +24,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PLAY_TEST_URL } from "~/services/app-links";
+import { primaryPurchaseUrl } from "~/services/generate-purchase-urls";
 
 const RECORD_MS = 8000; // target listening window (~8s)
 const REQUEST_TIMEOUT_MS = 20000; // widget cap; backend caps fpcalc at 30s
@@ -422,6 +423,10 @@ export default function RecognitionDemo() {
   }, [finishRecording, upload]);
 
   const purchaseUrl = match?.purchase_url;
+  // Resolve through the shared purchase-URL contract: Sheet Music Direct is the
+  // owner-approved PRIMARY retailer (affiliate ID 67650); Musicnotes is the
+  // backup only. Naming a retailer key here is the bug the contract scan guards.
+  const purchaseHref = primaryPurchaseUrl(purchaseUrl);
 
   return (
     <div className="mt-10 w-full max-w-xl rounded-2xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
@@ -569,10 +574,10 @@ export default function RecognitionDemo() {
                 Official sheet music is available from licensed retailers:
               </p>
             ) : null}
-            {!match.is_public_domain && purchaseUrl ? (
+            {!match.is_public_domain && purchaseHref ? (
               <div className="flex flex-wrap gap-2">
                 <a
-                  href={purchaseUrl.musicnotes}
+                  href={purchaseHref}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex min-h-11 items-center rounded-full bg-stone-800 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-stone-900"

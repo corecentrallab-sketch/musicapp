@@ -59,6 +59,15 @@ The dead `purchaseUrl.sheetmusicplus` button in `src/components/RecognitionDemo.
 was removed with it; `generate-purchase-urls.ts` needs no change (it iterates the
 registry). `src/services/affiliates.test.ts` pins the retirement.
 
+> **LINK AUDIT 2026-09-22 (supersedes the paragraph above):** iterating the registry
+> was itself the bug. Because `jwpepper` sat in it with no affiliate ID, every
+> copyrighted-song match emitted an unattributed jwpepper.com link, and the demo CTA
+> pointed at Musicnotes (the backup) because the map had no Sheet Music Direct entry.
+> `jwpepper` is now retired from the registry, `generate-purchase-urls.ts` only emits
+> owner-approved retailers (Sheet Music Direct primary + Musicnotes backup, SMD built
+> through the verified builder so ID 67650 is always attached), and the demo CTA
+> resolves through `primaryPurchaseUrl()`.
+
 ## 4. Piece of the Day (P1)
 
 - `src/components/PieceOfTheDay.tsx` — `daily | null`, `currentPieceId?`,

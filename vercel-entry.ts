@@ -18,7 +18,7 @@ import { handleCoachPcm } from "./src/services/coach-pcm-handler";
 import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
 import { handleStripeWebhook } from "./src/services/webhook-handler";
 import { handleEntitlement } from "./src/services/entitlement";
-import { handleSheetServe } from "./src/services/sheet-handler";
+import { handleSheetServe, isSheetServeMethod } from "./src/services/sheet-handler";
 import { handleAudioServe } from "./src/services/audio-handler";
 import { handleDailyChallenge } from "./src/services/daily-challenge-handler";
 import {
@@ -241,7 +241,9 @@ export default async function vercelHandler(
       res.end();
       return;
     }
-    if (pathname.startsWith("/api/sheets/") && req.method === "GET") {
+    // HEAD too: uptime/link monitors probe score URLs without the PDF body.
+    // (GET-only here made every score answer 404 to HEAD.)
+    if (pathname.startsWith("/api/sheets/") && isSheetServeMethod(req.method)) {
       const webReq = toWebRequest(req);
       const webRes = await handleSheetServe(webReq);
       res.statusCode = webRes.status;

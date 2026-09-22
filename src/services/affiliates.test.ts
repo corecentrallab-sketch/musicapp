@@ -31,9 +31,21 @@ describe("AFFILIATE_RETAILERS (Sheet Music Plus retired)", () => {
     );
   });
 
-  test("jwpepper template is untouched", () => {
-    expect(AFFILIATE_RETAILERS.jwpepper?.urlTemplate).toContain(
-      "https://www.jwpepper.com/sheet-music/search.jsp?keywords={{query}}",
+  test("jwpepper is retired from the registry, not merely unwired", () => {
+    // LINK AUDIT 2026-09-22: the entry had no affiliate ID ("check availability")
+    // and was not approved, yet `generatePurchaseUrls` iterated the whole
+    // registry and emitted an unattributed jwpepper.com link on every
+    // copyrighted-song match. The registry now holds approved retailers only.
+    expect(AFFILIATE_RETAILERS.jwpepper).toBeUndefined();
+  });
+
+  test("generated purchase URLs never include jwpepper", () => {
+    const urls = generatePurchaseUrls("Let It Be", "The Beatles");
+    expect(Object.keys(urls)).not.toContain("jwpepper");
+    expect(JSON.stringify(urls)).not.toContain("jwpepper.com");
+    // ...even when a caller explicitly asks for it (see the contract test file)
+    expect(JSON.stringify(generatePurchaseUrls("Let It Be", "The Beatles", ["jwpepper"]))).not.toContain(
+      "jwpepper.com",
     );
   });
 });
