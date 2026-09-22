@@ -1,9 +1,25 @@
 /**
  * Audio recording hook for NoteSnap.
  *
- * Uses expo-av with the HIGH_QUALITY preset to record microphone audio
- * as AAC (.m4a). The uploaded filename/type in api.ts mirrors that; the
- * backend sniffs content rather than trusting the label.
+ * Uses expo-av with an explicit AAC (.m4a) RecordingOptions. The uploaded
+ * filename/type in api.ts mirrors that; the backend sniffs content rather than
+ * trusting the label.
+ *
+ * SECOND-CAPTURE SAFETY (owner repro 09-22): the same hook backs the modern
+ * "Find any song" flow, whose retry resamples immediately after a first pass.
+ * Three guarantees make that second capture reliable, and each one is asserted
+ * by src/services/modernRetryContract.ts + scripts/recognitionRetry.test.ts:
+ *
+ *   1. every recording is bounded — `stopAndUnloadAsync()`, the audio-mode
+ *      release, the on-disk check and telemetry are all raced against a timeout,
+ *      because the caller only shows its loading/error surface AFTER the stop
+ *      resolves. An unbounded stop that never resolves is a blank screen.
+ *   2. a new capture tears down any recorder still held, so pass 2 cannot race
+ *      pass 1's orphaned recorder on a dirty audio session.
+ *   3. every failure is readable by the caller immediately (via the ref-based
+ *      takeStartFailure() / takeStopFailure(), which do not suffer the stale
+ *      closure of React state read right after an await) so a failure can always
+ *      become an honest, user-visible message.
  */
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { Audio } from 'expo-av';
@@ -13,11 +29,53 @@ import {
   buildCaptureTelemetry,
   type CaptureDiagnostics,
 } from '../services/captureTelemetry';
+import {
+  startFailure,
+  stopFailure,
+  START_FAILURE_COPY,
+  type StartFailure,
+  type StartFailureReason,
+  type StopFailure,
+  type StopFailureReason,
+} from '../services/recognitionRetry';
 
 export type RecordingPhase = 'idle' | 'recording' | 'processing' | 'done';
 
 /** How often we sample the recorder's live metering (dB) while capturing. */
 const METERING_INTERVAL_MS = 200;
+
+/**
+ * Upper bounds (ms) on every step that the caller has to wait for. The
+ * recognition screens only render their loading/result/error surface once
+ * `stopRecording()` resolves, so none of these may wait forever.
+ */
+const STOP_UNLOAD_TIMEOUT_MS = 5000;
+const AUDIO_MODE_TIMEOUT_MS = 2000;
+const FILE_CHECK_TIMEOUT_MS = 3000;
+const TELEMETRY_TIMEOUT_MS = 5000;
+
+/**
+ * Await `p` for at most `ms`. If it has not settled (or rejected) in time,
+ * resolve `fallback` instead. Used so a hung native call degrades into an honest
+ * error message rather than a screen that never updates.
+ */
+async function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+  fallback: T,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      p.catch(() => fallback),
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 /**
  * Explicit recording options for NoteSnap recognition.
@@ -91,6 +149,11 @@ export interface StoppedRecording {
   diagnostics: CaptureDiagnostics;
 }
 
+/** What a permission check resolved to, in a form the caller can surface. */
+type PermissionOutcome =
+  | { ok: true }
+  | { ok: false; reason: StartFailureReason; message: string };
+
 export function useAudioRecorder() {
   const recordingRef = useRef<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -102,6 +165,13 @@ export function useAudioRecorder() {
   const meteringTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Durations captured before final teardown (expo-av may lose this after unload).
   const durationMsRef = useRef<number | null>(null);
+  // A start attempt is in flight — a second concurrent start would create a
+  // second Audio.Recording and orphan the first one (mic session never released).
+  const startInFlightRef = useRef(false);
+  // Last failure, readable by the caller IMMEDIATELY after the await returns
+  // (React state read through a render closure would still be the old value).
+  const lastStartFailureRef = useRef<StartFailure | null>(null);
+  const lastStopFailureRef = useRef<StopFailure | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -115,12 +185,38 @@ export function useAudioRecorder() {
   }, []);
 
   /**
-   * Request microphone permission.
-   * Returns true if granted, false if denied.
+   * Release a recorder we still hold: stop the metering sampler, stop+unload
+   * with a bound, and drop the reference. Used before starting a new capture so
+   * a retry always runs on a clean audio session, and by stopRecording().
    */
-  const requestPermission = useCallback(async (): Promise<boolean> => {
-    setCheckingPermissions(true);
-    setError(null);
+  const releaseRecording = useCallback(
+    async (recording: Audio.Recording | null): Promise<void> => {
+      if (meteringTimerRef.current) {
+        clearInterval(meteringTimerRef.current);
+        meteringTimerRef.current = null;
+      }
+      if (!recording) return;
+      await withTimeout(
+        recording.stopAndUnloadAsync().catch(() => undefined),
+        STOP_UNLOAD_TIMEOUT_MS,
+        undefined,
+      );
+    },
+    [],
+  );
+
+  /**
+   * Resolve whether the microphone may be used, setting the hook's `error` on
+   * refusal. Returns the reason alongside the message so the caller can surface
+   * it without reading React state (which would still be stale right after an
+   * await — exactly how the pass-2 failure went silent, owner repro 09-22).
+   */
+  const resolvePermission = useCallback(async (): Promise<PermissionOutcome> => {
+    const fail = (reason: StartFailureReason): PermissionOutcome => {
+      const message = START_FAILURE_COPY[reason];
+      setError(message);
+      return { ok: false, reason, message };
+    };
 
     // Safety watchdog: if the permission check hangs — e.g. a redundant second
     // native dialog never resolves, or the system dialog is lost when the app
@@ -131,9 +227,7 @@ export function useAudioRecorder() {
     const watchdog = setTimeout(() => {
       watchdogFired = true;
       setCheckingPermissions(false);
-      setError(
-        'Could not finish checking microphone permission. Please tap again to retry.',
-      );
+      setError(START_FAILURE_COPY['permission-timeout']);
     }, 8000);
 
     try {
@@ -166,24 +260,15 @@ export function useAudioRecorder() {
       }
 
       // If the watchdog already fired (the check ran too long / a dialog was
-      // lost), treat this as an aborted check: return false so we never start a
-      // phantom recording based on a stale grant.
-      if (watchdogFired) {
-        setError('Microphone permission check timed out. Please tap again to retry.');
-        return false;
-      }
+      // lost), treat this as an aborted check: return the timeout failure so we
+      // never start a phantom recording based on a stale grant.
+      if (watchdogFired) return fail('permission-timeout');
 
-      if (!permitted) {
-        setError(
-          'Microphone access is required to recognize music. Please grant permission in your device settings.',
-        );
-        return false;
-      }
+      if (!permitted) return fail('permission-denied');
 
-      return true;
-    } catch (err) {
-      setError('Failed to check microphone permissions.');
-      return false;
+      return { ok: true };
+    } catch {
+      return fail('permission-error');
     } finally {
       // Fail-safe: no matter which path ran (success, denial, error, timeout,
       // or a hung promise), clear the watchdog and guarantee `checkingPermissions`
@@ -195,6 +280,32 @@ export function useAudioRecorder() {
 
   /** Mark the recognition request complete so the UI can return to idle/done. */
   const completeRecording = useCallback(() => setPhase('done'), []);
+
+  /** Take the failure from the last startRecording() call that failed. */
+  const takeStartFailure = useCallback((): StartFailure | null => {
+    const failure = lastStartFailureRef.current;
+    lastStartFailureRef.current = null;
+    return failure;
+  }, []);
+
+  /** Take the failure from the last stopRecording() call that returned null. */
+  const takeStopFailure = useCallback((): StopFailure | null => {
+    const failure = lastStopFailureRef.current;
+    lastStopFailureRef.current = null;
+    return failure;
+  }, []);
+
+  /**
+   * Prepare for a fresh pass (the retry/resample path): drop any stale error and
+   * phase so the second capture starts from a clean state instead of carrying
+   * pass 1's 'processing'/'done' phase or its error card.
+   */
+  const resetForRetry = useCallback(() => {
+    lastStartFailureRef.current = null;
+    lastStopFailureRef.current = null;
+    setError(null);
+    setPhase('idle');
+  }, []);
 
   /** Open the device Settings app so the user can manually grant permission. */
   const openSettings = useCallback(() => {
@@ -209,19 +320,49 @@ export function useAudioRecorder() {
   /**
    * Start recording audio from the microphone.
    * Requests permission if not already granted.
+   *
+   * Returns true only when the mic is genuinely capturing. On any failure it
+   * returns false AND records why (takeStartFailure()), so the caller can show
+   * the user an honest message instead of returning silently.
    */
   const startRecording = useCallback(async (): Promise<boolean> => {
     setError(null);
+    lastStartFailureRef.current = null;
 
-    const permitted = await requestPermission();
-    if (!permitted) return false;
+    // Never stack a second capture on top of a start that is still running: the
+    // second Audio.Recording() would overwrite the ref and orphan the first one.
+    if (startInFlightRef.current) {
+      lastStartFailureRef.current = startFailure('busy');
+      return false;
+    }
+    startInFlightRef.current = true;
 
     try {
-      // Configure audio mode for recording
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
+      const permission = await resolvePermission();
+      if (!permission.ok) {
+        lastStartFailureRef.current = startFailure(permission.reason);
+        return false;
+      }
+
+      // Pass-2 safety: tear down any recorder still held from an earlier pass
+      // BEFORE creating a new one, so the fresh capture never races an orphaned
+      // recorder for the mic (the second-recording dead-end, owner repro 09-22).
+      if (recordingRef.current) {
+        const stale = recordingRef.current;
+        recordingRef.current = null;
+        await releaseRecording(stale);
+      }
+
+      // Configure audio mode for recording. Bounded: a hung audio-mode call must
+      // not be able to leave the UI waiting forever.
+      await withTimeout(
+        Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        }),
+        AUDIO_MODE_TIMEOUT_MS,
+        undefined,
+      );
 
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync(RECORDING_OPTIONS);
@@ -255,27 +396,38 @@ export function useAudioRecorder() {
       }, METERING_INTERVAL_MS);
 
       return true;
-    } catch (err) {
-      setError('Failed to start recording. Please try again.');
+    } catch {
+      lastStartFailureRef.current = startFailure('start-error');
+      setError(START_FAILURE_COPY['start-error']);
       return false;
+    } finally {
+      startInFlightRef.current = false;
     }
-  }, [requestPermission]);
+  }, [releaseRecording, resolvePermission]);
 
   /**
    * Stop recording and return the finalised audio file URI.
    *
    * Never silently succeeds with a dead end: if no clip could be produced (no
    * recording in progress, the recorder never finalised, or the file is empty)
-   * it returns `null` AND sets a human-readable `error`. The caller is expected
-   * to surface that error to the user — it must NOT silently reset to idle.
+   * it returns `null` AND records why (takeStopFailure()) with a human-readable
+   * message. The caller is expected to surface that — it must NOT silently reset
+   * to idle. Every wait in here is bounded, because the caller's loading surface
+   * only appears once this resolves.
    */
   const stopRecording = useCallback(async (): Promise<StoppedRecording | null> => {
+    const noteStopFailure = (reason: StopFailureReason): null => {
+      setPhase('idle');
+      const failure = stopFailure(reason);
+      lastStopFailureRef.current = failure;
+      setError(failure.message);
+      return null;
+    };
+
     const recording = recordingRef.current;
     if (!recording) {
       setIsRecording(false);
-      setPhase('idle');
-      setError('No recording in progress. Please try again.');
-      return null;
+      return noteStopFailure('no-recording');
     }
 
     // Capture the URI BEFORE tearing the recorder down. The prepared file path
@@ -295,52 +447,51 @@ export function useAudioRecorder() {
     // durationMillis after unload).
     const durationMs = durationMsRef.current;
 
-    // Stop + unload, but treat a thrown stop error as a signal to discard the
+    // Stop + unload, but treat a thrown or hung stop as a signal to discard the
     // clip (e.g. Android E_AUDIO_NODATA when nothing was recorded) rather than
-    // letting it abort silently. We still verify the file on disk below, so a
-    // throw that left a valid file can still be salvaged.
-    try {
-      await recording.stopAndUnloadAsync();
-    } catch {
-      // Swallowed — the on-disk existence/size check below is authoritative.
-    }
+    // letting it abort silently. The stop is BOUNDED: a recorder that never
+    // reports "stopped" must not hang the caller's whole screen. We still verify
+    // the file on disk below, so a hung stop that left a valid file is salvaged.
     recordingRef.current = null;
+    await releaseRecording(recording);
     setIsRecording(false);
 
-    // Always release the audio session back to normal playback mode.
-    try {
-      await Audio.setAudioModeAsync({
+    // Always release the audio session back to normal playback mode (bounded).
+    await withTimeout(
+      Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
-      });
-    } catch {
-      // Non-fatal — recording is already finalised.
-    }
+      }),
+      AUDIO_MODE_TIMEOUT_MS,
+      undefined,
+    );
 
-    if (!uri) {
-      setPhase('idle');
-      setError('Recording failed to save. Please try again.');
-      return null;
-    }
+    if (!uri) return noteStopFailure('no-uri');
 
     // The file must actually exist and contain audio. A null/0-byte clip is a
-    // real failure (mic captured nothing), not a successful stop.
-    if (!(await hasNonEmptyFile(uri))) {
-      setPhase('idle');
-      setError('Recording was empty. Please move closer to the music and try again.');
-      return null;
-    }
+    // real failure (mic captured nothing), not a successful stop. The check is
+    // bounded too: an unreadable-in-time clip is reported as a save failure
+    // rather than stalling the caller forever.
+    const exists = await withTimeout(
+      hasNonEmptyFile(uri),
+      FILE_CHECK_TIMEOUT_MS,
+      null as boolean | null,
+    );
+    if (exists === false) return noteStopFailure('empty');
+    if (exists === null) return noteStopFailure('no-uri');
 
     setPhase('processing');
 
     // Build capture-path telemetry (format, sample rate, channels, dBFS, bytes)
     // from the finalised clip so the next test can read off exactly what the
-    // mic recorded. Never throws on an unparseable clip.
-    let diagnostics: CaptureDiagnostics;
-    try {
-      diagnostics = await buildCaptureTelemetry(uri, { durationMs, metering });
-    } catch {
-      diagnostics = {
+    // mic recorded. Never throws on an unparseable clip, and never blocks the
+    // caller for longer than its bound.
+    const diagnostics: CaptureDiagnostics =
+      (await withTimeout(
+        buildCaptureTelemetry(uri, { durationMs, metering }),
+        TELEMETRY_TIMEOUT_MS,
+        null as CaptureDiagnostics | null,
+      )) ?? {
         durationMs,
         sampleRate: null,
         channels: null,
@@ -349,7 +500,6 @@ export function useAudioRecorder() {
         bytes: null,
         format: null,
       };
-    }
     // eslint-disable-next-line no-console
     console.log(
       `[recognition] capture done: dur=${String(diagnostics.durationMs)}ms ` +
@@ -358,8 +508,9 @@ export function useAudioRecorder() {
         `bytes=${String(diagnostics.bytes)} fmt=${String(diagnostics.format)}`,
     );
 
+    lastStopFailureRef.current = null;
     return { uri, diagnostics };
-  }, []);
+  }, [releaseRecording]);
 
   return {
     phase,
@@ -369,6 +520,9 @@ export function useAudioRecorder() {
     startRecording,
     stopRecording,
     completeRecording,
+    resetForRetry,
+    takeStartFailure,
+    takeStopFailure,
     openSettings,
     clearError: () => setError(null),
   };

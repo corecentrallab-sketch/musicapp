@@ -30,6 +30,8 @@
     "src/services/homeCards.ts",
     "src/services/shareCardShare.ts",
     "src/services/modalBackContract.ts",
+    "src/services/recognitionRetry.ts",
+    "src/services/modernRetryContract.ts",
     "src/services/modernInterstitialSurface.ts",
     "src/services/inAppBrowserContract.ts",
     "src/types/index.ts",
@@ -45,6 +47,7 @@
     "scripts/homeCards.test.ts",
     "scripts/shareCardShare.test.ts",
     "scripts/modalBackContract.test.ts",
+    "scripts/recognitionRetry.test.ts",
     "scripts/modernRetailerInterstitial.test.ts"
   ]
 }
