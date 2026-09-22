@@ -17,8 +17,12 @@ import {
   pieceAffiliateUrl,
 } from "./piece-affiliate";
 import { sheetMusicDirectSearchUrl } from "./modern-retailer";
-
-const SMD_AFFILIATE_ID = "67650";
+import {
+  SMD_AFFILIATE_ID,
+  SMD_SEARCH_PATH,
+  auditSmdAffiliateUrl,
+  isDeadSmdSearchUrl,
+} from "./affiliate-url-contract";
 
 describe("pieceAffiliateQuery", () => {
   test("joins title and composer", () => {
@@ -50,12 +54,15 @@ describe("pieceAffiliateLink (Sheet Music Direct primary)", () => {
     expect(link).not.toBeNull();
     expect(link!.retailer).toBe(SMD_RETAILER_NAME);
     expect(link!.usedFallback).toBe(false);
-    expect(link!.url).toContain("https://www.sheetmusicdirect.com/en-US/search");
     expect(link!.url).toContain(
-      `searchText=${encodeURIComponent("Für Elise Ludwig van Beethoven")}`,
+      `https://www.sheetmusicdirect.com${SMD_SEARCH_PATH}`,
+    );
+    expect(link!.url).toContain(
+      `query=${encodeURIComponent("Für Elise Ludwig van Beethoven")}`,
     );
     expect(link!.url).toContain(`tid=${SMD_AFFILIATE_ID}`);
     expect(link!.url).toContain(`affiliateId=${SMD_AFFILIATE_ID}`);
+    expect(auditSmdAffiliateUrl(link!.url).ok).toBe(true);
   });
 
   test("title-only piece (no composer) still builds an SMD link", () => {
@@ -89,7 +96,7 @@ describe("pieceAffiliateLink (Sheet Music Direct primary)", () => {
     expect(link).toBeNull();
   });
 
-  test("every default-path URL is affiliate-attributed", () => {
+  test("every default-path URL is affiliate-attributed and on the live route", () => {
     const titles = [
       ["Für Elise", "Ludwig van Beethoven"],
       ["Air on the G String", "Johann Sebastian Bach"],
@@ -99,6 +106,8 @@ describe("pieceAffiliateLink (Sheet Music Direct primary)", () => {
       const url = pieceAffiliateUrl(title, composer);
       expect(url).toContain(`tid=${SMD_AFFILIATE_ID}`);
       expect(url).toContain(`affiliateId=${SMD_AFFILIATE_ID}`);
+      expect(isDeadSmdSearchUrl(url!)).toBe(false);
+      expect(auditSmdAffiliateUrl(url!).ok).toBe(true);
     }
   });
 });
