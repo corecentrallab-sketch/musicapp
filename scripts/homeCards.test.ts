@@ -31,6 +31,7 @@ import {
   featuredPieceCta,
   forYouAccessibilityLabel,
   forYouByline,
+  historyStreakDestination,
   localDateKey,
   mondayOf,
   practiceTodayDestination,
@@ -528,6 +529,77 @@ function streakTests(): void {
   );
 }
 
+// ─── Streak card (History tab) — the same card, wired in v22 ───
+
+/**
+ * History's streak card is Home's card on another tab: same copy, same styling.
+ * The one difference is what 0 days can open — History has no featured piece, so
+ * it opens the catalog search it already renders in place. Pinned here because
+ * the failure mode was a card that LOOKED wired and did nothing: the destination
+ * and the CTA line must come from the same mapping.
+ */
+function historyStreakTests(): void {
+  console.log('\nHistory streak card (same card, wired)');
+
+  assertEq(
+    historyStreakDestination(0),
+    'find-piece',
+    'no streak yet on History → Find-a-Piece (History has no featured piece)',
+  );
+  assertEq(
+    historyStreakDestination(-2),
+    'find-piece',
+    'a negative count is not a streak',
+  );
+  assertEq(
+    historyStreakDestination(Number.NaN),
+    'find-piece',
+    'a junk count reads as no streak',
+  );
+  assertEq(
+    historyStreakDestination(null),
+    'find-piece',
+    'an unloaded streak reads as no streak',
+  );
+  assertEq(
+    historyStreakDestination(undefined),
+    'find-piece',
+    'a missing streak reads as no streak',
+  );
+  assertEq(
+    historyStreakDestination(1),
+    'week',
+    'a 1-day streak opens the practice-week view',
+  );
+  assertEq(
+    historyStreakDestination(37),
+    'week',
+    'a long streak opens the practice-week view',
+  );
+
+  // The CTA line and the destination must agree, in both branches.
+  assertEq(
+    streakCta(0, null),
+    FIND_PIECE_CTA,
+    'the 0-day CTA is the Find-a-Piece line the tap really opens',
+  );
+  assertEq(
+    streakCta(9, null),
+    WEEK_CTA,
+    'the live-streak CTA is the week view the tap really opens',
+  );
+  assertEq(
+    streakAccessibilityLabel(0, null),
+    'Start your streak today — find a piece to practice',
+    'screen reader: the 0-day History card says where it goes',
+  );
+  assertEq(
+    streakAccessibilityLabel(9, null),
+    '9-day streak — see your practice week',
+    'screen reader: the live-streak History card says where it goes',
+  );
+}
+
 // ─── run ────────────────────────────────────────────────────────
 
 function main(): void {
@@ -540,6 +612,7 @@ function main(): void {
   practiceWeekTests();
   weekRowCopyTests();
   streakTests();
+  historyStreakTests();
   console.log(`\n${passes} passed, ${failures} failed\n`);
   process.exit(failures === 0 ? 0 : 1);
 }

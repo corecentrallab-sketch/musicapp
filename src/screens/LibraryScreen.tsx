@@ -39,6 +39,17 @@ const KIND_ICONS: Record<LibraryItem['kind'], keyof typeof Ionicons.glyphMap> = 
   scanned: 'images',
 };
 
+/**
+ * Kinds the app can actually OPEN today. PDF and scanned scores have viewers
+ * (PdfViewer / ScannedViewer); MusicXML, MIDI and Guitar Pro import fine but
+ * their rendering/playback is still to come, so their rows must not promise an
+ * open — they carry a "Soon" badge instead of the chevron (the same honest
+ * treatment the Editor's notation-editor card and Find-a-Piece's badges use).
+ */
+function isOpenableKind(kind: LibraryItem['kind']): boolean {
+  return kind === 'pdf' || kind === 'scanned';
+}
+
 function formatBytes(bytes: number): string {
   if (!bytes) return '';
   if (bytes < 1024) return `${bytes} B`;
@@ -219,7 +230,11 @@ export const LibraryScreen: React.FC = () => {
         onPress={() => openItem(item)}
         onLongPress={() => showItemMenu(item)}
         accessibilityRole="button"
-        accessibilityLabel={`${item.title}, ${kindLabel(item.kind)}`}
+        accessibilityLabel={
+          isOpenableKind(item.kind)
+            ? `${item.title}, ${kindLabel(item.kind)}`
+            : `${item.title}, ${kindLabel(item.kind)} — preview coming soon`
+        }
       >
         <View style={styles.rowIcon}>
           {item.kind === 'scanned' && item.thumbnailUri ? (
@@ -248,7 +263,11 @@ export const LibraryScreen: React.FC = () => {
           </Text>
         </View>
         <Text style={styles.rowDate}>{formatDate(item.createdAt)}</Text>
-        <Ionicons name="chevron-forward" size={16} color="#4a4a6a" />
+        {isOpenableKind(item.kind) ? (
+          <Ionicons name="chevron-forward" size={16} color="#4a4a6a" />
+        ) : (
+          <Text style={[styles.badge, styles.badgeSoon]}>Soon</Text>
+        )}
       </Pressable>
     ),
     [openItem, showItemMenu]
@@ -440,6 +459,25 @@ const styles = StyleSheet.create({
   rowDate: {
     color: '#5a5a80',
     fontSize: 12,
+  },
+  /* "Soon" badge for a row whose format has no viewer yet — the honest stand-in
+     for a chevron that promised an open the tap cannot deliver (same badge
+     treatment as Find-a-Piece). */
+  badge: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    overflow: 'hidden',
+  },
+  badgeSoon: {
+    color: '#8a8aa3',
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#0f3460',
   },
   empty: {
     flex: 1,

@@ -29,6 +29,7 @@
     "src/services/sheetViewerHtml.ts",
     "src/services/homeCards.ts",
     "src/services/shareCardShare.ts",
+    "src/services/modalBackContract.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
     "scripts/practiceCoach.test.ts",
@@ -40,6 +41,7 @@
     "scripts/catalogSearch.test.ts",
     "scripts/sheetViewerFit.test.ts",
     "scripts/homeCards.test.ts",
-    "scripts/shareCardShare.test.ts"
+    "scripts/shareCardShare.test.ts",
+    "scripts/modalBackContract.test.ts"
   ]
 }

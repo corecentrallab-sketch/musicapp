@@ -108,12 +108,34 @@ export const ScorePlayer: React.FC<ScorePlayerProps> = ({
           </Text>
         </TouchableOpacity>
 
+        {/* Looping needs BOTH A and B. Until they are set the button is disabled,
+            so it has to LOOK disabled: it used to render fully live and silently
+            swallow the tap (a control that cannot act must not look tappable).
+            The label stays the short "Loop" so the row keeps its width on a
+            phone — the muted style and the spoken state carry the explanation. */}
         <TouchableOpacity
-          style={[styles.loopBtn, loopActive && styles.loopBtnActive]}
+          style={[
+            styles.loopBtn,
+            loopActive && styles.loopBtnActive,
+            !loopReady && styles.loopBtnDisabled,
+          ]}
           onPress={toggleLoop}
           disabled={!loopReady}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !loopReady }}
+          accessibilityLabel={
+            loopReady
+              ? "Loop the A to B section"
+              : "Loop A to B — set A and B first"
+          }
         >
-          <Text style={[styles.loopBtnText, loopActive && styles.loopBtnTextActive]}>
+          <Text
+            style={[
+              styles.loopBtnText,
+              loopActive && styles.loopBtnTextActive,
+              !loopReady && styles.loopBtnTextDisabled,
+            ]}
+          >
             {loopActive ? "⏱ Looping A–B" : "Loop"}
           </Text>
         </TouchableOpacity>
@@ -208,6 +230,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#4ecdc4",
     borderColor: "#4ecdc4",
   },
+  /* Disabled until both A and B are set — muted border + reduced opacity, the
+     same "not available yet" treatment as the other dimmed controls. */
+  loopBtnDisabled: {
+    opacity: 0.4,
+    borderColor: "#2a2a45",
+  },
   loopBtnText: {
     color: "#c0c0d0",
     fontSize: 13,
@@ -215,6 +243,9 @@ const styles = StyleSheet.create({
   },
   loopBtnTextActive: {
     color: "#0f3460",
+  },
+  loopBtnTextDisabled: {
+    color: "#6a6a85",
   },
   clearBtn: {
     marginLeft: "auto",

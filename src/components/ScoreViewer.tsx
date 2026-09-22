@@ -220,7 +220,27 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
   const atLastPage = pageInfo.total > 0 && pageInfo.page >= pageInfo.total;
 
   return (
-    <Modal visible={true} animationType="slide" presentationStyle="fullScreen">
+    /* onRequestClose is REQUIRED on Android and was missing here — the exact
+       cause of the owner-reported white screen (09-18):
+         • RN's Android modal consumes the BACK key and dispatches a
+           RequestClose event for JS to handle (ReactModalHostView.kt:
+           "onRequestClose callback must be set if back key is expected to
+           close the modal"). With no handler, that press can never reach this
+           component, so JS keeps `showScoreViewer === true`.
+         • Every host of this viewer replaces its whole body with the viewer
+           (HomeScreen/PieceDetailScreen/RecognitionResultView all
+           `return <ScoreViewer …/>`), so an open-but-invisible modal leaves an
+           EMPTY screen under the tab's own header title ("Discover" on the
+           Home tab) — the white screen the owner saw — and the next BACK press
+           lands on React Navigation with nothing to pop, which exits the app.
+       With onRequestClose wired, the sheet viewer is the only thing the back
+       button closes and the piece page behind it is what comes back. */
+    <Modal
+      visible={true}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={onClose}
+    >
       <View style={styles.container}>
         {/* Header bar — hidden in immersive mode (the floating exit button and
             the in-page counter take over). */}
