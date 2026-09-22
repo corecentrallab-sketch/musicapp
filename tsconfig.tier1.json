@@ -34,6 +34,7 @@
     "src/services/modernRetryContract.ts",
     "src/services/modernInterstitialSurface.ts",
     "src/services/inAppBrowserContract.ts",
+    "src/services/humBridge.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
     "scripts/practiceCoach.test.ts",
@@ -48,6 +49,7 @@
     "scripts/shareCardShare.test.ts",
     "scripts/modalBackContract.test.ts",
     "scripts/recognitionRetry.test.ts",
-    "scripts/modernRetailerInterstitial.test.ts"
+    "scripts/modernRetailerInterstitial.test.ts",
+    "scripts/humModernBridge.test.ts"
   ]
 }

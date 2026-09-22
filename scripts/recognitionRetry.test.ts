@@ -501,14 +501,15 @@ function appSources(): SourceFile[] {
  * Screens that still drop a failed `startRecording()` on the floor (the same
  * silent-dead-end pattern this fix removes from the modern path). They are
  * tracked here so a NEW offender fails this suite immediately, while the
- * existing debt (out of scope for this fix — HomeScreen and HumSearchScreen each
- * own their own surface work) can be paid down later. When one of them is fixed,
- * remove it from this list: the suite then keeps it clean.
+ * remaining debt (out of scope — HomeScreen's own recognition start path is a
+ * separate follow-up) can be paid down later. When one of them is fixed, remove
+ * it from this list: the suite then keeps it clean.
+ *
+ * HumSearchScreen came OFF this list with the HUM → MODERN bridge pass: its
+ * failed start now lands on the honest error card (humStartFailureOutcome(),
+ * src/services/humBridge.ts) and the assertion below keeps it that way.
  */
-const KNOWN_SILENT_START_OFFENDERS = [
-  'src/screens/HomeScreen.tsx',
-  'src/screens/HumSearchScreen.tsx',
-];
+const KNOWN_SILENT_START_OFFENDERS = ['src/screens/HomeScreen.tsx'];
 
 function liveScanTests(): void {
   console.log('\nlive scan of the app source');
@@ -519,8 +520,10 @@ function liveScanTests(): void {
   const modernScreen = files.find(
     (f) => f.path === 'src/screens/ModernSearchScreen.tsx',
   );
+  const humScreen = files.find((f) => f.path === 'src/screens/HumSearchScreen.tsx');
   const hook = files.find((f) => f.path === 'src/hooks/useAudioRecorder.ts');
   assert(!!modernScreen, 'src/screens/ModernSearchScreen.tsx is part of the scan');
+  assert(!!humScreen, 'src/screens/HumSearchScreen.tsx is part of the scan');
   assert(!!hook, 'src/hooks/useAudioRecorder.ts is part of the scan');
 
   // Floors: the scan must actually see the pass-2 code it is auditing.
@@ -546,6 +549,18 @@ function liveScanTests(): void {
     silent.filter((v) => v.path === 'src/screens/ModernSearchScreen.tsx').length,
     0,
     'the modern "Find any song" screen surfaces every failed start',
+  );
+  // HumSearchScreen was removed from the tracked backlog in the same pass: it
+  // must now be clean on its own, NOT because the allowlist still covers it.
+  assertEq(
+    silent.filter((v) => v.path === 'src/screens/HumSearchScreen.tsx').length,
+    0,
+    'the hum "Hum it" screen surfaces every failed start (no longer allowlisted)',
+  );
+  assertEq(
+    KNOWN_SILENT_START_OFFENDERS.indexOf('src/screens/HumSearchScreen.tsx'),
+    -1,
+    'HumSearchScreen is no longer exempt from the silent-start contract',
   );
   for (const v of silent) {
     console.log(
