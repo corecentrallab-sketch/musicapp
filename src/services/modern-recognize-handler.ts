@@ -49,7 +49,20 @@ export interface ModernMatch {
   composer?: string;
   matchConfidence: number;
   source: string;
+  /**
+   * PRIMARY retailer: Sheet Music Direct (affiliate ID 67650), searched by
+   * title+artist. Never a recording/ISRC code — SMD's search indexes titles,
+   * artists and composers only, and a code search dead-ends on "No Results"
+   * (owner on-device bug 09-22). Absent when the match carries no searchable
+   * text at all.
+   */
   retailerUrl?: string;
+  /**
+   * BACKUP retailer (owner-approved: Musicnotes), same title+artist query, for the
+   * app's "Try Musicnotes" secondary button when SMD has nothing. Deliberately
+   * carries NO SMD affiliate params — attribution belongs to `retailerUrl` only.
+   */
+  musicnotesUrl?: string;
 }
 
 /** Get the audio file out of a multipart POST (mirrors /api/recognize). */
@@ -94,6 +107,10 @@ async function auddAdapter(buf: ArrayBuffer, name: string, token: string): Promi
   } else if (sp?.album?.images?.[0]?.url) {
     art = sp.album.images[0].url;
   }
+  // Title+artist search links (SMD primary + Musicnotes backup). The ISRC is
+  // still passed so the builder's call site documents that a code was available
+  // and was deliberately NOT used as the query (owner on-device bug 09-22).
+  const urls = modernRetailerUrls(r.title, r.artist, isrc);
   return {
     song: r.title,
     artist: r.artist,
@@ -103,7 +120,10 @@ async function auddAdapter(buf: ArrayBuffer, name: string, token: string): Promi
     composer: am.composerName,
     matchConfidence: typeof r.score === "number" ? r.score : 1,
     source: "audd",
-    retailerUrl: modernRetailerUrls(r.title, r.artist, isrc).primary,
+    retailerUrl: urls.primary,
+    // Delivered so the app can offer the backup retailer when SMD has nothing —
+    // computed before but never sent (the match only carried `.primary`).
+    musicnotesUrl: urls.musicnotes,
   };
 }
 

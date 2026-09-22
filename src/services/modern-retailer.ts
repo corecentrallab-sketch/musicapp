@@ -1,9 +1,19 @@
 // ---------------------------------------------------------------------------
 // Modern-song -> affiliate retailer URL mapping (Backlog #12).
 //
-// Primary retailer = Sheet Music Direct (owner decision 08-24).
-// Prefer ISRC-based deep link (most precise) when we have one; else fall back
-// to title+artist search. Musicnotes stays as a backup path (existing template).
+// Primary retailer = Sheet Music Direct (owner decision 08-24); Musicnotes stays
+// as the backup path (existing template).
+//
+// TITLE+ARTIST ONLY — NEVER A CODE (owner on-device bug 09-22, part 2): this
+// builder used to prefer an ISRC deep link. SMD's search is title/artist/composer
+// facing, so the owner's phone landed on SMD with the box filled by a recording
+// code (e.g. `AUAP*600001`) and SMD answered "No Results" — the CTA dead-ended on
+// every match that carried an ISRC. The live route evidence (robots.txt ASP.NET
+// stack + Wayback CDX: hundreds of HTTP 200 captures of `…/Search.aspx?query=…`
+// carrying *title* searches, and none carrying a code) is in
+// `affiliate-url-contract.ts`. `modernRetailerUrls()` therefore builds its query
+// from the human-readable title+artist, and returns NO link at all when all it has
+// is a code — a degraded state beats a retailer page that says "No Results".
 //
 // AFFILIATE ACCOUNT (owner relayed 09-14): Sheet Music Direct approved
 // Affiliate ID 67650 — MUST be embedded in every SMD link so each click is
@@ -33,12 +43,14 @@ import {
   SMD_SEARCH_PATH,
   SMD_SEARCH_ORIGIN,
   SMD_SEARCH_QUERY_PARAM,
+  looksLikeBareCatalogCode,
 } from "./affiliate-url-contract";
 
 /**
- * SMD deep link. The `query` parameter carries title/artist/ISRC/catalog text on
- * SMD's live search page. The affiliate params (`tid` / `affiliateId`) are
- * appended so attribution survives the in-app WebView session.
+ * SMD deep link. The `query` parameter carries the shopper's own words — a title,
+ * artist and/or composer, never a catalogue/recording code (see the file header).
+ * The affiliate params (`tid` / `affiliateId`) are appended so attribution
+ * survives the in-app WebView session.
  */
 function smdUrl(query: string): string {
   const q = encodeURIComponent(query);
@@ -71,13 +83,25 @@ export function musicnotesSearchUrl(query: string): string | undefined {
 export function modernRetailerUrls(
   title: string,
   artist: string,
-  isrc?: string,
+  // Accepted and DELIBERATELY IGNORED — a recording code must never become a
+  // retailer search query (`_`-prefixed so the unused parameter is explicit; the
+  // call site keeps passing it so the decision is visible in review). The code
+  // still travels to the app inside the match for display/diagnostics.
+  _isrc?: string,
 ): { primary?: string; musicnotes?: string } {
   if (!title || !artist) return {};
-  const byIsrc = isrc ? smdUrl(isrc) : undefined;
-  const byQuery = smdUrl(`${title} ${artist}`.trim());
+  const query = `${title} ${artist}`.trim();
+  // A code can reach here only through junk vendor metadata (a code in the title
+  // field, or a blank artist) — it is not something a retailer can search. Emit
+  // nothing and let the caller show its honest degraded state instead of an SMD
+  // page whose answer is "No Results" (the owner's on-device bug).
+  if (looksLikeBareCatalogCode(query)) return {};
   return {
-    primary: byIsrc || byQuery,
-    musicnotes: musicnotesSearchUrl(`${title} ${artist}`),
+    // ALWAYS the human-readable query — built by the shared builder so the
+    // affiliate ID travels with it. There is no by-code branch any more.
+    primary: sheetMusicDirectSearchUrl(query),
+    // Backup retailer for the app's secondary CTA (owner-approved: Musicnotes).
+    // Carries NO SMD params and no affiliate ID — it is not our SMD link.
+    musicnotes: musicnotesSearchUrl(query),
   };
 }

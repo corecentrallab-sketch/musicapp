@@ -127,6 +127,39 @@ export function auditSmdAffiliateUrl(url: string): SmdUrlAudit {
   return { ok: problems.length === 0, problems };
 }
 
+/**
+ * ---------------------------------------------------------------------------
+ * OWNER ON-DEVICE BUG 2026-09-22, PART 2 — a catalogue code is not a search term
+ * ---------------------------------------------------------------------------
+ * The modern-song path used to search SMD with the recording's ISRC (the owner's
+ * phone showed SMD's search box filled with `AUAP*600001`) and SMD answered
+ * **"No Results"**: SMD's search indexes titles / artists / composers, not
+ * recording codes. Evidence: the Wayback CDX index has hundreds of HTTP 200
+ * captures of `/en-US/Search.aspx?query=…` carrying *title* text, and none
+ * carrying a code; SMD's robots.txt shows the same ASP.NET title-search stack.
+ *
+ * `looksLikeBareCatalogCode()` is the tripwire for that bug class: a query that
+ * has no whitespace and carries a code's fingerprint (an ISRC-shaped string, a
+ * long bare number, or a separator-style code such as `AUAP*600001`) is a code,
+ * not something a shopper typed into a retailer search box.
+ *
+ * Deliberately NARROW, so real titles are never mistaken for codes: a title may
+ * legitimately contain digits (`Symphony No. 5 in C Minor, Op. 67`), so any query
+ * with a whitespace is never a code, and short numerals (`1812`) are never one.
+ */
+export function looksLikeBareCatalogCode(query: string): boolean {
+  const q = query.trim();
+  if (q === "" || /\s/.test(q)) return false;
+  const digits = (q.match(/\d/g) ?? []).length;
+  // ISRC / Apple-code shape: a long alphanumeric run with mostly digits.
+  if (q.length >= 10 && digits >= 6) return true;
+  // A bare long number carries no title information whatsoever.
+  if (/^\d{8,}$/.test(q)) return true;
+  // Separator-style recording code, e.g. "AUAP*600001" / "TCA1/23" (from the bug).
+  if (digits >= 3 && /^[A-Za-z0-9]{2,}[*/][A-Za-z0-9]{2,}$/.test(q)) return true;
+  return false;
+}
+
 export interface ScannedSource {
   path: string;
   content: string;

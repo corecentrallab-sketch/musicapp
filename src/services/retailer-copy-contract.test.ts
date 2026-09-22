@@ -151,9 +151,33 @@ describe("modern-song route — an AudD match must serialize to the live affilia
     expect(url.pathname).toBe("/en-US/Search.aspx");
     expect(url.searchParams.get("tid")).toBe(SMD_AFFILIATE_ID);
     expect(url.searchParams.get("affiliateId")).toBe(SMD_AFFILIATE_ID);
-    // the deep link prefers the ISRC when the provider gives one
-    expect(url.searchParams.get("query")).toBe("QZTEST0000001");
+    // The query is the human-readable title+artist. The ISRC the provider handed
+    // us must NOT reach SMD's search box — SMD indexes titles/artists/composers,
+    // and a code search is the "No Results" dead end the owner hit on 09-22.
+    expect(url.searchParams.get("query")).toBe("Elise's Serenade Trito Music");
+    expect(retailerUrl!).not.toContain("QZTEST0000001");
     expect(auditSmdAffiliateUrl(retailerUrl!).ok).toBe(true);
+  });
+
+  test("the match also carries the Musicnotes backup, and keeps the ISRC for display", async () => {
+    stubAudD(auddSuccessPayload());
+    const { status, body } = await callModernRoute();
+    expect(status).toBe(200);
+
+    // The backup URL the app needs for its "Try Musicnotes" CTA: computed before
+    // but never delivered (the old match only carried `.primary`).
+    const musicnotesUrl: string | undefined = body.modern?.musicnotesUrl;
+    expect(musicnotesUrl).toBeDefined();
+    const backup = new URL(musicnotesUrl!);
+    expect(backup.hostname).toBe("www.musicnotes.com");
+    expect(backup.searchParams.get("q")).toBe("Elise's Serenade Trito Music");
+    // attribution belongs to our SMD link only
+    expect(musicnotesUrl!).not.toContain("sheetmusicdirect.com");
+    expect(musicnotesUrl!).not.toContain(SMD_AFFILIATE_ID);
+
+    // the code still travels inside the match (display/diagnostics), it is simply
+    // never used as a search query
+    expect(body.modern.isrc).toBe("QZTEST0000001");
   });
 
   test("a provider no-match does not invent a retailer URL", async () => {

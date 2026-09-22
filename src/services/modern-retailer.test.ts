@@ -11,6 +11,12 @@
  * `/en-US/Search.aspx?query=…`; the exact retired strings + evidence live in
  * `affiliate-url-contract.ts` (and a source scan there blocks their return).
  *
+ * And they pin the QUERY (owner on-device bug 09-22, part 2): the builder used to
+ * prefer an ISRC deep link, so the owner's phone opened SMD with a recording code
+ * in the search box (`AUAP*600001`) and got "No Results" — SMD indexes titles,
+ * artists and composers, not codes. The query must now always be the human-readable
+ * `"<title> <artist>"`, and a bare code must never be emitted at all.
+ *
  * Run with: bun test src/services/modern-retailer.test.ts
  */
 import { describe, test, expect } from "bun:test";
@@ -20,12 +26,13 @@ import {
   SMD_SEARCH_PATH,
   auditSmdAffiliateUrl,
   isDeadSmdSearchUrl,
+  looksLikeBareCatalogCode,
 } from "./affiliate-url-contract";
 
 const SMD_LIVE_PATH_MARKER = `https://www.sheetmusicdirect.com${SMD_SEARCH_PATH}`;
 
 describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
-  test("ISRC deep link embeds affiliate ID 67650", () => {
+  test("a match that HAS an ISRC still searches title+artist (never the code)", () => {
     const { primary } = modernRetailerUrls(
       "Let It Be",
       "The Beatles",
@@ -33,12 +40,15 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
     );
     expect(primary).toBeDefined();
     expect(primary).toContain(SMD_LIVE_PATH_MARKER);
-    expect(primary).toContain("query=TCA123456789");
+    expect(primary).toContain("query=Let%20It%20Be%20The%20Beatles");
+    // the code must not survive anywhere in the link, encoded or not
+    expect(primary).not.toContain("TCA123456789");
+    expect(new URL(primary!).searchParams.get("query")).toBe("Let It Be The Beatles");
     expect(primary).toContain(`tid=${SMD_AFFILIATE_ID}`);
     expect(primary).toContain(`affiliateId=${SMD_AFFILIATE_ID}`);
   });
 
-  test("title+artist fallback (no ISRC) embeds affiliate ID 67650", () => {
+  test("title+artist search (no ISRC) embeds affiliate ID 67650", () => {
     const { primary } = modernRetailerUrls("Yesterday", "The Beatles");
     expect(primary).toContain("query=Yesterday%20The%20Beatles");
     expect(primary).toContain(`tid=${SMD_AFFILIATE_ID}`);
@@ -51,9 +61,71 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
     expect(urls.musicnotes).toBeUndefined();
   });
 
-  test("musicnotes backup remains present", () => {
-    const { musicnotes } = modernRetailerUrls("Let It Be", "The Beatles", "TCA1");
-    expect(musicnotes).toContain("musicnotes.com");
+  test("the Musicnotes backup exists, searches the same text, and carries no SMD params", () => {
+    const { primary, musicnotes } = modernRetailerUrls(
+      "Let It Be",
+      "The Beatles",
+      "TCA123456789",
+    );
+    expect(musicnotes).toBeDefined();
+    expect(musicnotes!).toContain("musicnotes.com");
+    // same human-readable query as the primary link — this is the app's fallback CTA
+    expect(new URL(musicnotes!).searchParams.get("q")).toBe("Let It Be The Beatles");
+    // attribution belongs to our SMD link only
+    expect(musicnotes!).not.toContain("sheetmusicdirect.com");
+    expect(musicnotes!).not.toContain(SMD_AFFILIATE_ID);
+    expect(musicnotes!).not.toBe(primary);
+  });
+
+  test("REGRESSION: the emitted query IS '<title> <artist>' — a code cannot slip in", () => {
+    const cases: [string, string, string?][] = [
+      ["Elise's Serenade", "Trito Music", "QZTEST0000001"],
+      ["Let It Be", "The Beatles", "AUAP*600001"],
+      ["Für Elise", "Ludwig van Beethoven", undefined],
+      ["Symphony No. 5 in C Minor, Op. 67", "Beethoven", "GBAYC0102393"],
+    ];
+    for (const [title, artist, isrc] of cases) {
+      const { primary } = modernRetailerUrls(title, artist, isrc);
+      expect(primary).toBeDefined();
+      const query = new URL(primary!).searchParams.get("query")!;
+      // equality (not substring) — the query can only ever be our title+artist
+      expect(query).toBe(`${title} ${artist}`);
+      expect(looksLikeBareCatalogCode(query)).toBe(false);
+      if (isrc) expect(query).not.toContain(isrc);
+    }
+  });
+
+  test("a bare recording code is never searched (no 'No Results' dead end)", () => {
+    // Junk vendor metadata: the code arrives in the title field, so title+artist
+    // normalises to a bare code. Emit nothing rather than an SMD page whose
+    // answer is "No Results" (the owner's on-device bug).
+    const junk = modernRetailerUrls("AUAP*600001", " ");
+    expect(junk.primary).toBeUndefined();
+    expect(junk.musicnotes).toBeUndefined();
+    expect(modernRetailerUrls("QZTEST0000001", "")).toEqual({});
+  });
+
+  test("looksLikeBareCatalogCode flags the codes the owner saw and no real title", () => {
+    const codes = [
+      "AUAP*600001",
+      "QZTEST0000001",
+      "TCA123456789",
+      "GBAYE0601498",
+      "12345678",
+    ];
+    for (const code of codes) expect(looksLikeBareCatalogCode(code)).toBe(true);
+
+    const realQueries = [
+      "Let It Be The Beatles",
+      "Für Elise Ludwig van Beethoven",
+      "Symphony No. 5 in C Minor, Op. 67",
+      "Rock & Roll Led Zeppelin",
+      "1812",
+      "Beethoven",
+      "",
+      "   ",
+    ];
+    for (const q of realQueries) expect(looksLikeBareCatalogCode(q)).toBe(false);
   });
 
   test("REGRESSION: never emits the retired dead search route", () => {
