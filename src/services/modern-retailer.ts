@@ -4,16 +4,33 @@
 // Primary retailer = Sheet Music Direct (owner decision 08-24); Musicnotes stays
 // as the backup path (existing template).
 //
-// TITLE+ARTIST ONLY — NEVER A CODE (owner on-device bug 09-22, part 2): this
-// builder used to prefer an ISRC deep link. SMD's search is title/artist/composer
-// facing, so the owner's phone landed on SMD with the box filled by a recording
-// code (e.g. `AUAP*600001`) and SMD answered "No Results" — the CTA dead-ended on
-// every match that carried an ISRC. The live route evidence (robots.txt ASP.NET
-// stack + Wayback CDX: hundreds of HTTP 200 captures of `…/Search.aspx?query=…`
-// carrying *title* searches, and none carrying a code) is in
-// `affiliate-url-contract.ts`. `modernRetailerUrls()` therefore builds its query
-// from the human-readable title+artist, and returns NO link at all when all it has
-// is a code — a degraded state beats a retailer page that says "No Results".
+// HUMAN-READABLE TEXT ONLY — NEVER A CODE (owner on-device bug 09-22, part 2):
+// this builder used to prefer an ISRC deep link. SMD's search is
+// title/artist/composer facing, so the owner's phone landed on SMD with the box
+// filled by a recording code (e.g. `AUAP*600001`) and SMD answered "No Results" —
+// the CTA dead-ended on every match that carried an ISRC. The live route evidence
+// (robots.txt ASP.NET stack + Wayback CDX: hundreds of HTTP 200 captures of
+// `…/Search.aspx?query=…` carrying *title* searches, and none carrying a code) is
+// in `affiliate-url-contract.ts`. `modernRetailerUrls()` therefore returns NO link
+// at all when all it has is a code — a degraded state beats a retailer page that
+// says "No Results".
+//
+// SMD QUERY IS THE TITLE ALONE — DO NOT RE-ADD THE ARTIST (owner on-device bug
+// 09-23). After the ISRC fix the owner STILL got SMD's zero-result page on popular
+// modern songs, because the SMD `query` was `"<title> <artist>"`: SMD's matcher
+// scores ~0 for extra tokens (a 4-token query returns a handful of hits — 6 for
+// `Ed Sheeran & Elton John`), and SMD carries the songs themselves (2024 capture
+// `perfect ed sheeran` → "Showing 1 to 25 of 1944 results", 29 arrangements; the
+// zero-result page is SMD's own "Sorry, we did not find any results for that
+// search phrase…"). Evidence + archived raw HTML:
+// `/home/team/shared/SMD-NO-RESULTS-INVESTIGATION-2026-09-23.md`. A title-only
+// query is what SMD's index wants, so the primary link uses the title ONLY.
+// Adding the artist back "to be more precise" is exactly the regression this
+// change removes — the tests below assert the artist string never reaches the SMD
+// search box.
+//
+// The Musicnotes BACKUP link is deliberately unchanged: Musicnotes' search handles
+// `"<title> <artist>"` well, and it is the fallback for songs SMD scores badly.
 //
 // AFFILIATE ACCOUNT (owner relayed 09-14): Sheet Music Direct approved
 // Affiliate ID 67650 — MUST be embedded in every SMD link so each click is
@@ -90,18 +107,24 @@ export function modernRetailerUrls(
   _isrc?: string,
 ): { primary?: string; musicnotes?: string } {
   if (!title || !artist) return {};
-  const query = `${title} ${artist}`.trim();
+  // The SMD search box gets the TITLE ALONE (09-23, see the file header): extra
+  // tokens narrow SMD's result set to nothing on many popular songs. The artist
+  // is still required above (unchanged contract: no match metadata at all -> no
+  // link), but it is NOT part of the primary query — the tests assert it never
+  // appears in the SMD URL.
+  const titleQuery = title.trim();
   // A code can reach here only through junk vendor metadata (a code in the title
-  // field, or a blank artist) — it is not something a retailer can search. Emit
-  // nothing and let the caller show its honest degraded state instead of an SMD
-  // page whose answer is "No Results" (the owner's on-device bug).
-  if (looksLikeBareCatalogCode(query)) return {};
+  // field) — it is not something a retailer can search. Emit nothing and let the
+  // caller show its honest degraded state instead of an SMD page whose answer is
+  // "No Results" (the owner's on-device bug).
+  if (titleQuery === "" || looksLikeBareCatalogCode(titleQuery)) return {};
   return {
-    // ALWAYS the human-readable query — built by the shared builder so the
+    // ALWAYS the human-readable TITLE, built by the shared builder so the
     // affiliate ID travels with it. There is no by-code branch any more.
-    primary: sheetMusicDirectSearchUrl(query),
+    primary: sheetMusicDirectSearchUrl(titleQuery),
     // Backup retailer for the app's secondary CTA (owner-approved: Musicnotes).
+    // Unchanged: title+artist — Musicnotes' search handles both tokens.
     // Carries NO SMD params and no affiliate ID — it is not our SMD link.
-    musicnotes: musicnotesSearchUrl(query),
+    musicnotes: musicnotesSearchUrl(`${title} ${artist}`.trim()),
   };
 }

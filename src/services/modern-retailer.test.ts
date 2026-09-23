@@ -14,8 +14,16 @@
  * And they pin the QUERY (owner on-device bug 09-22, part 2): the builder used to
  * prefer an ISRC deep link, so the owner's phone opened SMD with a recording code
  * in the search box (`AUAP*600001`) and got "No Results" — SMD indexes titles,
- * artists and composers, not codes. The query must now always be the human-readable
- * `"<title> <artist>"`, and a bare code must never be emitted at all.
+ * artists and composers, not codes. The query must now always be human-readable,
+ * and a bare code must never be emitted at all.
+ *
+ * And they pin the TITLE-ONLY rule (owner on-device bug 09-23): the human-readable
+ * query is the TITLE ALONE. `"<title> <artist>"` still dead-ended on SMD's own
+ * zero-result page for many popular songs, because SMD's matcher scores ~0 for the
+ * extra tokens (a 4-token query returns 6 hits). The artist string must never
+ * reach the SMD search box — the Musicnotes backup keeps title+artist, which its
+ * search handles well. Evidence:
+ * `/home/team/shared/SMD-NO-RESULTS-INVESTIGATION-2026-09-23.md`.
  *
  * Run with: bun test src/services/modern-retailer.test.ts
  */
@@ -32,7 +40,7 @@ import {
 const SMD_LIVE_PATH_MARKER = `https://www.sheetmusicdirect.com${SMD_SEARCH_PATH}`;
 
 describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
-  test("a match that HAS an ISRC still searches title+artist (never the code)", () => {
+  test("a match that HAS an ISRC still searches the title (never the code)", () => {
     const { primary } = modernRetailerUrls(
       "Let It Be",
       "The Beatles",
@@ -40,17 +48,20 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
     );
     expect(primary).toBeDefined();
     expect(primary).toContain(SMD_LIVE_PATH_MARKER);
-    expect(primary).toContain("query=Let%20It%20Be%20The%20Beatles");
+    expect(primary).toContain("query=Let%20It%20Be");
     // the code must not survive anywhere in the link, encoded or not
     expect(primary).not.toContain("TCA123456789");
-    expect(new URL(primary!).searchParams.get("query")).toBe("Let It Be The Beatles");
+    expect(new URL(primary!).searchParams.get("query")).toBe("Let It Be");
     expect(primary).toContain(`tid=${SMD_AFFILIATE_ID}`);
     expect(primary).toContain(`affiliateId=${SMD_AFFILIATE_ID}`);
   });
 
-  test("title+artist search (no ISRC) embeds affiliate ID 67650", () => {
+  test("title-only search (no ISRC) embeds affiliate ID 67650 and drops the artist", () => {
     const { primary } = modernRetailerUrls("Yesterday", "The Beatles");
-    expect(primary).toContain("query=Yesterday%20The%20Beatles");
+    expect(primary).toContain("query=Yesterday");
+    expect(new URL(primary!).searchParams.get("query")).toBe("Yesterday");
+    // the artist must NOT be part of the SMD query (09-23: extra tokens -> no results)
+    expect(primary).not.toContain("Beatles");
     expect(primary).toContain(`tid=${SMD_AFFILIATE_ID}`);
     expect(primary).toContain(`affiliateId=${SMD_AFFILIATE_ID}`);
   });
@@ -61,7 +72,7 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
     expect(urls.musicnotes).toBeUndefined();
   });
 
-  test("the Musicnotes backup exists, searches the same text, and carries no SMD params", () => {
+  test("the Musicnotes backup searches title+artist and carries no SMD params", () => {
     const { primary, musicnotes } = modernRetailerUrls(
       "Let It Be",
       "The Beatles",
@@ -69,15 +80,17 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
     );
     expect(musicnotes).toBeDefined();
     expect(musicnotes!).toContain("musicnotes.com");
-    // same human-readable query as the primary link — this is the app's fallback CTA
+    // The backup keeps BOTH tokens (its own search handles them) while the SMD
+    // primary is title-only — the two queries deliberately differ.
     expect(new URL(musicnotes!).searchParams.get("q")).toBe("Let It Be The Beatles");
+    expect(new URL(primary!).searchParams.get("query")).toBe("Let It Be");
     // attribution belongs to our SMD link only
     expect(musicnotes!).not.toContain("sheetmusicdirect.com");
     expect(musicnotes!).not.toContain(SMD_AFFILIATE_ID);
     expect(musicnotes!).not.toBe(primary);
   });
 
-  test("REGRESSION: the emitted query IS '<title> <artist>' — a code cannot slip in", () => {
+  test("REGRESSION: the emitted query IS the title — neither artist nor code can slip in", () => {
     const cases: [string, string, string?][] = [
       ["Elise's Serenade", "Trito Music", "QZTEST0000001"],
       ["Let It Be", "The Beatles", "AUAP*600001"],
@@ -88,16 +101,18 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
       const { primary } = modernRetailerUrls(title, artist, isrc);
       expect(primary).toBeDefined();
       const query = new URL(primary!).searchParams.get("query")!;
-      // equality (not substring) — the query can only ever be our title+artist
-      expect(query).toBe(`${title} ${artist}`);
+      // equality (not substring) — the query can only ever be our title
+      expect(query).toBe(title);
+      // ... and the artist is not in the URL at all (09-23: title-only search)
+      expect(new URL(primary!).searchParams.get("query")).not.toContain(artist);
       expect(looksLikeBareCatalogCode(query)).toBe(false);
       if (isrc) expect(query).not.toContain(isrc);
     }
   });
 
   test("a bare recording code is never searched (no 'No Results' dead end)", () => {
-    // Junk vendor metadata: the code arrives in the title field, so title+artist
-    // normalises to a bare code. Emit nothing rather than an SMD page whose
+    // Junk vendor metadata: the code arrives in the title field, so the title
+    // query IS a bare code. Emit nothing rather than an SMD page whose
     // answer is "No Results" (the owner's on-device bug).
     const junk = modernRetailerUrls("AUAP*600001", " ");
     expect(junk.primary).toBeUndefined();
@@ -148,10 +163,12 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
   });
 
   test("REGRESSION: a query containing & or # cannot break attribution", () => {
-    const { primary } = modernRetailerUrls("Me & You #1", "A & B");
+    const { primary, musicnotes } = modernRetailerUrls("Me & You #1", "A & B");
     const params = new URL(primary!).searchParams;
     expect(params.get("tid")).toBe(SMD_AFFILIATE_ID);
     expect(params.get("affiliateId")).toBe(SMD_AFFILIATE_ID);
-    expect(params.get("query")).toBe("Me & You #1 A & B");
+    // title only — the raw `&`/`#` in the artist must not even be part of it
+    expect(params.get("query")).toBe("Me & You #1");
+    expect(new URL(musicnotes!).searchParams.get("q")).toBe("Me & You #1 A & B");
   });
 });
