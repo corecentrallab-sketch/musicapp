@@ -151,10 +151,15 @@ describe("modern-song route — an AudD match must serialize to the live affilia
     expect(url.pathname).toBe("/en-US/Search.aspx");
     expect(url.searchParams.get("tid")).toBe(SMD_AFFILIATE_ID);
     expect(url.searchParams.get("affiliateId")).toBe(SMD_AFFILIATE_ID);
-    // The query is the human-readable title+artist. The ISRC the provider handed
-    // us must NOT reach SMD's search box — SMD indexes titles/artists/composers,
-    // and a code search is the "No Results" dead end the owner hit on 09-22.
-    expect(url.searchParams.get("query")).toBe("Elise's Serenade Trito Music");
+    // The SMD query is the TITLE ALONE (owner on-device bug 09-23: SMD scores ~0
+    // for the extra artist tokens and answers its own zero-result page — see
+    // /home/team/shared/SMD-NO-RESULTS-INVESTIGATION-2026-09-23.md). The artist
+    // string must not reach SMD's search box at all.
+    expect(url.searchParams.get("query")).toBe("Elise's Serenade");
+    expect(retailerUrl!).not.toContain("Trito Music");
+    // ... and the ISRC the provider handed us is never searched either: SMD
+    // indexes titles/artists/composers, and a code search is the "No Results"
+    // dead end the owner hit on 09-22.
     expect(retailerUrl!).not.toContain("QZTEST0000001");
     expect(auditSmdAffiliateUrl(retailerUrl!).ok).toBe(true);
   });
@@ -170,6 +175,8 @@ describe("modern-song route — an AudD match must serialize to the live affilia
     expect(musicnotesUrl).toBeDefined();
     const backup = new URL(musicnotesUrl!);
     expect(backup.hostname).toBe("www.musicnotes.com");
+    // The backup keeps title+artist (Musicnotes' search handles both tokens) —
+    // deliberately a different query from the title-only SMD primary above.
     expect(backup.searchParams.get("q")).toBe("Elise's Serenade Trito Music");
     // attribution belongs to our SMD link only
     expect(musicnotesUrl!).not.toContain("sheetmusicdirect.com");

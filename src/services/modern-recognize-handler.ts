@@ -50,17 +50,20 @@ export interface ModernMatch {
   matchConfidence: number;
   source: string;
   /**
-   * PRIMARY retailer: Sheet Music Direct (affiliate ID 67650), searched by
-   * title+artist. Never a recording/ISRC code — SMD's search indexes titles,
+   * PRIMARY retailer: Sheet Music Direct (affiliate ID 67650), searched by the
+   * TITLE ALONE. Never a recording/ISRC code — SMD's search indexes titles,
    * artists and composers only, and a code search dead-ends on "No Results"
-   * (owner on-device bug 09-22). Absent when the match carries no searchable
-   * text at all.
+   * (owner on-device bug 09-22). And never title+artist either: SMD scores ~0 for
+   * the extra artist tokens and answers its own zero-result page (owner on-device
+   * bug 09-23 — `/home/team/shared/SMD-NO-RESULTS-INVESTIGATION-2026-09-23.md`).
+   * Absent when the match carries no searchable text at all.
    */
   retailerUrl?: string;
   /**
-   * BACKUP retailer (owner-approved: Musicnotes), same title+artist query, for the
-   * app's "Try Musicnotes" secondary button when SMD has nothing. Deliberately
-   * carries NO SMD affiliate params — attribution belongs to `retailerUrl` only.
+   * BACKUP retailer (owner-approved: Musicnotes), searched by title+artist (its
+   * search handles both tokens), for the app's "Try Musicnotes" secondary button
+   * when SMD has nothing. Deliberately carries NO SMD affiliate params —
+   * attribution belongs to `retailerUrl` only.
    */
   musicnotesUrl?: string;
 }
@@ -107,9 +110,10 @@ async function auddAdapter(buf: ArrayBuffer, name: string, token: string): Promi
   } else if (sp?.album?.images?.[0]?.url) {
     art = sp.album.images[0].url;
   }
-  // Title+artist search links (SMD primary + Musicnotes backup). The ISRC is
-  // still passed so the builder's call site documents that a code was available
-  // and was deliberately NOT used as the query (owner on-device bug 09-22).
+  // Retailer search links: SMD primary (title only — see modern-retailer.ts) +
+  // Musicnotes backup (title+artist). The ISRC is still passed so the builder's
+  // call site documents that a code was available and was deliberately NOT used as
+  // the query (owner on-device bug 09-22).
   const urls = modernRetailerUrls(r.title, r.artist, isrc);
   return {
     song: r.title,
