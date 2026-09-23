@@ -29,6 +29,18 @@
 // change removes — the tests below assert the artist string never reaches the SMD
 // search box.
 //
+// AND THE TITLE IS BRACKET-NOISE-STRIPPED (owner on-device bug 09-23, part 2).
+// Title-only is necessary but not sufficient: the owner's song came back from the
+// provider as `Bang a Gong (Get it on) [2003 Remaster]` (T. Rex), and a
+// bracketed edition/remaster suffix is vendor metadata, not part of the title —
+// SMD's token matcher scores ~0 for those extra bracketed tokens, and SMD's own
+// catalogue titles the song `Get It On (Bang a Gong)`. `cleanSmdQuery()` therefore
+// drops every `[ ... ]` section and collapses whitespace before the title reaches
+// SMD, while KEEPING parenthesised content (real titles legitimately contain it:
+// `(I Can't Get No) Satisfaction`, `Bang a Gong (Get It On)`). Evidence:
+// `/home/team/shared/SMD-NO-RESULTS-INVESTIGATION-2026-09-23.md`. The bare-code
+// guard runs on the CLEANED string, so `[2003 Remaster]` alone degrades to no link.
+//
 // The Musicnotes BACKUP link is deliberately unchanged: Musicnotes' search handles
 // `"<title> <artist>"` well, and it is the fallback for songs SMD scores badly.
 //
@@ -62,6 +74,35 @@ import {
   SMD_SEARCH_QUERY_PARAM,
   looksLikeBareCatalogCode,
 } from "./affiliate-url-contract";
+
+/**
+ * Clean a song title for the SMD search box: strip edition/bracket noise, then
+ * normalise whitespace (owner on-device bug 09-23, part 2 — the owner's match came
+ * back as `Bang a Gong (Get it on) [2003 Remaster]` and the bracketed edition
+ * suffix alone is enough to push SMD's token matcher to zero results; see the file
+ * header and `/home/team/shared/SMD-NO-RESULTS-INVESTIGATION-2026-09-23.md`).
+ *
+ * Rules, deliberately narrow:
+ *  - every `[ ... ]` section is removed outright (remaster / live / deluxe edition
+ *    / `[feat. X]` style metadata — never part of the title SMD indexes);
+ *  - parenthesised content is KEPT: real titles legitimately contain it
+ *    (`(I Can't Get No) Satisfaction`, `Bang a Gong (Get It On)`);
+ *  - internal whitespace runs collapse to one space, and the ends are trimmed.
+ *
+ * Safe to hand any string: no brackets in, no change out. Exported so the query
+ * contract is testable directly (and only ever used for the SMD primary query —
+ * the Musicnotes backup keeps the untouched title+artist).
+ */
+export function cleanSmdQuery(title: string): string {
+  return (
+    title
+      // Bracket sections go entirely. Replaced by a SPACE (not "") so a title that
+      // runs straight into a bracket does not fuse two words together.
+      .replace(/\[[^\]]*\]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
 
 /**
  * SMD deep link. The `query` parameter carries the shopper's own words — a title,
@@ -112,18 +153,24 @@ export function modernRetailerUrls(
   // is still required above (unchanged contract: no match metadata at all -> no
   // link), but it is NOT part of the primary query — the tests assert it never
   // appears in the SMD URL.
-  const titleQuery = title.trim();
+  // ... and the title is bracket-noise-stripped first (09-23, part 2): the
+  // provider hands back edition metadata such as `[2003 Remaster]`, which SMD's
+  // matcher scores to zero. Parenthesised title content is kept.
+  const titleQuery = cleanSmdQuery(title);
   // A code can reach here only through junk vendor metadata (a code in the title
   // field) — it is not something a retailer can search. Emit nothing and let the
   // caller show its honest degraded state instead of an SMD page whose answer is
-  // "No Results" (the owner's on-device bug).
+  // "No Results" (the owner's on-device bug). The guard runs on the CLEANED
+  // string, so a bracket-only title (`[2003 Remaster]`) cleans to "" and a
+  // bracket-wrapped code still stops here.
   if (titleQuery === "" || looksLikeBareCatalogCode(titleQuery)) return {};
   return {
     // ALWAYS the human-readable TITLE, built by the shared builder so the
     // affiliate ID travels with it. There is no by-code branch any more.
     primary: sheetMusicDirectSearchUrl(titleQuery),
     // Backup retailer for the app's secondary CTA (owner-approved: Musicnotes).
-    // Unchanged: title+artist — Musicnotes' search handles both tokens.
+    // Unchanged: the RAW title+artist — Musicnotes' search handles both tokens,
+    // and its query is deliberately NOT passed through the SMD cleaner.
     // Carries NO SMD params and no affiliate ID — it is not our SMD link.
     musicnotes: musicnotesSearchUrl(`${title} ${artist}`.trim()),
   };

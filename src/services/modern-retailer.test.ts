@@ -25,10 +25,18 @@
  * search handles well. Evidence:
  * `/home/team/shared/SMD-NO-RESULTS-INVESTIGATION-2026-09-23.md`.
  *
+ * And they pin the BRACKET-NOISE-STRIPPING rule (owner on-device bug 09-23, part
+ * 2): the owner's song arrived as `Bang a Gong (Get it on) [2003 Remaster]`
+ * (T. Rex), and the bracketed edition suffix alone drives SMD's token matcher to
+ * zero results — it is vendor metadata, not a title. `cleanSmdQuery()` drops every
+ * `[ ... ]` section and collapses whitespace for the SMD primary ONLY; real
+ * parenthesised title content is kept, and the Musicnotes backup query keeps the
+ * raw title+artist.
+ *
  * Run with: bun test src/services/modern-retailer.test.ts
  */
 import { describe, test, expect } from "bun:test";
-import { modernRetailerUrls } from "./modern-retailer";
+import { cleanSmdQuery, modernRetailerUrls } from "./modern-retailer";
 import {
   SMD_AFFILIATE_ID,
   SMD_SEARCH_PATH,
@@ -82,7 +90,9 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
     expect(musicnotes!).toContain("musicnotes.com");
     // The backup keeps BOTH tokens (its own search handles them) while the SMD
     // primary is title-only — the two queries deliberately differ.
-    expect(new URL(musicnotes!).searchParams.get("q")).toBe("Let It Be The Beatles");
+    expect(new URL(musicnotes!).searchParams.get("q")).toBe(
+      "Let It Be The Beatles",
+    );
     expect(new URL(primary!).searchParams.get("query")).toBe("Let It Be");
     // attribution belongs to our SMD link only
     expect(musicnotes!).not.toContain("sheetmusicdirect.com");
@@ -101,7 +111,9 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
       const { primary } = modernRetailerUrls(title, artist, isrc);
       expect(primary).toBeDefined();
       const query = new URL(primary!).searchParams.get("query")!;
-      // equality (not substring) — the query can only ever be our title
+      // equality (not substring) — the query can only ever be our title (these
+      // titles carry no bracket noise, so the cleaner is the identity here)
+      expect(query).toBe(cleanSmdQuery(title));
       expect(query).toBe(title);
       // ... and the artist is not in the URL at all (09-23: title-only search)
       expect(new URL(primary!).searchParams.get("query")).not.toContain(artist);
@@ -140,7 +152,8 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
       "",
       "   ",
     ];
-    for (const q of realQueries) expect(looksLikeBareCatalogCode(q)).toBe(false);
+    for (const q of realQueries)
+      expect(looksLikeBareCatalogCode(q)).toBe(false);
   });
 
   test("REGRESSION: never emits the retired dead search route", () => {
@@ -169,6 +182,103 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
     expect(params.get("affiliateId")).toBe(SMD_AFFILIATE_ID);
     // title only — the raw `&`/`#` in the artist must not even be part of it
     expect(params.get("query")).toBe("Me & You #1");
-    expect(new URL(musicnotes!).searchParams.get("q")).toBe("Me & You #1 A & B");
+    expect(new URL(musicnotes!).searchParams.get("q")).toBe(
+      "Me & You #1 A & B",
+    );
+  });
+
+  test("REGRESSION: edition-bracket noise never survives into the SMD query (#122)", () => {
+    // The exact owner song (09-23): the `[2003 Remaster]` suffix is provider
+    // metadata; SMD's matcher scores ~0 for it. Parens are real title content.
+    const { primary } = modernRetailerUrls(
+      "Bang a Gong (Get it on) [2003 Remaster]",
+      "T. Rex",
+    );
+    expect(primary).toBeDefined();
+    expect(new URL(primary!).searchParams.get("query")).toBe(
+      "Bang a Gong (Get it on)",
+    );
+    expect(primary!).not.toContain("Remaster");
+    expect(auditSmdAffiliateUrl(primary!).ok).toBe(true);
+  });
+});
+
+/**
+ * Bracket-noise cleanup for the SMD query (owner on-device bug 09-23, part 2).
+ * Asserted strings are the exact `query` values the builder must emit.
+ */
+describe("cleanSmdQuery — edition/bracket noise stripped from the SMD query", () => {
+  test("owner's song: '[2003 Remaster]' is dropped, the real parens are kept", () => {
+    expect(cleanSmdQuery("Bang a Gong (Get it on) [2003 Remaster]")).toBe(
+      "Bang a Gong (Get it on)",
+    );
+    const { primary, musicnotes } = modernRetailerUrls(
+      "Bang a Gong (Get it on) [2003 Remaster]",
+      "T. Rex",
+    );
+    // SMD primary query (exact): bracket gone, parens kept
+    expect(new URL(primary!).searchParams.get("query")).toBe(
+      "Bang a Gong (Get it on)",
+    );
+    expect(primary!).not.toContain("Remaster");
+    expect(primary!).not.toContain("%5B");
+    expect(auditSmdAffiliateUrl(primary!).ok).toBe(true);
+    // the Musicnotes backup is NOT cleaned: raw title+artist, as before
+    expect(new URL(musicnotes!).searchParams.get("q")).toBe(
+      "Bang a Gong (Get it on) [2003 Remaster] T. Rex",
+    );
+  });
+
+  test("a trailing remaster bracket on a plain title is dropped", () => {
+    expect(cleanSmdQuery("Let It Be [2003 Remaster]")).toBe("Let It Be");
+    const { primary } = modernRetailerUrls(
+      "Let It Be [2003 Remaster]",
+      "The Beatles",
+    );
+    expect(new URL(primary!).searchParams.get("query")).toBe("Let It Be");
+    expect(primary!).not.toContain("Beatles");
+  });
+
+  test("a real parenthesised title is untouched", () => {
+    expect(cleanSmdQuery("(I Can't Get No) Satisfaction")).toBe(
+      "(I Can't Get No) Satisfaction",
+    );
+    const { primary } = modernRetailerUrls(
+      "(I Can't Get No) Satisfaction",
+      "The Rolling Stones",
+    );
+    expect(new URL(primary!).searchParams.get("query")).toBe(
+      "(I Can't Get No) Satisfaction",
+    );
+    expect(primary!).not.toContain("Rolling");
+  });
+
+  test("interior whitespace collapses and the ends are trimmed", () => {
+    expect(cleanSmdQuery("  Yesterday   (Remaster 2023)  ")).toBe(
+      "Yesterday (Remaster 2023)",
+    );
+    expect(cleanSmdQuery("Let   It\tBe\n")).toBe("Let It Be");
+    // a title with no brackets and clean spacing is unchanged
+    expect(cleanSmdQuery("Me & You #1")).toBe("Me & You #1");
+  });
+
+  test("several brackets go, and a fused bracket does not fuse two words", () => {
+    expect(cleanSmdQuery("Song [Live][Deluxe Edition]")).toBe("Song");
+    expect(cleanSmdQuery("Song[Live]Title")).toBe("Song Title");
+  });
+
+  test("a bracketed-only title cleans to empty -> the guard applies -> no link", () => {
+    expect(cleanSmdQuery("[2003 Remaster]")).toBe("");
+    // existing degraded state: no SMD page that would answer "No Results"
+    expect(modernRetailerUrls("[2003 Remaster]", "T. Rex")).toEqual({});
+  });
+
+  test("the bare-code guard runs on the CLEANED string", () => {
+    // without cleanup this would pass the guard (it has a whitespace) and be
+    // searched; cleaned, it is a bare code -> no link.
+    expect(cleanSmdQuery("AUAP*600001 [2003 Remaster]")).toBe("AUAP*600001");
+    expect(
+      modernRetailerUrls("AUAP*600001 [2003 Remaster]", "Some Artist"),
+    ).toEqual({});
   });
 });
