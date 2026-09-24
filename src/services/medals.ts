@@ -426,9 +426,12 @@ export function earnedMedalCount(
 }
 
 /**
- * The next medal to earn: the unearned one closest to its threshold, so the
- * screen can say "next up" without inventing a target the user cannot reach.
- * Ties break on catalog order (streak ladder first).
+ * The next medal to earn: the unearned one whose target is CLOSEST to being
+ * met, so the screen can say "next up" without inventing a target the user
+ * cannot reach. "Closest" is the share of its own target already reached
+ * (`percent`), not the raw distance: comparing 1 recognition to 5 minutes
+ * across metrics is meaningless, and it would let a barely-started medal outrank
+ * one that is 95% done. Ties break on catalog order (streak ladder first).
  */
 export function nextMedalToEarn(
   stats: MedalStats,
@@ -438,7 +441,7 @@ export function nextMedalToEarn(
   if (candidates.length === 0) return null;
   let best = candidates[0];
   for (const candidate of candidates) {
-    if (candidate.remaining < best.remaining) best = candidate;
+    if (candidate.percent > best.percent) best = candidate;
   }
   return best;
 }
