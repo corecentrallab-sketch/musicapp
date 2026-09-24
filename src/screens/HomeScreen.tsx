@@ -245,6 +245,29 @@ export const HomeScreen: React.FC = () => {
     loadData();
   }, []);
 
+  /**
+   * The one medal check Home makes. `checkAndAwardMedals` is idempotent — a medal
+   * is awarded exactly once and never removed — so this can run on every load,
+   * pull-to-refresh and recognition without ever re-announcing anything. A fresh
+   * unlock becomes a NON-BLOCKING toast plus the achievement card its Share
+   * action opens; play is never interrupted by a dialog.
+   */
+  const refreshMedals = useCallback(async () => {
+    const result = await checkAndAwardMedals();
+    setMedalSummary(achievementsSummaryLine(result.stats, result.records));
+
+    const unlock = result.unlocks[0];
+    const medal = result.medals[0];
+    if (!unlock || !medal) return;
+
+    setMedalToast(medal);
+    setMedalCard({
+      medal,
+      context: medalContext(unlock.contextTitle, unlock.contextSubtitle),
+      progressLabel: medalProgressLabel(medal, medalMetricValue(medal, result.stats)),
+    });
+  }, []);
+
   // Medals settle whenever Home comes back into view (returning from a practice
   // run, the sheet reader or another tab) — the same idempotent check as loadData,
   // so a medal earned during play is announced as soon as play is over, never
@@ -274,29 +297,6 @@ export const HomeScreen: React.FC = () => {
     // refresh the quiet entry card's line.
     await refreshMedals();
   };
-
-  /**
-   * The one medal check Home makes. `checkAndAwardMedals` is idempotent — a medal
-   * is awarded exactly once and never removed — so this can run on every load,
-   * pull-to-refresh and recognition without ever re-announcing anything. A fresh
-   * unlock becomes a NON-BLOCKING toast plus the achievement card its Share
-   * action opens; play is never interrupted by a dialog.
-   */
-  const refreshMedals = useCallback(async () => {
-    const result = await checkAndAwardMedals();
-    setMedalSummary(achievementsSummaryLine(result.stats, result.records));
-
-    const unlock = result.unlocks[0];
-    const medal = result.medals[0];
-    if (!unlock || !medal) return;
-
-    setMedalToast(medal);
-    setMedalCard({
-      medal,
-      context: medalContext(unlock.contextTitle, unlock.contextSubtitle),
-      progressLabel: medalProgressLabel(medal, medalMetricValue(medal, result.stats)),
-    });
-  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
