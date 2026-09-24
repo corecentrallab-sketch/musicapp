@@ -934,18 +934,16 @@ export const HomeScreen: React.FC = () => {
     );
   }
 
-  // Full-screen sheet music viewer — the same path the recognition result flow
-  // uses for pieces that have a curated sheet.
-  if (showScoreViewer && dailyChallenge?.sheetMusicUrl) {
-    return (
-      <ScoreViewer
-        url={dailyChallenge.sheetMusicUrl}
-        title={dailyChallenge.title}
-        composer={dailyChallenge.composer}
-        onClose={() => setShowScoreViewer(false)}
-      />
-    );
-  }
+  // NOTE (owner-reported blank Home page, v22 → v24): the sheet-music viewer used
+  // to be a body-replacement early return HERE (the whole Home body was replaced
+  // by the viewer). That is the empty-body path: the viewer is a Modal whose
+  // Android dialog can be dismissed natively (e.g. by the platform's back
+  // handling) while `showScoreViewer` stays true, and a flag left true with no
+  // dialog on screen rendered Home with NOTHING in it — the blank white body the
+  // owner saw, with the tab bar still alive. The viewer is now an OVERLAY inside
+  // this always-mounted body (see the sheet-music block in the JSX below), so no
+  // state of the viewer can ever blank Home. Guarded by
+  // src/services/backExitContract.ts (the blank-return contract).
 
   if (showDetail && dailyChallenge) {
     return (
@@ -994,6 +992,22 @@ export const HomeScreen: React.FC = () => {
         onHumFallback={noMatchOffer === 'hum' ? handleHumFallbackFromCard : undefined}
         onFindAnySong={noMatchOffer === 'modern' ? handleFindAnySongFromCard : undefined}
       />
+
+      {/* Full-screen sheet-music viewer — the same path the recognition result
+          flow uses for pieces that have a curated sheet.
+
+          It is an OVERLAY, never a body replacement (owner-reported blank Home
+          page, v22 → v24): this body stays mounted underneath whatever the viewer
+          does, so even a viewer flag left true by a natively dismissed dialog
+          cannot leave Home blank. Guarded by src/services/backExitContract.ts. */}
+      {showScoreViewer && dailyChallenge?.sheetMusicUrl && (
+        <ScoreViewer
+          url={dailyChallenge.sheetMusicUrl}
+          title={dailyChallenge.title}
+          composer={dailyChallenge.composer}
+          onClose={() => setShowScoreViewer(false)}
+        />
+      )}
 
       <ScrollView
         style={styles.scroll}

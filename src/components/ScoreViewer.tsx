@@ -220,21 +220,21 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
   const atLastPage = pageInfo.total > 0 && pageInfo.page >= pageInfo.total;
 
   return (
-    /* onRequestClose is REQUIRED on Android and was missing here — the exact
-       cause of the owner-reported white screen (09-18):
-         • RN's Android modal consumes the BACK key and dispatches a
-           RequestClose event for JS to handle (ReactModalHostView.kt:
-           "onRequestClose callback must be set if back key is expected to
-           close the modal"). With no handler, that press can never reach this
-           component, so JS keeps `showScoreViewer === true`.
-         • Every host of this viewer replaces its whole body with the viewer
-           (HomeScreen/PieceDetailScreen/RecognitionResultView all
-           `return <ScoreViewer …/>`), so an open-but-invisible modal leaves an
-           EMPTY screen under the tab's own header title ("Discover" on the
-           Home tab) — the white screen the owner saw — and the next BACK press
-           lands on React Navigation with nothing to pop, which exits the app.
-       With onRequestClose wired, the sheet viewer is the only thing the back
-       button closes and the piece page behind it is what comes back. */
+    /* onRequestClose is REQUIRED on Android (v22 fix, kept): React Native's modal
+       window consumes the BACK key press and hands it to the JS `onRequestClose`
+       handler (ReactModalHostView.kt: "onRequestClose callback must be set if back
+       key is expected to close the modal"). Without it the press can never reach
+       JS, so a host's `showScoreViewer` flag would stay true.
+       It is now ONE authority with the on-screen ✕ below (`onClose` for both) — a
+       split between the two dismissals is what lets the host state drift.
+       AND (owner-reported blank page, v22 → v24) RN raises onRequestClose only
+       from an Android KEYCODE_BACK key event, which apps targeting SDK 36 no
+       longer receive on Android 16 — plugins/withAndroidBackCompat.js opts this
+       app back into the legacy dispatch, and
+       src/services/backExitContract.ts fails the gate if that opt-out disappears.
+       Belt and braces: every host now mounts this viewer as an OVERLAY inside its
+       own body (never as a body-replacement return), so even a flag left true by
+       a natively dismissed dialog can no longer leave a screen empty. */
     <Modal
       visible={true}
       animationType="slide"

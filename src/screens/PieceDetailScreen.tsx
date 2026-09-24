@@ -180,30 +180,20 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
     return true;
   });
 
-  // If showing the ScoreViewer
-  if (showScoreViewer && piece.sheetMusicUrl) {
-    // Practice audio: use curated score audio when the backend supplies it;
-    // otherwise fall back to a bundled public-domain preview so the
-    // loop/time-stretch player is always usable for public-domain scores.
-    // The label stays honest about which one is playing.
-    const hasCuratedAudio = !!piece.audioUrl;
-    const audioBundled = require('../../assets/audio/preview-fur-elise.wav');
-    const audioSource = hasCuratedAudio
-      ? (piece.audioUrl as string)
-      : piece.isPublicDomain !== false
-      ? audioBundled
-      : null;
-    return (
-      <ScoreViewer
-        url={piece.sheetMusicUrl}
-        title={piece.title}
-        composer={piece.composer}
-        onClose={handleCloseScoreViewer}
-        audioSource={audioSource}
-        audioLabel={hasCuratedAudio ? 'Score audio' : 'Preview'}
-      />
-    );
-  }
+  // Practice audio for the sheet viewer: use curated score audio when the backend
+  // supplies it; otherwise fall back to a bundled public-domain preview so the
+  // loop/time-stretch player is always usable for public-domain scores. The label
+  // stays honest about which one is playing.
+  //
+  // Computed here (unconditionally, like every hook above) because the viewer is
+  // now an overlay inside the page body below — not a body-replacing early return.
+  const hasCuratedScoreAudio = !!piece.audioUrl;
+  const bundledScoreAudio = require('../../assets/audio/preview-fur-elise.wav');
+  const scoreAudioSource = hasCuratedScoreAudio
+    ? (piece.audioUrl as string)
+    : piece.isPublicDomain !== false
+    ? bundledScoreAudio
+    : null;
 
   const handleShare = useCallback(async () => {
     setSharing(true);
@@ -358,6 +348,22 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
         onClose={handleCloseShareCard}
       />
       </ScrollView>
+
+      {/* Full-screen sheet-music viewer — an OVERLAY inside this always-mounted
+          page body, never a body replacement (owner-reported blank page, v22 →
+          v24: a viewer flag left true by a natively dismissed dialog left the
+          host rendering an empty screen). Guarded by
+          src/services/backExitContract.ts (the blank-return contract). */}
+      {showScoreViewer && piece.sheetMusicUrl && (
+        <ScoreViewer
+          url={piece.sheetMusicUrl}
+          title={piece.title}
+          composer={piece.composer}
+          onClose={handleCloseScoreViewer}
+          audioSource={scoreAudioSource}
+          audioLabel={hasCuratedScoreAudio ? 'Score audio' : 'Preview'}
+        />
+      )}
     </View>
   );
 };

@@ -116,17 +116,13 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
 
   if (!visible || !phase) return null;
 
-  // If viewing the ScoreViewer for a match that has a sheet_music_url
-  if (showScoreViewer && selectedMatch && phase.type === 'success' && selectedMatch.sheet_music_url) {
-    return (
-      <ScoreViewer
-        url={selectedMatch.sheet_music_url}
-        title={selectedMatch.title}
-        composer={selectedMatch.composer}
-        onClose={() => setShowScoreViewer(false)}
-      />
-    );
-  }
+  // NOTE (owner-reported blank page, v22 → v24): the sheet-music viewer used to be
+  // returned from HERE instead of this component's own card, i.e. the card was
+  // replaced by the viewer and the sheet dialog swapped with the card dialog in the
+  // same frame. The viewer is now an overlay INSIDE the card's own Modal (see the
+  // sheet-music block in the success phase below), so the card stays mounted and
+  // closing the sheet simply reveals it again. Guarded by
+  // src/services/backExitContract.ts (the blank-return contract).
 
   // If viewing detail for a match (no sheet_music_url), show PieceDetailScreen
   if (showDetail && selectedMatch && phase.type === 'success') {
@@ -335,6 +331,20 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
+        {/* The tapped match's sheet music, opened on top of this card — an
+            OVERLAY, never a replacement for the card's own content: the card
+            stays mounted underneath, so closing the sheet reveals it and no
+            dialog is swapped while another one is being dismissed (the frame
+            where a host could come back blank). Owner-reported blank page,
+            v22 → v24; guarded by src/services/backExitContract.ts. */}
+        {showScoreViewer && selectedMatch?.sheet_music_url && (
+          <ScoreViewer
+            url={selectedMatch.sheet_music_url}
+            title={selectedMatch.title}
+            composer={selectedMatch.composer}
+            onClose={() => setShowScoreViewer(false)}
+          />
+        )}
         <ScrollView
           style={styles.scrollContainer}
           contentContainerStyle={styles.scrollContent}
