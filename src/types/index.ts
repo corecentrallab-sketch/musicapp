@@ -17,11 +17,27 @@ export interface SavedPiece {
 
 // ─── API types ─────────────────────────────────────────────────
 
-/** Purchase link URLs for a matched piece. */
-export interface PurchaseUrls {
-  musicnotes: string;
-  sheetmusicplus: string;
-}
+/**
+ * Purchase link URLs for a matched piece, keyed by retailer.
+ *
+ * The backend emits the OWNER-APPROVED retailers only, in priority order:
+ * `sheetmusicdirect` (Sheet Music Direct, affiliate ID 67650 — PRIMARY, the
+ * money path) and `musicnotes` (the BACKUP). Sheet Music Plus was dropped and JW
+ * Pepper is not approved, so neither may appear here.
+ *
+ * A CTA must resolve through `primaryPurchaseUrl()` (src/services/purchaseCta.ts)
+ * rather than naming a key — the app used to read `.musicnotes` by name, which
+ * sent every in-app purchase to the backup retailer no matter what the backend
+ * emitted. Both keys are optional because the backend omits one when it cannot
+ * build it (the primary builder returns nothing for an empty query).
+ *
+ * A type alias (not an interface) on purpose: it carries an implicit index
+ * signature, so the map can be passed straight to `primaryPurchaseUrl()`.
+ */
+export type PurchaseUrls = {
+  sheetmusicdirect?: string;
+  musicnotes?: string;
+};
 
 /** A single match result from the recognition API. */
 export interface RecognitionMatch {
@@ -133,7 +149,18 @@ export interface ModernMatch {
   composer?: string;
   matchConfidence: number;
   source: string;
+  /**
+   * The PRIMARY retailer page for this song (Sheet Music Direct, affiliate ID
+   * 67650) — built by the backend, never by the app. Opened in our own in-app
+   * shell on an explicit tap; a modern-song match NEVER auto-redirects.
+   */
   retailerUrl?: string;
+  /**
+   * The SECONDARY retailer page (Musicnotes), also built by the backend — the
+   * "Try Musicnotes" button on the interstitial. Attribution belongs to
+   * `retailerUrl`; this is a backup path, not the money path.
+   */
+  musicnotesUrl?: string;
 }
 
 /** Successful response from POST /api/recognize-modern.

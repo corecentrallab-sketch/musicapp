@@ -28,6 +28,7 @@ import {
   getWeeklyGoal,
 } from '../services/storage';
 import { getPracticeHistoryLocal } from '../services/practiceHistoryStore';
+import { useHardwareBack } from '../hooks/useHardwareBack';
 import type { WeeklyGoal } from '../types';
 import {
   buildWeekView,
@@ -69,6 +70,15 @@ export const PracticeWeekScreen: React.FC<PracticeWeekScreenProps> = ({
 }) => {
   const [data, setData] = useState<WeekData | null>(null);
   const [readFailed, setReadFailed] = useState(false);
+  // Android hardware BACK (in-place flow — owner bug class 09-23). Home renders
+  // this surface by replacing its whole tab body, so the route never changes and
+  // an unconsumed BACK press reaches React Navigation, which has nothing to pop
+  // and finishes the activity (the app "exits"). Consume it and go back to Home.
+  // Guarded by src/services/backExitContract.ts.
+  useHardwareBack(() => {
+    onClose();
+    return true;
+  });
 
   const load = useCallback(async () => {
     const now = new Date();

@@ -29,6 +29,12 @@ import type { RecognitionMatch, RecognitionResponse } from '../types';
 import type { CaptureDiagnostics } from '../services/captureTelemetry';
 import { PieceDetailScreen } from '../screens/PieceDetailScreen';
 import { ScoreViewer } from './ScoreViewer';
+// The money path resolves through ONE helper: the first APPROVED retailer in the
+// backend's purchase-URL map (Sheet Music Direct, affiliate ID 67650, PRIMARY),
+// falling back to Musicnotes only when the primary is absent. Naming a retailer
+// key here is what the app used to do (`.musicnotes`) — the defect
+// src/services/purchaseCta.ts guards with a source scan.
+import { recognitionPurchaseUrl } from '../services/purchaseCta';
 
 export type RecognitionPhase =
   | { type: 'loading' }
@@ -256,10 +262,17 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   // PD pieces never get a purchase redirect — the backend guarantees
   // purchase_url is null for them, and we double-guard here so a stale
   // response can never show a buy button on a public-domain piece.
-  const hasPurchaseUrl =
-    !isPublicDomain &&
-    (topMatch.purchase_url?.musicnotes ||
-      phase.response.purchase_url?.musicnotes);
+  //
+  // The link itself comes from the backend's purchase-URL map through
+  // primaryPurchaseUrl() (Sheet Music Direct PRIMARY, Musicnotes backup only) —
+  // never from a retailer key named in this component. The match's own map wins
+  // over the response-level fallback, and the primary key wins over the backup in
+  // both, so the commission can no longer land on the backup retailer by default.
+  const purchaseUrl = recognitionPurchaseUrl(
+    topMatch.purchase_url,
+    phase.response.purchase_url,
+  );
+  const hasPurchaseUrl = !isPublicDomain && !!purchaseUrl;
 
   return (
     <Modal
@@ -344,12 +357,9 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
             {hasPurchaseUrl && (
               <TouchableOpacity
                 style={styles.purchaseBtn}
-                onPress={() =>
-                  handleOpenPurchaseUrl(
-                    topMatch.purchase_url?.musicnotes ??
-                      phase.response.purchase_url!.musicnotes,
-                  )
-                }
+                onPress={() => {
+                  if (purchaseUrl) handleOpenPurchaseUrl(purchaseUrl);
+                }}
               >
                 <Text style={styles.purchaseBtnText}>
                   🛒 Get Official Sheet Music

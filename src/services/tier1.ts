@@ -201,6 +201,8 @@ export function parseModernResponse(raw: unknown): ModernResponse | null {
         source: typeof mm.source === "string" ? mm.source : "unknown",
         retailerUrl:
           typeof mm.retailerUrl === "string" ? mm.retailerUrl : undefined,
+        musicnotesUrl:
+          typeof mm.musicnotesUrl === "string" ? mm.musicnotesUrl : undefined,
       };
     }
   }
