@@ -58,6 +58,7 @@
     "scripts/backExitContract.test.ts",
     "scripts/purchaseCtaContract.test.ts",
     "scripts/resultGenreContract.test.ts",
-    "scripts/abcTranspose.test.ts"
+    "scripts/abcTranspose.test.ts",
+    "scripts/notationEditorContract.test.ts"
   ]
 }

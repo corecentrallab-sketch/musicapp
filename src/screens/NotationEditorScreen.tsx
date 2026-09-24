@@ -23,7 +23,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import * as FileSystem from 'expo-file-system';
 import type { RootStackParamList } from '../types';
 import { AbcScoreView } from '../components/AbcScoreView';
 import {
@@ -33,6 +32,7 @@ import {
 import {
   addAbcToLibrary,
   getLibraryItem,
+  readAbcText,
 } from '../services/libraryStore';
 import {
   clampSemitones,
@@ -78,7 +78,7 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
           if (cancelled || !item || item.kind !== 'abc' || !item.fileUri) {
             throw new Error('not-found');
           }
-          const abc = await FileSystem.readAsStringAsync(item.fileUri);
+          const abc = await readAbcText(item);
           if (cancelled) return;
           setSelected(scoreFromAbc(abc, item.title));
           setOffset(0);

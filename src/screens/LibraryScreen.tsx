@@ -37,17 +37,19 @@ const KIND_ICONS: Record<LibraryItem['kind'], keyof typeof Ionicons.glyphMap> = 
   midi: 'musical-notes',
   guitarpro: 'albums',
   scanned: 'images',
+  abc: 'create',
 };
 
 /**
  * Kinds the app can actually OPEN today. PDF and scanned scores have viewers
- * (PdfViewer / ScannedViewer); MusicXML, MIDI and Guitar Pro import fine but
- * their rendering/playback is still to come, so their rows must not promise an
- * open — they carry a "Soon" badge instead of the chevron (the same honest
- * treatment the Editor's notation-editor card and Find-a-Piece's badges use).
+ * (PdfViewer / ScannedViewer), and an ABC score opens in the notation editor
+ * (NotationEditorScreen), which renders it and can transpose it. MusicXML, MIDI
+ * and Guitar Pro import fine but their rendering/playback is still to come, so
+ * their rows must not promise an open — they carry a "Soon" badge instead of the
+ * chevron (the same honest treatment Find-a-Piece's badges use).
  */
 function isOpenableKind(kind: LibraryItem['kind']): boolean {
-  return kind === 'pdf' || kind === 'scanned';
+  return kind === 'pdf' || kind === 'scanned' || kind === 'abc';
 }
 
 function formatBytes(bytes: number): string {
@@ -134,6 +136,10 @@ export const LibraryScreen: React.FC = () => {
         navigation.navigate('PdfViewer', { itemId: item.id });
       } else if (item.kind === 'scanned') {
         navigation.navigate('ScannedViewer', { itemId: item.id });
+      } else if (item.kind === 'abc') {
+        // ABC scores open in the notation editor: it renders the score and can
+        // transpose it into a new key (saving a new copy).
+        navigation.navigate('NotationEditor', { itemId: item.id });
       } else {
         // Rendering/playback of these formats arrives later; the file is
         // stored and will be openable via the share/export path.
@@ -317,7 +323,8 @@ export const LibraryScreen: React.FC = () => {
           <Text style={styles.emptySubtitle}>
             Import a PDF, MusicXML, MIDI or Guitar Pro file, or scan a paper
             score with your camera. Files are stored on your device and work
-            offline.
+            offline. Transposed copies you save from the Notation editor land
+            here too.
           </Text>
         </View>
       ) : (
