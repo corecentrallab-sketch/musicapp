@@ -38,6 +38,7 @@
     "src/services/backExitContract.ts",
     "src/services/purchaseCta.ts",
     "src/services/resultGenre.ts",
+    "src/services/frontDoor.ts",
     "src/services/abcTranspose.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
@@ -59,6 +60,7 @@
     "scripts/purchaseCtaContract.test.ts",
     "scripts/resultGenreContract.test.ts",
     "scripts/abcTranspose.test.ts",
-    "scripts/notationEditorContract.test.ts"
+    "scripts/notationEditorContract.test.ts",
+    "scripts/frontDoor.test.ts"
   ]
 }
