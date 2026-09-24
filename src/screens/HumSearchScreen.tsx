@@ -30,6 +30,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
+import { useHardwareBack } from '../hooks/useHardwareBack';
 import { humToSearch } from '../services/api';
 import { humOutcome, humPhraseHint, humNoMatchMessage, type HumOutcome } from '../services/tier1';
 import {
@@ -167,6 +168,20 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
     setTimeout(() => handleStart(), 300);
   }, [handleStart]);
 
+  // Android hardware BACK (in-place flow — owner bug class 09-23). This screen
+  // is not a route and not a modal: its host tab replaces its whole body with it,
+  // so an unconsumed BACK press pops React Navigation's last route and finishes
+  // the activity (the app "exits"). Consume it here, unwinding ONE level: out of
+  // the opened piece first, then back to the screen that opened the hum flow.
+  // Guarded by src/services/backExitContract.ts.
+  useHardwareBack(() => {
+    if (showDetail) {
+      setShowDetail(null);
+      return true;
+    }
+    onClose();
+    return true;
+  });
   // ── Piece detail (full-screen, as the rest of the app does) ──
   if (showDetail) {
     return (

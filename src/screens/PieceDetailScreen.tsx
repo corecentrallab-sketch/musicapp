@@ -21,6 +21,7 @@ import { ScoreViewer } from '../components/ScoreViewer';
 import { ShareCard } from '../components/ShareCard';
 import { CoachPracticeCard } from '../components/CoachPracticeCard';
 import { StreakNudgeCard } from '../components/StreakNudgeCard';
+import { useHardwareBack } from '../hooks/useHardwareBack';
 import {
   addPracticeMinutes,
   recordPractice,
@@ -156,6 +157,28 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
     );
     setShowShareCard(true);
   }, []);
+
+  // Android hardware BACK (owner-reproduced on device, 09-23: "streak day →
+  // featured piece → sheet music page → BACK → the app exits"). This page is an
+  // IN-PLACE flow — Home / History / Find-a-Piece / the hum flow replace their
+  // tab body with it, so the route never changes and nothing else consumes the
+  // key. Without this handler the press reaches React Navigation, whose last
+  // route is "Tabs" with nothing to pop, and the activity finishes.
+  //
+  // It unwinds ONE level: out of the score first (when the ScoreViewer modal is
+  // up it consumes the press itself via onRequestClose, so this branch is the
+  // belt-and-braces path), then back to whoever opened the piece. Returning true
+  // is the "I consumed this press" signal — returning false would fall straight
+  // through to the exiting behaviour this exists to prevent.
+  // src/services/backExitContract.ts guards the whole class in the tier1 gate.
+  useHardwareBack(() => {
+    if (showScoreViewer) {
+      void handleCloseScoreViewer();
+      return true;
+    }
+    onBack();
+    return true;
+  });
 
   // If showing the ScoreViewer
   if (showScoreViewer && piece.sheetMusicUrl) {

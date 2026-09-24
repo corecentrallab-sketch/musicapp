@@ -45,6 +45,7 @@ import {
 } from '../services/catalogSearch';
 import { mergeCatalogIntoDetail } from '../services/historyPiece';
 import { PieceDetailScreen } from './PieceDetailScreen';
+import { useHardwareBack } from '../hooks/useHardwareBack';
 import type { CatalogPiece, DailyChallengePiece } from '../types';
 
 type Status = 'loading' | 'ready' | 'empty' | 'error';
@@ -159,6 +160,20 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
     );
   };
 
+  // Android hardware BACK (in-place flow — owner bug class 09-23). Find-a-Piece
+  // replaces its host tab's whole body, so nothing else consumes the BACK press:
+  // without this it reaches React Navigation, which has no route to pop and
+  // finishes the activity (the app "exits"). Unwind ONE level: out of the opened
+  // piece first, then back to whoever opened the search. Guarded by
+  // src/services/backExitContract.ts.
+  useHardwareBack(() => {
+    if (showDetail) {
+      handleCloseDetail();
+      return true;
+    }
+    onClose();
+    return true;
+  });
   // Full-screen piece page for a tapped row (same in-place pattern as History).
   if (showDetail) {
     return <PieceDetailScreen piece={showDetail} onBack={handleCloseDetail} />;

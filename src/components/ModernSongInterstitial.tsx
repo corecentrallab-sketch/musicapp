@@ -225,6 +225,24 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
                 </View>
               )}
 
+              {/* SECONDARY retailer (owner-approved 09-23): the backend already
+                  returns `modern.musicnotesUrl`, so the user has a second
+                  licensed place to buy from when the primary link is missing or
+                  they simply prefer it. It opens in the SAME in-app shell as the
+                  primary button — one WebView, one BACK rule — and it is rendered
+                  only when the backend actually supplied a URL, so it can never
+                  be a dead button. Still no auto-redirect: an explicit tap only. */}
+              {match.musicnotesUrl ? (
+                <TouchableOpacity
+                  style={styles.musicnotesBtn}
+                  onPress={() => setRetailerUrl(match.musicnotesUrl!)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Try Musicnotes for ${match.song}`}
+                >
+                  <Text style={styles.musicnotesBtnText}>🎼 Try Musicnotes</Text>
+                </TouchableOpacity>
+              ) : null}
+
               {/* Retention levers */}
               <TouchableOpacity style={styles.humBtn} onPress={onHumIt}>
                 <Text style={styles.humBtnText}>
@@ -400,6 +418,23 @@ const styles = StyleSheet.create({
   noLinkText: {
     color: '#a0a0b8',
     fontSize: 13,
+    textAlign: 'center',
+  },
+  // SECONDARY retailer CTA (Musicnotes) — visually quieter than the primary buy
+  // button: the owner-approved money path stays Sheet Music Direct.
+  musicnotesBtn: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    padding: 12,
+    width: '100%',
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
+  musicnotesBtnText: {
+    color: '#e94560',
+    fontSize: 14,
+    fontWeight: '700',
     textAlign: 'center',
   },
   humBtn: {

@@ -241,10 +241,15 @@ export const HomeScreen: React.FC = () => {
           matched_at_s: 8.2,
           is_public_domain: false,
           sheet_music_available: false,
-          purchase_url: {
-            musicnotes: 'https://www.musicnotes.com/sheetmusic/mtd.asp?ppn=MN0217881',
-            sheetmusicplus: 'https://www.sheetmusicplus.com/title/clair-de-lune-digital-sheet-music/19377456',
-          },
+          // NO hand-written retailer link, even here. The affiliate URLs are
+          // built by the BACKEND (Sheet Music Direct primary, ID 67650;
+          // Musicnotes backup) and this mock used to hardcode Musicnotes plus
+          // the DROPPED Sheet Music Plus. A dev demo has no backend response to
+          // derive a link from, so it carries none — the honest "not linked yet"
+          // card — instead of inventing one. The real CTA is one live
+          // recognition away; src/services/purchaseCta.ts scans the source so a
+          // hardcoded retailer link can never come back into the app.
+          purchase_url: null,
         },
       ],
     };

@@ -28,6 +28,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
+import { useHardwareBack } from '../hooks/useHardwareBack';
 import { recognizeModernSong } from '../services/api';
 import { modernOutcome } from '../services/tier1';
 import { saveRecognition } from '../services/storage';
@@ -235,6 +236,18 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
       void startNewPass();
     }, RETRY_DELAY_MS);
   }, [recorder, starting, startNewPass]);
+
+  // Android hardware BACK (in-place flow — owner bug class 09-23). "Find any
+  // song" replaces its host tab's whole body, so its route never changes: a BACK
+  // press nothing consumes reaches React Navigation, which has no route to pop
+  // and finishes the activity (the app "exits"). The interstitial and the
+  // retailer shell are Modals and consume the press themselves
+  // (onRequestClose), so this only runs when the plain screen is the surface.
+  // Guarded by src/services/backExitContract.ts.
+  useHardwareBack(() => {
+    onClose();
+    return true;
+  });
 
   return (
     <View style={styles.container}>
