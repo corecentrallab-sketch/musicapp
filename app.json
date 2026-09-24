@@ -58,7 +58,8 @@
             "useLegacyPackaging": false
           }
         }
-      ]
+      ],
+      "./plugins/withAndroidBackCompat"
     ],
     "extra": {
       "eas": {

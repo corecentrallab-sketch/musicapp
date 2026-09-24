@@ -23,12 +23,22 @@
 import {
   BACK_HANDLER_SUBSCRIPTION_PATTERN,
   FULL_SCREEN_FLOWS,
+  MODAL_ONLY_SURFACES,
+  appPluginNames,
+  clearsOpenState,
   countHardwareBackHandlers,
   findBackExitViolations,
+  findBlankReturnViolations,
+  findBodyReplacingModalMounts,
   findFlowMountsMissingBackCallback,
+  findPredictiveBackOptOutViolations,
+  findSplitDismissalAuthority,
   findUnguardedFullScreenFlows,
+  findViewerMountsThatCannotClearOpenState,
   flowMountSites,
   formatBackExitViolations,
+  isReturnedElement,
+  pluginScanCandidates,
   registersHardwareBackHandler,
   type BackGuardViolation,
 } from '../src/services/backExitContract';
@@ -286,7 +296,7 @@ function appSources(): SourceFile[] {
     for (const name of fs.readdirSync(dir) as string[]) {
       const full = path.join(dir, name);
       if (fs.statSync(full).isDirectory()) walk(full);
-      else if (name.endsWith('.tsx') || name.endsWith('.ts')) {
+      else if (name.endsWith('.tsx') || name.endsWith('.ts') || name.endsWith('.js')) {
         files.push({
           path: path.relative(root, full),
           source: fs.readFileSync(full, 'utf8') as string,
@@ -295,6 +305,10 @@ function appSources(): SourceFile[] {
     }
   };
   walk(path.join(root, 'src'));
+  // The predictive-back opt-out lives OUTSIDE src/: app.json references the plugin
+  // module and the plugin sets the manifest attribute, so both must be scanned.
+  walk(path.join(root, 'plugins'));
+  files.push({ path: 'app.json', source: readAppFile('app.json') });
   files.push({ path: 'App.tsx', source: readAppFile('App.tsx') });
   return files;
 }
@@ -373,12 +387,325 @@ function liveScanTests(): void {
   );
 }
 
+// ─── 3. The blank-return contract (owner-reported blank white Home page) ─────
+
+const HOST = 'src/screens/HomeScreen.tsx';
+
+function blankReturnTests(): void {
+  console.log('\nthe blank-return contract (blank Home body, v22 → v24)');
+
+  assert(
+    MODAL_ONLY_SURFACES.some((s) => s.component === 'ScoreViewer'),
+    'the contract declares the sheet-music viewer as a modal-only surface',
+  );
+  assert(
+    MODAL_ONLY_SURFACES.some((s) => s.component === 'ShareCard'),
+    'the share card (the other modal-only surface v22 patched) is declared too',
+  );
+
+  // 1. A host that RETURNS the viewer is the empty-body path itself.
+  const bodyReplacing: SourceFile = {
+    path: HOST,
+    source:
+      'const H = () => {\n' +
+      '  if (showScoreViewer) {\n' +
+      '    return (\n' +
+      '      <ScoreViewer url={u} onClose={() => setShowScoreViewer(false)} />\n' +
+      '    );\n' +
+      '  }\n' +
+      '  return <View />;\n' +
+      '};',
+  };
+  const overlay: SourceFile = {
+    path: HOST,
+    source:
+      'const H = () => (\n' +
+      '  <View>\n' +
+      '    {showScoreViewer && (\n' +
+      '      <ScoreViewer url={u} onClose={() => setShowScoreViewer(false)} />\n' +
+      '    )}\n' +
+      '    <ScrollView />\n' +
+      '  </View>\n' +
+      ');',
+  };
+  const replaced = findBodyReplacingModalMounts([bodyReplacing]);
+  assertEq(replaced.length, 1, 'a host that returns the viewer is a violation');
+  assertEq(
+    replaced[0].kind,
+    'blank-return-body-replaced',
+    'the violation names the blank return',
+  );
+  assertEq(replaced[0].line, 4, 'the violation points at the returned viewer');
+  assert(
+    formatBackExitViolations(replaced)[0].includes('empty screen'),
+    'the report explains the blank page in words',
+  );
+  assertEq(
+    findBodyReplacingModalMounts([overlay]).length,
+    0,
+    'the same viewer mounted as an overlay inside the host body is clean',
+  );
+  assert(
+    isReturnedElement(
+      'const r = () => <ScoreViewer url={u} />;',
+      'const r = () => <ScoreViewer url={u} />;'.indexOf('<'),
+    ),
+    'an implicit arrow return of the viewer counts as a returned element',
+  );
+  assert(
+    !isReturnedElement(
+      'const b = cond ? <A /> : <ScoreViewer url={u} />;',
+      'const b = cond ? <A /> : <ScoreViewer url={u} />;'.indexOf('<ScoreViewer'),
+    ),
+    'a viewer inside a ternary is not a returned element',
+  );
+
+  // 2. The close it is handed must clear the state that mounts it.
+  const stuck: SourceFile = {
+    path: HOST,
+    source:
+      'const H = () => (\n' +
+      '  <View>\n' +
+      '    {showScoreViewer && (\n' +
+      '      <ScoreViewer url={u} onClose={() => {}} />\n' +
+      '    )}\n' +
+      '  </View>\n' +
+      ');',
+  };
+  const localClear: SourceFile = {
+    path: HOST,
+    source:
+      'const H = () => {\n' +
+      '  const closeViewer = useCallback(() => {\n' +
+      '    setShowScoreViewer(false);\n' +
+      '  }, []);\n' +
+      '  return (\n' +
+      '    <View>\n' +
+      '      {showScoreViewer && (\n' +
+      '        <ScoreViewer url={u} onClose={closeViewer} />\n' +
+      '      )}\n' +
+      '    </View>\n' +
+      '  );\n' +
+      '};',
+  };
+  assertEq(
+    findViewerMountsThatCannotClearOpenState([stuck]).length,
+    1,
+    'a close callback that cannot clear the flag is a violation',
+  );
+  assertEq(
+    findViewerMountsThatCannotClearOpenState([stuck])[0].kind,
+    'mount-cannot-clear-open-state',
+    'the violation names the unclearable state',
+  );
+  assertEq(
+    findViewerMountsThatCannotClearOpenState([overlay]).length,
+    0,
+    'an inline setSomething(false) close is clean',
+  );
+  assertEq(
+    findViewerMountsThatCannotClearOpenState([localClear]).length,
+    0,
+    'a local handler that clears the flag is resolved and accepted',
+  );
+  assert(
+    clearsOpenState('const x = 1;', 'onClose') === true,
+    'a prop handed down from a parent is accepted (out of this file)',
+  );
+
+  // 3. BACK and the on-screen close must be ONE authority.
+  const split: SourceFile = {
+    path: 'src/components/ScoreViewer.tsx',
+    source:
+      'const V = () => (\n' +
+      '  <Modal visible onRequestClose={handleDismiss}>\n' +
+      '    <TouchableOpacity onPress={onClose} />\n' +
+      '  </Modal>\n' +
+      ');',
+  };
+  const single: SourceFile = {
+    path: 'src/components/ScoreViewer.tsx',
+    source:
+      'const V = () => (\n' +
+      '  <Modal visible onRequestClose={onClose}>\n' +
+      '    <TouchableOpacity onPress={onClose} />\n' +
+      '  </Modal>\n' +
+      ');',
+  };
+  assertEq(
+    findSplitDismissalAuthority([split]).length,
+    1,
+    'a BACK handler that differs from the on-screen close is a violation',
+  );
+  assertEq(
+    findSplitDismissalAuthority([split])[0].kind,
+    'split-dismissal-authority',
+    'the violation names the split dismissal',
+  );
+  assertEq(
+    findSplitDismissalAuthority([single]).length,
+    0,
+    'one handler for BACK and the ✕ is clean',
+  );
+
+  // 4. The Android 16 opt-out that keeps BACK alive at all.
+  const appNoPlugin: SourceFile = {
+    path: 'app.json',
+    source: '{"expo":{"plugins":["expo-notifications"]}}',
+  };
+  const appWithPlugin: SourceFile = {
+    path: 'app.json',
+    source: '{"expo":{"plugins":["./plugins/withAndroidBackCompat"]}}',
+  };
+  const plugin: SourceFile = {
+    path: 'plugins/withAndroidBackCompat.js',
+    source:
+      "const A = 'android:enableOnBackInvokedCallback';\n" +
+      "module.exports = (c) => (c.$[A] = 'false', c);",
+  };
+  const pluginReverted: SourceFile = {
+    path: 'plugins/withAndroidBackCompat.js',
+    source:
+      "const A = 'android:enableOnBackInvokedCallback';\n" +
+      "module.exports = (c) => (c.$[A] = 'true', c);",
+  };
+  assertEq(
+    appPluginNames(appWithPlugin.source).length,
+    1,
+    'the plugin module is read out of app.json',
+  );
+  assertEq(
+    findPredictiveBackOptOutViolations([appNoPlugin]).length,
+    1,
+    'app.json with no opt-out plugin is a violation',
+  );
+  assert(
+    findPredictiveBackOptOutViolations([appNoPlugin])[0].message.includes(
+      'KEYCODE_BACK',
+    ),
+    'the failure explains that the platform stops dispatching the back key',
+  );
+  assertEq(
+    findPredictiveBackOptOutViolations([appWithPlugin, plugin]).length,
+    0,
+    'a plugin that sets the attribute to false satisfies the contract',
+  );
+  assertEq(
+    findPredictiveBackOptOutViolations([appWithPlugin, pluginReverted])[0].kind,
+    'predictive-back-opt-out-reverted',
+    'a plugin flipped back to true is reported as a reverted opt-out',
+  );
+  assertEq(
+    findPredictiveBackOptOutViolations([])[0].kind,
+    'predictive-back-opt-out-missing',
+    'a scan without app.json cannot pass the opt-out check vacuously',
+  );
+}
+
+function blankReturnLiveScan(files: SourceFile[]): void {
+  console.log('\nblank-return live scan (the real tree)');
+
+  for (const surface of MODAL_ONLY_SURFACES) {
+    const file = files.find((f) => f.path === surface.path);
+    assert(!!file, `${surface.path} (${surface.component}) is part of the scan`);
+  }
+
+  const blank = findBlankReturnViolations(files);
+  if (blank.length > 0) {
+    for (const line of formatBackExitViolations(blank)) console.error(`  ✗ ${line}`);
+  }
+  assertEq(
+    blank.length,
+    0,
+    'no host replaces its body with a modal-only surface, every close clears its flag, and every dismissal is one authority',
+  );
+
+  for (const path of [HOST, 'src/screens/PieceDetailScreen.tsx', 'src/components/RecognitionResultView.tsx']) {
+    const file = files.find((f) => f.path === path);
+    assert(
+      !!file && /showScoreViewer && /.test(file.source),
+      `${path} mounts the sheet viewer as a condition, not as its returned body`,
+    );
+  }
+
+  // SABOTAGE: put the body-replacement early return back into the REAL Home
+  // source and prove the guard fails on it.
+  const home = files.find((f) => f.path === HOST);
+  assert(!!home, 'HomeScreen.tsx is in the scan');
+  const anchor = '  if (showDetail && dailyChallenge) {';
+  assert(
+    !!home && home.source.includes(anchor),
+    'the sabotage anchor (Home\u2019s piece-page branch) is present',
+  );
+  const sabotaged = home
+    ? home.source.replace(
+        anchor,
+        '  if (showScoreViewer && dailyChallenge) {\n' +
+          '    return (\n' +
+          '      <ScoreViewer url={u} title={t} composer={c} onClose={() => setShowScoreViewer(false)} />\n' +
+          '    );\n' +
+          '  }\n' +
+          anchor,
+      )
+    : '';
+  const sabotageViolations = findBodyReplacingModalMounts([
+    { path: HOST, source: sabotaged },
+  ]);
+  assertEq(
+    sabotageViolations.length,
+    1,
+    'SABOTAGE: the real Home source with the body-replacement return back in FAILS the guard',
+  );
+
+  // SABOTAGE: an unclearable close on the real mount.
+  const sabotageStuck = home
+    ? home.source.replace('onClose={() => setShowScoreViewer(false)}', 'onClose={() => {}}')
+    : '';
+  assertEq(
+    findViewerMountsThatCannotClearOpenState([{ path: HOST, source: sabotageStuck }])
+      .length >= 1,
+    true,
+    'SABOTAGE: a Home mount whose close cannot clear the flag FAILS the guard',
+  );
+
+  console.log('\nthe predictive-back opt-out (Android 16 + targetSdk 36)');
+
+  const appConfig = files.find((f) => f.path === 'app.json');
+  const pluginName = appConfig
+    ? appPluginNames(appConfig.source).find((n) => n.includes('BackCompat'))
+    : undefined;
+  assert(!!pluginName, 'app.json references the Android back-compat plugin');
+  const pluginFile = pluginName
+    ? pluginScanCandidates(pluginName)
+        .map((candidate) => files.find((f) => f.path === candidate))
+        .find((f) => f !== undefined)
+    : undefined;
+  assert(!!pluginFile, 'the referenced plugin module is in the scan');
+  assert(
+    !!pluginFile &&
+      /enableOnBackInvokedCallback/.test(pluginFile.source) &&
+      /['"]false['"]/.test(pluginFile.source),
+    'the plugin sets the manifest attribute to false (RN 0.76 needs the legacy back dispatch)',
+  );
+  assertEq(
+    findPredictiveBackOptOutViolations(files).length,
+    0,
+    'the live tree carries the predictive-back opt-out',
+  );
+}
+
+function main2(files: SourceFile[]): void {
+  blankReturnTests();
+  blankReturnLiveScan(files);
+}
+
 // ─── run ────────────────────────────────────────────────────────
 
 function main(): void {
   console.log('\n=== hardware BACK exits in-place full-screen flows ===');
   detectorTests();
   liveScanTests();
+  main2(appSources());
   console.log(`\n${passes} passed, ${failures} failed\n`);
   process.exit(failures === 0 ? 0 : 1);
 }
