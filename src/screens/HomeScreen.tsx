@@ -1642,30 +1642,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 2,
   },
-  // Full-width single button under the two tier-1 modes: search by name.
-  // width:'100%' (not a flex child of the row) so the text keeps its line.
-  findPieceBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    backgroundColor: '#0f3460',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: '#1a1a2e',
-  },
-  findPieceEmoji: {
-    fontSize: 18,
-    marginRight: 10,
-  },
-  findPieceText: {
-    flex: 1,
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
 
   // Recording indicator
   recordingIndicator: {
