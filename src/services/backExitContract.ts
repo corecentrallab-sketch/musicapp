@@ -102,6 +102,12 @@ export const FULL_SCREEN_FLOWS: readonly FullScreenFlow[] = [
     why: 'The modern-song front door — in place, with its own recorder, and the host of the retailer interstitial.',
   },
   {
+    path: 'src/screens/AchievementsScreen.tsx',
+    name: 'medals & achievements',
+    guard: 'hook',
+    why: 'Home\u2019s quiet medals entry (owner-approved 08-25) renders this in place, and it hosts the achievement share card — BACK must leave the screen, and while the card is up it must close the card first.',
+  },
+  {
     path: 'src/components/ScoreViewer.tsx',
     name: 'sheet-music view',
     guard: 'modal',
@@ -126,6 +132,7 @@ export const FLOW_MOUNTS: readonly FlowMount[] = [
   { component: 'FindPieceScreen', backProp: 'onClose' },
   { component: 'PracticeWeekScreen', backProp: 'onClose' },
   { component: 'ModernSearchScreen', backProp: 'onClose' },
+  { component: 'AchievementsScreen', backProp: 'onClose' },
 ];
 
 // ─── Detectors ──────────────────────────────────────────────────

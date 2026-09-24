@@ -331,13 +331,14 @@ function liveScanTests(): void {
     assert(!!file, `${flow.path} (${flow.name}) is part of the scan`);
   }
 
-  // The five in-place flows must each own the BACK press.
+  // The in-place flows must each own the BACK press.
   for (const path of [
     'src/screens/PieceDetailScreen.tsx',
     'src/screens/HumSearchScreen.tsx',
     'src/screens/FindPieceScreen.tsx',
     'src/screens/PracticeWeekScreen.tsx',
     'src/screens/ModernSearchScreen.tsx',
+    'src/screens/AchievementsScreen.tsx',
   ]) {
     const file = files.find((f) => f.path === path);
     assert(

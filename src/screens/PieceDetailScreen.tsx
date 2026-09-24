@@ -28,6 +28,7 @@ import {
   getTodayPracticeMinutes,
 } from '../services/storage';
 import { getDisplayStreakLocal } from '../services/reinforcementStore';
+import { recordPieceOpened } from '../services/medalStore';
 import { refreshStreakNudge } from '../services/notifications';
 import {
   resolveShareCardPreviewData,
@@ -77,6 +78,14 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
     };
   }, [showScoreViewer]);
 
+  // ── The medals layer's opened-pieces ledger (owner-approved 08-25) ──
+  // The 10-piece repertoire medal counts DISTINCT pieces the user actually
+  // opened. Every route into a piece (Home, History, Find-a-Piece, the hum flow)
+  // renders THIS screen, so the ledger is written once, here — never from a
+  // screen that merely lists pieces.
+  useEffect(() => {
+    void recordPieceOpened(piece.id);
+  }, [piece.id]);
   /**
    * When ScoreViewer closes, check if the user practiced long enough
    * to warrant a share prompt. Only shows once per session.

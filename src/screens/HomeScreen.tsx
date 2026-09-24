@@ -19,6 +19,7 @@ import {
   Animated,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { BadgeToast } from '../components/BadgeToast';
 import {
@@ -32,6 +33,9 @@ import { HumSearchScreen } from './HumSearchScreen';
 import { ModernSearchScreen } from './ModernSearchScreen';
 import { FindPieceScreen } from './FindPieceScreen';
 import { PracticeWeekScreen } from './PracticeWeekScreen';
+// The medals surface (owner-approved 08-25 retention build). Rendered IN PLACE
+// like the flows above; it registers useHardwareBack itself.
+import { AchievementsScreen } from './AchievementsScreen';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import type { CaptureDiagnostics } from '../services/captureTelemetry';
 import {
@@ -103,6 +107,28 @@ import {
   weekProgressCopy,
 } from '../services/homeCards';
 import { checkAndAwardBadges } from '../services/achievements';
+// ── The MEDALS layer (owner-approved 08-25): earned-once medals over the data
+// the app already has, with the achievement share card and a quiet entry card.
+// Every rule/threshold/copy string lives in src/services/medals.ts, and
+// scripts/medals.test.ts asserts this screen's wiring from the source text.
+import { ShareCard } from '../components/ShareCard';
+import {
+  ACHIEVEMENTS_ENTRY_HINT,
+  ACHIEVEMENTS_ENTRY_LABEL,
+  MEDAL_TOAST_SHARE_LABEL,
+  MEDAL_UNLOCK_LABEL,
+  achievementsSummaryLine,
+  medalCardSubtitle,
+  medalCardTitle,
+  medalContext,
+  medalHeadline,
+  medalMetricValue,
+  medalProgressLabel,
+  medalShareText,
+  type Medal,
+  type MedalContext,
+} from '../services/medals';
+import { checkAndAwardMedals } from '../services/medalStore';
 // The category a recognized match is saved with. The card used to store the
 // catalog NUMBER in the genre slot (and a genre-less match fell through to a
 // hardcoded one); the genre module owns that decision.
@@ -168,6 +194,21 @@ export const HomeScreen: React.FC = () => {
   // app has no practice-run tab, so Home renders it in place like the flows above.
   const [showPracticeWeek, setShowPracticeWeek] = useState(false);
 
+  // ── Medals (owner-approved 08-25 retention build) ──
+  // The quiet entry card's line ("3 of 11 earned · next: 7-Day Streak"), the
+  // freshly-earned medal shown as a NON-BLOCKING toast, and the achievement card
+  // the toast's Share action opens. Nothing here can interrupt play: the toast is
+  // a banner (no modal), and the card only ever opens because the user tapped.
+  const [showAchievements, setShowAchievements] = useState(false);
+  const [medalToast, setMedalToast] = useState<Medal | null>(null);
+  const [medalSummary, setMedalSummary] = useState('');
+  const [medalCard, setMedalCard] = useState<{
+    medal: Medal;
+    context: MedalContext;
+    progressLabel: string;
+  } | null>(null);
+  const [showMedalCard, setShowMedalCard] = useState(false);
+
   // ── The ONE-BUTTON FRONT DOOR (owner-approved 09-24) ──
   // One tap runs the WHOLE hybrid pipeline (our library landmark match, then the
   // AudD modern pass) with no mode choice; when the ambient pass hears nothing we
@@ -204,6 +245,39 @@ export const HomeScreen: React.FC = () => {
     loadData();
   }, []);
 
+  /**
+   * The one medal check Home makes. `checkAndAwardMedals` is idempotent — a medal
+   * is awarded exactly once and never removed — so this can run on every load,
+   * pull-to-refresh and recognition without ever re-announcing anything. A fresh
+   * unlock becomes a NON-BLOCKING toast plus the achievement card its Share
+   * action opens; play is never interrupted by a dialog.
+   */
+  const refreshMedals = useCallback(async () => {
+    const result = await checkAndAwardMedals();
+    setMedalSummary(achievementsSummaryLine(result.stats, result.records));
+
+    const unlock = result.unlocks[0];
+    const medal = result.medals[0];
+    if (!unlock || !medal) return;
+
+    setMedalToast(medal);
+    setMedalCard({
+      medal,
+      context: medalContext(unlock.contextTitle, unlock.contextSubtitle),
+      progressLabel: medalProgressLabel(medal, medalMetricValue(medal, result.stats)),
+    });
+  }, []);
+
+  // Medals settle whenever Home comes back into view (returning from a practice
+  // run, the sheet reader or another tab) — the same idempotent check as loadData,
+  // so a medal earned during play is announced as soon as play is over, never
+  // during it. Cheap: a handful of AsyncStorage reads.
+  useFocusEffect(
+    useCallback(() => {
+      void refreshMedals();
+    }, [refreshMedals]),
+  );
+
   const loadData = async () => {
     const [s, wg, ob, dc, minutes] = await Promise.all([
       getDisplayStreakLocal(),
@@ -219,6 +293,9 @@ export const HomeScreen: React.FC = () => {
     setPracticeMinutes(minutes);
     setFreeRecognitions(await getRecognitionCount());
     setIsPro((await getProState()).isPro);
+    // Medals ride the same load: settle anything already earned (idempotent) and
+    // refresh the quiet entry card's line.
+    await refreshMedals();
   };
 
   const onRefresh = useCallback(async () => {
@@ -726,6 +803,23 @@ export const HomeScreen: React.FC = () => {
     setShowFindPiece(true);
   }, []);
 
+  // ── Medals entry + achievement card (owner-approved 08-25) ──
+  /** Open the medals screen (quiet entry card, below the front door). */
+  const handleOpenAchievements = useCallback(() => {
+    setShowAchievements(true);
+    // Settle anything earned since the last check so the screen is current.
+    void refreshMedals();
+  }, [refreshMedals]);
+  /** Open the achievement card for the medal that just unlocked. */
+  const openMedalShare = useCallback(() => {
+    if (!medalCard) return;
+    setShowMedalCard(true);
+  }, [medalCard]);
+  /** One dismissal authority for the card's BACK press and its close button. */
+  const closeMedalShare = useCallback(() => {
+    setShowMedalCard(false);
+  }, []);
+
   // ── "⏱️ Practice today" tap (owner-reported dead card, v19 bug) ──
   // The card is a way INTO practice, so it opens today's featured piece: the
   // in-app sheet reader when the catalog has a curated score for it, otherwise
@@ -934,6 +1028,13 @@ export const HomeScreen: React.FC = () => {
     );
   }
 
+  // 🏅 Medals — the achievements surface, rendered in place like the flows above.
+  // It owns its own Android BACK handling (useHardwareBack) and reads the medal
+  // rules from src/services/medals.ts, so Home only supplies the exit.
+  if (showAchievements) {
+    return <AchievementsScreen onClose={() => setShowAchievements(false)} />;
+  }
+
   // NOTE (owner-reported blank Home page, v22 → v24): the sheet-music viewer used
   // to be a body-replacement early return HERE (the whole Home body was replaced
   // by the viewer). That is the empty-body path: the viewer is a Modal whose
@@ -956,11 +1057,19 @@ export const HomeScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {/* Badge toast overlay */}
+      {/* Achievement/medal toast — ONE banner slot: a fresh medal wins it, and
+          its Share action opens the achievement card. It is a banner, never a
+          modal: an unlock cannot interrupt play. */}
       <BadgeToast
-        badge={badgeToast ?? { id: '', name: '', description: '', emoji: '' }}
-        visible={badgeToast !== null}
-        onDismiss={() => setBadgeToast(null)}
+        badge={medalToast ?? badgeToast ?? { id: '', name: '', description: '', emoji: '' }}
+        visible={medalToast !== null || badgeToast !== null}
+        label={medalToast ? MEDAL_UNLOCK_LABEL : undefined}
+        onAction={medalToast ? openMedalShare : undefined}
+        actionLabel={MEDAL_TOAST_SHARE_LABEL}
+        onDismiss={() => {
+          setMedalToast(null);
+          setBadgeToast(null);
+        }}
       />
 
       {/* Modern-song match from the one-tap pipeline → the EXISTING interstitial.
@@ -1008,6 +1117,34 @@ export const HomeScreen: React.FC = () => {
           onClose={() => setShowScoreViewer(false)}
         />
       )}
+
+      {/* The ACHIEVEMENT CARD for a freshly earned medal — the EXISTING ShareCard
+          component with its medal block (never a second card). It opens only from
+          the toast's Share action, and it is an OVERLAY inside this
+          always-mounted body: one dismissal authority (closeMedalShare) serves
+          both the card's close button and the Android BACK press, so no state of
+          the card can leave Home blank. */}
+      <ShareCard
+        visible={showMedalCard && medalCard !== null}
+        medal={
+          medalCard
+            ? {
+                emoji: medalCard.medal.emoji,
+                name: medalCard.medal.name,
+                progressLabel: medalCard.progressLabel,
+              }
+            : undefined
+        }
+        title={medalCard ? medalCardTitle(medalCard.medal, medalCard.context) : ''}
+        composer={medalCard ? medalCardSubtitle(medalCard.medal, medalCard.context) : ''}
+        headline={medalCard ? medalHeadline(medalCard.medal) : undefined}
+        shareMessage={
+          medalCard ? medalShareText(medalCard.medal, medalCard.context) : undefined
+        }
+        streak={streak.currentDays}
+        practiceMinutes={practiceMinutes}
+        onClose={closeMedalShare}
+      />
 
       <ScrollView
         style={styles.scroll}
@@ -1162,6 +1299,28 @@ export const HomeScreen: React.FC = () => {
             showFindPiece
           }
         />
+
+        {/* 🏅 Achievements — the QUIET medals entry (owner-approved 08-25). It
+            sits BELOW the one-button front door and below the streak card so it
+            is never a competing CTA: a small row, a line of progress, and the
+            medals screen behind it. The line comes from the medal rules
+            (achievementsSummaryLine), never from a number typed here. */}
+        <TouchableOpacity
+          style={styles.achievementsCard}
+          onPress={handleOpenAchievements}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={ACHIEVEMENTS_ENTRY_LABEL}
+        >
+          <Text style={styles.achievementsEmoji}>🏅</Text>
+          <View style={styles.achievementsInfo}>
+            <Text style={styles.achievementsTitle}>{ACHIEVEMENTS_ENTRY_LABEL}</Text>
+            <Text style={styles.achievementsHint}>
+              {medalSummary || ACHIEVEMENTS_ENTRY_HINT}
+            </Text>
+          </View>
+          <Text style={styles.achievementsChevron}>›</Text>
+        </TouchableOpacity>
 
         {/* ⏱️ Practice today — tappable (v19 bug: this card looked tappable and
             did nothing). Opens today's featured piece: the sheet reader when the
@@ -1358,6 +1517,43 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     borderWidth: 1,
     borderColor: '#0f3460',
+  },
+  // 🏅 The quiet medals entry — a small row, deliberately lighter than the
+  // streak card so it never competes with the one-button front door.
+  achievementsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#16213e',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 14,
+    minHeight: 56,
+  },
+  achievementsEmoji: {
+    fontSize: 22,
+    marginRight: 12,
+  },
+  achievementsInfo: {
+    flex: 1,
+  },
+  achievementsTitle: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  achievementsHint: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  achievementsChevron: {
+    color: '#4ecdc4',
+    fontSize: 22,
+    fontWeight: '700',
+    marginLeft: 8,
   },
   streakRow: {
     flexDirection: 'row',
