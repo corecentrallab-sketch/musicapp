@@ -22,6 +22,12 @@
  * full-screen Modal that BACK can close" is enforced on the render tree, where
  * the detail that matters is the modal wrapper — not on the URL or the button.
  *
+ * One deliberate exemption: the app's own INLINE app-rendered WebViews — markup
+ * this app generates itself and embeds inside one of its own layouts — are not
+ * browser surfaces at all. See `INLINE_APP_RENDERED_WEBVIEWS` below, which is the
+ * single source of truth: every scanner that enforces this rule consults that
+ * list, so the rule and its exemptions cannot drift apart.
+ *
  * Pure by design — no react / react-native / fs imports — so the tier1 gate can
  * compile and run it with node_modules absent (see tsconfig.tier1.json). The disk
  * walk lives in the test script; this file only reasons about source text.
@@ -193,10 +199,40 @@ export function propSource(tagSource: string, name: string): string | null {
   return plain ? plain[1] : null;
 }
 
-/** Every returned tree in `files` that renders a `<WebView>`. */
+/**
+ * The app's own INLINE app-rendered WebViews, exempt by source path.
+ *
+ * `AbcScoreView` is the notation editor's sheet-music preview: it is handed an
+ * abcjs HTML document this app generates itself (`source={{ html }}`) and renders
+ * it embedded INSIDE the editor's own layout. Nobody navigates anywhere in it and
+ * there is no remote page to return from, so the two things this contract exists
+ * to protect — "the screen behind a browser must not reappear" and "BACK must
+ * return the user to where they were" — do not apply. A Modal wrapper would only
+ * hide the preview behind a BACK press in the middle of editing.
+ *
+ * Keep this list to app-rendered `source={{ html }}` previews. A page the user
+ * NAVIGATES to (a retailer, an external link, anything the backend supplies a URL
+ * for) is a browser surface and belongs in a BACK-closable Modal — always.
+ */
+export const INLINE_APP_RENDERED_WEBVIEWS: readonly string[] = [
+  'src/components/AbcScoreView.tsx',
+];
+
+/** True when `path` is one of the app's own inline (non-navigable) WebView renderers. */
+export function isInlineAppRenderedWebview(path: string): boolean {
+  return INLINE_APP_RENDERED_WEBVIEWS.includes(path);
+}
+
+/**
+ * Every returned tree in `files` that renders a `<WebView>`, minus the app's own
+ * inline previews (`INLINE_APP_RENDERED_WEBVIEWS`). Excluded here so that every
+ * caller — the violation finder below and the suites' own per-surface scanners —
+ * inherits the one exemption list instead of re-deciding what a browser is.
+ */
 export function browserSurfaces(files: readonly SourceFile[]): BrowserSurface[] {
   const surfaces: BrowserSurface[] = [];
   for (const file of files) {
+    if (isInlineAppRenderedWebview(file.path)) continue;
     for (const block of returnBlocks(file.source)) {
       if (!block.text.includes('<WebView')) continue;
       const root = jsxRootTag(block.text);

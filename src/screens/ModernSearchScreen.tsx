@@ -32,6 +32,8 @@ import { useHardwareBack } from '../hooks/useHardwareBack';
 import { recognizeModernSong } from '../services/api';
 import { modernOutcome } from '../services/tier1';
 import { saveRecognition } from '../services/storage';
+// The category a modern song is saved with — never a fallback genre.
+import { MODERN_SONG_GENRE } from '../services/resultGenre';
 import { ModernSongInterstitial } from '../components/ModernSongInterstitial';
 import {
   IDLE_SURFACE,
@@ -179,6 +181,9 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
             title: m.song,
             composer: m.artist,
             savedAt: new Date().toISOString(),
+            // Save the category WITH the record: a modern song that reaches
+            // History with no genre would later be filled in by a fallback.
+            genre: MODERN_SONG_GENRE,
           });
         }
         setInterstitial({

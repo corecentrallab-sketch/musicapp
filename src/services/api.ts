@@ -21,6 +21,9 @@ import {
   type CatalogSearchResponse,
 } from "./catalogSearch";
 import { getDeviceId } from "./device";
+// A catalog piece with no genre in the payload is "Uncategorised" — the honest
+// answer — resolved by the module that owns these strings.
+import { UNCATEGORISED_GENRE } from "./resultGenre";
 
 /** Production NoteSnap site URL (stable — the Vercel production alias; every deploy lands here). Set EXPO_PUBLIC_API_URL to override for local dev. */
 let BASE_URL =
@@ -287,7 +290,7 @@ export async function fetchDailyChallenge(): Promise<DailyChallengePiece | null>
       id: String(d.piece_id),
       title: String(d.title),
       composer: String(d.composer ?? ""),
-      genre: d.genre ? String(d.genre) : "Classical",
+      genre: d.genre ? String(d.genre) : UNCATEGORISED_GENRE,
       difficulty: d.difficulty_label
         ? String(d.difficulty_label)
         : "Intermediate",

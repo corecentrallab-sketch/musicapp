@@ -35,6 +35,12 @@ import { ScoreViewer } from './ScoreViewer';
 // key here is what the app used to do (`.musicnotes`) — the defect
 // src/services/purchaseCta.ts guards with a source scan.
 import { recognitionPurchaseUrl } from '../services/purchaseCta';
+// The category a result card is allowed to claim. A match without a catalog
+// number (every modern song) used to fall through to the literal "Classical" —
+// and the catalog NUMBER was printed in the genre slot on a library piece.
+// resultGenreLabel() owns that decision: modern → "Modern song", library →
+// the catalog's genre, else the honest "Public domain".
+import { resultGenreLabel } from '../services/resultGenre';
 
 export type RecognitionPhase =
   | { type: 'loading' }
@@ -62,7 +68,7 @@ function matchToDailyChallenge(match: RecognitionMatch) {
     id: match.piece_id,
     title: match.title,
     composer: match.composer,
-    genre: match.catalog ?? 'Classical',
+    genre: resultGenreLabel(match),
     difficulty: 'Intermediate' as const,
     description: `Recognized with ${Math.round(match.confidence * 100)}% confidence`,
     sheetMusicUrl: match.sheet_music_url ?? undefined,
@@ -313,7 +319,11 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
               </Text>
             </View>
 
-            {/* Catalog info */}
+            {/* Category + catalog info. The category is resolved by the genre
+                module (a modern song reads "Modern song", a library piece the
+                catalog's genre or the honest "Public domain"); the catalog
+                number is shown as what it is — a number, never the genre. */}
+            <Text style={styles.catalogText}>{resultGenreLabel(topMatch)}</Text>
             {topMatch.catalog && (
               <Text style={styles.catalogText}>{topMatch.catalog}</Text>
             )}
