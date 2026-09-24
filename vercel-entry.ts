@@ -19,7 +19,7 @@ import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
 import { handleStripeWebhook } from "./src/services/webhook-handler";
 import { handleEntitlement } from "./src/services/entitlement";
 import { handleSheetServe, isSheetServeMethod } from "./src/services/sheet-handler";
-import { handleAudioServe } from "./src/services/audio-handler";
+import { handleAudioServe, isAudioServeMethod } from "./src/services/audio-handler";
 import { handleDailyChallenge } from "./src/services/daily-challenge-handler";
 import {
   handleCatalogList,
@@ -259,7 +259,9 @@ export default async function vercelHandler(
       res.end();
       return;
     }
-    if (pathname.startsWith("/api/audio/") && req.method === "GET") {
+    // HEAD too — see the scores guard above; GET-only made every practice-audio
+    // URL answer 404 to a HEAD probe.
+    if (pathname.startsWith("/api/audio/") && isAudioServeMethod(req.method)) {
       const webReq = toWebRequest(req);
       const webRes = await handleAudioServe(webReq);
       res.statusCode = webRes.status;

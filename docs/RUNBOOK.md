@@ -50,6 +50,33 @@ dashboard copy live. The Vercel project env vars are the **canonical runtime sou
 | GitHub token | git push / PR | GitHub → Developer settings → tokens | ✅ Save in password manager |
 | Porkbun DNS access | `notesnap.app` | Porkbun dashboard | ✅ Verify login works |
 
+### Debug/QA env vars that must NEVER be set in production
+
+These two exist only to make internal QA possible; with them set, a tester could
+bypass the 5-recognitions/month free cap and every recognition would write a debug
+audio capture into R2. Both were **armed in production** until the pre-launch pass on
+**2026-09-24** and are now **deleted from the Vercel project** (production target
+included) — verified by listing the project's env vars: the remaining set is
+`AUDD_API_TOKEN`, `MODERN_RECOGNITION_PROVIDER`, `FREE_RECOGNITIONS_PER_MONTH`,
+`STRIPE_*`, `R2_*`, `DATABASE_URL`, and neither QA var appears.
+
+| Env var | Effect when set | Required state |
+|---|---|---|
+| `RECOGNITION_QA_BYPASS=1` | lets the `qa-internal-test-device-0000` identity skip the free monthly recognition cap | **absent** in production (code default is OFF: `src/services/recognize-handler.ts`) |
+| `PERSIST_RECOGNIZE_AUDIO=true` | persists every recognized audio capture to `notesnapscores` `debug/recognize-*.m4a` | **absent** in production (default OFF) |
+
+Re-check before any launch deploy (`prj_j9hp8mOwIokZ5fFH8RqUgAgTTWOn`, team
+`team_fecHrI8lrW60USwEfGPVJuzp`):
+
+```bash
+curl -sS -H "Authorization: Bearer $VERCEL_TOKEN" \
+  "https://api.vercel.com/v9/projects/prj_j9hp8mOwIokZ5fFH8RqUgAgTTWOn/env?teamId=team_fecHrI8lrW60USwEfGPVJuzp" \
+  | jq -r '.envs[] | "\(.key) target=\(.target|join(","))"'
+```
+
+Deleting a Vercel env var only affects **new** deployments, so the removal must be
+followed by a `bun run go-live` (which the same pass did).
+
 ---
 
 ## 3. Owner-runnable redeploy (site + API)

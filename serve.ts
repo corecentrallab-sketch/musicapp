@@ -17,7 +17,7 @@ import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
 import { handleStripeWebhook } from "./src/services/webhook-handler";
 import { handleEntitlement } from "./src/services/entitlement";
 import { handleSheetServe, isSheetServeMethod } from "./src/services/sheet-handler";
-import { handleAudioServe } from "./src/services/audio-handler";
+import { handleAudioServe, isAudioServeMethod } from "./src/services/audio-handler";
 import { handleDailyChallenge } from "./src/services/daily-challenge-handler";
 import {
   handleCatalogList,
@@ -126,7 +126,9 @@ for (let attempt = 1; ; attempt++) {
         if (pathname.startsWith("/api/sheets/") && isSheetServeMethod(req.method)) {
           return handleSheetServe(req);
         }
-        if (pathname.startsWith("/api/audio/") && req.method === "GET") {
+        // HEAD too: the same dead-end the scores route had (GET-only here made
+        // every practice-audio URL answer 404, text/html, to a HEAD probe).
+        if (pathname.startsWith("/api/audio/") && isAudioServeMethod(req.method)) {
           return handleAudioServe(req);
         }
         if (pathname === "/api/daily-challenge" && req.method === "GET") {
