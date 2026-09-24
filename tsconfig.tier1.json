@@ -37,6 +37,8 @@
     "src/services/humBridge.ts",
     "src/services/backExitContract.ts",
     "src/services/purchaseCta.ts",
+    "src/services/resultGenre.ts",
+    "src/services/abcTranspose.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
     "scripts/practiceCoach.test.ts",
@@ -54,6 +56,9 @@
     "scripts/modernRetailerInterstitial.test.ts",
     "scripts/humModernBridge.test.ts",
     "scripts/backExitContract.test.ts",
-    "scripts/purchaseCtaContract.test.ts"
+    "scripts/purchaseCtaContract.test.ts",
+    "scripts/resultGenreContract.test.ts",
+    "scripts/abcTranspose.test.ts",
+    "scripts/notationEditorContract.test.ts"
   ]
 }

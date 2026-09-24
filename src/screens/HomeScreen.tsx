@@ -67,6 +67,10 @@ import {
   weekProgressCopy,
 } from '../services/homeCards';
 import { checkAndAwardBadges } from '../services/achievements';
+// The category a recognized match is saved with. The card used to store the
+// catalog NUMBER in the genre slot (and a genre-less match fell through to a
+// hardcoded one); the genre module owns that decision.
+import { resultGenreLabel } from '../services/resultGenre';
 import { getTodayChallenge } from '../services/dailyChallenge';
 import type {
   WeeklyGoal,
@@ -263,7 +267,7 @@ export const HomeScreen: React.FC = () => {
       title: topMatch.title,
       composer: topMatch.composer,
       savedAt: new Date().toISOString(),
-      genre: topMatch.catalog ?? undefined,
+      genre: resultGenreLabel(topMatch),
     });
 
     // Recognition still records the legacy activity counter, but the streak the
@@ -359,7 +363,7 @@ export const HomeScreen: React.FC = () => {
           title: topMatch.title,
           composer: topMatch.composer,
           savedAt: new Date().toISOString(),
-          genre: topMatch.catalog ?? undefined,
+          genre: resultGenreLabel(topMatch),
         });
 
         // Record the practice day (legacy counter) and re-read the engine streak

@@ -28,6 +28,10 @@ import {
   interstitialSurface,
   type InterstitialViewState,
 } from '../services/modernInterstitialSurface';
+// The category a recognized modern song may claim. It is never a catalog number
+// and never the word the app used to print for a song it had not identified as
+// a library piece — the label comes from the module that owns these strings.
+import { MODERN_SONG_GENRE } from '../services/resultGenre';
 
 export interface ModernInterstitialState {
   /** true while the /api/recognize-modern request is in flight. */
@@ -195,6 +199,8 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
 
               <Text style={styles.songTitle}>{match.song}</Text>
               <Text style={styles.artist}>{match.artist}</Text>
+
+              <Text style={styles.meta}>{MODERN_SONG_GENRE}</Text>
 
               {match.composer ? (
                 <Text style={styles.meta}>

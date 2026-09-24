@@ -205,6 +205,14 @@ export type RootStackParamList = {
   ScanScore: undefined;
   CloudSync: undefined;
   Metronome: undefined;
+  /**
+   * Notation editor (transpose v1). Reachable from the Editor tab card and from
+   * an `abc` row in the Library; both params are optional so either entry point
+   * can pass only what it has:
+   * - `sourcePieceId` — a bundled public-domain piece (src/data/abcScores.ts).
+   * - `itemId` — a saved ABC library item, loaded as the piece to transpose.
+   */
+  NotationEditor: { sourcePieceId?: string; itemId?: string } | undefined;
 };
 
 // ─── Library (Phase 4a: import + local sheet music library) ──
@@ -215,7 +223,13 @@ export type LibraryKind =
   | 'musicxml'
   | 'midi'
   | 'guitarpro'
-  | 'scanned';
+  | 'scanned'
+  /**
+   * ABC notation text (`.abc`) — the notation editor's save format. The score
+   * text lives in the item's `fileUri` (like every other single-file kind), so
+   * abc copies rename/share/sync/delete through the same paths as the rest.
+   */
+  | 'abc';
 
 /** A persistent entry in the local sheet music library. */
 export interface LibraryItem {
@@ -223,7 +237,7 @@ export interface LibraryItem {
   kind: LibraryKind;
   /** Display title (derived from filename, or user-supplied). */
   title: string;
-  /** Single file (pdf/musicxml/midi/guitarpro), stored in app documents. */
+  /** Single file (pdf/musicxml/midi/guitarpro/abc), stored in app documents. */
   fileUri?: string;
   /** Ordered page images for a scanned score. */
   pageUris?: string[];

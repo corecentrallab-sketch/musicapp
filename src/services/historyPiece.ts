@@ -26,9 +26,15 @@
  * keeps a saved piece's sheet identical to a freshly recognized one.
  */
 import type { DailyChallengePiece, SavedPiece } from '../types';
+import { UNCATEGORISED_GENRE } from './resultGenre';
 
-/** Genre shown when the saved record carries no genre tag. */
-export const HISTORY_DEFAULT_GENRE = 'Classical';
+/**
+ * Genre shown when the saved record carries no genre tag. A legacy History row
+ * with no genre is "Uncategorised" — we do not know it, so we do not claim it
+ * (and specifically do not claim it is classical). Resolved by the module that
+ * owns these strings, so this default can never drift from the result card's.
+ */
+export const HISTORY_DEFAULT_GENRE = UNCATEGORISED_GENRE;
 
 /**
  * Difficulty label shown when the saved record carries no catalog label.

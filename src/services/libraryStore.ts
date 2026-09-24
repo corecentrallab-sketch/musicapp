@@ -41,6 +41,7 @@ const EXTENSION_KINDS: Record<string, LibraryKind> = {
   gp5: 'guitarpro',
   gpx: 'guitarpro',
   gp: 'guitarpro',
+  abc: 'abc',
 };
 
 /** Recognised file extensions, shown in the document picker hint. */
@@ -80,6 +81,8 @@ export function kindLabel(kind: LibraryKind): string {
       return 'Guitar Pro';
     case 'scanned':
       return 'Scanned score';
+    case 'abc':
+      return 'ABC score';
   }
 }
 
@@ -267,6 +270,77 @@ export async function importCloudFileAsset(asset: {
   items.unshift(item);
   await persistLibrary(items);
   return item;
+}
+
+// ─── ABC scores (notation editor: transpose + save) ───────────
+
+/** File name an ABC score is stored under inside its item folder. */
+const ABC_FILENAME = 'score.abc';
+
+/**
+ * Saves an ABC score to the library as a distinct, openable item.
+ *
+ * Used by the notation editor for every "Save transposed copy" — the caller
+ * passes the already-transposed ABC text. Storage follows the same pattern as
+ * every other kind: the registry entry lives in AsyncStorage and the score text
+ * is a real file in the item's folder (`library/<id>/score.abc`), pointed at by
+ * `fileUri`. That is what makes an abc copy rename, share, sync to
+ * Dropbox/Drive and delete through the existing paths with no special-casing.
+ *
+ * Persisted registry shape:
+ *   { id, kind: 'abc', title, fileUri, pageCount: 1, sizeBytes, createdAt }
+ * plus the ABC text itself in the file at `fileUri`.
+ */
+export async function addAbcToLibrary(input: {
+  title: string;
+  abc: string;
+}): Promise<LibraryItem> {
+  const title = input.title.trim();
+  const abc = input.abc;
+  if (!title) {
+    throw new Error('A title is required to save this score.');
+  }
+  if (!abc.trim()) {
+    throw new Error('There is no score to save.');
+  }
+
+  const id = makeId();
+  const dir = `${LIBRARY_ROOT}${id}/`;
+  await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+
+  const fileUri = `${dir}${ABC_FILENAME}`;
+  await FileSystem.writeAsStringAsync(fileUri, abc);
+
+  const info = await FileSystem.getInfoAsync(fileUri);
+  const item: LibraryItem = {
+    id,
+    kind: 'abc',
+    title,
+    fileUri,
+    pageCount: 1,
+    sizeBytes: info.exists ? info.size ?? 0 : 0,
+    createdAt: new Date().toISOString(),
+  };
+
+  const items = await getLibraryItems();
+  items.unshift(item);
+  await persistLibrary(items);
+  return item;
+}
+
+/**
+ * The ABC text of a saved score, read back from the item's file. Throws a
+ * user-readable message when the item is not an abc item or its text is gone.
+ */
+export async function readAbcText(item: LibraryItem): Promise<string> {
+  if (item.kind !== 'abc' || !item.fileUri) {
+    throw new Error('This library item does not hold an ABC score.');
+  }
+  const abc = await FileSystem.readAsStringAsync(item.fileUri);
+  if (!abc.trim()) {
+    throw new Error('The saved score is empty.');
+  }
+  return abc;
 }
 
 // ─── Mutations ────────────────────────────────────────────────

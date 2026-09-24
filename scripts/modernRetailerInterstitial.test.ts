@@ -20,6 +20,11 @@
  *      a BACK-closable <Modal>, which is the detail the modalBackContract scanner
  *      cannot see (it only looks at <Modal> tags, so a plain <View> slipped past
  *      it — that is why this defect shipped).
+ *
+ * Both the shared scanner and this suite's own per-surface scanner honour the
+ * shared `INLINE_APP_RENDERED_WEBVIEWS` exemption (src/services/inAppBrowserContract.ts):
+ * markup the app renders into a WebView itself — the notation editor's inline
+ * abcjs preview — is not a navigable browser, so no Modal is demanded around it.
  */
 import {
   closeRetailer,
@@ -30,6 +35,8 @@ import {
   browserSurfaces,
   findBrowserContractViolations,
   formatBrowserViolations,
+  INLINE_APP_RENDERED_WEBVIEWS,
+  isInlineAppRenderedWebview,
   jsxRootTag,
   matchDelimiter,
   propSource,
@@ -535,6 +542,29 @@ function liveScanTests(): void {
     surfaces.length >= 2,
     `found ${surfaces.length} in-app browser surfaces (≥ 2: the score viewer + the retailer page)`,
   );
+
+  // This suite carries its own per-surface scanner, so it consults the shared
+  // INLINE_APP_RENDERED_WEBVIEWS list itself rather than trusting the module to
+  // have applied it: one list, two guards, no drift. Both directions are checked —
+  // a stale entry (the file is gone) and an exempt file that still turns up as a
+  // surface (the exemption stopped being applied) each fail here.
+  const inline = files.filter((file) => isInlineAppRenderedWebview(file.path));
+  assertEq(
+    inline.length,
+    INLINE_APP_RENDERED_WEBVIEWS.length,
+    `every INLINE_APP_RENDERED_WEBVIEWS path is a live app source file (${INLINE_APP_RENDERED_WEBVIEWS.join(', ')})`,
+  );
+  for (const file of inline) {
+    assert(
+      file.source.includes('<WebView'),
+      `${file.path} is exempt as an inline app-rendered WebView and still renders one`,
+    );
+    assert(
+      !surfaces.some((surface) => surface.path === file.path),
+      `${file.path} is exempt as an inline app-rendered WebView, so no Modal is demanded around it`,
+    );
+  }
+
   for (const surface of surfaces) {
     assert(
       surface.rootTag === 'Modal',

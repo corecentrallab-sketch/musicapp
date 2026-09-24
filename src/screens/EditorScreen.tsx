@@ -41,28 +41,29 @@ export const EditorScreen: React.FC = () => {
         <Ionicons name="chevron-forward" size={18} color="#4a4a6a" />
       </Pressable>
 
-      {/* There is no notation editor yet, so this card is CONTENT, not a control.
-          It used to be a Pressable: it highlighted under the finger (cardPressed),
-          carried a button role, and then did nothing on release — a card that
-          looks tappable must act, so it must not look tappable. A plain View +
-          the SOON chip is the honest treatment: no press feedback, no button
-          role, no accessibility announcement of an action that does not exist. */}
-      <View
-        style={[styles.card, styles.cardDisabled]}
-        accessible
-        accessibilityLabel="Notation editor — coming soon"
+      {/* Notation editor (transpose v1) is live, so this card is a control
+          again: it navigates on tap, carries the button role, and gets the same
+          chevron/press feedback as the metronome card above. Transpose-only for
+          now — the subtitle says so rather than the card wearing a "SOON" chip
+          that would understate what the tap actually does. */}
+      <Pressable
+        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+        onPress={() => navigation.navigate('NotationEditor')}
+        accessibilityRole="button"
+        accessibilityLabel="Notation editor — transpose a public-domain score into a new key and save the copy"
       >
-        <View style={[styles.cardIcon, styles.cardIconDisabled]}>
-          <Ionicons name="create" size={26} color="#5a5a80" />
+        <View style={styles.cardIcon}>
+          <Ionicons name="create" size={26} color="#e94560" />
         </View>
         <View style={styles.cardBody}>
           <Text style={styles.cardTitle}>Notation editor</Text>
           <Text style={styles.cardSubtitle}>
-            Correct and transpose sheet music — coming soon.
+            Transpose a public-domain score into a new key and save the copy.
+            Note-by-note editing is coming.
           </Text>
         </View>
-        <Text style={styles.comingSoon}>SOON</Text>
-      </View>
+        <Ionicons name="chevron-forward" size={18} color="#4a4a6a" />
+      </Pressable>
     </View>
   );
 };
@@ -96,9 +97,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#0f3460',
   },
-  cardDisabled: {
-    opacity: 0.75,
-  },
   cardPressed: {
     backgroundColor: '#1f2b52',
   },
@@ -112,9 +110,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14,
-  },
-  cardIconDisabled: {
-    borderColor: '#2a2a4a',
   },
   cardBody: {
     flex: 1,
@@ -130,11 +125,5 @@ const styles = StyleSheet.create({
     color: '#a0a0b8',
     fontSize: 13,
     lineHeight: 19,
-  },
-  comingSoon: {
-    color: '#5a5a80',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
   },
 });

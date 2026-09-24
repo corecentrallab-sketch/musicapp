@@ -40,6 +40,9 @@ import {
   humStartFailureOutcome,
 } from '../services/humBridge';
 import { saveRecognition } from '../services/storage';
+// A hum/whistle/sing match is identified against our own public-domain melody
+// library, so its category is a fact the app knows — not an invented genre.
+import { PUBLIC_DOMAIN_GENRE } from '../services/resultGenre';
 import { PieceDetailScreen } from './PieceDetailScreen';
 import type { DailyChallengePiece, HumMatch } from '../types';
 
@@ -71,7 +74,7 @@ function matchToPiece(match: HumMatch): DailyChallengePiece {
     id: match.piece_id,
     title: match.title,
     composer: match.composer,
-    genre: 'Classical',
+    genre: PUBLIC_DOMAIN_GENRE,
     difficulty: 'Intermediate',
     description: `Hum/whistle/sing matched with ${Math.round(
       match.confidence * 100,
