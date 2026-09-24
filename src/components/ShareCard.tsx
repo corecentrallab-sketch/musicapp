@@ -72,6 +72,18 @@ interface ShareCardProps {
   shareMessage?: string;
   /** Label under the minutes stat (default "min today"). */
   minutesLabel?: string;
+  /**
+   * A medal being celebrated (the achievements layer). Renders the medal block
+   * above the context line, so an achievement card is THIS card with a medal on
+   * it — never a second, forked share card. The title/composer props carry the
+   * piece/song context the medal unlocked around.
+   */
+  medal?: {
+    emoji: string;
+    name: string;
+    /** Optional progress line ("7 of 7 days in a row"). */
+    progressLabel?: string;
+  };
 }
 
 export const ShareCard: React.FC<ShareCardProps> = ({
@@ -85,6 +97,7 @@ export const ShareCard: React.FC<ShareCardProps> = ({
   headline,
   shareMessage,
   minutesLabel,
+  medal,
 }) => {
   const cardRef = useRef<View>(null);
   const [capturing, setCapturing] = useState(false);
@@ -197,6 +210,18 @@ export const ShareCard: React.FC<ShareCardProps> = ({
 
               {/* Celebration headline (reinforcement moment only) */}
               {headline ? <Text style={styles.headline}>{headline}</Text> : null}
+
+              {/* Medal block (achievements layer only) — the medal being
+                  celebrated, on the SAME captured card as the context below. */}
+              {medal ? (
+                <View style={styles.medalBlock}>
+                  <Text style={styles.medalEmoji}>{medal.emoji}</Text>
+                  <Text style={styles.medalName}>{medal.name}</Text>
+                  {medal.progressLabel ? (
+                    <Text style={styles.medalProgress}>{medal.progressLabel}</Text>
+                  ) : null}
+                </View>
+              ) : null}
 
               {/* Piece title & composer — the focus */}
               <Text style={styles.pieceTitle} numberOfLines={3}>
@@ -350,6 +375,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 10,
     lineHeight: 24,
+  },
+
+  // Medal block — only rendered for an achievement card
+  medalBlock: {
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  medalEmoji: {
+    fontSize: 44,
+    marginBottom: 6,
+  },
+  medalName: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#4ecdc4',
+    textAlign: 'center',
+  },
+  medalProgress: {
+    fontSize: 12,
+    color: '#a0a0b8',
+    fontWeight: '600',
+    marginTop: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 
   // Piece info — the focus
