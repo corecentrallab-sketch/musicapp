@@ -501,15 +501,20 @@ function appSources(): SourceFile[] {
  * Screens that still drop a failed `startRecording()` on the floor (the same
  * silent-dead-end pattern this fix removes from the modern path). They are
  * tracked here so a NEW offender fails this suite immediately, while the
- * remaining debt (out of scope — HomeScreen's own recognition start path is a
- * separate follow-up) can be paid down later. When one of them is fixed, remove
- * it from this list: the suite then keeps it clean.
+ * remaining debt (out of scope) can be paid down later. When one of them is
+ * fixed, remove it from this list: the suite then keeps it clean.
  *
  * HumSearchScreen came OFF this list with the HUM → MODERN bridge pass: its
  * failed start now lands on the honest error card (humStartFailureOutcome(),
  * src/services/humBridge.ts) and the assertion below keeps it that way.
+ *
+ * HomeScreen came OFF with the ONE-BUTTON FRONT DOOR pass (owner-approved
+ * 09-24, debt f9f8e4f3): the front door's capture start now maps a failure
+ * through frontDoorStartFailure() onto the existing error card instead of
+ * `if (!started) return;`. The list is EMPTY — a new silent start is a failure,
+ * not an entry.
  */
-const KNOWN_SILENT_START_OFFENDERS = ['src/screens/HomeScreen.tsx'];
+const KNOWN_SILENT_START_OFFENDERS: string[] = [];
 
 function liveScanTests(): void {
   console.log('\nlive scan of the app source');
@@ -561,6 +566,18 @@ function liveScanTests(): void {
     KNOWN_SILENT_START_OFFENDERS.indexOf('src/screens/HumSearchScreen.tsx'),
     -1,
     'HumSearchScreen is no longer exempt from the silent-start contract',
+  );
+  // The one-button front door (owner 09-24, debt f9f8e4f3) took HomeScreen off
+  // the list: it must now be clean on its own, not by exemption.
+  assertEq(
+    silent.filter((v) => v.path === 'src/screens/HomeScreen.tsx').length,
+    0,
+    'the Home one-button front door surfaces every failed capture start',
+  );
+  assertEq(
+    KNOWN_SILENT_START_OFFENDERS.indexOf('src/screens/HomeScreen.tsx'),
+    -1,
+    'HomeScreen is no longer exempt from the silent-start contract',
   );
   for (const v of silent) {
     console.log(

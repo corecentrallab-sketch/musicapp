@@ -25,6 +25,7 @@ import {
   RecognitionResultView,
   type RecognitionPhase,
 } from '../components/RecognitionResultView';
+import { ModernSongInterstitial } from '../components/ModernSongInterstitial';
 import { ScoreViewer } from '../components/ScoreViewer';
 import { PieceDetailScreen } from './PieceDetailScreen';
 import { HumSearchScreen } from './HumSearchScreen';
@@ -32,10 +33,45 @@ import { ModernSearchScreen } from './ModernSearchScreen';
 import { FindPieceScreen } from './FindPieceScreen';
 import { PracticeWeekScreen } from './PracticeWeekScreen';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
+import type { CaptureDiagnostics } from '../services/captureTelemetry';
 import {
   recognizeAudio,
+  recognizeModernSong,
+  humToSearch,
   isRecognitionLimitError,
 } from '../services/api';
+import {
+  humOutcome,
+  humNoMatchMessage,
+  humPhraseHint,
+  modernOutcome,
+  type ModernOutcome,
+} from '../services/tier1';
+import {
+  IDLE_SURFACE,
+  STOP_FAILURE_COPY,
+  type ModernSurfaceState,
+} from '../services/recognitionRetry';
+// The ONE-BUTTON FRONT DOOR (owner-approved 09-24). Its state machine, every
+// string it shows and its honest start-failure mapping live in
+// src/services/frontDoor.ts so the screen and the tier1 gate read the SAME
+// words, and the guard can assert the wiring from the app's own source.
+import {
+  FIND_PIECE_ENTRY_HINT,
+  FIND_PIECE_ENTRY_LABEL,
+  HUM_FALLBACK_LIBRARY_NOTE,
+  frontDoorStartFailure,
+  heroAccessibilityLabel,
+  heroLabel,
+  heroState,
+  heroSupport,
+  heroTapAction,
+  heroTitle,
+  homePromiseCopy,
+  humMatchToResultResponse,
+} from '../services/frontDoor';
+// The categories a result is allowed to claim — never a hardcoded genre.
+import { MODERN_SONG_GENRE, PUBLIC_DOMAIN_GENRE } from '../services/resultGenre';
 import {
   recordPractice,
   getWeeklyGoal,
@@ -87,6 +123,10 @@ import type {
  *  matcher and produces weak/uncertain confidence. */
 const RECORDING_TIMEOUT_MS = 12000;
 
+/** Pause between dismissing a result card and starting the next capture, so the
+ *  recorder from the previous pass is fully released first. */
+const RETRY_DELAY_MS = 300;
+
 export const HomeScreen: React.FC = () => {
   // Tab-navigation handle (used to jump to Settings → Pro upgrade from the
   // quota-exhausted modal).
@@ -127,6 +167,34 @@ export const HomeScreen: React.FC = () => {
   // "📋 This Week" — the practice-week surface (which days were practised). The
   // app has no practice-run tab, so Home renders it in place like the flows above.
   const [showPracticeWeek, setShowPracticeWeek] = useState(false);
+
+  // ── The ONE-BUTTON FRONT DOOR (owner-approved 09-24) ──
+  // One tap runs the WHOLE hybrid pipeline (our library landmark match, then the
+  // AudD modern pass) with no mode choice; when the ambient pass hears nothing we
+  // recognise, this SAME button becomes the hum/whistle/sing fallback.
+  // `humFallback` is that mode, `heroBusy` stops a second capture stacking on a
+  // pass already in flight.
+  const [humFallback, setHumFallback] = useState(false);
+  const [heroBusy, setHeroBusy] = useState(false);
+  // The modern match the pipeline can produce is shown by the EXISTING
+  // interstitial (owner rule 08-24: no auto-redirect; SMD primary, Musicnotes
+  // secondary), rendered here instead of inside a second screen.
+  const [modernSurface, setModernSurface] =
+    useState<ModernSurfaceState>(IDLE_SURFACE);
+  const [showModernInterstitial, setShowModernInterstitial] = useState(false);
+  // Which pass the current capture belongs to — read by the stop handler and by
+  // "Try Again", never from a stale state closure.
+  const captureModeRef = useRef<'ambient' | 'hum'>('ambient');
+  /** A recognition / hum request is in flight. */
+  const requestInFlightRef = useRef(false);
+  /** A stop is in flight (blocks a second, phantom stop). */
+  const stoppingRef = useRef(false);
+  /** The tracked retry auto-start (a bare 300ms timer raced the recorder). */
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Which next step the no-match card offers: the inline hum fallback (the
+  // ambient miss) or the hum → modern bridge (the hum miss).
+  const [noMatchOffer, setNoMatchOffer] = useState<'hum' | 'modern' | null>(null);
+
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Pulsing animation for the mic indicator
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -290,124 +358,306 @@ export const HomeScreen: React.FC = () => {
     }
   }, []);
 
-  // ── Recognition flow ──
+  // ── The one-tap pipeline ──
+  // The hero state machine and every string it renders live in
+  // src/services/frontDoor.ts (pure, tier1-tested); the screen only mirrors it.
+  const hero = heroState({
+    recording: recorder.isRecording,
+    humFallback,
+    busy: heroBusy,
+  });
 
-  const handleStartListening = useCallback(async () => {
-    // If already recording, stop it
-    if (recorder.isRecording) {
-      handleStopRecording();
-      return;
+  /** Everything a successful LIBRARY match does after the card is shown: save it,
+   *  count the practice day, refresh the streak/week/badges. */
+  const afterLibraryMatch = useCallback(async (topMatch: RecognitionMatch) => {
+    await saveRecognition({
+      id: topMatch.piece_id,
+      title: topMatch.title,
+      composer: topMatch.composer,
+      savedAt: new Date().toISOString(),
+      genre: resultGenreLabel(topMatch),
+    });
+
+    // Record the practice day (legacy counter) and re-read the engine streak
+    await recordPractice();
+    setStreak(await getDisplayStreakLocal());
+
+    // Refresh weekly goal
+    const wg = await getWeeklyGoal();
+    setWeeklyGoal(wg);
+
+    // Check for badges
+    const totalRecognitions = await getRecognitionCount();
+    setFreeRecognitions(totalRecognitions);
+    const newBadges = await checkAndAwardBadges({
+      totalRecognitions,
+      currentHour: new Date().getHours(),
+    });
+    if (newBadges.length > 0) {
+      setBadgeToast(newBadges[0]);
     }
+  }, []);
 
-    const started = await recorder.startRecording();
-    if (!started) return;
-
-    // Auto-stop after timeout
-    timeoutRef.current = setTimeout(() => {
-      handleStopRecording();
-    }, RECORDING_TIMEOUT_MS);
-  }, [recorder.isRecording, recorder.startRecording]);
-
-  const handleStopRecording = useCallback(async () => {
-    // Clear the auto-stop timeout
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-
-    const stopped = await recorder.stopRecording();
-    if (!stopped) {
-      // NEVER silently drop the user back to idle. A dead recording (null URI,
-      // failed finalize, or an empty/0-byte clip) must surface an explicit
-      // error state so the flow can't loop "Listening → Tap to identify".
-      // Clear the hook's inline permission-style error too, so we don't ALSO
-      // render the "Open Settings" block under the recording card for what is
-      // a recording failure, not a permission denial.
-      recorder.clearError();
-      setRecognitionPhase({
-        type: 'error',
-        message: 'Recording failed — please try again.',
-      });
+  /**
+   * PASS 1 + PASS 2 of the ONE TAP (front-door spec 09-24): our library landmark
+   * match first, then the AudD modern pass on the SAME clip when the library has
+   * nothing — the user never chooses a mode. A modern hit opens the EXISTING
+   * interstitial (no auto-redirect); when both miss, the honest no-match card
+   * goes up and the SAME button becomes the hum fallback.
+   */
+  const runAmbientPipeline = useCallback(
+    async (uri: string, diagnostics?: CaptureDiagnostics) => {
+      requestInFlightRef.current = true;
+      setHeroBusy(true);
+      setRecognitionPhase({ type: 'loading' });
       setShowRecognitionResults(true);
+      try {
+        const result = await recognizeAudio(uri);
+
+        if (result.matches && result.matches.length > 0) {
+          recorder.completeRecording();
+          setRecognitionPhase({
+            type: 'success',
+            response: result,
+            diagnostics,
+          });
+          await afterLibraryMatch(result.matches[0]);
+          return;
+        }
+
+        // ── PASS 2: modern-song recognition (AudD, 100M+ fingerprints) ──
+        // Deliberately wrapped in its own try: a modern-pass failure must never
+        // hide the honest library no-match behind an error card. The user still
+        // gets the no-match answer and the hum fallback (never a silent miss).
+        let modern: ModernOutcome | null = null;
+        try {
+          modern = modernOutcome(await recognizeModernSong(uri));
+        } catch {
+          modern = null;
+        }
+
+        if (modern && modern.recognized && modern.match) {
+          const m = modern.match;
+          // Save-to-history FIRST (the retention lever the owner requires around
+          // the affiliate moment), then the interstitial — an explicit tap, no
+          // auto-redirect.
+          await saveRecognition({
+            id: m.isrc || m.song,
+            title: m.song,
+            composer: m.artist,
+            savedAt: new Date().toISOString(),
+            // Save the category WITH the record: a modern song must never reach
+            // History genre-less and be filled in by a fallback later.
+            genre: MODERN_SONG_GENRE,
+          });
+          recorder.completeRecording();
+          setShowRecognitionResults(false);
+          setRecognitionPhase(null);
+          setNoMatchOffer(null);
+          setModernSurface({
+            loading: false,
+            error: null,
+            match: m,
+            recognized: true,
+          });
+          setShowModernInterstitial(true);
+          return;
+        }
+
+        // Honest no-match. When the server declined to name a piece (ambiguous /
+        // too weak) its own reason is surfaced instead of a generic message —
+        // the launch rule is "no confident-wrong" — and the SAME button becomes
+        // the hum fallback.
+        recorder.completeRecording();
+        setRecognitionPhase({
+          type: 'no-match',
+          message: result.no_confident_match_reason,
+          server: result.received_audio,
+          diagnostics,
+        });
+        setHumFallback(true);
+        setNoMatchOffer('hum');
+      } catch (err) {
+        recorder.completeRecording();
+        const errPhase = isRecognitionLimitError(err)
+          ? ({ type: 'limit', message: err.message } as const)
+          : ({
+              type: 'error',
+              message:
+                err instanceof Error ? err.message : 'Something went wrong.',
+            } as const);
+        setRecognitionPhase({ ...errPhase, diagnostics });
+      } finally {
+        requestInFlightRef.current = false;
+        setHeroBusy(false);
+      }
+    },
+    [recorder, afterLibraryMatch],
+  );
+
+  /**
+   * The inline hum fallback's pass — the SAME button, the SAME recorder, posting
+   * the clip to /api/hum. A match reuses the EXISTING result card
+   * (humMatchToResultResponse: public domain, no retail redirect, honest
+   * coming-soon score state); a miss offers the hum → modern bridge, so a hum we
+   * don't hold is never a dead end.
+   */
+  const runHumPass = useCallback(
+    async (uri: string) => {
+      requestInFlightRef.current = true;
+      setHeroBusy(true);
+      setRecognitionPhase({ type: 'loading' });
+      setShowRecognitionResults(true);
+      try {
+        const resp = await humToSearch(uri);
+        const outcome = humOutcome(resp);
+        if (outcome.ok && outcome.topMatch) {
+          // Recognition of a hum counts as a practice day, exactly as the hum
+          // screen does; the category is a fact (our own public-domain library).
+          await saveRecognition({
+            id: outcome.topMatch.piece_id,
+            title: outcome.topMatch.title,
+            composer: outcome.topMatch.composer,
+            savedAt: new Date().toISOString(),
+            genre: PUBLIC_DOMAIN_GENRE,
+          });
+          recorder.completeRecording();
+          setHumFallback(false);
+          setNoMatchOffer(null);
+          setRecognitionPhase({
+            type: 'success',
+            response: humMatchToResultResponse(resp, outcome.matches),
+          });
+          return;
+        }
+        recorder.completeRecording();
+        // Honest banded no-match copy (never a raw percentage, never a fabricated
+        // title), plus the short-phrase hint when the server extracted too little.
+        const hint = humPhraseHint(resp);
+        const reason = humNoMatchMessage(outcome);
+        setRecognitionPhase({
+          type: 'no-match',
+          message: hint ? `${reason}\n\n${hint}` : reason,
+        });
+        setNoMatchOffer('modern');
+      } catch (err) {
+        recorder.completeRecording();
+        const errPhase = isRecognitionLimitError(err)
+          ? ({ type: 'limit', message: err.message } as const)
+          : ({
+              type: 'error',
+              message:
+                err instanceof Error ? err.message : 'Something went wrong.',
+            } as const);
+        setRecognitionPhase(errPhase);
+      } finally {
+        requestInFlightRef.current = false;
+        setHeroBusy(false);
+      }
+    },
+    [recorder],
+  );
+
+  /**
+   * Start a capture for one of the door's two passes. A failed start is NEVER
+   * silent (tracked debt f9f8e4f3, the PR #115 rule): the old HomeScreen did
+   * `if (!started) return;`, which set no state at all, so nothing rendered and
+   * every retry tap was eaten. It now lands on the existing error card.
+   */
+  const startCapture = useCallback(
+    async (mode: 'ambient' | 'hum') => {
+      if (mode === 'hum') setHumFallback(true);
+      captureModeRef.current = mode;
+      recorder.clearError();
+      setHeroBusy(true);
+      const started = await recorder.startRecording();
+      setHeroBusy(false);
+      if (!started) {
+        const failure = frontDoorStartFailure(recorder.takeStartFailure());
+        // Permission problems keep the hook's inline error (and its Open
+        // Settings affordance); everything else is surfaced once, here.
+        if (!failure.keepHookError) recorder.clearError();
+        setRecognitionPhase({ type: 'error', message: failure.message });
+        setShowRecognitionResults(true);
+        return;
+      }
+      timeoutRef.current = setTimeout(() => {
+        void handleStopCapture();
+      }, RECORDING_TIMEOUT_MS);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [recorder],
+  );
+
+  const handleStopCapture = useCallback(async () => {
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
+    try {
+      // Clear the auto-stop timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+
+      const stopped = await recorder.stopRecording();
+      if (!stopped) {
+        const failure = recorder.takeStopFailure();
+        const reason = failure ? failure.reason : 'no-recording';
+        recorder.clearError();
+        if (reason === 'empty') {
+          // No audio heard at all → straight into the inline hum fallback (spec
+          // state 5) instead of an error card about a clip that never existed.
+          setNoMatchOffer(null);
+          setHumFallback(true);
+          return;
+        }
+        // NEVER silently drop the user back to idle: every other stop failure
+        // surfaces its own honest words.
+        setRecognitionPhase({ type: 'error', message: STOP_FAILURE_COPY[reason] });
+        setShowRecognitionResults(true);
+        return;
+      }
+      const { uri, diagnostics } = stopped;
+      if (captureModeRef.current === 'hum') {
+        await runHumPass(uri);
+        return;
+      }
+      await runAmbientPipeline(uri, diagnostics);
+    } finally {
+      stoppingRef.current = false;
+    }
+  }, [recorder, runAmbientPipeline, runHumPass]);
+
+  /**
+   * THE one hero tap. A live capture always stops on a tap (tap-to-stop, as
+   * everywhere else); a pass in flight swallows the tap rather than stacking a
+   * second capture; otherwise it starts the pass the door is in.
+   */
+  const handleHeroTap = useCallback(async () => {
+    const action = heroTapAction({
+      recording: recorder.isRecording,
+      humFallback,
+      busy: heroBusy,
+    });
+    if (action === 'wait') return;
+    if (action === 'stop') {
+      await handleStopCapture();
       return;
     }
-    const { uri, diagnostics } = stopped;
+    await startCapture(action === 'start-hum' ? 'hum' : 'ambient');
+  }, [
+    recorder.isRecording,
+    humFallback,
+    heroBusy,
+    startCapture,
+    handleStopCapture,
+  ]);
 
-    // Show loading phase
-    setRecognitionPhase({ type: 'loading' });
-    setShowRecognitionResults(true);
-
-    try {
-      const result = await recognizeAudio(uri);
-
-      // Attach capture-path telemetry to the first result phase (whichever it
-      // is) so the owner can read off what the mic recorded next to the result.
-      const outcome =
-        result.matches && result.matches.length > 0
-          ? ({ type: 'success', response: result } as const)
-          : ({
-              type: 'no-match',
-              message: result.no_confident_match_reason,
-              server: result.received_audio,
-            } as const);
-      setRecognitionPhase({ ...outcome, diagnostics });
-
-      // Handle success: check for matches
-      if (result.matches && result.matches.length > 0) {
-        recorder.completeRecording();
-
-        // Save top match to history
-        const topMatch: RecognitionMatch = result.matches[0];
-        await saveRecognition({
-          id: topMatch.piece_id,
-          title: topMatch.title,
-          composer: topMatch.composer,
-          savedAt: new Date().toISOString(),
-          genre: resultGenreLabel(topMatch),
-        });
-
-        // Record the practice day (legacy counter) and re-read the engine streak
-        await recordPractice();
-        setStreak(await getDisplayStreakLocal());
-
-        // Refresh weekly goal
-        const wg = await getWeeklyGoal();
-        setWeeklyGoal(wg);
-
-        // Check for badges
-        const totalRecognitions = await getRecognitionCount();
-        setFreeRecognitions(totalRecognitions);
-        const newBadges = await checkAndAwardBadges({
-          totalRecognitions,
-          currentHour: new Date().getHours(),
-        });
-        if (newBadges.length > 0) {
-          setBadgeToast(newBadges[0]);
-        }
-      } else {
-        // API returned success but no matches. If the server declined to name a
-        // piece (ambiguous / too weak), surface its honest reason instead of a
-        // generic message — the launch rule is "no confident-wrong"; an honest
-        // "play longer & clearer" is the correct UX.
-        recorder.completeRecording();
-      }
-    } catch (err) {
-      recorder.completeRecording();
-      const errPhase = isRecognitionLimitError(err)
-        ? ({ type: 'limit', message: err.message } as const)
-        : ({
-            type: 'error',
-            message:
-              err instanceof Error ? err.message : 'Something went wrong.',
-          } as const);
-      setRecognitionPhase({ ...errPhase, diagnostics });
-    }
-  }, [recorder]);
-
-  // ── Cleanup timeout on unmount ──
+  // ── Cleanup timers on unmount ──
   useEffect(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     };
   }, []);
 
@@ -415,16 +665,27 @@ export const HomeScreen: React.FC = () => {
   const handleCloseRecognition = useCallback(() => {
     setShowRecognitionResults(false);
     setRecognitionPhase(null);
+    setNoMatchOffer(null);
     recorder.clearError();
   }, [recorder]);
 
   // ── Retry recognition ──
+  // "Try Again" repeats the pass that produced the card — an ambient retry after
+  // an ambient miss, a hum retry after a hum miss — so it never silently switches
+  // the user's mode. The auto-start is tracked in a ref (a bare 300ms timer raced
+  // the recorder and orphaned it — the pass-2 defect class).
   const handleRetryRecognition = useCallback(() => {
+    const mode = captureModeRef.current;
     setShowRecognitionResults(false);
     setRecognitionPhase(null);
-    // Auto-start listening again
-    setTimeout(() => handleStartListening(), 300);
-  }, [handleStartListening]);
+    setNoMatchOffer(null);
+    recorder.resetForRetry();
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      void startCapture(mode);
+    }, RETRY_DELAY_MS);
+  }, [recorder, startCapture]);
 
   // ── Upgrade to Pro (from the quota-exhausted modal) ──
   // Close the modal and open the Settings tab, where the transparent upgrade
@@ -432,23 +693,35 @@ export const HomeScreen: React.FC = () => {
   const handleUpgradePro = useCallback(() => {
     setShowRecognitionResults(false);
     setRecognitionPhase(null);
+    setNoMatchOffer(null);
     navigation.navigate('Settings');
   }, [navigation]);
 
-  // ── Tier-1 full-screen flows ──
-  // Hum/whistle/sing-to-search: opens HumSearchScreen (its own recorder).
-  const handleOpenHumSearch = useCallback(() => {
-    setShowHumSearch(true);
+  // ── The no-match card's two ways forward (front-door spec 09-24) ──
+  // 1. The inline hum fallback: close the card and leave the door in hum mode —
+  //    the SAME button, no second flow to choose between.
+  const handleHumFallbackFromCard = useCallback(() => {
+    setShowRecognitionResults(false);
+    setRecognitionPhase(null);
+    setNoMatchOffer(null);
+    setHumFallback(true);
   }, []);
 
-  // Modern-song search: opens ModernSearchScreen (its own recorder).
-  const handleOpenModernSearch = useCallback(() => {
+  // 2. The hum → modern bridge (owner-approved 09-22): our melody catalog is
+  //    small, so a hum we don't hold must not be a dead end. This opens the
+  //    existing "Find any song" screen, which identifies the actual recording
+  //    (AudD) and links the official sheet music.
+  const handleFindAnySongFromCard = useCallback(() => {
+    setShowRecognitionResults(false);
+    setRecognitionPhase(null);
+    setNoMatchOffer(null);
     setShowModernSearch(true);
   }, []);
 
-  // "Find a piece": catalog search by title/composer — no microphone involved,
-  // so it also works for a learner who just knows the name of the piece and
-  // hasn't got the music playing (or can't hum it).
+  // ── "Find a piece" (the secondary SEARCH entry under the one button): catalog
+  // search by title/composer — no microphone involved, so it also works for a
+  // learner who just knows the name of the piece and hasn't got the music
+  // playing (or can't hum it). ──
   const handleOpenFindPiece = useCallback(() => {
     setShowFindPiece(true);
   }, []);
@@ -510,9 +783,13 @@ export const HomeScreen: React.FC = () => {
     setShowFindPiece(true);
   }, []);
 
-  // From the modern interstitial: jump to the hum flow (find a free PD piece).
+  // ── The modern surfaces (the pipeline's pass 2, and the hum bridge) ──
+  // From the modern interstitial (or the modern screen): jump to the hum flow,
+  // which finds a FREE public-domain piece. One flow is mounted at a time.
   const handleHumItFromModern = useCallback(() => {
     setShowModernSearch(false);
+    setShowModernInterstitial(false);
+    setModernSurface(IDLE_SURFACE);
     setShowHumSearch(true);
   }, []);
 
@@ -530,8 +807,26 @@ export const HomeScreen: React.FC = () => {
   // From the modern interstitial: open the free public-domain Library.
   const handleBrowseLibraryFromModern = useCallback(() => {
     setShowModernSearch(false);
+    setShowModernInterstitial(false);
+    setModernSurface(IDLE_SURFACE);
     navigation.navigate('Library');
   }, [navigation]);
+
+  // Close the modern interstitial (its "Done"/✕/BACK all land here).
+  const handleCloseModernInterstitial = useCallback(() => {
+    setShowModernInterstitial(false);
+    setModernSurface(IDLE_SURFACE);
+  }, []);
+
+  // "Try Again" on the modern interstitial: the door runs a fresh ambient pass
+  // (one tap on the big button does the same thing — this only shortens it).
+  const handleRetryModernInterstitial = useCallback(() => {
+    handleCloseModernInterstitial();
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      void startCapture('ambient');
+    }, RETRY_DELAY_MS);
+  }, [handleCloseModernInterstitial, startCapture]);
 
   // ── Daily challenge tap: record practice (streak framing), then open the
   // piece's sheet music in the in-app viewer when available; otherwise show
@@ -572,16 +867,15 @@ export const HomeScreen: React.FC = () => {
         }s`
     : 'Discover sheet music';
 
-  const genreCopy =
-    onboarding?.genres?.length
-      ? `Curated ${onboarding.genres
-          .map((g) =>
-            g === 'jazz-ragtime'
-              ? 'Jazz & Ragtime'
-              : g.charAt(0).toUpperCase() + g.slice(1),
-          )
-          .join(', ')}`
-      : 'All genres';
+  // The Home subtitle is the genre-neutral product promise (owner 09-24): it
+  // used to render "Curated Classical" for anyone who skipped genre selection in
+  // onboarding (the picker defaulted to ['classical']), which told a guitar or
+  // pop learner the app was not for them. frontDoor.homePromiseCopy() makes it
+  // instrument-aware too — guitar users get the live TAB promise.
+  // (Rendered inline below from that helper — one source of truth.)
+
+  // The one button, mirrored from the front door's state machine.
+  const heroEmoji = recorder.isRecording ? '🎙️' : '🎤';
 
   const streakText =
     streak.currentDays > 0
@@ -671,13 +965,34 @@ export const HomeScreen: React.FC = () => {
         onDismiss={() => setBadgeToast(null)}
       />
 
-      {/* Recognition results modal */}
+      {/* Modern-song match from the one-tap pipeline → the EXISTING interstitial.
+          Owner rule (08-24) preserved: identity + metadata, an explicit
+          "Get the Official Sheet Music" tap into our own in-app shell (SMD
+          primary, ID 67650), the "Try Musicnotes" secondary CTA, and the
+          retention levers — never an auto-redirect. */}
+      <ModernSongInterstitial
+        visible={showModernInterstitial}
+        loading={modernSurface.loading}
+        error={modernSurface.error}
+        match={modernSurface.match}
+        recognized={modernSurface.recognized}
+        onClose={handleCloseModernInterstitial}
+        onRetry={handleRetryModernInterstitial}
+        onHumIt={handleHumItFromModern}
+        onBrowseLibrary={handleBrowseLibraryFromModern}
+      />
+
+      {/* Recognition results modal. The no-match card carries the next step for
+          whichever pass missed: the inline hum fallback (ambient miss) or the
+          hum → modern bridge (hum miss). */}
       <RecognitionResultView
         visible={showRecognitionResults}
         phase={recognitionPhase}
         onClose={handleCloseRecognition}
         onRetry={handleRetryRecognition}
         onUpgrade={handleUpgradePro}
+        onHumFallback={noMatchOffer === 'hum' ? handleHumFallbackFromCard : undefined}
+        onFindAnySong={noMatchOffer === 'modern' ? handleFindAnySongFromCard : undefined}
       />
 
       <ScrollView
@@ -695,22 +1010,22 @@ export const HomeScreen: React.FC = () => {
         {/* ── Header ── */}
         <Text style={styles.headerEmoji}>🎵</Text>
         <Text style={styles.title}>NoteSnap</Text>
-        <Text style={styles.subtitle}>{genreCopy}</Text>
+        {/* Genre-neutral product promise, instrument-aware (owner 09-24). */}
+        <Text style={styles.subtitle}>
+          {homePromiseCopy(onboarding?.instrument)}
+        </Text>
 
-        {/* ── Recognition CTA ── */}
+        {/* ── ONE-BUTTON FRONT DOOR (owner-approved 09-24) ──
+            The ONLY primary action on this screen. One tap runs the whole hybrid
+            pipeline (our library landmark match, then the AudD modern pass) with
+            no mode choice; when the ambient pass hears nothing we recognise, this
+            SAME button becomes the hum/whistle/sing fallback — inline, never a
+            rival button. Every state's words come from src/services/frontDoor.ts. */}
         <View style={styles.recognitionCard}>
-          <Text style={styles.recognitionEmoji}>
-            {recorder.isRecording ? '🎙️' : '🎤'}
-          </Text>
-          <Text style={styles.recognitionTitle}>
-            {recorder.isRecording ? 'Listening...' : 'Recognize a Song'}
-          </Text>
+          <Text style={styles.recognitionEmoji}>{heroEmoji}</Text>
+          <Text style={styles.recognitionTitle}>{heroTitle(hero)}</Text>
           <Text style={styles.recognitionDesc}>
-            {recorder.isRecording
-              ? 'Recording audio — move closer to the music source for best results.'
-              : isPro
-                ? 'Hear a song you want to play? Tap to identify it and get the sheet music instantly. Unlimited recognitions.'
-                : `Hear a song you want to play? Tap to identify it and get the sheet music instantly. (${freeRecognitions}/5 free recognitions)`}
+            {heroSupport(hero, { isPro, freeRecognitions })}
           </Text>
 
           {/* Mic permission error inline */}
@@ -738,22 +1053,20 @@ export const HomeScreen: React.FC = () => {
             </Animated.View>
           )}
 
+          {/* THE one button. In hum-fallback mode it is the SAME button — the
+              user never picks a mode. */}
           <TouchableOpacity
             style={[
               styles.recognitionBtn,
               recorder.isRecording && styles.recognitionBtnActive,
             ]}
-            onPress={handleStartListening}
-            disabled={recorder.checkingPermissions}
+            onPress={handleHeroTap}
+            disabled={recorder.checkingPermissions || hero === 'busy'}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={heroAccessibilityLabel(hero)}
           >
-            <Text style={styles.recognitionBtnText}>
-              {recorder.checkingPermissions
-                ? 'Checking...'
-                : recorder.isRecording
-                  ? 'Stop & Identify'
-                  : 'Tap to Identify'}
-            </Text>
+            <Text style={styles.recognitionBtnText}>{heroLabel(hero)}</Text>
           </TouchableOpacity>
 
           {/* Demo button — dev-only shortcut that skips microphone */}
@@ -767,53 +1080,27 @@ export const HomeScreen: React.FC = () => {
             </TouchableOpacity>
           )}
 
-          {/* Tier-1 secondary modes (distinct from audio-recognize above) */}
-          {!recorder.isRecording && !recorder.checkingPermissions && (
-            <View style={styles.tier1Block}>
-              <View style={styles.tier1Row}>
-                <TouchableOpacity
-                  style={styles.tier1Btn}
-                  onPress={handleOpenHumSearch}
-                  activeOpacity={0.6}
-                >
-                  <Text style={styles.tier1BtnEmoji}>🎤</Text>
-                  <Text style={styles.tier1BtnText}>
-                    Hum, whistle or sing the melody
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.tier1Btn}
-                  onPress={handleOpenModernSearch}
-                  activeOpacity={0.6}
-                >
-                  <Text style={styles.tier1BtnEmoji}>💿</Text>
-                  <Text style={styles.tier1BtnText}>
-                    Find any song & get the sheet music
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              {/* Third way in: type the piece's name. No microphone — for a
-                  learner who knows what the piece is called (or who wants to
-                  browse the free public-domain catalog). */}
-              <TouchableOpacity
-                style={styles.findPieceBtn}
-                onPress={handleOpenFindPiece}
-                activeOpacity={0.6}
-                accessibilityRole="button"
-                accessibilityLabel="Find a piece by title or composer"
-              >
-                <Text style={styles.findPieceEmoji}>🔎</Text>
-                <Text style={styles.findPieceText}>
-                  Find a piece — search by title or composer
-                </Text>
-              </TouchableOpacity>
-              {/* Honest beta note — recognition library is small and growing. */}
-              <Text style={styles.tier1BetaNote}>
-                Beta: our recognition library is still growing — well-known
-                classical melodies match best; not every song will match yet.
-              </Text>
-            </View>
-          )}
+          {/* The secondary way in: KNOW the piece's name. This used to be a third
+              hero button ("Find a piece"); the owner's decision (09-24) is that it
+              is a search field, not a competing CTA. */}
+          <TouchableOpacity
+            style={styles.findPieceBtn}
+            onPress={handleOpenFindPiece}
+            activeOpacity={0.6}
+            accessibilityRole="search"
+            accessibilityLabel={FIND_PIECE_ENTRY_LABEL}
+          >
+            <Text style={styles.findPieceEmoji}>🔎</Text>
+            <Text style={styles.findPieceText}>{FIND_PIECE_ENTRY_HINT}</Text>
+          </TouchableOpacity>
+
+          {/* Honest beta note — the recognition library is small and growing.
+              In hum mode it says what the hum fallback can actually do. */}
+          <Text style={styles.tier1BetaNote}>
+            {humFallback
+              ? HUM_FALLBACK_LIBRARY_NOTE
+              : 'Beta: our recognition library is still growing — well-known classical melodies match best; not every song will match yet.'}
+          </Text>
         </View>
 
 
@@ -1320,39 +1607,32 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Tier-1 secondary modes (hum / modern-song)
-  // Block = full-width column: buttons row on top, beta note on its own line below.
-  // (The note must NOT be a child of the row — its intrinsic width squeezed the
-  //  two flex:1 buttons to slivers on device. v17 fix.)
-  tier1Block: {
-    width: '100%',
-    marginTop: 14,
-  },
-  tier1Row: {
+  // The secondary way in (the "Find a piece" SEARCH entry under the one button).
+  // Styled as a search field — dimmed placeholder text, a magnifier, quieter
+  // than the hero — because it must never read as a competing primary CTA.
+  // (The old tier-1 row of hum/modern/find-piece buttons is gone: those modes
+  //  collapsed into the one front door.)
+  findPieceBtn: {
     flexDirection: 'row',
-    gap: 10,
+    alignItems: 'center',
     width: '100%',
-  },
-  tier1Btn: {
-    flex: 1,
-    backgroundColor: '#0f3460',
+    backgroundColor: '#1a1a2e',
     borderRadius: 12,
     paddingVertical: 12,
-    paddingHorizontal: 8,
-    alignItems: 'center',
+    paddingHorizontal: 14,
+    marginTop: 16,
     borderWidth: 1,
-    borderColor: '#1a1a2e',
+    borderColor: '#0f3460',
   },
-  tier1BtnEmoji: {
-    fontSize: 22,
-    marginBottom: 4,
+  findPieceEmoji: {
+    fontSize: 18,
+    marginRight: 10,
   },
-  tier1BtnText: {
-    color: '#ffffff',
-    fontSize: 12,
+  findPieceText: {
+    flex: 1,
+    color: '#8a8aa3',
+    fontSize: 13,
     fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: 16,
   },
   tier1BetaNote: {
     color: '#8a8aa3',

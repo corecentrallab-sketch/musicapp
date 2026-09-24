@@ -41,6 +41,11 @@ import { recognitionPurchaseUrl } from '../services/purchaseCta';
 // resultGenreLabel() owns that decision: modern → "Modern song", library →
 // the catalog's genre, else the honest "Public domain".
 import { resultGenreLabel } from '../services/resultGenre';
+// The no-match card's two ways forward (owner-approved 09-24 front door + the
+// 09-22 hum → modern bridge). The strings come from the modules that own them so
+// the card, the screen and the tier1 gate read the SAME words.
+import { HUM_FALLBACK_BUTTON } from '../services/frontDoor';
+import { HUM_TO_MODERN_BLURB, HUM_TO_MODERN_CTA } from '../services/humBridge';
 
 export type RecognitionPhase =
   | { type: 'loading' }
@@ -60,6 +65,19 @@ interface RecognitionResultViewProps {
   onRetry: () => void;
   /** Opens the Pro upgrade path (Settings tab) from the quota-exhausted modal. */
   onUpgrade?: () => void;
+  /**
+   * The inline hum/whistle/sing fallback (the one-button front door, owner
+   * 09-24): offered on the no-match card so an ambient miss hands the user
+   * straight to humming — the SAME way in, not a rival button. Omitted when the
+   * miss came from the hum pass itself.
+   */
+  onHumFallback?: () => void;
+  /**
+   * The hum → modern bridge (owner 09-22): a hum we don't hold is not a dead end
+   * — identify the recording and link the official sheet music. Offered on the
+   * no-match card of the hum pass.
+   */
+  onFindAnySong?: () => void;
 }
 
 /** Convert a RecognitionMatch to a shape the PieceDetailScreen can render. */
@@ -81,6 +99,8 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   onClose,
   onRetry,
   onUpgrade,
+  onHumFallback,
+  onFindAnySong,
 }) => {
   const [showDetail, setShowDetail] = React.useState(false);
   const [showScoreViewer, setShowScoreViewer] = React.useState(false);
@@ -255,6 +275,33 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
                 <Text style={styles.primaryBtnText}>Try Again</Text>
               </TouchableOpacity>
             </View>
+
+            {/* THE next step, from the pass that missed — never a dead end.
+                Ambient miss → the inline hum fallback (the one-button front
+                door: humming is the SAME way in, one tap away).
+                Hum miss → the hum → modern bridge, which identifies the actual
+                recording and links the official sheet music. */}
+            {onHumFallback ? (
+              <TouchableOpacity
+                style={styles.nextStepBtn}
+                onPress={onHumFallback}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={HUM_FALLBACK_BUTTON}
+              >
+                <Text style={styles.nextStepBtnText}>{HUM_FALLBACK_BUTTON}</Text>
+              </TouchableOpacity>
+            ) : null}
+            {onFindAnySong ? (
+              <TouchableOpacity
+                style={styles.bridgeBtn}
+                onPress={onFindAnySong}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.bridgeBtnText}>{HUM_TO_MODERN_CTA}</Text>
+                <Text style={styles.bridgeBtnHint}>{HUM_TO_MODERN_BLURB}</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -515,6 +562,51 @@ const styles = StyleSheet.create({
     color: '#a0a0b8',
     fontSize: 15,
     fontWeight: '600',
+  },
+
+  // No-match card: the next-step actions (the inline hum fallback, and the
+  // hum → modern bridge). Full width under the Cancel/Try Again row, quieter
+  // than the primary, and only rendered when the caller supplies the handler.
+  nextStepBtn: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 18,
+    width: '100%',
+    marginTop: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#4ecdc4',
+  },
+  nextStepBtnText: {
+    color: '#4ecdc4',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  bridgeBtn: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 18,
+    width: '100%',
+    marginTop: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
+  bridgeBtnText: {
+    color: '#e94560',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  bridgeBtnHint: {
+    color: '#a0a0b8',
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+    marginTop: 6,
   },
 
   // Success

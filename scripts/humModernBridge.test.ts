@@ -519,8 +519,8 @@ function liveScanTests(): void {
     'HumSearchScreen is NOT in the silent-start allowlist (the fix, not the exemption)',
   );
   assert(
-    allowlist.indexOf('HomeScreen') >= 0,
-    "HomeScreen is still tracked there (its own start path is a separate follow-up)",
+    allowlist.indexOf('HomeScreen') < 0,
+    'HomeScreen came OFF the silent-start allowlist with the one-button front door (its failed start now surfaces)',
   );
   assert(
     gateSource.indexOf("silent.filter((v) => v.path === 'src/screens/HumSearchScreen.tsx')") >= 0,

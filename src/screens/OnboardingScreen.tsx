@@ -43,7 +43,12 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
       onComplete({
         instrument,
         level,
-        genres: genres.length === 0 ? ['classical'] : genres,
+        // Genres are the user's OWN picks — an empty list stays empty. The
+        // former `genres.length === 0 ? ['classical'] : genres` default made
+        // every skipped onboarding look like a classical-only musician, which is
+        // what rendered "Curated Classical" on Home for guitar/pop learners
+        // (owner 09-24: the home line is genre-neutral and instrument-aware).
+        genres,
         completedAt: new Date().toISOString(),
       });
     } else {
