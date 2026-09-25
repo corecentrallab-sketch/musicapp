@@ -1,6 +1,11 @@
 import { modernRetailerUrls } from "./modern-retailer";
 import { pickModernGenre } from "./modern-genre";
 import { logCaptureHeaders } from "./capture-headers";
+import {
+  crossCheckPdCatalog,
+  type PdCrossCheckFn,
+  type PdMatchWire,
+} from "./modern-pd-crosscheck";
 
 // ---------------------------------------------------------------------------
 // Modern-song recognition wrapper — PREP/DRY-RUN skeleton (Backlog #12).
@@ -19,6 +24,16 @@ import { logCaptureHeaders } from "./capture-headers";
 // is purely an env change: set MODERN_RECOGNITION_PROVIDER=audd + AUDD_API_TOKEN
 // (or ACRCLOUD_ACCESS_KEY / ACRCLOUD_ACCESS_SECRET). See
 // /home/team/shared/MODERN-SONG-ID-EVALUATION.md.
+//
+// PD CROSS-CHECK (backlog 43c1c500 / 718da1e9, added 2026-09-25): the provider
+// identifies a RECORDING, and a recording of a public-domain work we already
+// hold is not a modern song to sell (owner's Lang Lang / Für Elise card). When
+// the provider returns a match this route asks `modern-pd-crosscheck.ts` whether
+// the identified work is in our PD catalog and, if the mapping is confident,
+// adds `pd_match` alongside the modern data — the app (PD-ROUTING, app master
+// 8558419) renders the free PD-library card for it. The key is ABSENT otherwise:
+// an ambiguous mapping is never sent as a guess, and a cross-check that cannot
+// run leaves this response exactly what it was before.
 // ---------------------------------------------------------------------------
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // match our existing cap (AudD's own limit is 10 MB)
@@ -157,7 +172,20 @@ async function acrcloudAdapter(_buf: ArrayBuffer, _key: string, _secret: string)
   throw new Error("ACRCloud adapter not yet implemented (Plan B); wire during vendor trial.");
 }
 
-export async function handleModernRecognize(req: Request): Promise<Response> {
+/**
+ * Injected dependencies — production callers pass nothing and get the real
+ * cross-check; the route test injects a catalog read so the whole pipeline can
+ * be pinned (AudD stub -> PD route decision) without a vendor call or a
+ * database round trip.
+ */
+export interface ModernRecognizeDeps {
+  crossCheck?: PdCrossCheckFn;
+}
+
+export async function handleModernRecognize(
+  req: Request,
+  deps: ModernRecognizeDeps = {},
+): Promise<Response> {
   if (req.method !== "POST") return json({ success: false, error: "Method not allowed. Use POST." }, 405);
 
   // 503 / not configured -> feature off, dry-run safe.
@@ -183,11 +211,33 @@ export async function handleModernRecognize(req: Request): Promise<Response> {
     return json({ success: false, error: "modern recognition service unavailable" }, 502);
   }
 
+  // --- PD cross-check (backlog 43c1c500 / 718da1e9) -------------------------
+  // The provider identified a RECORDING; when that recording is of a work we
+  // already hold in public domain, the app must show OUR free score card
+  // instead of the modern interstitial (owner 09-25: Lang Lang's Für Elise came
+  // up as a modern song to buy). The cross-check is run ONLY when there is a
+  // match — a no-match pass has nothing to map, and must not touch the catalog.
+  // It never throws: an unreadable catalog or an ambiguous mapping returns null
+  // and the response stays the honest modern result it was before.
+  const crossCheck = deps.crossCheck ?? crossCheckPdCatalog;
+  let pdMatch: PdMatchWire | null = null;
+  if (match) {
+    pdMatch = await crossCheck({
+      title: match.song,
+      artist: match.artist,
+      composer: match.composer,
+    });
+  }
+
   return json({
     success: true,
     modern: match,            // null -> recognized: "none"
     recognized: match ? "modern" : "none",
     source: PROVIDER,
     query_duration_ms: Date.now() - t0,
+    // Present ONLY when the mapping was confident. The app reads this to route
+    // the PD-library card; its absence is what keeps a genuine modern song on
+    // the modern path (an ambiguous mapping is never sent as a guess).
+    ...(pdMatch ? { pd_match: pdMatch } : {}),
   });
 }
