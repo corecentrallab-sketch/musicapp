@@ -55,6 +55,16 @@
 // and keeping the whole string when no later segment matches (a real `A - B`
 // duet is never over-stripped). Evidence: `/home/team/shared/RC-V26-RESULTS.md`.
 //
+// AND VERSION-DESCRIPTOR PARENS GO WITH THEM (owner on-device bug 09-25, RC v26
+// re-test #2): the owner's modern card was `Fur Elise (Piano Version)` and SMD's
+// answer was "No Results" again, because the version descriptor was NOT stripped.
+// `version` has since joined the marker vocabulary, so the SMD query is the
+// searchable `Fur Elise`; this pass closes the rest of that family
+// (`Re-recorded`/`re-recording`, `Remixed`/`Remixes`, `Radio Edit`/`Single Edit`)
+// and pins the owner's exact card plus the umlaut spelling as tests. The failing
+// half of that owner report (the Musicnotes CTA searching the literal word
+// "NoteSnap") was the `w=NoteSnap` tag, deleted in the same fix.
+//
 // The Musicnotes BACKUP link keeps `"<title> <artist>"` (its own search handles
 // both tokens) — but its title half is cleaned the same way and the URL carries
 // NO `w` parameter: on the owner's phone Musicnotes read `w=NoteSnap` AS the
@@ -104,9 +114,21 @@ import {
  * query slightly noisy (the old behaviour) while a false positive would delete a
  * real title. Markers whose word appears in real titles ("take", "session") are
  * excluded for that reason.
+ *
+ * VERSION-DESCRIPTOR PARENTHETICALS (owner on-device bug 09-25, RC v26 #2): the
+ * owner's card read `Fur Elise (Piano Version)` and SMD answered "No Results".
+ * `version` is already a marker, so the paren goes and the query is `Fur Elise`
+ * — pinned by tests because that is the exact card that dead-ended. This pass
+ * closes the rest of the same family so the vocabulary matches what providers
+ * actually put in a title: `Re-recorded`/`re-recording` (the one descriptor in
+ * the owner's list the older list missed — `remaster` does not cover
+ * `re-recorded`), the `-ed`/`-es` spellings of `remix`/`mix` (`\bremix\b` does
+ * not match `Remixed`), and the radio/single cut (`Radio Edit`). Every addition
+ * is exercised by a test, and a test pins that these words are untouched when
+ * they are part of the title itself rather than a parenthetical.
  */
 const RETAILER_METADATA_MARKER =
-  /\b(?:live|remaster(?:ed)?|deluxe|feat|featuring|edition|demo|acoustic|anniversary|reissue|remix|mix|mono|stereo|instrumental|karaoke|version|bonus|expanded)\b/i;
+  /\b(?:live|remaster(?:ed)?|deluxe|feat|featuring|edition|demo|acoustic|anniversary|reissue|remix(?:ed|es)?|mix(?:ed|es)?|mono|stereo|instrumental|karaoke|version|bonus|expanded|re-?record(?:ed|ing)?s?|(?:radio|single)\s+edit)\b/i;
 /** A 4-digit release year (19xx / 20xx) — `(1966)`, `- Live …, 1966`. */
 const RETAILER_METADATA_YEAR = /\b(?:19|20)\d{2}\b/;
 
