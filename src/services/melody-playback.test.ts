@@ -133,7 +133,7 @@ describe("buildMelodyPlaybackPlan", () => {
   });
 
   test("every bundled seed produces a playable plan", () => {
-    expect(MELODY_SEEDS.length).toBe(8);
+    expect(MELODY_SEEDS.length).toBe(9);
     for (const seed of MELODY_SEEDS) {
       const plan = buildMelodyPlaybackPlan(seed.abc);
       expect(plan.notes.length).toBeGreaterThanOrEqual(4);

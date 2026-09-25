@@ -2,11 +2,12 @@
  * piece-melody.ts — which reference melody belongs to a catalog piece
  * (SITE WAVE 1b, P2: the "play the melody" widget).
  *
- * The site holds exactly eight public-domain reference melodies, bundled as ABC
+ * The site holds exactly nine public-domain reference melodies, bundled as ABC
  * in `hum/melody-seeds.ts` (MELODY_SEEDS) — the same byte-identical seed list the
  * hum-to-search recogniser searches and the app's practice coach practices
- * against. Those seeds carry **slug** ids (`fur-elise`), while a piece page is
- * addressed by a catalog **UUID**, and the same title can be written several ways
+ * against (`src/services/pieceAbc.ts` ABC_SEEDS). Those seeds carry **slug** ids
+ * (`fur-elise`), while a piece page is addressed by a catalog **UUID**, and the
+ * same title can be written several ways
  * ("Für Elise" / "Fur Elise" / "Bagatelle in A Minor (Für Elise)").
  *
  * So a piece page can never join on id. This module is the resolver: it matches
@@ -16,9 +17,10 @@
  *
  * Matching is deliberately conservative — a wrong reference melody is worse than
  * no melody at all, so an unmatched piece returns null and the page shows the
- * honest "coming soon" state. Only these eight titles can ever match:
+ * honest "coming soon" state. Only these nine titles can ever match:
  *   Für Elise · Ode to Joy · Twinkle, Twinkle, Little Star · Greensleeves ·
- *   Jingle Bells · Canon in D · Happy Birthday · Anvil Chorus
+ *   Jingle Bells · Canon in D · Happy Birthday · Anvil Chorus ·
+ *   Air on the G String
  *
  * Pure: no network, no database, no environment. Testable under plain bun test.
  */
