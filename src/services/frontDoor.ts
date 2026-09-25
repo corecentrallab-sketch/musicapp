@@ -79,6 +79,12 @@ export const HUM_FALLBACK_HINT =
   'Tap the button and hum a phrase (8–12s), then tap again to find it.';
 /** The no-match card's action that hands the user into the hum fallback. */
 export const HUM_FALLBACK_BUTTON = '🎤 Hum, whistle or sing the melody';
+/**
+ * The line that LABELS that action as the secondary way in (owner 09-25): the
+ * big red button is identify-first, so the card says in words that humming is
+ * the alternative — it is not the door's primary action any more.
+ */
+export const HUM_SECONDARY_CTA = "Can't play it? Hum it";
 /** The honest library-size note under the fallback (same as the hum screen's). */
 export const HUM_FALLBACK_LIBRARY_NOTE =
   'Library still growing — try a well-known melody (Für Elise, Ode to Joy).';
@@ -396,6 +402,52 @@ export function humFallbackIsInline(source: string): boolean {
   );
 }
 
+/** The ambient-miss branch's marker: it offers the hum way in on the card. */
+export const AMBIENT_NO_MATCH_OFFER_MARKER = "setNoMatchOffer('hum')";
+/** The marker of the "the recorder produced no clip at all" branch. */
+export const EMPTY_CAPTURE_MARKER = "reason === 'empty'";
+
+/**
+ * True when the hero stays IDENTIFY-FIRST (owner 09-25): the big red button
+ * reads "Tap to identify" unless the user themself chose the hum way in, and the
+ * two miss paths never silently arm the hum fallback behind their back — which
+ * is exactly what turned the big button into "Tap to hum it" after every failed
+ * listen (v25: the capture never produced a clip, the door armed hum mode, and
+ * the primary CTA changed its job without being asked).
+ *
+ * Contracts, in the order the screen runs them:
+ *   1. the ambient no-match branch (the one that offers the hum affordance) must
+ *      NOT call setHumFallback(true) — the CARD carries the hum path instead;
+ *   2. the no-clip-at-all branch must show the honest capture-feedback card
+ *      (setRecognitionPhase) rather than arming hum and returning wordlessly;
+ *   3. the hum path is still reachable: the card's handler exists and is what
+ *      arms it (setHumFallback(true) inside handleHumFallbackFromCard).
+ */
+export function heroStaysIdentifyFirst(source: string): boolean {
+  const masked = maskComments(source);
+  const offer = masked.indexOf(AMBIENT_NO_MATCH_OFFER_MARKER);
+  if (offer < 0) return false;
+  // The branch around the offer marker: the offer is the LAST statement of the
+  // ambient no-match branch, so the branch's body runs from the no-match phase
+  // it sets to the offer itself.
+  const phaseAt = masked.lastIndexOf('setRecognitionPhase', offer);
+  if (phaseAt < 0) return false;
+  const branch = masked.slice(phaseAt, offer + 120);
+  if (/setHumFallback\s*\(\s*true\s*\)/.test(branch)) return false;
+  // The empty-capture branch: a card, never a silent mode switch.
+  const empty = new RegExp(EMPTY_CAPTURE_MARKER).exec(masked);
+  if (!empty) return false;
+  const emptyBody = braceBlockFrom(masked, empty.index);
+  if (!emptyBody) return false;
+  if (/setHumFallback\s*\(\s*true\s*\)/.test(emptyBody)) return false;
+  if (!/setRecognitionPhase\s*\(/.test(emptyBody)) return false;
+  // The hum path is still reachable — the card's handler arms it.
+  const handler = masked.indexOf('handleHumFallbackFromCard');
+  if (handler < 0) return false;
+  const handlerBody = braceBlockFrom(masked, handler);
+  return /setHumFallback\s*\(\s*true\s*\)/.test(handlerBody);
+}
+
 /** True when "Find a piece" is the secondary search-field entry under the hero
  *  button (not a competing CTA), labelled from this module. */
 export function findPieceIsSearchEntry(source: string): boolean {
@@ -458,6 +510,9 @@ export function noMatchOffersNextStep(source: string): boolean {
     /onHumFallback/.test(block) &&
     /onFindAnySong/.test(block) &&
     block.indexOf('HUM_FALLBACK_BUTTON') >= 0 &&
+    // The hum affordance is LABELLED as the secondary way in (owner 09-25): the
+    // identify pass is the door's primary action, so the card must say so.
+    block.indexOf('HUM_SECONDARY_CTA') >= 0 &&
     block.indexOf('HUM_TO_MODERN_CTA') >= 0
   );
 }

@@ -21,6 +21,11 @@ import {
   type CatalogSearchResponse,
 } from "./catalogSearch";
 import { getDeviceId } from "./device";
+// The on-device capture diagnostics (V26, owner 09-25) ride along as request
+// HEADERS so the server can log what the phone actually captured. The header
+// builder and its field names live in the pure captureFeedback module, together
+// with the no-match card copy that surfaces the same numbers to the user.
+import { captureDiagnosticHeaders, type CaptureNumbers } from "./captureFeedback";
 // A catalog piece with no genre in the payload is "Uncategorised" — the honest
 // answer — resolved by the module that owns these strings.
 import { UNCATEGORISED_GENRE } from "./resultGenre";
@@ -98,12 +103,34 @@ export function isRecognitionLimitError(
 }
 
 /**
+ * The request headers for an audio upload: our identity plus the capture
+ * diagnostics (V26, owner 09-25) — `x-capture-duration-ms`,
+ * `x-capture-peak-dbfs`, `x-capture-bytes`. Only measured values are sent, and
+ * the server only logs them (never a response body). One helper for both upload
+ * paths, so the numbers can never go missing on one of them silently.
+ */
+function uploadHeaders(
+  deviceId: string,
+  diagnostics?: CaptureNumbers | null,
+): Record<string, string> {
+  return {
+    Accept: "application/json",
+    "x-user-id": deviceId,
+    ...captureDiagnosticHeaders(diagnostics),
+  };
+}
+
+/**
  * Upload an audio recording for recognition.
  * Sends the anonymous device id as x-user-id so the server can apply
  * subscription-based (Pro) limits instead of per-IP limits.
+ *
+ * The multipart field MUST be `audio` on this route (the server reads
+ * formData.get("audio")). Field names are pinned by src/services/uploadFieldContract.ts.
  */
 export async function recognizeAudio(
   audioUri: string,
+  diagnostics?: CaptureNumbers | null,
 ): Promise<RecognitionResponse> {
   const formData = new FormData();
   const filePart = buildAudioFilePart(audioUri);
@@ -119,7 +146,7 @@ export async function recognizeAudio(
     response = await fetch(`${BASE_URL}/api/recognize`, {
       method: "POST",
       body: formData,
-      headers: { Accept: "application/json", "x-user-id": deviceId },
+      headers: uploadHeaders(deviceId, diagnostics),
       signal: controller.signal,
     });
   } catch (err) {
@@ -168,16 +195,21 @@ export async function recognizeAudio(
 
 /**
  * Shared multipart upload for the Tier-1 endpoints (/api/hum and
- * /api/recognize-modern). Builds the same audio file part and device-id header
- * as recognizeAudio, POSTs to `path` with the given multipart `fieldName`, then
- * returns the parsed JSON body (raw) or throws a user-facing Error. A 429 is
- * surfaced as a RecognitionLimitError so the UI can show the honest free-tier
- * limit state for these flows too.
+ * /api/recognize-modern). Builds the same audio file part, device-id header and
+ * capture-diagnostic headers as recognizeAudio, POSTs to `path` with the given
+ * multipart `fieldName`, then returns the parsed JSON body (raw) or throws a
+ * user-facing Error. A 429 is surfaced as a RecognitionLimitError so the UI can
+ * show the honest free-tier limit state for these flows too.
+ *
+ * THE FIELD NAME IS THE ROUTE'S CONTRACT and differs per route: `/api/hum` takes
+ * `audio`, `/api/recognize-modern` takes `file`. A drift is a silent 400 on
+ * device, so both call sites are pinned by src/services/uploadFieldContract.ts.
  */
 async function postAudioMultipart(
   audioUri: string,
   path: string,
   fieldName: string,
+  diagnostics?: CaptureNumbers | null,
 ): Promise<unknown> {
   const formData = new FormData();
   const filePart = buildAudioFilePart(audioUri);
@@ -192,7 +224,7 @@ async function postAudioMultipart(
     response = await fetch(`${BASE_URL}${path}`, {
       method: "POST",
       body: formData,
-      headers: { Accept: "application/json", "x-user-id": deviceId },
+      headers: uploadHeaders(deviceId, diagnostics),
       signal: controller.signal,
     });
   } catch (err) {
@@ -235,8 +267,11 @@ async function postAudioMultipart(
  * same field name as /api/recognize) and returns the normalized response. The
  * honest match/no-match decision lives in tier1.ts.
  */
-export async function humToSearch(audioUri: string): Promise<HumResponse> {
-  const json = await postAudioMultipart(audioUri, "/api/hum", "audio");
+export async function humToSearch(
+  audioUri: string,
+  diagnostics?: CaptureNumbers | null,
+): Promise<HumResponse> {
+  const json = await postAudioMultipart(audioUri, "/api/hum", "audio", diagnostics);
   const parsed = parseHumResponse(json);
   if (!parsed) {
     throw new Error("Couldn't read the hum-to-search result. Please try again.");
@@ -253,11 +288,13 @@ export async function humToSearch(audioUri: string): Promise<HumResponse> {
  */
 export async function recognizeModernSong(
   audioUri: string,
+  diagnostics?: CaptureNumbers | null,
 ): Promise<ModernResponse> {
   const json = await postAudioMultipart(
     audioUri,
     "/api/recognize-modern",
     "file",
+    diagnostics,
   );
   const parsed = parseModernResponse(json);
   if (!parsed) {

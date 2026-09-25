@@ -22,8 +22,10 @@
  * The rule this module owns, and the only place these strings may live:
  *
  *   • a match that is NOT public domain (recognised through the licensed
- *     fingerprint service — a modern, copyrighted song) is categorised
- *     "Modern song" and gets the official-sheet-music CTA. Never "Classical".
+ *     fingerprint service — a modern, copyrighted song) shows the PROVIDER'S
+ *     genre when the backend carries one ("Hard Rock", "Ambient", … — owner
+ *     request 09-25), else the honest generic "Modern song", and gets the
+ *     official-sheet-music CTA. Never "Classical".
  *   • a public-domain match shows the catalog's OWN genre when the payload has
  *     one (the backend sends `genre`; the app used to drop it and print the
  *     catalog NUMBER in the genre slot instead), else the honest
@@ -40,8 +42,16 @@
  */
 import { maskComments } from './modalBackContract';
 
-/** The user-facing category for a modern (copyrighted, non-library) match. */
-export const MODERN_SONG_GENRE = 'Modern song';
+/**
+ * The FALLBACK category for a modern (copyrighted, non-library) match — used
+ * only when the provider gave us no genre of its own.
+ *
+ * Owner request 09-25: the hardcoded "Modern song" label had to go. A modern
+ * match now shows the PROVIDER'S genre ("Hard Rock", "Modern Jazz", "Ambient")
+ * when the backend sends one (see modernGenreLabel below), and only falls back
+ * to this honest generic category when it does not.
+ */
+export const FALLBACK_MODERN_GENRE = 'Modern song';
 
 /**
  * The category for a piece served from our own free library. A fact the app
@@ -90,20 +100,36 @@ export function isModernResult(match: GenreSource | null | undefined): boolean {
 }
 
 /**
+ * The category label for a MODERN match: the provider's own genre when the
+ * backend carried one (`/api/recognize-modern` maps AudD's Apple Music /
+ * Spotify genre — see the site's modern-genre.ts), else the honest generic
+ * FALLBACK_MODERN_GENRE. Never "Classical", and never an invented genre.
+ *
+ * This is the ONLY place a modern match's genre string may be produced; the
+ * interstitial, the History save and the search screen all resolve through it.
+ */
+export function modernGenreLabel(
+  result: { genre?: string | null } | null | undefined,
+): string {
+  return clean(result?.genre) ?? FALLBACK_MODERN_GENRE;
+}
+
+/**
  * The category label for a recognition match.
  *
- * Modern → "Modern song" (never "Classical"); public domain → the catalog's own
- * genre, else "Public domain".
+ * Modern → its provider genre, else "Modern song" (never "Classical"); public
+ * domain → the catalog's own genre, else "Public domain".
  */
 export function resultGenreLabel(match: GenreSource | null | undefined): string {
-  if (isModernResult(match)) return MODERN_SONG_GENRE;
+  if (isModernResult(match)) return modernGenreLabel(match);
   return clean(match?.genre) ?? PUBLIC_DOMAIN_GENRE;
 }
 
 /**
  * The category label for a SAVED recognition (a History row), which carries only
- * what was stored at save time. A modern save stores MODERN_SONG_GENRE, so it
- * survives; a legacy row with no genre is "Uncategorised" — not classical.
+ * what was stored at save time. A modern save stores its genre (or
+ * FALLBACK_MODERN_GENRE), so it survives; a legacy row with no genre is
+ * "Uncategorised" — not classical.
  */
 export function savedGenreLabel(genre: string | null | undefined): string {
   return clean(genre) ?? UNCATEGORISED_GENRE;
@@ -178,6 +204,6 @@ export function formatGenreLabelOffenders(
 ): string[] {
   return offenders.map(
     (o) =>
-      `${o.path}:${o.line} — a result genre is hardcoded/defaulted to "Classical" (${o.kind}); use resultGenreLabel() / MODERN_SONG_GENRE / PUBLIC_DOMAIN_GENRE instead: ${o.text}`,
+      `${o.path}:${o.line} — a result genre is hardcoded/defaulted to "Classical" (${o.kind}); use resultGenreLabel() / modernGenreLabel() / PUBLIC_DOMAIN_GENRE instead: ${o.text}`,
   );
 }

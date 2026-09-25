@@ -11,21 +11,29 @@
  *   • it only fires while the streak is genuinely alive and today has no run yet
  *     (the engine's at-risk nudge — services/practiceReinforcement.evaluateNudge)
  *   • the copy states the streak and keeps it warm: no pressure, no deadline
- *   • it is a ONE-SHOT at 18:00 local with TODAY's copy, re-scheduled each time
- *     the app refreshes — so the number in the message is the real one, and we
- *     never repeat a stale count day after day
+ *   • it is a ONE-SHOT at the user's chosen local time (owner 09-25; 18:00 by
+ *     default) with TODAY's copy, re-scheduled each time the app refreshes — so
+ *     the number in the message is the real one, and we never repeat a stale
+ *     count day after day
  *   • no streak to speak of → nothing is scheduled at all
- * It can never interrupt play: notifications only ever land at 18:00, outside any
- * run or score screen.
+ * It can never interrupt play: the nudge only ever lands at the time the user
+ * chose (outside any run or score screen), and it is a single one-shot.
  */
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { getNotificationEnabled, getTodayPracticeMinutes } from './storage';
+import {
+  getNotificationEnabled,
+  getReminderMinutes,
+  getTodayPracticeMinutes,
+} from './storage';
 import {
   getEngineStreakLocal,
   getReinforcementNudgeLocal,
 } from './reinforcementStore';
 import { nextNudgeTime } from './practiceReinforcementView';
+// The user's chosen reminder time: minutes-of-day + its hour/minute pair. The
+// default (18:00) and the formatting live in that pure module (owner 09-25).
+import { reminderHourMinute } from './reminderTime';
 
 const CHANNEL_ID = 'streak-nudges';
 const NUDGE_ID = 'streak-nudge';
@@ -63,7 +71,12 @@ export async function scheduleStreakNudge(): Promise<boolean> {
   await Notifications.cancelScheduledNotificationAsync(NUDGE_ID).catch(() => undefined);
   if (!nudge) return false;
 
-  const when = nextNudgeTime(new Date());
+  // The user's chosen reminder time (owner 09-25) — 18:00 until they change it.
+  // Cancel-then-reschedule above is what makes a time change atomic: the one
+  // pending one-shot is dropped and re-armed at the new time, never stacked.
+  const reminderMinutes = await getReminderMinutes();
+  const { hour, minute } = reminderHourMinute(reminderMinutes);
+  const when = nextNudgeTime(new Date(), hour, minute);
   if (!when) return false;
 
   const granted = await requestNotificationPermission();
@@ -106,4 +119,16 @@ export async function refreshStreakNudge(): Promise<void> {
 
 export async function cancelStreakNudge(): Promise<void> {
   await Notifications.cancelScheduledNotificationAsync(NUDGE_ID).catch(() => undefined);
+}
+
+/**
+ * Re-arm the one-shot after the user picked a new reminder time (owner 09-25):
+ * cancel the pending notification, then schedule it again at the new time. The
+ * caller persists the choice first (services/storage.setReminderMinutes) so the
+ * scheduler reads the new value; this is the only place a time change touches
+ * the notification queue, which is what keeps exactly ONE nudge armed.
+ */
+export async function rescheduleStreakNudgeForTimeChange(): Promise<boolean> {
+  await cancelStreakNudge();
+  return scheduleStreakNudge();
 }

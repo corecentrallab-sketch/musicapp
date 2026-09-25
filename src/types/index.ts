@@ -145,6 +145,14 @@ export interface ModernMatch {
   artist: string;
   album?: string;
   isrc?: string;
+  /**
+   * THE REAL GENRE from the music-ID provider's own metadata ("Hard Rock",
+   * "Modern Jazz", "Ambient"), mapped server-side from AudD's Apple Music /
+   * Spotify blocks (owner request 09-25 — the result card used to hardcode
+   * "Modern song"). ABSENT when the provider carried no genre; the app then
+   * resolves through modernGenreLabel() and shows its honest generic category.
+   */
+  genre?: string;
   albumArtUrl?: string;
   composer?: string;
   matchConfidence: number;

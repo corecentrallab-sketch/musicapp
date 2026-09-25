@@ -19,6 +19,10 @@
  * yields `null` for that field without ever breaking the recognition flow.
  */
 import * as FileSystem from "expo-file-system";
+// The tiny-capture decision and its thresholds live in the PURE captureFeedback
+// module (no expo import, so the tier1 gate covers it, and it also owns the
+// no-match card's copy for this exact condition).
+import { isTinyCapture } from "./captureFeedback";
 
 export interface CaptureDiagnostics {
   durationMs: number | null;
@@ -33,14 +37,30 @@ export interface CaptureDiagnostics {
   format: string | null;
 }
 
+/**
+ * The diagnostics of a capture that never produced a clip at all (a stop failure
+ * of reason 'empty'). These are MEASUREMENTS, not guesses: 0 bytes on disk and
+ * 0 ms of audio, i.e. strictly tinier than every tiny-capture threshold — which
+ * is why the pure captureFeedback.isTinyCapture() classifies them as the
+ * "We couldn't hear enough" card instead of a library miss.
+ */
+export const NO_AUDIO_DIAGNOSTICS: CaptureDiagnostics = {
+  durationMs: 0,
+  sampleRate: null,
+  channels: null,
+  peakDbFS: null,
+  rmsDbFS: null,
+  bytes: 0,
+  format: null,
+};
+
 /** True when the clip metadata implies an empty/tiny capture (defect signal). */
 export function looksSuspicious(d: CaptureDiagnostics): boolean {
-  if (d.bytes === null) return false;
-  // 12s @ 128kbps AAC should be ~190KB or more. A clip far below that, or a
-  // recorded duration of a few ms, points at a silently-truncated capture.
-  if (d.bytes > 0 && d.bytes < 4000) return true;
-  if (d.durationMs !== null && d.durationMs > 0 && d.durationMs < 500) return true;
-  return false;
+  // The thresholds and the null-handling live in captureFeedback.ts (the pure
+  // module the tier1 gate covers, which also owns the no-match card's copy for
+  // this exact condition). Kept as a named export here for the existing
+  // callers/log line.
+  return isTinyCapture(d);
 }
 
 /** Read magic bytes (ASCII helper) */

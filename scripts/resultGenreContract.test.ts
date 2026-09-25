@@ -25,7 +25,7 @@
  * Plain Node, no react-native, no network. Run with: npm run test:tier1
  */
 import {
-  MODERN_SONG_GENRE,
+  FALLBACK_MODERN_GENRE,
   PUBLIC_DOMAIN_GENRE,
   RESULT_GENRE_MODULE_PATH,
   UNCATEGORISED_GENRE,
@@ -85,14 +85,14 @@ function labelTests(): void {
   };
   assertEq(
     resultGenreLabel(zzTop),
-    MODERN_SONG_GENRE,
+    FALLBACK_MODERN_GENRE,
     'a modern (non-public-domain) match is categorised "Modern song"',
   );
   assert(
     !claimsClassical(resultGenreLabel(zzTop)),
     'a modern match is NEVER labelled classical',
   );
-  assertEq(MODERN_SONG_GENRE, 'Modern song', 'the neutral modern category is stated plainly');
+  assertEq(FALLBACK_MODERN_GENRE, 'Modern song', 'the neutral modern category is stated plainly');
 
   // The same match with no explicit flag at all is still not public domain.
   assert(
@@ -126,7 +126,7 @@ function labelTests(): void {
   // Saved records (History rows).
   assertEq(
     savedGenreLabel('Modern song'),
-    MODERN_SONG_GENRE,
+    FALLBACK_MODERN_GENRE,
     'a saved modern recognition keeps its category',
   );
   assertEq(
@@ -311,7 +311,7 @@ function wiringTests(): void {
 
   const interstitial = readAppFile(INTERSTITIAL);
   assert(
-    interstitial.includes('{MODERN_SONG_GENRE}'),
+    interstitial.includes('{modernGenreLabel(match)}'),
     'the modern-song interstitial states the neutral category "Modern song"',
   );
   assert(
@@ -321,7 +321,7 @@ function wiringTests(): void {
 
   const modernScreen = readAppFile(MODERN_SCREEN);
   assert(
-    modernScreen.includes('genre: MODERN_SONG_GENRE'),
+    modernScreen.includes('genre: modernGenreLabel(m)'),
     'a modern match is saved to History WITH its category (no classical default can apply)',
   );
 

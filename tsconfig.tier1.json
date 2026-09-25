@@ -40,6 +40,9 @@
     "src/services/resultGenre.ts",
     "src/services/frontDoor.ts",
     "src/services/medals.ts",
+    "src/services/uploadFieldContract.ts",
+    "src/services/captureFeedback.ts",
+    "src/services/reminderTime.ts",
     "src/services/abcTranspose.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
@@ -63,6 +66,9 @@
     "scripts/abcTranspose.test.ts",
     "scripts/notationEditorContract.test.ts",
     "scripts/frontDoor.test.ts",
-    "scripts/medals.test.ts"
+    "scripts/medals.test.ts",
+    "scripts/uploadFieldContract.test.ts",
+    "scripts/captureFeedback.test.ts",
+    "scripts/reminderTime.test.ts"
   ]
 }
