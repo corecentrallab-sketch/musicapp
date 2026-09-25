@@ -35,6 +35,7 @@ import {
   HUM_FALLBACK_HINT,
   HUM_FALLBACK_LIBRARY_NOTE,
   HUM_FALLBACK_PROMPT,
+  HUM_SECONDARY_CTA,
   RIVAL_MODE_HANDLERS,
   elementWithMarker,
   findPieceIsSearchEntry,
@@ -45,6 +46,7 @@ import {
   heroLabel,
   heroRunsHybridPipeline,
   heroStartFailureSurfaced,
+  heroStaysIdentifyFirst,
   heroState,
   heroSupport,
   heroTapAction,
@@ -119,6 +121,11 @@ function copyTests(): void {
     'idle reads "Tap to identify" (the owner-approved copy)',
   );
   assertEq(heroLabel('hum'), HERO_CTA_HUM, 'hum mode relabels the SAME button');
+  const secondaryCta: string = HUM_SECONDARY_CTA;
+  assert(
+    /hum it/i.test(secondaryCta) && secondaryCta !== (HERO_CTA_HUM as string),
+    'the hum way in is offered as a labelled SECONDARY affordance, never the primary CTA',
+  );
   assert(
     /tap/i.test(heroLabel('hum')),
     'the hum label is still an instruction on the one button',
@@ -405,6 +412,71 @@ function fixtureTests(): void {
   assertEq(humFallbackIsInline(fixedTier1), true, 'the inline fallback passes');
   assertEq(findPieceIsSearchEntry(fixedTier1), true, 'the search-field entry passes');
 
+  console.log('\npre-fix Home source is caught: the hero quietly BECOMES "Tap to hum it"');
+  // Verbatim pre-fix shape (v25): an ambient miss, and the no-clip case, both arm
+  // the hum fallback behind the user's back — so the big red button's job (and
+  // its label) changes without anyone choosing it. That is the defect the owner
+  // reported on 09-25.
+  const preFixHeroJobs = [
+    '  const runAmbientPipeline = useCallback(async (uri: string, diagnostics?: CaptureDiagnostics) => {',
+    "        setRecognitionPhase({ type: 'no-match', message: result.no_confident_match_reason });",
+    "        setHumFallback(true);",
+    "        setNoMatchOffer('hum');",
+    '  }, [recorder]);',
+    '  const handleStopCapture = useCallback(async () => {',
+    "        if (reason === 'empty') {",
+    '          setNoMatchOffer(null);',
+    '          setHumFallback(true);',
+    '          return;',
+    '        }',
+    '  }, [recorder]);',
+    '  const handleHumFallbackFromCard = useCallback(() => {',
+    '    setHumFallback(true);',
+    '  }, []);',
+  ].join('\n');
+  assertEq(
+    heroStaysIdentifyFirst(preFixHeroJobs),
+    false,
+    'an ambient miss that arms hum mode behind the user fails (the big button changes job)',
+  );
+  const preFixEmptyOnly = [
+    "        setRecognitionPhase({ type: 'no-match' });",
+    "        setNoMatchOffer('hum');",
+    "        if (reason === 'empty') {",
+    '          setNoMatchOffer(null);',
+    '          setHumFallback(true);',
+    '          return;',
+    '        }',
+    '  const handleHumFallbackFromCard = useCallback(() => {',
+    '    setHumFallback(true);',
+    '  }, []);',
+  ].join('\n');
+  assertEq(
+    heroStaysIdentifyFirst(preFixEmptyOnly),
+    false,
+    'a no-clip capture that arms hum and shows NO card fails (the v25 silent dead end)',
+  );
+  // The fixed shape (ambient miss keeps the door identify-first, the no-clip case
+  // shows the honest card, the CARD is what arms hum) passes.
+  const fixedHeroJobs = [
+    "        setRecognitionPhase({ type: 'no-match', diagnostics: NO_AUDIO_DIAGNOSTICS });",
+    "        setNoMatchOffer('hum');",
+    "        if (reason === 'empty') {",
+    "          setNoMatchOffer('hum');",
+    "          setRecognitionPhase({ type: 'no-match', diagnostics: NO_AUDIO_DIAGNOSTICS });",
+    '          setShowRecognitionResults(true);',
+    '          return;',
+    '        }',
+    '  const handleHumFallbackFromCard = useCallback(() => {',
+    '    setHumFallback(true);',
+    '  }, []);',
+  ].join('\n');
+  assertEq(
+    heroStaysIdentifyFirst(fixedHeroJobs),
+    true,
+    'the identify-first door passes: the card carries the hum path, the hero keeps its job',
+  );
+
   console.log('\npre-fix Home source is caught: the silent start + Curated subtitle');
 
   const preFixStart = [
@@ -477,12 +549,21 @@ function fixtureTests(): void {
   );
   const fixedCard = [
     "  if (phase.type === 'no-match') {",
+    '    {onHumFallback ? (<Text>{HUM_SECONDARY_CTA}</Text>) : null}',
     '    {onHumFallback ? (<Text>{HUM_FALLBACK_BUTTON}</Text>) : null}',
     '    {onFindAnySong ? (<Text>{HUM_TO_MODERN_CTA}</Text>) : null}',
     '  }',
     '  const topMatch = phase.response.matches[0];',
   ].join('\n');
   assertEq(noMatchOffersNextStep(fixedCard), true, 'the both-ways-forward card passes');
+  // A card that offers the hum affordance but does NOT label it as the
+  // secondary way in fails — the identify pass is the door's primary action.
+  const unlabelledHumCard = fixedCard.replace('{HUM_SECONDARY_CTA}', 'Humming');
+  assertEq(
+    noMatchOffersNextStep(unlabelledHumCard),
+    false,
+    'an unlabelled hum affordance fails (the hum button is not the primary CTA)',
+  );
 
   console.log('\nthe half-pipeline is caught');
 
@@ -579,6 +660,15 @@ function liveScanTests(): void {
   );
   assertEq(heroStartFailureSurfaced(home), true, 'a failed capture start surfaces (no silent dead end)');
   assertEq(humFallbackIsInline(home), true, 'the hum fallback is inline on the SAME button');
+  assertEq(
+    heroStaysIdentifyFirst(home),
+    true,
+    'the hero stays IDENTIFY-FIRST: no miss path arms hum mode behind the user',
+  );
+  assert(
+    home.indexOf('handleHumFallbackFromCard') > 0,
+    "the card's hum affordance is still the way into the hum pass (the hum path is not removed)",
+  );
   assertEq(findPieceIsSearchEntry(home), true, '"Find a piece" is the secondary search entry');
   assertEq(homePromiseRendered(home), true, 'the subtitle renders the genre-neutral promise');
 
@@ -615,6 +705,10 @@ function liveScanTests(): void {
   assert(
     /onPress=\{onHumFallback\}/.test(card),
     'the hum fallback button is actually wired to its handler',
+  );
+  assert(
+    card.indexOf('HUM_SECONDARY_CTA') >= 0,
+    'the hum way in is LABELLED as the secondary affordance on the card',
   );
   assert(
     /onPress=\{onFindAnySong\}/.test(card),

@@ -37,6 +37,23 @@ export interface CaptureDiagnostics {
   format: string | null;
 }
 
+/**
+ * The diagnostics of a capture that never produced a clip at all (a stop failure
+ * of reason 'empty'). These are MEASUREMENTS, not guesses: 0 bytes on disk and
+ * 0 ms of audio, i.e. strictly tinier than every tiny-capture threshold — which
+ * is why the pure captureFeedback.isTinyCapture() classifies them as the
+ * "We couldn't hear enough" card instead of a library miss.
+ */
+export const NO_AUDIO_DIAGNOSTICS: CaptureDiagnostics = {
+  durationMs: 0,
+  sampleRate: null,
+  channels: null,
+  peakDbFS: null,
+  rmsDbFS: null,
+  bytes: 0,
+  format: null,
+};
+
 /** True when the clip metadata implies an empty/tiny capture (defect signal). */
 export function looksSuspicious(d: CaptureDiagnostics): boolean {
   // The thresholds and the null-handling live in captureFeedback.ts (the pure

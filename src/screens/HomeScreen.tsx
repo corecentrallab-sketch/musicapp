@@ -37,6 +37,7 @@ import { PracticeWeekScreen } from './PracticeWeekScreen';
 // like the flows above; it registers useHardwareBack itself.
 import { AchievementsScreen } from './AchievementsScreen';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
+import { NO_AUDIO_DIAGNOSTICS } from '../services/captureTelemetry';
 import type { CaptureDiagnostics } from '../services/captureTelemetry';
 import {
   recognizeAudio,
@@ -545,8 +546,10 @@ export const HomeScreen: React.FC = () => {
 
         // Honest no-match. When the server declined to name a piece (ambiguous /
         // too weak) its own reason is surfaced instead of a generic message —
-        // the launch rule is "no confident-wrong" — and the SAME button becomes
-        // the hum fallback.
+        // the launch rule is "no confident-wrong" — and the CARD offers the hum
+        // way in as a labelled SECONDARY affordance (owner 09-25). The door is
+        // NOT armed into hum mode here: the big red button stays identify-first,
+        // so a failed listen never silently changes what the primary CTA does.
         recorder.completeRecording();
         setRecognitionPhase({
           type: 'no-match',
@@ -554,7 +557,6 @@ export const HomeScreen: React.FC = () => {
           server: result.received_audio,
           diagnostics,
         });
-        setHumFallback(true);
         setNoMatchOffer('hum');
       } catch (err) {
         recorder.completeRecording();
@@ -687,10 +689,19 @@ export const HomeScreen: React.FC = () => {
         const reason = failure ? failure.reason : 'no-recording';
         recorder.clearError();
         if (reason === 'empty') {
-          // No audio heard at all → straight into the inline hum fallback (spec
-          // state 5) instead of an error card about a clip that never existed.
-          setNoMatchOffer(null);
-          setHumFallback(true);
+          // No clip at all. This used to arm the hum fallback and return with NO
+          // surface at all — the door silently became "Tap to hum it" and the
+          // user could not tell the microphone had recorded nothing (the v25
+          // dead end). V26 (owner 09-25): show the honest tiny-capture card
+          // ("We couldn't hear enough — try again closer to the music") with its
+          // Retry, keep the hum way in as the card's SECONDARY affordance, and
+          // leave the big button identify-first.
+          setNoMatchOffer('hum');
+          setRecognitionPhase({
+            type: 'no-match',
+            diagnostics: NO_AUDIO_DIAGNOSTICS,
+          });
+          setShowRecognitionResults(true);
           return;
         }
         // NEVER silently drop the user back to idle: every other stop failure

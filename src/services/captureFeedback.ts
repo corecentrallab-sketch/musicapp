@@ -44,14 +44,16 @@ export const TINY_CAPTURE_MAX_DURATION_MS = 500;
 /**
  * True when the capture metadata says the phone barely recorded anything.
  * A null field is NOT tiny evidence (we do not know) — it is only a defect when
- * a measurement exists and is clearly too small.
+ * a measurement exists and is clearly too small. A measured ZERO is the most
+ * tiny evidence there is (no clip at all: the recorder's stop failure 'empty'),
+ * so 0 bytes / 0 ms classify as tiny rather than being skipped as "unknown".
  */
 export function isTinyCapture(d: CaptureNumbers | null | undefined): boolean {
   if (!d) return false;
-  if (typeof d.bytes === "number" && d.bytes > 0 && d.bytes < TINY_CAPTURE_MAX_BYTES) return true;
+  if (typeof d.bytes === "number" && d.bytes >= 0 && d.bytes < TINY_CAPTURE_MAX_BYTES) return true;
   if (
     typeof d.durationMs === "number" &&
-    d.durationMs > 0 &&
+    d.durationMs >= 0 &&
     d.durationMs < TINY_CAPTURE_MAX_DURATION_MS
   ) {
     return true;
@@ -102,6 +104,21 @@ export function noMatchCardCopy(
     body: reason ?? NO_MATCH_BODY_LIBRARY,
     showRetry: true,
     tiny: false,
+  };
+}
+
+/**
+ * The card copy for a pass whose clip never existed at all (the recorder's stop
+ * failure 'empty' — no file to measure). It is a tiny capture by definition, so
+ * it gets the same honest words and the same retry-first state; the screen feeds
+ * it NO_AUDIO_DIAGNOSTICS (0 bytes / 0 ms) so one code path serves both.
+ */
+export function noAudioCardCopy(): NoMatchCardCopy {
+  return {
+    title: NO_MATCH_TITLE_TINY,
+    body: NO_MATCH_BODY_TINY,
+    showRetry: true,
+    tiny: true,
   };
 }
 

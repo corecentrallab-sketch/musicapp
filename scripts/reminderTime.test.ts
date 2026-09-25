@@ -125,8 +125,13 @@ try {
     false,
     'the pre-fix fixed-time row fails the Settings contract',
   );
+  // The row carries FOUR stepper call sites (±1h, ±5min), so the mutation has to
+  // strip every one of them: replacing only the first left the guard green and
+  // the fixture vacuous (caught by the gate itself).
+  const stepperSites = (settings.match(/stepReminderMinutes\(/g) ?? []).length;
+  assert(stepperSites >= 4, `the row really wires the stepper (${stepperSites} call sites)`);
   assertEq(
-    reminderSettingWired(settings.replace('stepReminderMinutes(', 'stepNothing(')),
+    reminderSettingWired(settings.replace(/stepReminderMinutes\(/g, 'stepNothing(')),
     false,
     'a row that loses its stepper wiring fails',
   );

@@ -16,6 +16,7 @@ import {
   captureDiagnosticHeaders,
   captureDiagnosticLine,
   isTinyCapture,
+  noAudioCardCopy,
   noMatchCardCopy,
   noMatchCardWired,
 } from '../src/services/captureFeedback';
@@ -59,7 +60,19 @@ try {
     false,
     'a real 12s / 198KB capture is NOT tiny',
   );
-  assertEq(isTinyCapture({ bytes: 0, durationMs: 0, peakDbFS: null }), false, 'a zero-byte/zero-ms readout is not a tiny verdict');
+  // A MEASURED zero is the no-clip case (the recorder's stop failure 'empty') —
+  // the most tiny capture there is, not an "unknown". The screen feeds exactly
+  // these numbers, so this is the assertion the honest card depends on.
+  assertEq(
+    isTinyCapture({ bytes: 0, durationMs: 0, peakDbFS: null }),
+    true,
+    'a measured zero-byte / zero-ms capture (no clip at all) IS tiny',
+  );
+  assertEq(
+    isTinyCapture({ bytes: 0, durationMs: 12000, peakDbFS: -18 }),
+    true,
+    'zero bytes on disk is tiny even if a duration was reported',
+  );
   assertEq(isTinyCapture({ bytes: null, durationMs: null, peakDbFS: null }), false, 'unknown numbers are not a tiny verdict');
   assertEq(isTinyCapture(null), false, 'no diagnostics at all is not a tiny verdict');
 
@@ -77,6 +90,18 @@ try {
     'too short a phrase',
     "the server's own reason wins when it declined to name a piece",
   );
+
+  // The no-clip case (stop failure 'empty'): the screen has no file, so it feeds
+  // NO_AUDIO_DIAGNOSTICS (0 bytes / 0 ms). One path, the same honest words.
+  const noAudio = noMatchCardCopy({ bytes: 0, durationMs: 0, peakDbFS: null });
+  assertEq(noAudio.tiny, true, 'no clip at all → the microphone is the reason');
+  assertEq(noAudio.title, NO_MATCH_TITLE_TINY, 'no clip at all → "We couldn\'t hear enough"');
+  assertEq(noAudio.body, NO_MATCH_BODY_TINY, 'no clip at all → the retry-first message');
+  assertEq(noAudio.showRetry, true, 'no clip at all → Retry is offered');
+  const noAudioNamed = noAudioCardCopy();
+  assertEq(noAudioNamed.title, noAudio.title, 'noAudioCardCopy() agrees with the diagnostics-driven copy');
+  assertEq(noAudioNamed.body, noAudio.body, 'noAudioCardCopy() carries the same retry-first body');
+  assertEq(noAudioNamed.tiny, true, 'noAudioCardCopy() is the tiny state');
 
   console.log('\nthe small measurable capture line');
   assertEq(

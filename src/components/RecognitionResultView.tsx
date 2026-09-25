@@ -44,7 +44,7 @@ import { resultGenreLabel } from '../services/resultGenre';
 // The no-match card's two ways forward (owner-approved 09-24 front door + the
 // 09-22 hum → modern bridge). The strings come from the modules that own them so
 // the card, the screen and the tier1 gate read the SAME words.
-import { HUM_FALLBACK_BUTTON } from '../services/frontDoor';
+import { HUM_FALLBACK_BUTTON, HUM_SECONDARY_CTA } from '../services/frontDoor';
 import { HUM_TO_MODERN_BLURB, HUM_TO_MODERN_CTA } from '../services/humBridge';
 // V26 honest capture feedback (owner 09-25): WHY this pass found nothing. A tiny
 // capture says so and is retry-first; a real listen that is simply not in our
@@ -288,6 +288,9 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
                 door: humming is the SAME way in, one tap away).
                 Hum miss → the hum → modern bridge, which identifies the actual
                 recording and links the official sheet music. */}
+            {onHumFallback ? (
+              <Text style={styles.humSecondaryLabel}>{HUM_SECONDARY_CTA}</Text>
+            ) : null}
             {onHumFallback ? (
               <TouchableOpacity
                 style={styles.nextStepBtn}
@@ -561,6 +564,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: -12,
     marginBottom: 16,
+  },
+  // The secondary-way-in label above the hum button (owner 09-25): the big red
+  // button is identify-first, so the card names humming as the alternative.
+  humSecondaryLabel: {
+    fontSize: 13,
+    color: '#a0a0b8',
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 6,
   },
   buttonRow: {
     flexDirection: 'row',
