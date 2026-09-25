@@ -15,6 +15,7 @@ import { describe, test, expect } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import {
+  MUSICNOTES_RETIRED_TAG,
   SMD_AFFILIATE_ID,
   SMD_DEAD_SEARCH_PATHS,
   SMD_SEARCH_PATH,
@@ -23,9 +24,13 @@ import {
   isDeadSmdSearchPath,
   isDeadSmdSearchUrl,
   scanSourcesForDeadSmdRoute,
+  scanSourcesForNoteSnapReferrerTag,
   type ScannedSource,
 } from "./affiliate-url-contract";
-import { sheetMusicDirectSearchUrl } from "./modern-retailer";
+import {
+  modernRetailerUrls,
+  sheetMusicDirectSearchUrl,
+} from "./modern-retailer";
 import { pieceAffiliateUrl } from "./piece-affiliate";
 
 const SRC_ROOT = join(import.meta.dir, "..");
@@ -173,5 +178,98 @@ describe("source scan — the dead route is gone from src/", () => {
       },
     ];
     expect(scanSourcesForDeadSmdRoute(live, [])).toEqual([]);
+  });
+});
+
+/**
+ * Musicnotes backup shape (owner on-device bug 2026-09-25, RC v26 Test 4a
+ * finding #3 + Test 5). The backup URL used to carry the tag `w=NoteSnap`, and
+ * Musicnotes' search page reads `w` AS ITS QUERY: the owner's phone showed
+ * "NoteSnap" in the search box and the engine searched that literal word,
+ * returning one unrelated fuzzy result. The tag bought no commission (Sheet Music
+ * Direct carries affiliate ID 67650), so it is banned outright — along with any
+ * SECOND hand-written Musicnotes URL builder, which is how the tag survived two
+ * copies of the same template.
+ */
+describe("source scan — the Musicnotes backup shape cannot regress", () => {
+  const CONTRACT_FILE = "services/affiliate-url-contract.ts";
+
+  test("no source file still carries the retired w tag", () => {
+    const files = walkSources(SRC_ROOT);
+    expect(files.length).toBeGreaterThan(20);
+    expect(files.some((f) => f.content.includes("musicnotes.com"))).toBe(true);
+
+    const offenders = scanSourcesForNoteSnapReferrerTag(files, [
+      CONTRACT_FILE,
+      THIS_FILE,
+    ]);
+    expect(offenders.map((o) => `${o.path}:${o.line} ${o.rule} ${o.text}`)).toEqual(
+      [],
+    );
+  });
+
+  test("the live backup URL satisfies the contract (only `q`, no `w`)", () => {
+    const { musicnotes } = modernRetailerUrls("Let It Be", "The Beatles");
+    const url = new URL(musicnotes!);
+    expect(url.hostname).toBe("www.musicnotes.com");
+    expect([...url.searchParams.keys()]).toEqual(["q"]);
+    expect(musicnotes!).not.toContain(MUSICNOTES_RETIRED_TAG);
+    expect(musicnotes!).not.toContain("NoteSnap");
+  });
+
+  test("the scanner catches a planted w tag (guard cannot silently no-op)", () => {
+    const planted: ScannedSource[] = [
+      {
+        path: "services/planted-backup.ts",
+        content:
+          'const u = `https://www.musicnotes.com/search/go?q=${q}&w=NoteSnap`;\n',
+      },
+    ];
+    const found = scanSourcesForNoteSnapReferrerTag(planted, []);
+    expect(found.length).toBe(1);
+    expect(found[0].path).toBe("services/planted-backup.ts");
+    expect(found[0].rule).toBe("w=NoteSnap tag");
+  });
+
+  test("the scanner catches a planted hand-written Musicnotes URL — even without the tag", () => {
+    const planted: ScannedSource[] = [
+      {
+        path: "services/planted-builder.ts",
+        content:
+          'return `https://www.musicnotes.com/search/go?q=${encodeURIComponent(q)}`;\n',
+      },
+    ];
+    const found = scanSourcesForNoteSnapReferrerTag(planted, []);
+    expect(found.length).toBe(1);
+    expect(found[0].rule).toBe("hand-written Musicnotes URL");
+  });
+
+  test("the ONE builder module may spell the URL out (allowlisted, and still scanned for the tag)", () => {
+    const builder: ScannedSource[] = [
+      {
+        path: "services/modern-retailer.ts",
+        content:
+          'const t = "https://www.musicnotes.com/search/go?q={{query}}";\n',
+      },
+    ];
+    expect(scanSourcesForNoteSnapReferrerTag(builder, [])).toEqual([]);
+    // ...but the tag is a violation THERE too (only the contract module and this
+    // test may name the retired tag).
+    const builderWithTag: ScannedSource[] = [
+      {
+        path: "services/modern-retailer.ts",
+        content: 'const u = "https://www.musicnotes.com/search/go?q=x&w=NoteSnap";\n',
+      },
+    ];
+    const found = scanSourcesForNoteSnapReferrerTag(builderWithTag, []);
+    expect(found.length).toBe(1);
+    expect(found[0].rule).toBe("w=NoteSnap tag");
+  });
+
+  test("a doc that merely NAMES the tag (no ? or & before it) is not an offender", () => {
+    const doc: ScannedSource[] = [
+      { path: "services/notes.ts", content: "// the retired w=NoteSnap tag\n" },
+    ];
+    expect(scanSourcesForNoteSnapReferrerTag(doc, [])).toEqual([]);
   });
 });

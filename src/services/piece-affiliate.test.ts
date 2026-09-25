@@ -16,7 +16,12 @@ import {
   pieceAffiliateQuery,
   pieceAffiliateUrl,
 } from "./piece-affiliate";
-import { sheetMusicDirectSearchUrl } from "./modern-retailer";
+import {
+  MUSICNOTES_SEARCH_ORIGIN,
+  MUSICNOTES_SEARCH_PATH,
+  MUSICNOTES_SEARCH_QUERY_PARAM,
+  sheetMusicDirectSearchUrl,
+} from "./modern-retailer";
 import {
   SMD_AFFILIATE_ID,
   SMD_SEARCH_PATH,
@@ -80,7 +85,11 @@ describe("pieceAffiliateLink (Sheet Music Direct primary)", () => {
   test("musicnotes fallback is used only when the SMD builder fails", () => {
     const link = pieceAffiliateLink("Any Piece", "Any Composer", {
       sheetMusicDirect: () => undefined,
-      musicnotes: () => "https://www.musicnotes.com/search/go?q=Any&w=NoteSnap",
+      // A stand-in for the injected backup builder — deliberately the live shape
+      // (the retired `w` tag is banned by a source scan; see
+      // `affiliate-url-contract.test.ts` and owner bug 09-25).
+      musicnotes: () =>
+        `${MUSICNOTES_SEARCH_ORIGIN}${MUSICNOTES_SEARCH_PATH}?${MUSICNOTES_SEARCH_QUERY_PARAM}=Any`,
     });
     expect(link).not.toBeNull();
     expect(link!.usedFallback).toBe(true);
