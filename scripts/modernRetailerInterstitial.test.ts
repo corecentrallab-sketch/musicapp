@@ -34,13 +34,18 @@ import {
 import {
   browserSurfaces,
   findBrowserContractViolations,
+  findWebViewFlagViolations,
   formatBrowserViolations,
+  formatWebViewFlagViolations,
   INLINE_APP_RENDERED_WEBVIEWS,
   isInlineAppRenderedWebview,
   jsxRootTag,
   matchDelimiter,
+  missingWebViewFlags,
   propSource,
+  REQUIRED_WEBVIEW_FLAGS,
   returnBlocks,
+  webViewTags,
   type BrowserContractViolation,
 } from '../src/services/inAppBrowserContract';
 import type { SourceFile } from '../src/services/modalBackContract';
@@ -583,6 +588,138 @@ function liveScanTests(): void {
   );
 }
 
+// ─── 6. The WebView RUNTIME FLAGS (RC v26 Test 6 → build #3) ─────
+
+/**
+ * The Modal contract above guards HOW a browser surface is mounted. This guards
+ * that it is USABLE: owner-reproduced on device (09-25, RC v26 Test 6), the SMD
+ * page showed "No results" for every query inside our app shell while Musicnotes'
+ * page rendered fine in the same WebView. The retailer surface was a BARE
+ * `<WebView … />` — no javaScriptEnabled / domStorageEnabled — and on Android
+ * react-native-webview defaults domStorageEnabled to FALSE, so SMD's JS search app
+ * loaded, never initialised its session storage, and rendered its empty state
+ * (Musicnotes' page is server-rendered, which is why it worked).
+ *
+ * `findWebViewFlagViolations()` is the guard the fix shipped with. It is called
+ * HERE on purpose: a contract function nothing invokes is a fix that cannot
+ * regress-proof itself, and this suite is the money path's gate.
+ */
+function webViewFlagTests(): void {
+  console.log('\nthe WebView runtime flags (the retailer page must actually run)');
+
+  assertEq(
+    REQUIRED_WEBVIEW_FLAGS.length,
+    2,
+    `two flags are required on every app-shell WebView (${REQUIRED_WEBVIEW_FLAGS.join(', ')})`,
+  );
+
+  const wrappers = (inner: string): string =>
+    `<Modal>\n  <View>\n    ${inner}\n  </View>\n</Modal>`;
+
+  // A compliant tag: both flags, JSX shorthand.
+  const compliant: SourceFile[] = [
+    {
+      path: 'src/screens/Fixture.tsx',
+      source: wrappers(
+        '<WebView source={{ uri: url }} style={styles.webview} javaScriptEnabled domStorageEnabled />',
+      ),
+    },
+  ];
+  assertEq(
+    missingWebViewFlags(
+      '<WebView source={{ uri: url }} style={styles.webview} javaScriptEnabled domStorageEnabled />',
+    ).length,
+    0,
+    'both flags present ⇒ nothing missing',
+  );
+  assertEq(
+    findWebViewFlagViolations(compliant).length,
+    0,
+    'a WebView carrying both flags is not a violation',
+  );
+
+  // THE SHIPPED DEFECT, verbatim in shape: a bare WebView.
+  const bare: SourceFile[] = [
+    {
+      path: 'src/screens/Fixture.tsx',
+      source: wrappers('<WebView source={{ uri: retailerUrl }} style={styles.webview} />'),
+    },
+  ];
+  const bareViolations = findWebViewFlagViolations(bare);
+  assertEq(bareViolations.length, 1, 'a bare WebView IS a violation (the RC v26 dead end)');
+  if (bareViolations.length > 0) {
+    assert(
+      bareViolations[0].missing.includes('javaScriptEnabled') &&
+        bareViolations[0].missing.includes('domStorageEnabled'),
+      'the violation names BOTH missing flags',
+    );
+    assert(
+      formatWebViewFlagViolations(bareViolations)[0].includes('domStorageEnabled'),
+      'the report explains the flag the retailer page needed',
+    );
+    assert(
+      formatWebViewFlagViolations(bareViolations)[0].includes('Fixture.tsx:'),
+      'the report names the offender path (and line)',
+    );
+  }
+
+  // Each flag individually, and the explicit-false form.
+  assertEq(
+    missingWebViewFlags('<WebView source={{ uri: u }} javaScriptEnabled />').join(','),
+    'domStorageEnabled',
+    'javaScriptEnabled alone is still a violation',
+  );
+  assertEq(
+    missingWebViewFlags('<WebView source={{ uri: u }} domStorageEnabled />').join(','),
+    'javaScriptEnabled',
+    'domStorageEnabled alone is still a violation',
+  );
+  assertEq(
+    missingWebViewFlags(
+      '<WebView source={{ uri: u }} javaScriptEnabled={true} domStorageEnabled={false} />',
+    ).join(','),
+    'domStorageEnabled',
+    'an explicit {false} never satisfies the requirement',
+  );
+  assertEq(
+    missingWebViewFlags(
+      '<WebView source={{ uri: u }} javaScriptEnabled={true} domStorageEnabled={true} />',
+    ).length,
+    0,
+    'the explicit {true} form satisfies it too',
+  );
+  // The exemption is shared, so an inline app-rendered preview is not demanded
+  // to carry browser flags it does not need (one list, two guards).
+  const exempt = INLINE_APP_RENDERED_WEBVIEWS[0];
+  assert(
+    findWebViewFlagViolations([{ path: exempt, source: wrappers('<WebView source={{ html }} />') }])
+      .length === 0,
+    `${exempt} (inline app-rendered preview) is exempt from the flags contract`,
+  );
+
+  // ── the live app: the real retailer surface must be flagged correctly ──
+  const files = appSources();
+  const retailerTags = webViewTags(readAppFile(COMPONENT));
+  assertEq(retailerTags.length, 1, 'the retailer interstitial renders exactly one WebView');
+  for (const tag of retailerTags) {
+    assertEq(
+      missingWebViewFlags(tag.tag).length,
+      0,
+      `${COMPONENT}:${tag.line} (the money-path WebView) carries every required flag`,
+    );
+  }
+
+  const violations = findWebViewFlagViolations(files);
+  if (violations.length > 0) {
+    for (const line of formatWebViewFlagViolations(violations)) console.error(line);
+  }
+  assertEq(
+    violations.length,
+    0,
+    'every app-shell WebView in the app carries javaScriptEnabled + domStorageEnabled',
+  );
+}
+
 // ─── run ─────────────────────────────────────────────────────────
 
 function main(): void {
@@ -592,6 +729,7 @@ function main(): void {
   componentTests();
   callerTests();
   liveScanTests();
+  webViewFlagTests();
   console.log(`\n${passes} passed, ${failures} failed\n`);
   process.exit(failures === 0 ? 0 : 1);
 }

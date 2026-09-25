@@ -32,9 +32,25 @@ import { useHardwareBack } from '../hooks/useHardwareBack';
 import { recognizeModernSong } from '../services/api';
 import { modernOutcome } from '../services/tier1';
 import { saveRecognition } from '../services/storage';
-// The category a modern song is saved with — never a fallback genre.
-import { modernGenreLabel } from '../services/resultGenre';
+// The category a modern song is saved with — never a fallback genre. A
+// public-domain work that the backend's cross-check routes here is saved with
+// the catalog's own category (or the honest "Public domain"), never a modern one.
+import { PUBLIC_DOMAIN_GENRE, modernGenreLabel } from '../services/resultGenre';
+// THE PD CROSS-CHECK (owner 09-25, build #3): a recording the provider identified
+// may be a recording OF a public-domain work our own library holds. When the
+// backend says so, the free in-app score is the result — never the modern
+// interstitial, never a "Modern song" card with a purchase CTA.
+import {
+  pdLibraryResultResponse,
+  pdMatchFromModernResponse,
+} from '../services/pdRouting';
 import { ModernSongInterstitial } from '../components/ModernSongInterstitial';
+// The PD-library result reuses the app's EXISTING result card (the same one the
+// one-tap Home pipeline renders for a library match) — no second card grows here.
+import {
+  RecognitionResultView,
+  type RecognitionPhase,
+} from '../components/RecognitionResultView';
 import {
   IDLE_SURFACE,
   isPermissionFailure,
@@ -73,6 +89,13 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
   const [interstitial, setInterstitial] =
     useState<ModernSurfaceState>(IDLE_SURFACE);
   const [showInterstitial, setShowInterstitial] = useState(false);
+  /**
+   * The PD-library result for this pass, when the backend's cross-check routed
+   * the identified recording to a public-domain work we hold. Rendered through
+   * the app's existing result card as a success phase — the same card the Home
+   * one-tap pipeline shows for a library match.
+   */
+  const [pdResult, setPdResult] = useState<RecognitionPhase | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** The retry auto-start handle — tracked so it can be cancelled (see below). */
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -171,6 +194,40 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
       setShowInterstitial(true);
       try {
         const resp = await recognizeModernSong(uri);
+        // ── THE PD CROSS-CHECK (owner 09-25, build #3) — BEFORE the modern card ──
+        // The provider identifies a RECORDING. When that recording is of a
+        // public-domain work our own library holds (the owner's Lang Lang Für
+        // Elise), the free score is what the user came for — the work is not a
+        // modern song and must never be presented as one to buy. The backend
+        // reaches that verdict by matching the identified title + composer
+        // surname against the pieces table and sends `pd_match` ONLY when the
+        // mapping is confident; an ambiguous mapping is absent and the modern
+        // card below stays (the honest-no-match rule — we never guess a genre,
+        // and we never invent a PD work).
+        const pd = pdMatchFromModernResponse(resp);
+        if (pd) {
+          // Save FIRST (the same retention lever as the modern path), with the
+          // category a public-domain work actually has.
+          await saveRecognition({
+            id: pd.id,
+            title: pd.title,
+            composer: pd.composer,
+            savedAt: new Date().toISOString(),
+            genre: pd.genre ?? PUBLIC_DOMAIN_GENRE,
+          });
+          recorder.completeRecording();
+          // The modern interstitial is never opened for this pass: the library
+          // result card goes up instead, and `purchase_url` is null on it (the
+          // score we host is the primary offer; the affiliate search link rides
+          // along as the card's secondary "get a printed arrangement" action).
+          setInterstitial(IDLE_SURFACE);
+          setShowInterstitial(false);
+          setPdResult({
+            type: 'success',
+            response: pdLibraryResultResponse(pd),
+          });
+          return;
+        }
         const outcome = modernOutcome(resp);
         if (outcome.recognized && outcome.match) {
           // Save-to-history first (a retention lever the owner requires around
@@ -270,6 +327,23 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
         onRetry={handleRetry}
         onHumIt={onHumIt}
         onBrowseLibrary={onBrowseLibrary}
+      />
+
+      {/* THE PD RESULT CARD (owner 09-25, build #3): the recording was of a
+          public-domain work our own library holds, so this pass ends here, on the
+          SAME result card the one-tap Home pipeline uses for a library match —
+          free score first, the affiliate search link secondary, purchase_url
+          null. The modern interstitial above is never opened for it (backend
+          `pd_match` ⇒ this branch ⇒ return). Backend: the site repository's
+          modern→PD cross-check. App: src/services/pdRouting.ts. */}
+      <RecognitionResultView
+        visible={pdResult !== null}
+        phase={pdResult}
+        onClose={() => setPdResult(null)}
+        onRetry={() => {
+          setPdResult(null);
+          handleRetry();
+        }}
       />
 
       <View style={styles.header}>

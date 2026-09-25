@@ -64,6 +64,7 @@
     "scripts/backExitContract.test.ts",
     "scripts/purchaseCtaContract.test.ts",
     "scripts/resultGenreContract.test.ts",
+    "scripts/pdRouting.test.ts",
     "scripts/abcTranspose.test.ts",
     "scripts/notationEditorContract.test.ts",
     "scripts/frontDoor.test.ts",

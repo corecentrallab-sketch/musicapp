@@ -324,9 +324,18 @@ function wiringTests(): void {
   );
 
   const interstitial = readAppFile(INTERSTITIAL);
+  // BUILD #3 (owner 09-25): the neutral "Modern song" line is RETIRED — the card
+  // shows the provider's own genre and omits the line entirely when the provider
+  // sent none. So the contract is not "the interstitial prints the fallback" (it
+  // never may again): it resolves its category through the shared helper AND
+  // renders the line conditionally, so no invented category can reach the card.
   assert(
-    interstitial.includes('{modernGenreLabel(match)}'),
-    'the modern-song interstitial states the neutral category "Modern song"',
+    interstitial.includes('modernGenreLabel(match)'),
+    'the modern-song interstitial resolves its category through modernGenreLabel()',
+  );
+  assert(
+    /\{genreLine \? <Text[^>]*>\{genreLine\}<\/Text> : null\}/.test(interstitial),
+    'the interstitial renders the category line ONLY when the provider sent one (no invented label)',
   );
   assert(
     !interstitial.includes("'Classical'"),

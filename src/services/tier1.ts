@@ -14,6 +14,7 @@ import type {
   HumContourStats,
   ModernResponse,
   ModernMatch,
+  PdMatchWire,
 } from "../types";
 
 /**
@@ -220,6 +221,17 @@ export function parseModernResponse(raw: unknown): ModernResponse | null {
     source: typeof r.source === "string" ? r.source : "unknown",
     query_duration_ms:
       typeof r.query_duration_ms === "number" ? r.query_duration_ms : 0,
+    // THE PD CROSS-CHECK CARRIER (build #3, owner 09-25): this parser REBUILDS
+    // the response, so a field it does not copy does not exist downstream — and
+    // the whole PD route (src/services/pdRouting.ts + the screens) reads the
+    // PARSED response. Dropping it here is what would make the app half inert
+    // while every payload-level test still passed. Passed through unvalidated on
+    // purpose: pdMatchFromModernResponse() is the only reader and it validates
+    // every field it needs (`pd_match` absent, non-object or untitled ⇒ no route).
+    pd_match:
+      r.pd_match && typeof r.pd_match === "object"
+        ? (r.pd_match as PdMatchWire)
+        : undefined,
   };
 }
 

@@ -33,6 +33,8 @@ import {
   HOME_PROMISE_GUITAR,
   HUM_FALLBACK_BUTTON,
   HUM_FALLBACK_HINT,
+  HUM_ENTRY_HANDLER,
+  HUM_ENTRY_STYLE,
   HUM_FALLBACK_LIBRARY_NOTE,
   HUM_FALLBACK_PROMPT,
   HUM_SECONDARY_CTA,
@@ -53,6 +55,7 @@ import {
   heroTitle,
   homePromiseCopy,
   homePromiseRendered,
+  humEntryWired,
   humFallbackIsInline,
   humMatchToResultResponse,
   noMatchOffersNextStep,
@@ -747,6 +750,126 @@ function liveScanTests(): void {
   );
 }
 
+// ─── the HOME hum entry (owner 09-25, build #3) ─────────────────
+
+/**
+ * Owner-reported (RC v26 Test 6, 09-25): "no 'Hum the melody' CTA on the home
+ * screen — hum reachable only post-recognition via result-card levers". The one
+ * big button was doing the right thing (identify-first), but a musician who
+ * cannot play the audio at all had NO visible way in on the surface they land on.
+ *
+ * The contract (src/services/frontDoor.ts, humEntryWired) is deliberately
+ * picky, because the fix is easy to get half right: the affordance must exist,
+ * carry the labelled-secondary copy, be styled as a secondary row, render AFTER
+ * the hero (never as a rival CTA), and open the EXISTING hum flow. Each of those
+ * is a mutation fixture below — a fixture that must FAIL the contract, so the
+ * live pass cannot be vacuous.
+ */
+function humEntryTests(): void {
+  console.log('\nthe HOME hum entry (a visible way in for a musician who can\'t play it)');
+
+  const hero = `<TouchableOpacity onPress={${HERO_TAP_HANDLER}} accessibilityLabel={heroAccessibilityLabel(state)} />`;
+  const entry =
+    `<TouchableOpacity onPress={${HUM_ENTRY_HANDLER}} style={${HUM_ENTRY_STYLE}} ` +
+    `accessibilityRole="button" accessibilityLabel={HUM_SECONDARY_CTA}>` +
+    `<Text>{HUM_SECONDARY_CTA}</Text></TouchableOpacity>`;
+  const handler = `const ${HUM_ENTRY_HANDLER} = useCallback(() => { setShowHumSearch(true); }, []);`;
+
+  // The shape the fix ships: handler declared, hero first, the labelled entry
+  // SECOND, opening the existing hum flow.
+  assertEq(
+    humEntryWired(`${handler}\n${hero}\n${entry}`),
+    true,
+    'the hum entry renders BELOW the hero and opens the existing hum flow',
+  );
+
+  // Fixture 1 — the v26 source (no hum entry at all): the reported defect.
+  assertEq(
+    humEntryWired(`${hero}`),
+    false,
+    'PRE-FIX: a Home with only the hero has no way in for hummers (the RC v26 defect)',
+  );
+
+  // Fixture 2 — the entry above the hero would make it a RIVAL mode CTA, which
+  // the owner's one-button front door forbids.
+  assertEq(
+    humEntryWired(`${handler}\n${entry}\n${hero}`),
+    false,
+    'an entry placed BEFORE the hero is a rival CTA, not a secondary path',
+  );
+
+  // Fixture 3 — wired, but to nothing: the affordance is decoration.
+  assertEq(
+    humEntryWired(`const ${HUM_ENTRY_HANDLER} = () => { doNothing(); };\n${hero}\n${entry}`),
+    false,
+    'a hum entry whose handler never opens the hum flow is not wired',
+  );
+
+  // Fixture 4 — the old rival hum opener creeping back beside the entry.
+  assertEq(
+    humEntryWired(`${handler}\n${hero}\n${entry}\n<TouchableOpacity onPress={handleOpenHumSearch} />`),
+    false,
+    'the retired rival hum opener is still rejected next to the entry',
+  );
+
+  // Fixture 5 — present but unlabelled / unstyled: it would read as a second
+  // hero button rather than the labelled secondary path.
+  assertEq(
+    humEntryWired(
+      `${handler}\n${hero}\n<TouchableOpacity onPress={${HUM_ENTRY_HANDLER}} style={styles.other}>` +
+        `<Text>Hum</Text></TouchableOpacity>`,
+    ),
+    false,
+    'the entry must carry the shared secondary label and its own style',
+  );
+
+  // ── the live Home screen ──
+  const home = readAppFile('src/screens/HomeScreen.tsx');
+  assert(home.length > 5000, `read HomeScreen.tsx (${home.length} chars)`);
+  assertEq(humEntryWired(home), true, 'the real Home screen satisfies the hum-entry contract');
+  assert(
+    home.indexOf(`onPress={${HUM_ENTRY_HANDLER}}`) > 0,
+    `the entry is wired to ${HUM_ENTRY_HANDLER}`,
+  );
+  assert(
+    /<Text style=\{styles\.humEntryText\}>\{HUM_SECONDARY_CTA\}<\/Text>/.test(home),
+    "the entry's visible label IS the shared secondary CTA copy (never a rival hero label)",
+  );
+  assert(
+    /accessibilityLabel=\{HUM_SECONDARY_CTA\}/.test(home),
+    'the entry is reachable to a screen reader under the same copy',
+  );
+  assert(
+    home.indexOf(`onPress={${HUM_ENTRY_HANDLER}}`) >
+      home.indexOf(`onPress={${HERO_TAP_HANDLER}}`),
+    'the entry renders AFTER the one hero button (secondary path, not a rival mode)',
+  );
+  // The flows the entry opens are the app's ONLY hum implementation.
+  assert(
+    /setShowHumSearch\(true\)/.test(home) && home.indexOf('<HumSearchScreen') > 0,
+    'the entry opens the EXISTING hum screen (one hum implementation, no drift)',
+  );
+
+  // Mutation on the REAL source, not a fixture: break the wiring and the contract
+  // must notice (a contract that only ever sees a healthy file proves nothing).
+  const broken = home.replace(
+    `onPress={${HUM_ENTRY_HANDLER}}`,
+    'onPress={handleHumEntryRemoved}',
+  );
+  assert(broken !== home, 'the mutation fixture changed the real source');
+  assertEq(humEntryWired(broken), false, 'MUTATION: an unwired hum entry fails the contract');
+  const closed = home.replace(
+    /const handleHumEntry = useCallback\(\(\) => \{[\s\S]*?\}, \[\]\);/,
+    `const ${HUM_ENTRY_HANDLER} = useCallback(() => { setShowFindPiece(true); }, []);`,
+  );
+  assert(closed !== home, 'the handler mutation fixture changed the real handler');
+  assertEq(
+    humEntryWired(closed),
+    false,
+    'MUTATION: an entry that stops opening the hum flow fails the contract',
+  );
+}
+
 // ─── run ────────────────────────────────────────────────────────
 
 function main(): void {
@@ -755,6 +878,7 @@ function main(): void {
   promiseTests();
   stateTests();
   humResultTests();
+  humEntryTests();
   fixtureTests();
   liveScanTests();
   console.log(`\n${passes} passed, ${failures} failed\n`);

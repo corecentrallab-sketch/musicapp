@@ -336,8 +336,16 @@ export function webViewTags(
   const pattern = /<WebView(?=[\s/>])/g;
   let match = pattern.exec(masked);
   while (match) {
-    const tag = readModalTag(masked, match.index);
-    if (tag !== null) found.push({ line: lineAt(masked, match.index), tag });
+    // A TS type reference is not a JSX element: `useRef<WebView>(null)` reads as
+    // `<WebView>` followed by `(`, and a scanner that counted it would report an
+    // EMPTY tag (`<WebView>`) as missing both flags — a false alarm on the app's
+    // own compliant score viewer, which is exactly what the first live run of
+    // this guard produced. Only real JSX elements count.
+    const after = masked.slice(match.index + '<WebView'.length);
+    if (!/^>\s*\(/.test(after)) {
+      const tag = readModalTag(masked, match.index);
+      if (tag !== null) found.push({ line: lineAt(masked, match.index), tag });
+    }
     pattern.lastIndex = match.index + '<WebView'.length;
     match = pattern.exec(masked);
   }
@@ -348,11 +356,20 @@ export function webViewTags(
 export function missingWebViewFlags(tagSource: string): string[] {
   const missing: string[] = [];
   for (const flag of REQUIRED_WEBVIEW_FLAGS) {
-    // Both the JSX shorthand (`javaScriptEnabled`, what our own score view uses)
-    // and the explicit form (`javaScriptEnabled={true}`) satisfy the requirement;
-    // an explicit `false` never does.
+    // Both the JSX shorthand (`javaScriptEnabled`) and the explicit form
+    // (`javaScriptEnabled={true}`) satisfy the requirement; an explicit `false`
+    // never does.
+    //
+    // Both forms must really be recognised: the retailer surface sets the
+    // shorthand while ScoreViewer (the other navigable WebView in the app) sets
+    // `={true}`, and a scanner that only understood the shorthand would report
+    // the app's own compliant view as a violation — a false alarm that would
+    // train the next reader to ignore the guard.
     const shorthand = new RegExp(`(?:^|[\\s{])${flag}(?=\\s|/?>)`);
-    if (!shorthand.test(tagSource)) {
+    const explicitTrue = new RegExp(
+      `(?:^|[\\s{])${flag}\\s*=\\s*\\{\\s*true\\s*\\}`,
+    );
+    if (!shorthand.test(tagSource) && !explicitTrue.test(tagSource)) {
       missing.push(flag);
       continue;
     }

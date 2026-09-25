@@ -207,3 +207,35 @@ export function pdRoutePrecedesModernInterstitial(source: string): boolean {
   const interstitial = source.indexOf('setShowModernInterstitial(true)');
   return interstitial < 0 || read < interstitial;
 }
+
+/**
+ * True when the PD branch LEAVES the pipeline before the modern card can be
+ * built or shown — the ordering that makes the route real.
+ *
+ * Two screens carry this branch and their shapes differ:
+ *   • HomeScreen's one-tap pipeline reads the mapping, renders the card and
+ *     `return`s, and only later reaches `modernOutcome(...)` /
+ *     `setShowModernInterstitial(true)` (file order works there);
+ *   • ModernSearchScreen shows the interstitial from its capture-start path, so
+ *     a whole-file "PD before the interstitial write" check is meaningless — what
+ *     matters is that the PD branch returns inside the same handler before the
+ *     modern outcome is read and before the interstitial is set.
+ *
+ * So the rule is stated where it is true for both: after the PD card is built,
+ * the next control-flow exit is a `return`, and it comes before the modern
+ * outcome is consumed or the interstitial is opened.
+ */
+export function pdRouteReturnsBeforeModernCard(source: string): boolean {
+  const read = source.indexOf(PD_ROUTE_READER);
+  if (read < 0) return false;
+  const cardAt = source.indexOf(PD_ROUTE_CARD, read);
+  if (cardAt < 0) return false;
+  const after = source.slice(cardAt);
+  const exit = after.indexOf('return');
+  if (exit < 0) return false;
+  const modernOutcomeAt = after.indexOf('modernOutcome(');
+  if (modernOutcomeAt >= 0 && modernOutcomeAt < exit) return false;
+  const interstitialAt = after.indexOf('setShowModernInterstitial(true)');
+  if (interstitialAt >= 0 && interstitialAt < exit) return false;
+  return true;
+}
