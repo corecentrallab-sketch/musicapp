@@ -458,6 +458,52 @@ export function findPieceIsSearchEntry(source: string): boolean {
   return /onPress=\{handleOpenFindPiece\}/.test(tag);
 }
 
+// ─────────────────────── the HOME hum entry (owner 09-25, build #3) ─────────
+
+/**
+ * The handler the home hum entry calls. Deliberately NOT one of the rival mode
+ * handlers above (`handleOpenHumSearch`): this is a labelled secondary path under
+ * the one hero button, and the big button stays identify-first.
+ */
+export const HUM_ENTRY_HANDLER = 'handleHumEntry';
+/** The style marker the hum entry renders with — a distinct, lighter row. */
+export const HUM_ENTRY_STYLE = 'styles.humEntryBtn';
+
+/**
+ * True when HOME carries a VISIBLE hum/whistle/sing affordance that routes into
+ * the existing hum flow.
+ *
+ * Owner-reported (RC v26 Test 6, 09-25): "no 'Hum the melody' CTA on the home
+ * screen — hum reachable only post-recognition via result-card levers". The one
+ * button was correct (identify-first), but a musician who cannot play the audio
+ * at all had no visible way in on the surface they land on. The affordance must
+ * therefore be present, LABELLED as the alternative (HUM_SECONDARY_CTA), styled
+ * distinctly (a secondary row, never a second hero), rendered BELOW the one hero
+ * button, and wired to open the EXISTING hum flow (setShowHumSearch(true)) — one
+ * hum implementation, not two.
+ */
+export function humEntryWired(source: string): boolean {
+  const masked = maskComments(source);
+  const entry = masked.indexOf(`onPress={${HUM_ENTRY_HANDLER}}`);
+  const hero = masked.indexOf(`onPress={${HERO_TAP_HANDLER}}`);
+  if (entry < 0 || hero < 0) return false;
+  // Secondary, not a rival hero: it renders after the one button.
+  if (entry < hero) return false;
+  if (masked.indexOf('HUM_SECONDARY_CTA') < 0) return false;
+  if (masked.indexOf(HUM_ENTRY_STYLE) < 0) return false;
+  // It opens the existing hum flow — the handler body is the arrow function the
+  // declaration opens.
+  const declaration = masked.indexOf(`const ${HUM_ENTRY_HANDLER}`);
+  if (declaration < 0) return false;
+  const body = braceBlockFrom(masked, declaration);
+  if (!/setShowHumSearch\s*\(\s*true\s*\)/.test(body)) return false;
+  // …and it is not a rival mode button: the old openers stay unwired.
+  for (const handler of RIVAL_MODE_HANDLERS) {
+    if (masked.indexOf(`onPress={${handler}}`) >= 0) return false;
+  }
+  return true;
+}
+
 /** True when the Home subtitle renders the genre-neutral promise from this
  *  module and the old classical-biased "Curated …" subtitle is gone. */
 export function homePromiseRendered(source: string): boolean {

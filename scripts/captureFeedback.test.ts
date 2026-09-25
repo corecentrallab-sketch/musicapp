@@ -15,6 +15,7 @@ import {
   NO_MATCH_TITLE_TINY,
   captureDiagnosticHeaders,
   captureDiagnosticLine,
+  isSilentCapture,
   isTinyCapture,
   noAudioCardCopy,
   noMatchCardCopy,
@@ -75,6 +76,58 @@ try {
   );
   assertEq(isTinyCapture({ bytes: null, durationMs: null, peakDbFS: null }), false, 'unknown numbers are not a tiny verdict');
   assertEq(isTinyCapture(null), false, 'no diagnostics at all is not a tiny verdict');
+
+  // ── THE OWNER'S CASE (RC v26 Test 4 → build #3): a full-length SILENT capture.
+  // The microphone was covered; the recorder wrote a healthy 12s / ~190KB .m4a
+  // whose peak never rose above about −60 dBFS. Bytes and duration both look
+  // perfect, which is exactly why the old classifier passed it through to the
+  // library no-match card. peakDbFS was measured (and sent to the server) but
+  // never consulted. build #3 consults it.
+  const ownerSilentCapture = { bytes: 198345, durationMs: 12400, peakDbFS: -62.5 };
+  assertEq(
+    isTinyCapture(ownerSilentCapture),
+    true,
+    "the owner's silent 12s / 198KB capture is a capture defect, not a library miss",
+  );
+  assertEq(
+    isSilentCapture(ownerSilentCapture),
+    true,
+    'the loudness floor is what classifies it (isSilentCapture)',
+  );
+  // The pre-fix classifier, verbatim from v26 (bytes + duration only) — kept as
+  // the fixture that proves the new guard is the thing doing the work.
+  function preFixIsTinyCapture(d: { bytes: number | null; durationMs: number | null }): boolean {
+    if (typeof d.bytes === 'number' && d.bytes >= 0 && d.bytes < 4000) return true;
+    if (typeof d.durationMs === 'number' && d.durationMs >= 0 && d.durationMs < 500) return true;
+    return false;
+  }
+  assertEq(
+    preFixIsTinyCapture(ownerSilentCapture),
+    false,
+    'PRE-FIX: the same silent capture passed the old bytes/duration classifier (the bug)',
+  );
+  assertEq(
+    noMatchCardCopy(ownerSilentCapture).title,
+    NO_MATCH_TITLE_TINY,
+    "the silent capture now routes to the \"We couldn't hear enough\" card",
+  );
+  assertEq(
+    noMatchCardCopy(ownerSilentCapture).tiny,
+    true,
+    'the silent capture is flagged as a capture defect (Retry-first), not a library miss',
+  );
+  assertEq(
+    noMatchCardCopy(ownerSilentCapture).body,
+    NO_MATCH_BODY_TINY,
+    'the silent capture gets the retry-first message verbatim',
+  );
+  // The floor itself: inclusive at −40, and only a MEASURED peak can decide.
+  assertEq(isTinyCapture({ bytes: 198345, durationMs: 12400, peakDbFS: -40 }), true, 'exactly at the −40 floor counts as silence');
+  assertEq(isTinyCapture({ bytes: 198345, durationMs: 12400, peakDbFS: -39.9 }), false, 'just above the floor is a real listen');
+  assertEq(isTinyCapture({ bytes: 198345, durationMs: 12400, peakDbFS: null }), false, 'no peak measurement → no silence verdict');
+  assertEq(isTinyCapture({ bytes: 198345, durationMs: 12400, peakDbFS: Number.NaN }), false, 'a non-finite peak is not evidence');
+  assertEq(isSilentCapture({ bytes: null, durationMs: null, peakDbFS: -18 }), false, 'a loud capture is never silent');
+  assertEq(isSilentCapture(null), false, 'no diagnostics → not silent');
 
   console.log('\nthe no-match card says the REAL reason');
   const tiny = noMatchCardCopy({ bytes: 2400, durationMs: 900, peakDbFS: -40 });

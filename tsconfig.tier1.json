@@ -42,6 +42,7 @@
     "src/services/medals.ts",
     "src/services/uploadFieldContract.ts",
     "src/services/captureFeedback.ts",
+    "src/services/pdRouting.ts",
     "src/services/reminderTime.ts",
     "src/services/abcTranspose.ts",
     "src/types/index.ts",

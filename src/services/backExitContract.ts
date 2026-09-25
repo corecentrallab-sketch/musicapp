@@ -113,6 +113,12 @@ export const FULL_SCREEN_FLOWS: readonly FullScreenFlow[] = [
     guard: 'modal',
     why: 'The sheet music page itself (from the streak/featured flows and everywhere else). It is a Modal, so BACK is onRequestClose — re-asserted here so one contract owns the whole full-screen class.',
   },
+  {
+    path: 'src/screens/HomeScreen.tsx',
+    name: 'home featured-piece view (in place)',
+    guard: 'hook',
+    why: 'The featured-piece page Home renders IN PLACE — the "🌟 Today\'s Featured Piece" card (and the streak/"Practice today" cards through the same destination mapping) replaces Home\'s whole body, so the route never changes and nothing else consumes BACK. Owner-specified behaviour (build #3): BACK here returns to the TOP OF THE HOME HERO ("Tap to identify"), and a BACK press on the hero itself still exits the app — which is why HomeScreen registers the handler GATED on the featured view, never always-on (findFeaturedViewBackViolations keeps that gate honest).',
+  },
 ];
 
 /**
@@ -183,7 +189,9 @@ export type BackGuardViolationKind =
   | 'mount-cannot-clear-open-state'
   | 'split-dismissal-authority'
   | 'predictive-back-opt-out-missing'
-  | 'predictive-back-opt-out-reverted';
+  | 'predictive-back-opt-out-reverted'
+  | 'featured-view-back-always-on'
+  | 'featured-view-back-cannot-leave';
 
 export interface BackGuardViolation {
   path: string;
@@ -692,6 +700,203 @@ export function findPredictiveBackOptOutViolations(
   return violations;
 }
 
+// ─── The featured-piece view's BACK gate (owner 09-25, build #3) ────────────
+//
+// Owner-reproduced on device (RC v26): open the featured piece from Home
+// ("🌟 Today's Featured Piece", or the streak / "Practice today" cards, which
+// share its destination mapping), press hardware BACK — and the app exits.
+//
+// The featured view is an IN-PLACE flow (HomeScreen returns the featured piece
+// page in place of its whole body — the route never changes), so nothing but a
+// hardware-back handler can consume the press. HomeScreen must own that press
+// ITSELF: the piece page a host mounts is a separate component, and a host that
+// relies on its child's handler has no exit of its own the moment the child
+// changes shape.
+//
+// Owner-specified behaviour, and the reason this detector is stricter than "a
+// handler exists":
+//   • BACK on the featured view → returns to the TOP OF THE HOME HERO
+//     ("Tap to identify"), i.e. the handler must be able to CLEAR the featured
+//     view's state;
+//   • BACK on the hero → exits the app. So the handler must be GATED on the
+//     featured view being open: an always-on handler would swallow the press at
+//     the hero forever, and the user could never leave Home.
+//
+// Two build-failing failure classes:
+//   • the handler is registered unconditionally (or for the wrong state) — the
+//     app becomes un-exitable from Home's hero;
+//   • the handler cannot clear the featured view's own state — BACK does nothing
+//     useful and the press falls through to finish the activity.
+
+/** The host that renders the featured view in place. */
+export const HOME_FEATURED_VIEW_PATH = 'src/screens/HomeScreen.tsx';
+/** The state that IS the featured view being open. */
+export const HOME_FEATURED_VIEW_STATE = 'showDetail';
+/** The state write that leaves it (BACK's whole job on this surface). */
+export const HOME_FEATURED_VIEW_CLOSE = 'setShowDetail(false)';
+
+/** One `useHardwareBack(handler, enabled)` call site. */
+export interface HardwareBackCall {
+  /** 1-based line of the call. */
+  line: number;
+  /** The first argument, as written (a handler identifier in every flow). */
+  handler: string;
+  /**
+   * The second argument (the `enabled` gate), or null when the call omits it —
+   * which means the hook's default, `true`: registered forever.
+   */
+  enabled: string | null;
+}
+
+/** Source from the `(` at `open` to its matching `)`, string- and paren-aware. */
+function readParens(source: string, open: number): string | null {
+  let depth = 0;
+  let quote = '';
+  for (let i = open; i < source.length; i++) {
+    const c = source[i];
+    if (quote) {
+      if (c === '\\') {
+        i++;
+        continue;
+      }
+      if (c === quote) quote = '';
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      quote = c;
+      continue;
+    }
+    if (c === '(') depth++;
+    else if (c === ')') {
+      depth--;
+      if (depth === 0) return source.slice(open + 1, i);
+    }
+  }
+  return null;
+}
+
+/** Split a call's argument list at its top-level commas. */
+export function splitCallArgs(args: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let quote = '';
+  let start = 0;
+  for (let i = 0; i < args.length; i++) {
+    const c = args[i];
+    if (quote) {
+      if (c === '\\') i++;
+      else if (c === quote) quote = '';
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') quote = c;
+    else if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') depth--;
+    else if (c === ',' && depth === 0) {
+      out.push(args.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(args.slice(start));
+  return out.map((a) => a.trim()).filter((a) => a.length > 0);
+}
+
+/** Every `useHardwareBack(…)` call in one file. */
+export function hardwareBackCalls(source: string): HardwareBackCall[] {
+  const masked = maskComments(source);
+  const calls: HardwareBackCall[] = [];
+  const pattern = /\buseHardwareBack\s*\(/g;
+  let match = pattern.exec(masked);
+  while (match) {
+    const open = match.index + match[0].length - 1;
+    const args = readParens(masked, open);
+    if (args !== null) {
+      const parts = splitCallArgs(args);
+      calls.push({
+        line: lineAt(masked, match.index),
+        handler: parts[0] ?? '',
+        enabled: parts.length > 1 ? parts[1] : null,
+      });
+    }
+    pattern.lastIndex = open + 1;
+    match = pattern.exec(masked);
+  }
+  return calls;
+}
+
+/**
+ * True when the `enabled` expression is tied to the featured view's state: it
+ * names the state directly (`showDetail && dailyChallenge !== null`) or is an
+ * identifier declared from it (`const featuredViewOpen = showDetail && …`).
+ * A literal `true`, a missing argument, or a gate on unrelated state is NOT.
+ */
+export function gateTiedToFeaturedView(source: string, enabled: string): boolean {
+  const trimmed = enabled.trim();
+  if (trimmed.length === 0 || trimmed === 'true' || trimmed === 'false') return false;
+  if (trimmed.includes(HOME_FEATURED_VIEW_STATE)) return true;
+  if (!IDENTIFIER_PATTERN.test(trimmed)) return false;
+  const definition = localDefinition(source, trimmed);
+  return definition !== null && definition.includes(HOME_FEATURED_VIEW_STATE);
+}
+
+/**
+ * Every problem with the featured view's BACK gate. An empty result means Home
+ * owns the BACK press on the featured view, can leave it, and stands down on the
+ * hero so the app can still be exited.
+ */
+export function findFeaturedViewBackViolations(
+  files: readonly SourceFile[],
+): BackGuardViolation[] {
+  const file = files.find((f) => f.path === HOME_FEATURED_VIEW_PATH);
+  if (!file) {
+    return [
+      {
+        path: HOME_FEATURED_VIEW_PATH,
+        kind: 'missing-file',
+        message: `${HOME_FEATURED_VIEW_PATH} (home featured-piece view) was not in the scan — its BACK gate cannot be verified (include the screen in the scanned files)`,
+      },
+    ];
+  }
+
+  const calls = hardwareBackCalls(file.source);
+  if (calls.length === 0) {
+    return [
+      {
+        path: HOME_FEATURED_VIEW_PATH,
+        kind: 'no-hardware-back-handler',
+        message: `${HOME_FEATURED_VIEW_PATH} renders the featured piece in place but never calls useHardwareBack() — BACK on the featured view reaches React Navigation's last route ("Tabs"), which has nothing to pop, and the app EXITS (owner-reproduced, RC v26)`,
+      },
+    ];
+  }
+
+  const gated = calls.find(
+    (call) => call.enabled !== null && gateTiedToFeaturedView(file.source, call.enabled),
+  );
+  if (!gated) {
+    return [
+      {
+        path: HOME_FEATURED_VIEW_PATH,
+        line: calls[0].line,
+        kind: 'featured-view-back-always-on',
+        message: `${HOME_FEATURED_VIEW_PATH}:${calls[0].line} registers a hardware-back handler whose gate is not the featured view's own state (${HOME_FEATURED_VIEW_STATE}) — an always-on handler swallows the BACK press on the HOME HERO too, so the user can never leave Home (owner-specified behaviour: BACK on the featured view returns to the hero, BACK on the HERO exits the app)`,
+      },
+    ];
+  }
+
+  const handlerBody = localDefinition(file.source, gated.handler);
+  if (handlerBody === null || !handlerBody.includes(HOME_FEATURED_VIEW_CLOSE)) {
+    return [
+      {
+        path: HOME_FEATURED_VIEW_PATH,
+        line: gated.line,
+        kind: 'featured-view-back-cannot-leave',
+        message: `${HOME_FEATURED_VIEW_PATH}:${gated.line} handles BACK for the featured view through ${gated.handler}, which never calls ${HOME_FEATURED_VIEW_CLOSE} — the press would be swallowed without leaving the featured view, so BACK could never return the user to the home hero`,
+      },
+    ];
+  }
+
+  return [];
+}
+
 /** Every violation of the full BACK contract, ready to fail a gate. */
 export function findBackExitViolations(
   files: readonly SourceFile[],
@@ -701,6 +906,7 @@ export function findBackExitViolations(
     ...findFlowMountsMissingBackCallback(files),
     ...findBlankReturnViolations(files),
     ...findPredictiveBackOptOutViolations(files),
+    ...findFeaturedViewBackViolations(files),
   ];
 }
 

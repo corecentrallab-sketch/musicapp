@@ -34,7 +34,7 @@ import {
 // The REAL genre for a modern match: the provider's own genre when the backend
 // sent one (owner request 09-25 — "Hard Rock", "Modern Jazz", "Ambient"), else the
 // honest generic "Modern song". Never a hardcoded label.
-import { modernGenreLabel } from '../services/resultGenre';
+import { modernGenreLabel, modernGenreLine } from '../services/resultGenre';
 
 export interface ModernInterstitialState {
   /** true while the /api/recognize-modern request is in flight. */
@@ -167,7 +167,22 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
               {match.song} — official sheet music
             </Text>
           </View>
-          <WebView source={{ uri: retailerUrl }} style={styles.webview} />
+          {/* THE money-path flags (owner-reproduced dead end, RC v26 Test 6 →
+              build #3): without these the retailer page's own JavaScript never
+              runs on Android. react-native-webview defaults domStorageEnabled to
+              FALSE and SMD's search page is a JS app — it initialised with no
+              session storage and rendered its empty "No results" state, for EVERY
+              query (Musicnotes worked because its page is server-rendered). Owner
+              ground truth: SMD's own box returns 2,060 results for the ASCII term
+              "Fur Elise", so the term was never the problem.
+              src/services/inAppBrowserContract.ts now REQUIRES both flags on
+              every app-shell WebView so this cannot silently regress. */}
+          <WebView
+            source={{ uri: retailerUrl }}
+            style={styles.webview}
+            javaScriptEnabled
+            domStorageEnabled
+          />
         </View>
       </Modal>
     );
@@ -176,6 +191,13 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
   // ── Recognized song → interstitial (no auto-redirect) ──
   if (surface === 'recognized' && match) {
     const canBuy = !!match.retailerUrl;
+    // The genre line exists ONLY when the provider told us one (owner 09-25,
+    // build #3). The retired neutral "Modern song" fallback is gone: the owner
+    // rejected an invented category, and the honest answer to "which genre?" is
+    // to say nothing rather than guess. (A public-domain work never reaches this
+    // card at all — the backend's PD cross-check routes it to the free library
+    // score, see src/services/pdRouting.ts.)
+    const genreLine = modernGenreLabel(match);
     return (
       <Modal visible transparent animationType="slide" onRequestClose={onClose}>
         <View style={styles.overlay}>
@@ -203,7 +225,7 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
               <Text style={styles.songTitle}>{match.song}</Text>
               <Text style={styles.artist}>{match.artist}</Text>
 
-              <Text style={styles.meta}>{modernGenreLabel(match)}</Text>
+              {genreLine ? <Text style={styles.meta}>{genreLine}</Text> : null}
 
               {match.composer ? (
                 <Text style={styles.meta}>

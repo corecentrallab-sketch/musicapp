@@ -65,6 +65,7 @@ import {
   FIND_PIECE_ENTRY_HINT,
   FIND_PIECE_ENTRY_LABEL,
   HUM_FALLBACK_LIBRARY_NOTE,
+  HUM_SECONDARY_CTA,
   frontDoorStartFailure,
   heroAccessibilityLabel,
   heroLabel,
@@ -77,6 +78,17 @@ import {
 } from '../services/frontDoor';
 // The categories a result is allowed to claim — never a hardcoded genre.
 import { PUBLIC_DOMAIN_GENRE } from '../services/resultGenre';
+// The PD-library cross-check on the modern route (owner 09-25, build #3): a
+// commercial RECORDING of a public-domain work (Lang Lang's Für Elise) must land
+// on the PD library card — the free in-app score — not on a "Modern Song" card
+// with retailer CTAs.
+import {
+  pdLibraryResultResponse,
+  pdMatchFromModernResponse,
+} from '../services/pdRouting';
+// The Android hardware-BACK handler for Home's own in-place flow (the featured
+// piece view). src/services/backExitContract.ts guards the wiring.
+import { useHardwareBack } from '../hooks/useHardwareBack';
 import {
   recordPractice,
   getWeeklyGoal,
@@ -510,7 +522,36 @@ export const HomeScreen: React.FC = () => {
         // gets the no-match answer and the hum fallback (never a silent miss).
         let modern: ModernOutcome | null = null;
         try {
-          modern = modernOutcome(await recognizeModernSong(uri, diagnostics));
+          const modernResponse = await recognizeModernSong(uri, diagnostics);
+          // THE PD CROSS-CHECK (owner 09-25, build #3): when the recording the
+          // provider identified is a RECORDING OF a public-domain work our own
+          // library holds (Lang Lang's Für Elise), the free score is what the
+          // user came for. The backend reaches that verdict by matching the
+          // match's title + composer surname against the PD catalog and only
+          // sends it when the mapping is confident; an ambiguous mapping is
+          // absent and the modern card stays (honest-no-match rule).
+          const pd = pdMatchFromModernResponse(modernResponse);
+          if (pd) {
+            await saveRecognition({
+              id: pd.id,
+              title: pd.title,
+              composer: pd.composer,
+              savedAt: new Date().toISOString(),
+              // A public-domain work is never saved as a modern song: the
+              // category is a fact about OUR library.
+              genre: pd.genre ?? PUBLIC_DOMAIN_GENRE,
+            });
+            recorder.completeRecording();
+            setShowRecognitionResults(true);
+            setNoMatchOffer(null);
+            setRecognitionPhase({
+              type: 'success',
+              response: pdLibraryResultResponse(pd),
+              diagnostics,
+            });
+            return;
+          }
+          modern = modernOutcome(modernResponse);
         } catch {
           modern = null;
         }
@@ -809,6 +850,53 @@ export const HomeScreen: React.FC = () => {
     setRecognitionPhase(null);
     setNoMatchOffer(null);
     setShowModernSearch(true);
+  }, []);
+
+  // ── The featured-piece view's OWN hardware-BACK gate (owner-specified, build
+  // #3 — RC v26: BACK here exited the app) ──
+  // The featured piece is rendered IN PLACE: this screen returns it in place of
+  // its whole body, so the route never changes and only a hardware-back handler
+  // can consume the press. Owner's behaviour, verbatim: BACK on the featured view
+  // returns to the TOP OF THE HOME HERO ("Tap to identify"), and BACK on the HERO
+  // itself exits the app.
+  //
+  // Two things make that true:
+  //   • the handler unwinds ONE level — the score overlay when it is up (the
+  //     hero's own "Practice today" path opens it directly), otherwise the
+  //     featured piece — so a press never drops the user two screens back; and
+  //   • the hook is GATED on the featured view being open. An always-on handler
+  //     would swallow BACK at the hero too, and the user could never leave Home.
+  //     (The hero body remounts when the featured view closes, i.e. it comes back
+  //     scrolled to the top — the "top of the hero" the owner asked for.)
+  // src/services/backExitContract.ts asserts both halves from this source.
+  const featuredViewOpen =
+    (showDetail && dailyChallenge !== null) || showScoreViewer;
+
+  const handleFeaturedViewBack = useCallback(() => {
+    if (showScoreViewer) {
+      setShowScoreViewer(false);
+      return true;
+    }
+    setShowDetail(false);
+    return true;
+  }, [showScoreViewer]);
+
+  useHardwareBack(handleFeaturedViewBack, featuredViewOpen);
+
+  // ── The hum way in, from HOME (owner 09-25; RC v26 Test 6 FAIL: "no 'Hum the
+  // melody' CTA on the home screen — hum reachable only post-recognition") ──
+  // A musician who cannot play the audio at all (or hums to look a tune up) needs
+  // the hum/whistle/sing way in to be VISIBLE on the surface they land on. It is a
+  // LABELLED SECONDARY path under the one hero button — never a rival mode CTA
+  // (the big button stays identify-first; HUM_SECONDARY_CTA says in words that
+  // this is the alternative) — and it opens the EXISTING hum flow
+  // (HumSearchScreen: its own recorder, its own BACK exit, the same matcher), so
+  // there is no second hum implementation to drift.
+  const handleHumEntry = useCallback(() => {
+    setShowRecognitionResults(false);
+    setRecognitionPhase(null);
+    setNoMatchOffer(null);
+    setShowHumSearch(true);
   }, []);
 
   // ── "Find a piece" (the secondary SEARCH entry under the one button): catalog
@@ -1246,6 +1334,22 @@ export const HomeScreen: React.FC = () => {
               <Text style={styles.demoBtnText}>🧪 Try Demo</Text>
             </TouchableOpacity>
           )}
+
+          {/* The secondary way in for a musician who CAN'T play the audio at
+              all: hum, whistle or sing the melody (owner 09-25, RC v26 Test 6:
+              the affordance must be visible on HOME, not only after a failed
+              listen). A labelled secondary path under the one button — never a
+              rival mode CTA — that opens the existing hum flow. */}
+          <TouchableOpacity
+            style={styles.humEntryBtn}
+            onPress={handleHumEntry}
+            activeOpacity={0.6}
+            accessibilityRole="button"
+            accessibilityLabel={HUM_SECONDARY_CTA}
+          >
+            <Text style={styles.humEntryEmoji}>🎤</Text>
+            <Text style={styles.humEntryText}>{HUM_SECONDARY_CTA}</Text>
+          </TouchableOpacity>
 
           {/* The secondary way in: KNOW the piece's name. This used to be a third
               hero button ("Find a piece"); the owner's decision (09-24) is that it
@@ -1849,6 +1953,27 @@ const styles = StyleSheet.create({
     marginTop: 16,
     borderWidth: 1,
     borderColor: '#0f3460',
+  },
+  // The hum/whistle/sing entry (owner 09-25). Deliberately lighter than the
+  // find-a-piece row and than the big red hero button: it is a labelled
+  // secondary path, not a second hero — no filled background, no accent border.
+  humEntryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginTop: 12,
+  },
+  humEntryEmoji: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  humEntryText: {
+    fontSize: 14,
+    color: '#a0a0b8',
+    textDecorationLine: 'underline',
   },
   findPieceEmoji: {
     fontSize: 18,
