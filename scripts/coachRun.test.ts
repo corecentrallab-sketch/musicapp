@@ -27,6 +27,7 @@ import {
   WAVE_FORMAT_PCM,
 } from '../src/services/wavCapture';
 import { ABC_SEEDS, normalizePieceKey, resolvePieceAbc } from '../src/services/pieceAbc';
+import { abcToReference } from '../src/services/abcToReference';
 import {
   coachRunReducer,
   coachUnavailableOutcome,
@@ -361,7 +362,12 @@ console.log('\n── pieceAbc: which reference melody? ──');
   assertEq(normalizePieceKey('Für Elise'), 'fur elise', 'diacritics fold away (Für → Fur)');
   assertEq(normalizePieceKey('  Twinkle,  Twinkle, Little Star '), 'twinkle twinkle little star', 'punctuation and spacing fold away');
   assertEq(normalizePieceKey(null), '', 'a missing title folds to an empty key');
-  assertEq(ABC_SEEDS.length >= 8, true, 'the bundled public-domain seed list is present');
+  assertEq(ABC_SEEDS.length, 9, 'the bundled public-domain seed list holds nine pieces');
+  assertEq(
+    new Set(ABC_SEEDS.map((s) => s.pieceId)).size,
+    ABC_SEEDS.length,
+    'every seed has a distinct slug',
+  );
 
   const exact = resolvePieceAbc({ title: 'Für Elise', composer: 'Ludwig van Beethoven' });
   assertEq(exact.source, 'seed', 'a known piece resolves to a bundled seed');
@@ -390,6 +396,73 @@ console.log('\n── pieceAbc: which reference melody? ──');
 
   const composerMismatch = resolvePieceAbc({ title: 'Canon in D', composer: 'Someone Else' });
   assertEq(composerMismatch.source, 'seed', 'an exact title match does not need the composer');
+
+  // ---- Seed #9: Air on the G String (build #3) ------------------------------
+  // The owner-reported gap: Air's piece page said "reference melody coming soon"
+  // because only 8 seeds existed. The seed is resolved from the LIVE catalog row
+  // for the Air — {"id":"0e1e4700-dc96-47f5-8ef9-11c7324150ef","title":"Air on the
+  // G String","composer":"Johann Sebastian Bach","catalog":"BWV 1068"} read from
+  // https://site-notesnap.vercel.app/api/pieces/0e1e4700-... on 2026-09-25 — so
+  // the exact-title path must hit and the loose title+composer path must agree.
+  const AIR_SEED_ABC = [
+    'X:1',
+    'T:Air on the G String (practice phrase)',
+    'C:Johann Sebastian Bach',
+    'M:4/4',
+    'L:1/8',
+    'K:D',
+    '^f8 | ^f b/2 g/2 e/2 d/2 ^c/2 d/2 ^c2 A2 | a4 a/2 ^f/2 =c/2 B/2 e/2 ^d/2 a/2 g/2 | g4 g/2 e/2 B/2 A/2 d/2 ^c/2 g/2 ^f/2 |]',
+  ].join('\n');
+
+  const airSeed = ABC_SEEDS.find((s) => s.pieceId === 'air-on-the-g-string');
+  assert(!!airSeed, 'seed #9 (Air on the G String) is bundled');
+  assertEq(airSeed?.title, 'Air on the G String', 'the Air seed keeps the display title');
+  assertEq(airSeed?.composer, 'Johann Sebastian Bach', 'the Air seed carries the catalog composer');
+  assertEq(airSeed?.abc, AIR_SEED_ABC, 'the Air abc matches the pinned mirror literal');
+
+  const airExact = resolvePieceAbc({
+    title: 'Air on the G String',
+    composer: 'Johann Sebastian Bach',
+  });
+  assertEq(airExact.source, 'seed', 'the live Air catalog row resolves to a seed');
+  assertEq(airExact.seed?.pieceId, 'air-on-the-g-string', 'the Air seed is the right piece');
+  assert(airExact.abc.startsWith('X:1'), 'the Air reference is real ABC notation');
+
+  // The Air resolves with the composer spelled the catalog's way, and the loose
+  // path (a longer Air title carrying the BWV number) agrees with the same
+  // composer. A loose title with a DIFFERENT composer must not match.
+  const airLoose = resolvePieceAbc({
+    title: 'Air on the G String (BWV 1068)',
+    composer: 'Johann Sebastian Bach',
+  });
+  assertEq(airLoose.seed?.pieceId, 'air-on-the-g-string', 'a related Air title + Bach resolves too');
+  assertEq(
+    resolvePieceAbc({ title: 'Air on the G String (BWV 1068)', composer: 'Edvard Grieg' }).source,
+    'none',
+    'a related Air title with another composer resolves to nothing',
+  );
+
+  // No stolen titles: every seed still resolves to ITSELF, so adding #9 at the
+  // end of the list cannot have displaced a title that matched seed 1..8.
+  for (const seed of ABC_SEEDS) {
+    const hit = resolvePieceAbc({ title: seed.title, composer: seed.composer });
+    assertEq(hit.seed?.pieceId, seed.pieceId, `seed ${seed.pieceId} still resolves to itself`);
+  }
+  // A different Bach piece must NOT inherit the Air melody.
+  assertEq(
+    resolvePieceAbc({ title: 'Prelude in C Major', composer: 'Johann Sebastian Bach' }).source,
+    'none',
+    'another Bach piece is not handed the Air melody',
+  );
+
+  // The Air phrase must parse as ABC: 4/4 of L:1/8 with the chromatic C natural,
+  // the held opening F#, and no unparsed tokens. 28 notes over exactly 16 beats.
+  const airNotes = abcToReference(airExact.abc);
+  assertEq(airNotes.length, 28, 'the Air practice phrase parses to 28 notes');
+  assertEq(airNotes[0].midi, 78, 'the phrase opens on the held F#5 (violin I, BWV 1068/2)');
+  assertEq(airNotes[0].durationBeats, 4, 'the opening F# is held for a full 4/4 bar');
+  assert(airNotes.some((n) => n.midi === 72), 'the chromatic C natural (bar 3) parses as C5');
+  assertEq(airNotes[airNotes.length - 1].startBeat, 15.75, 'the phrase is four 4/4 bars of L:1/8');
 }
 
 console.log('\n── coachRun: honest outcomes ──');

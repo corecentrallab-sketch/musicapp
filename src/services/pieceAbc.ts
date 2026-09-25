@@ -83,6 +83,21 @@ export const ABC_SEEDS: AbcSeed[] = [
     composer: 'Giuseppe Verdi',
     abc: ['X:1', 'T:Anvil Chorus (Il Trovatore)', 'C:Giuseppe Verdi', 'M:4/4', 'L:1/8', 'K:G', 'G c c c c2 | c d e d c B A B | G4 z4 |'].join('\n'),
   },
+  {
+    // Seed #9 (build #3; owner-reported gap — the Air piece page showed
+    // "reference melody coming soon" because only 8 seeds existed). The phrase is
+    // the violin I opening of the Air (BWV 1068/2, D major): the held F#, the
+    // descending 16ths to the A4 cadence, and the chromatic C natural in bar 3.
+    // Read from the public-domain Mutopia typeset of the Bach-Gesellschaft score
+    // (mutopiaproject.org .../BWV1068/bach-air/bach-air-lys/bach-air-notes.ly),
+    // cross-checked against bach-air-jlh-35.mid. Four bars, no grace notes; ties
+    // written as repeated notes — a practice phrase, not the full movement.
+    // Byte-identical to the site's MELODY_SEEDS entry and the /api/hum store.
+    pieceId: 'air-on-the-g-string',
+    title: 'Air on the G String',
+    composer: 'Johann Sebastian Bach',
+    abc: ['X:1', 'T:Air on the G String (practice phrase)', 'C:Johann Sebastian Bach', 'M:4/4', 'L:1/8', 'K:D', '^f8 | ^f b/2 g/2 e/2 d/2 ^c/2 d/2 ^c2 A2 | a4 a/2 ^f/2 =c/2 B/2 e/2 ^d/2 a/2 g/2 | g4 g/2 e/2 B/2 A/2 d/2 ^c/2 g/2 ^f/2 |]'].join('\n'),
+  },
 ];
 
 export type AbcSource = 'piece' | 'seed' | 'none';
