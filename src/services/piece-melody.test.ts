@@ -1,7 +1,7 @@
 /**
  * Regression tests for the piece -> reference-melody resolver (SITE WAVE 1b, P2).
  *
- * The site holds eight bundled melodies but a piece page is addressed by a
+ * The site holds nine bundled melodies but a piece page is addressed by a
  * catalog UUID, so the widget must resolve by NORMALISED TITLE + COMPOSER. The
  * titles below are the real catalog titles, read from the live
  * `/api/pieces` on 2026-09-18 (see docs/SITE-WAVE1B.md) — including the honest
@@ -68,6 +68,53 @@ describe("resolvePieceMelody", () => {
     expect(hit?.seed.pieceId).toBe("canon-in-d");
   });
 
+  test("matches the live catalog row for the Air on the G String (seed #9)", () => {
+    // The owner-reported gap (build #3): the Air page showed "reference melody
+    // coming soon" because only 8 seeds existed. The live row is
+    // {"title":"Air on the G String","composer":"Johann Sebastian Bach",
+    //  "catalog":"BWV 1068"} — id 0e1e4700-dc96-47f5-8ef9-11c7324150ef, read from
+    // https://site-notesnap.vercel.app/api/pieces/0e1e4700-... on 2026-09-25.
+    const hit = resolvePieceMelody({
+      title: "Air on the G String",
+      composer: "Johann Sebastian Bach",
+    });
+    expect(hit?.seed.pieceId).toBe("air-on-the-g-string");
+    expect(hit?.matchedBy).toBe("title");
+    expect(hit?.abc).toContain("K:D");
+    // Byte-identity guard: this literal is pinned in the app repo's
+    // scripts/coachRun.test.ts (AIR_SEED_ABC) too — the two surfaces must keep
+    // handing the coach / hum matcher the very same abc string.
+    expect(hit?.abc).toBe(
+      [
+        "X:1",
+        "T:Air on the G String (practice phrase)",
+        "C:Johann Sebastian Bach",
+        "M:4/4",
+        "L:1/8",
+        "K:D",
+        "^f8 | ^f b/2 g/2 e/2 d/2 ^c/2 d/2 ^c2 A2 | a4 a/2 ^f/2 =c/2 B/2 e/2 ^d/2 a/2 g/2 | g4 g/2 e/2 B/2 A/2 d/2 ^c/2 g/2 ^f/2 |]",
+      ].join("\n"),
+    );
+    // The resolver (page widget) and the hum store must hand out the SAME abc.
+    expect(melodySeedBySlug("air-on-the-g-string")?.abc).toBe(hit?.abc);
+  });
+
+  test("the Air seed never steals another piece's melody", () => {
+    // A different Bach piece must not inherit the Air melody...
+    expect(
+      resolvePieceMelody({ title: "Prelude in C Major", composer: "Johann Sebastian Bach" }),
+    ).toBeNull();
+    // ...and a loose Air title with the wrong composer must not match either.
+    expect(
+      resolvePieceMelody({ title: "Air on the G String (BWV 1068)", composer: "Edvard Grieg" }),
+    ).toBeNull();
+    // ...while the same loose title + Bach does.
+    expect(
+      resolvePieceMelody({ title: "Air on the G String (BWV 1068)", composer: "Johann Sebastian Bach" })
+        ?.seed.pieceId,
+    ).toBe("air-on-the-g-string");
+  });
+
   test("every seeded title resolves to itself", () => {
     for (const title of MELODY_SEED_TITLES) {
       const hit = resolvePieceMelody({ title });
@@ -108,9 +155,12 @@ describe("resolvePieceMelody", () => {
     expect(resolvePieceMelody({})).toBeNull();
   });
 
-  test("all eight seeded melodies are carried by exactly eight seeds", () => {
-    expect(MELODY_SEED_COUNT).toBe(8);
-    expect(new Set(MELODY_SEED_TITLES).size).toBe(8);
+  test("all nine seeded melodies are carried by exactly nine seeds", () => {
+    expect(MELODY_SEED_COUNT).toBe(9);
+    expect(new Set(MELODY_SEED_TITLES).size).toBe(9);
+    // The Air seed (build #3) must be present with the display title the piece
+    // page shows — its words are what the resolver matches on.
+    expect(MELODY_SEED_TITLES).toContain("Air on the G String");
   });
 });
 

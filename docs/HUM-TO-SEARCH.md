@@ -90,7 +90,7 @@ this scoped config avoids the repo-wide pre-existing Bun-typing noise).
 
 ## Phase 1 does NOT include
 - The mobile app "tap to hum → search" screen/UI (follow-up).
-- Full-catalog skeleton population beyond the 8 bundled public-domain seeds
+- Full-catalog skeleton population beyond the 9 bundled public-domain seeds
   (the Neon `melody_skeletons` table + build script are ready; populating the
   remaining ~48 fingerprinted / 525 catalog pieces from their ABC/MIDI is a data
   step, not yet wired to production ABC locations for all pieces).

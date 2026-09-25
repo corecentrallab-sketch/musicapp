@@ -1,8 +1,11 @@
 // ---------------------------------------------------------------------------
 // melody-seeds.ts — bundled public-domain ABC reference seeds for the
 // hum-to-search melody database (Phase 1). These mirror the app's
-// PUBLIC_DOMAIN_ABC_SCORES (notation-editor bundle) so the algorithm is
-// self-contained and testable without a DB. All content is public domain.
+// src/services/pieceAbc.ts ABC_SEEDS byte-for-byte (the coach's reference
+// melodies) so the algorithm is self-contained and testable without a DB, and
+// so the piece page, the practice coach and /api/hum agree about what a piece's
+// melody is. Adding or editing a seed here means editing the app list too.
+// All content is public domain.
 // ---------------------------------------------------------------------------
 export interface AbcSeed {
   pieceId: string;
@@ -59,5 +62,21 @@ export const MELODY_SEEDS: AbcSeed[] = [
     title: 'Anvil Chorus',
     composer: 'Giuseppe Verdi',
     abc: ['X:1', 'T:Anvil Chorus (Il Trovatore)', 'C:Giuseppe Verdi', 'M:4/4', 'L:1/8', 'K:G', 'G c c c c2 | c d e d c B A B | G4 z4 |]'].join('\n'),
+  },
+  {
+    // Seed #9 (build #3; owner-reported gap — the Air piece page showed
+    // "reference melody coming soon" because only 8 seeds existed). The phrase is
+    // the violin I opening of the Air (BWV 1068/2, D major): the held F#, the
+    // descending 16ths to the A4 cadence, and the chromatic C natural in bar 3.
+    // Read from the public-domain Mutopia typeset of the Bach-Gesellschaft score
+    // (mutopiaproject.org .../BWV1068/bach-air/bach-air-lys/bach-air-notes.ly),
+    // cross-checked against bach-air-jlh-35.mid. Four bars, no grace notes; ties
+    // written as repeated notes — a practice phrase, not the full movement.
+    // BYTE-IDENTICAL to the app's src/services/pieceAbc.ts ABC_SEEDS entry, and
+    // this list IS the /api/hum reference store (store.ts getMelodyStore()).
+    pieceId: 'air-on-the-g-string',
+    title: 'Air on the G String',
+    composer: 'Johann Sebastian Bach',
+    abc: ['X:1', 'T:Air on the G String (practice phrase)', 'C:Johann Sebastian Bach', 'M:4/4', 'L:1/8', 'K:D', '^f8 | ^f b/2 g/2 e/2 d/2 ^c/2 d/2 ^c2 A2 | a4 a/2 ^f/2 =c/2 B/2 e/2 ^d/2 a/2 g/2 | g4 g/2 e/2 B/2 A/2 d/2 ^c/2 g/2 ^f/2 |]'].join('\n'),
   },
 ];

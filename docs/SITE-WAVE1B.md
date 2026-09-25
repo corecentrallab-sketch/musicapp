@@ -24,13 +24,13 @@ engagement layer around it.
   if a seed ever carries one, wins and is attributed to the score.
 * `src/components/MelodyPlayer.tsx` — Web Audio synthesised in the browser (triangle
   oscillator + gain envelope), the ABC embedded in the rendered page: no audio files, no
-  R2, no infra, works offline. Play/stop only, no autoplay. The other ~517 pieces get
+  R2, no infra, works offline. Play/stop only, no autoplay. The other ~516 pieces get
   the app's honest line, **"Reference melody coming soon"**, and no player at all.
 
-### The eight melodies (the only pieces that can ever be interactive)
+### The nine melodies (the only pieces that can ever be interactive)
 
 `Für Elise` · `Ode to Joy` · `Twinkle, Twinkle, Little Star` · `Greensleeves` ·
-`Jingle Bells` · `Canon in D` · `Happy Birthday` · `Anvil Chorus`
+`Jingle Bells` · `Canon in D` · `Happy Birthday` · `Anvil Chorus` · `Air on the G String`
 (`src/services/hum/melody-seeds.ts`, byte-identical mirror of the app's `ABC_SEEDS`).
 
 Which of them the LIVE catalog can actually match (probed `/api/pieces` on 2026-09-18) —
@@ -42,6 +42,7 @@ on normalised text:
 | fur-elise | `Bagatelle in A Minor (Für Elise)` (Beethoven) | title contains the seed key + composer agrees |
 | ode-to-joy | `Symphony No. 9 in D Minor (Choral) — Ode to Joy` (Beethoven) | title contains the seed key + composer agrees |
 | canon-in-d | `Canon in D Major (piano arrangement)` (Pachelbel) | title contains the seed key + composer agrees |
+| air-on-the-g-string | `Air on the G String` (Bach, BWV 1068) | **exact** normalised title + composer agrees (seed #9, build #3, 2026-09-25) |
 | twinkle, greensleeves, jingle-bells, happy-birthday, anvil-chorus | **no piece in the catalog** (`?q=` returned 0) | honest "coming soon" |
 
 `Twelve Variations on 'Ah vous dirai-je, Maman' (K. 265)` (Mozart) is the catalog's
