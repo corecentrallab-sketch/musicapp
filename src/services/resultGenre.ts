@@ -24,8 +24,10 @@
  *   • a match that is NOT public domain (recognised through the licensed
  *     fingerprint service — a modern, copyrighted song) shows the PROVIDER'S
  *     genre when the backend carries one ("Hard Rock", "Ambient", … — owner
- *     request 09-25), else the honest generic "Modern song", and gets the
- *     official-sheet-music CTA. Never "Classical".
+ *     request 09-25) and OTHERWISE SHOWS NO GENRE LINE AT ALL (`modernGenreLabel`
+ *     → null; owner 09-25 build #3 — the neutral "Modern song" fallback is
+ *     retired, because an invented category is what the owner stopped trusting).
+ *     Never "Classical".
  *   • a public-domain match shows the catalog's OWN genre when the payload has
  *     one (the backend sends `genre`; the app used to drop it and print the
  *     catalog NUMBER in the genre slot instead), else the honest
@@ -43,15 +45,15 @@
 import { maskComments } from './modalBackContract';
 
 /**
- * The FALLBACK category for a modern (copyrighted, non-library) match — used
- * only when the provider gave us no genre of its own.
+ * RETIRED (build #3, owner 09-25): the neutral "Modern song" fallback label.
  *
- * Owner request 09-25: the hardcoded "Modern song" label had to go. A modern
- * match now shows the PROVIDER'S genre ("Hard Rock", "Modern Jazz", "Ambient")
- * when the backend sends one (see modernGenreLabel below), and only falls back
- * to this honest generic category when it does not.
+ * It is deliberately GONE rather than kept as a default. The card omits its
+ * genre line when the provider sent none (`modernGenreLabel` → null); a
+ * hardcoded neutral category re-appearing anywhere in the result path would
+ * re-create the exact label the owner rejected, so the guard suite asserts the
+ * literal never comes back (scripts/resultGenreContract.test.ts).
  */
-export const FALLBACK_MODERN_GENRE = 'Modern song';
+export const FALLBACK_MODERN_GENRE_RETIRED = 'Modern song';
 
 /**
  * The category for a piece served from our own free library. A fact the app
@@ -100,28 +102,48 @@ export function isModernResult(match: GenreSource | null | undefined): boolean {
 }
 
 /**
- * The category label for a MODERN match: the provider's own genre when the
- * backend carried one (`/api/recognize-modern` maps AudD's Apple Music /
- * Spotify genre — see the site's modern-genre.ts), else the honest generic
- * FALLBACK_MODERN_GENRE. Never "Classical", and never an invented genre.
+ * The provider's own genre for a modern match, or null when the provider sent
+ * none.
  *
- * This is the ONLY place a modern match's genre string may be produced; the
- * interstitial, the History save and the search screen all resolve through it.
+ * OWNER 09-25 (build #3): the neutral "Modern song" fallback had to go. The owner
+ * reported it on Otis Redding's "Just One More Day" and Roxy Music's "More Than
+ * This" — both provider matches with NO genre — and again on Lang Lang's
+ * recording of Für Elise, where "Modern Song" on a 200-year-old public-domain
+ * work was a category error. The rule is now the strictest one: SHOW WHAT THE
+ * PROVIDER SAID, ELSE SHOW NOTHING. The card omits its genre line rather than
+ * inventing a category, because an invented category is the thing the owner
+ * stopped trusting.
  */
 export function modernGenreLabel(
   result: { genre?: string | null } | null | undefined,
-): string {
-  return clean(result?.genre) ?? FALLBACK_MODERN_GENRE;
+): string | null {
+  return clean(result?.genre) ?? null;
 }
 
 /**
- * The category label for a recognition match.
+ * The genre label to RENDER on a modern card, or null when the line must be
+ * omitted (the provider sent no genre). Named so the screens read the rule from
+ * here rather than re-deciding it — `{modernGenreLabel(result) && <Text …>}` is
+ * exactly the shape this returns for.
+ */
+export function modernGenreLine(
+  result: { genre?: string | null } | null | undefined,
+): string | null {
+  return modernGenreLabel(result);
+}
+
+/**
+ * The category label for a recognition match, as a NON-EMPTY string (this is the
+ * value stamped on a saved recognition and on the piece page a result opens, so
+ * it can never be blank).
  *
- * Modern → its provider genre, else "Modern song" (never "Classical"); public
- * domain → the catalog's own genre, else "Public domain".
+ * Public domain → the catalog's own genre, else "Public domain" (a fact). Modern
+ * → the PROVIDER'S genre, else "Uncategorised" — we do not know, so we say so;
+ * the modern CARD omits the line entirely through `modernGenreLabel` (this
+ * string is the stored/derived value, not the card's line).
  */
 export function resultGenreLabel(match: GenreSource | null | undefined): string {
-  if (isModernResult(match)) return modernGenreLabel(match);
+  if (isModernResult(match)) return modernGenreLabel(match) ?? UNCATEGORISED_GENRE;
   return clean(match?.genre) ?? PUBLIC_DOMAIN_GENRE;
 }
 
@@ -165,7 +187,7 @@ export interface GenreLabelOffender {
   /** 1-based line number. */
   line: number;
   /** Why the line was flagged. */
-  kind: 'classical-fallback' | 'classical-genre-value';
+  kind: 'classical-fallback' | 'classical-genre-value' | 'modern-song-genre-invented';
   text: string;
 }
 
@@ -205,5 +227,61 @@ export function formatGenreLabelOffenders(
   return offenders.map(
     (o) =>
       `${o.path}:${o.line} — a result genre is hardcoded/defaulted to "Classical" (${o.kind}); use resultGenreLabel() / modernGenreLabel() / PUBLIC_DOMAIN_GENRE instead: ${o.text}`,
+  );
+}
+
+// ─── the retired neutral modern label (owner 09-25, build #3) ───────────────
+
+/**
+ * The retired literal, as a genre VALUE or a genre DEFAULT in source text: the
+ * `'Modern song'` string assigned to a genre, or used as a `??` / `||` default.
+ * A mention in prose (a comment, this module's own note) is not an offence —
+ * comments are blanked before matching, exactly like the classical scanner.
+ */
+export const INVENTED_MODERN_GENRE_LITERAL_PATTERN = /['"][Mm]odern\s+[Ss]ong['"]/;
+export const INVENTED_MODERN_GENRE_DEFAULT_PATTERN =
+  /(?:\?\?|\|\|)\s*['"][Mm]odern\s+[Ss]ong['"]/;
+
+/**
+ * Every place a genre is assigned or defaulted to the retired neutral label.
+ *
+ * Why this exists: the owner rejected "Modern Song" twice — on provider matches
+ * that carried no genre at all, and (worse) on Lang Lang's recording of a
+ * public-domain work. The fix is omission, and omission is invisible in a
+ * passing build, so the guard has to be a source scan: a screen that
+ * re-introduces `genre: modernGenreLabel(m) ?? 'Modern song'` fails the gate.
+ */
+export function scanSourcesForInventedModernGenre(
+  files: readonly { path: string; source: string }[],
+  allow: readonly string[] = [RESULT_GENRE_MODULE_PATH],
+): GenreLabelOffender[] {
+  const allowed = new Set(allow);
+  const offenders: GenreLabelOffender[] = [];
+  for (const file of files) {
+    if (allowed.has(file.path)) continue;
+    const lines = maskComments(file.source).split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const text = lines[i];
+      if (!INVENTED_MODERN_GENRE_LITERAL_PATTERN.test(text)) continue;
+      const isFallback = INVENTED_MODERN_GENRE_DEFAULT_PATTERN.test(text);
+      if (!isFallback && !GENRE_ASSIGNMENT_TOKEN_PATTERN.test(text)) continue;
+      offenders.push({
+        path: file.path,
+        line: i + 1,
+        kind: 'modern-song-genre-invented',
+        text: text.trim().slice(0, 160),
+      });
+    }
+  }
+  return offenders;
+}
+
+/** One-line report per invented-genre offender, ready to print in a failure. */
+export function formatInventedModernGenreOffenders(
+  offenders: readonly GenreLabelOffender[],
+): string[] {
+  return offenders.map(
+    (o) =>
+      `${o.path}:${o.line} — a genre is set to the retired neutral label "Modern song" (${o.kind}); a modern match shows the PROVIDER's genre or NO genre line at all (modernGenreLabel() → null): ${o.text}`,
   );
 }

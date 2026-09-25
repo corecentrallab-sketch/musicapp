@@ -291,3 +291,130 @@ export function formatBrowserViolations(
 ): string[] {
   return violations.map((v) => `  ✗ ${v.message}`);
 }
+
+// ─── the WebView runtime flags (the money path's dead end, RC v26 → build #3) ──
+//
+// Owner-reproduced on device (09-25, RC v26 Test 6): the Sheet Music Direct page
+// opened inside our app shell and showed "No results" for EVERY query, while the
+// SAME ASCII term ("Fur Elise") returns 2,060 results in SMD's own search box and
+// the SAME WebView rendered Musicnotes' search fine. Root cause, verified in the
+// source: the retailer surface was a BARE WebView —
+//
+//   <WebView source={{ uri: retailerUrl }} style={styles.webview} />
+//
+// with no javaScriptEnabled / domStorageEnabled. On Android react-native-webview
+// defaults domStorageEnabled to false, and SMD's search results page is a JS app
+// that initialises its session storage on load — with storage off it renders its
+// empty state and no query can ever produce a result. (Musicnotes' search page is
+// server-rendered, which is exactly why it worked in the same WebView.)
+//
+// The modal contract above guards HOW a browser surface is mounted; this guards
+// that the surface is actually USABLE. Every app-shell WebView must carry both
+// flags, so a future retailer surface cannot reopen the same silent dead end.
+
+/** The runtime flags every app-shell WebView must set. */
+export const REQUIRED_WEBVIEW_FLAGS: readonly string[] = [
+  'javaScriptEnabled',
+  'domStorageEnabled',
+];
+
+export interface WebViewFlagViolation {
+  path: string;
+  /** 1-based line of the WebView's opening tag. */
+  line: number;
+  /** The flags missing from that tag (or explicitly disabled). */
+  missing: string[];
+  message: string;
+}
+
+/** Every `<WebView` opening tag in one file, with its source text + line. */
+export function webViewTags(
+  source: string,
+): Array<{ line: number; tag: string }> {
+  const masked = maskComments(source);
+  const found: Array<{ line: number; tag: string }> = [];
+  const pattern = /<WebView(?=[\s/>])/g;
+  let match = pattern.exec(masked);
+  while (match) {
+    // A TS type reference is not a JSX element: `useRef<WebView>(null)` reads as
+    // `<WebView>` followed by `(`, and a scanner that counted it would report an
+    // EMPTY tag (`<WebView>`) as missing both flags — a false alarm on the app's
+    // own compliant score viewer, which is exactly what the first live run of
+    // this guard produced. Only real JSX elements count.
+    const after = masked.slice(match.index + '<WebView'.length);
+    if (!/^>\s*\(/.test(after)) {
+      const tag = readModalTag(masked, match.index);
+      if (tag !== null) found.push({ line: lineAt(masked, match.index), tag });
+    }
+    pattern.lastIndex = match.index + '<WebView'.length;
+    match = pattern.exec(masked);
+  }
+  return found;
+}
+
+/** The required flags a WebView tag is missing (or has switched off). */
+export function missingWebViewFlags(tagSource: string): string[] {
+  const missing: string[] = [];
+  for (const flag of REQUIRED_WEBVIEW_FLAGS) {
+    // Both the JSX shorthand (`javaScriptEnabled`) and the explicit form
+    // (`javaScriptEnabled={true}`) satisfy the requirement; an explicit `false`
+    // never does.
+    //
+    // Both forms must really be recognised: the retailer surface sets the
+    // shorthand while ScoreViewer (the other navigable WebView in the app) sets
+    // `={true}`, and a scanner that only understood the shorthand would report
+    // the app's own compliant view as a violation — a false alarm that would
+    // train the next reader to ignore the guard.
+    const shorthand = new RegExp(`(?:^|[\\s{])${flag}(?=\\s|/?>)`);
+    const explicitTrue = new RegExp(
+      `(?:^|[\\s{])${flag}\\s*=\\s*\\{\\s*true\\s*\\}`,
+    );
+    if (!shorthand.test(tagSource) && !explicitTrue.test(tagSource)) {
+      missing.push(flag);
+      continue;
+    }
+    const disabled = new RegExp(`${flag}\\s*=\\s*\\{\\s*false\\s*\\}`);
+    if (disabled.test(tagSource)) missing.push(flag);
+  }
+  return missing;
+}
+
+/**
+ * Every app-shell (non-inline) WebView missing the runtime flags it needs to
+ * render a retailer's JS search page. An empty result means every navigable
+ * WebView in the app is usable — the two inline app-rendered previews are exempt
+ * through `INLINE_APP_RENDERED_WEBVIEWS`, the same single list the modal contract
+ * uses.
+ */
+export function findWebViewFlagViolations(
+  files: readonly SourceFile[],
+): WebViewFlagViolation[] {
+  const violations: WebViewFlagViolation[] = [];
+  for (const file of files) {
+    if (isInlineAppRenderedWebview(file.path)) continue;
+    for (const { line, tag } of webViewTags(file.source)) {
+      const missing = missingWebViewFlags(tag);
+      if (missing.length === 0) continue;
+      violations.push({
+        path: file.path,
+        line,
+        missing,
+        message:
+          `${file.path}:${line} renders a WebView without ${missing.join(' + ')} — ` +
+          'on Android domStorageEnabled defaults to false, so a JavaScript ' +
+          'retailer page (Sheet Music Direct) loads, never initialises, and shows ' +
+          'its empty "No results" state for every query (owner-reproduced, RC v26). ' +
+          `Tag: ${tag.replace(/\s+/g, ' ').trim()}`,
+      });
+    }
+  }
+  return violations;
+}
+
+/** One-line report per WebView-flag violation, ready to print in a test failure. */
+export function formatWebViewFlagViolations(
+  violations: readonly WebViewFlagViolation[],
+): string[] {
+  return violations.map((v) => `  ✗ ${v.message}`);
+}
+

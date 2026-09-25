@@ -42,11 +42,57 @@ export const TINY_CAPTURE_MAX_BYTES = 4000;
 export const TINY_CAPTURE_MAX_DURATION_MS = 500;
 
 /**
+ * THE SILENCE FLOOR (owner-reported on device, RC v26 Test 4 → build #3).
+ *
+ * A capture can be perfectly healthy in bytes and duration and still carry no
+ * audio at all: the owner held the phone with the microphone covered, the
+ * recorder wrote a full-length 12s / ~190KB .m4a of digital near-silence, and
+ * `isTinyCapture` — which only knew about bytes and duration — passed it. The
+ * clip then travelled through landmark matching and AudD, matched nothing (of
+ * course), and the user got "No match in our library yet": the wrong card, for
+ * the wrong reason, with the wrong advice.
+ *
+ * The capture path already MEASURED the answer — `peakDbFS` (the loudest
+ * metering sample of the listen, see captureTelemetry.buildCaptureTelemetry)
+ * travels to the server as `x-capture-peak-dbfs`. It was simply never consulted
+ * here. This floor is that consultation: a whole listen whose PEAK never rose
+ * above −40 dBFS heard nothing a matcher can use, so it is a capture defect
+ * ("we couldn't hear enough — try again closer to the music") rather than a
+ * library miss.
+ *
+ * Why −40 dBFS: a room recording the owner's own working takes peaked around
+ * −18 dBFS and a quiet-but-real take still lands well above −40; digital
+ * near-silence lands far below it (metering floors at −60…−160). The comparison
+ * is inclusive (<=) so a capture measured exactly at the floor counts as
+ * silence — erring toward the honest retry card, never toward blaming the
+ * library for a listen that heard nothing.
+ *
+ * A null / non-finite peak is NOT evidence (we do not know) — identical to the
+ * bytes and duration rules below: only a MEASUREMENT can make the verdict.
+ */
+export const SILENT_CAPTURE_MAX_PEAK_DBFS = -40;
+
+/**
+ * True when a measured peak level says this listen heard (essentially) nothing.
+ * Only a finite measurement counts; null/NaN/±Infinity mean "not measured".
+ */
+export function isSilentCapture(d: CaptureNumbers | null | undefined): boolean {
+  if (!d) return false;
+  const peak = d.peakDbFS;
+  if (typeof peak !== "number" || !Number.isFinite(peak)) return false;
+  return peak <= SILENT_CAPTURE_MAX_PEAK_DBFS;
+}
+
+/**
  * True when the capture metadata says the phone barely recorded anything.
  * A null field is NOT tiny evidence (we do not know) — it is only a defect when
  * a measurement exists and is clearly too small. A measured ZERO is the most
  * tiny evidence there is (no clip at all: the recorder's stop failure 'empty'),
  * so 0 bytes / 0 ms classify as tiny rather than being skipped as "unknown".
+ *
+ * Three ways a capture fails to be a listen: nothing on disk (bytes), nothing
+ * long enough to be a listen (duration), and nothing AUDIBLE (the peak floor —
+ * the owner's full-length silent capture, RC v26 Test 4).
  */
 export function isTinyCapture(d: CaptureNumbers | null | undefined): boolean {
   if (!d) return false;
@@ -58,7 +104,8 @@ export function isTinyCapture(d: CaptureNumbers | null | undefined): boolean {
   ) {
     return true;
   }
-  return false;
+  // The loudness floor: a full-length clip that never rose above it is silence.
+  return isSilentCapture(d);
 }
 
 // ─── the no-match card's two honest states ──────────────────────────────

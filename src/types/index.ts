@@ -173,12 +173,50 @@ export interface ModernMatch {
 
 /** Successful response from POST /api/recognize-modern.
  *  `modern` is null and `recognized` is "none" when no song was matched. */
+/**
+ * The PD-library cross-check the BACKEND attaches to a modern recognition
+ * (build #3, owner 09-25). The licensed provider identifies a RECORDING; when
+ * that recording is of a public-domain work our own catalog holds (Lang Lang's
+ * Für Elise), its free score is what the user came for — and the work must never
+ * be presented as a modern song to buy. The server reaches that verdict by
+ * matching the AudD title + composer surname against the pieces table and sends
+ * this block ONLY when the mapping is confident (an ambiguous mapping is absent,
+ * so the modern card stays honest).
+ *
+ * Every field is optional and unvalidated on the wire: `pdMatchFromModernResponse`
+ * (src/services/pdRouting.ts) is the only reader, and it refuses anything it
+ * cannot prove. Fields are snake_case because this is the server's payload.
+ */
+export interface PdMatchWire {
+  id?: string;
+  title?: string;
+  composer?: string;
+  catalog?: string;
+  genre?: string;
+  difficulty_label?: string;
+  sheet_music_available?: boolean;
+  sheet_music_url?: string;
+  album_art_url?: string;
+  affiliate_url?: string;
+  confidence?: number;
+  match_confidence?: number;
+  /** Explicit PD flag; `false` vetoes the route (a future server veto). */
+  is_public_domain?: boolean;
+}
+
 export interface ModernResponse {
   success: true;
   modern: ModernMatch | null;
   recognized: "modern" | "none";
   source: string;
   query_duration_ms: number;
+  /**
+   * The PD-library mapping for this recording, when the backend's cross-check
+   * was confident. Present ⇒ the app renders OUR library card (free score) for
+   * the work instead of the modern interstitial. ABSENT ⇒ an honest modern
+   * match (never a guess).
+   */
+  pd_match?: PdMatchWire;
 }
 
 /** The states a recognition session can be in. */

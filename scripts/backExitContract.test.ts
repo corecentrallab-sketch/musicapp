@@ -30,6 +30,7 @@ import {
   findBackExitViolations,
   findBlankReturnViolations,
   findBodyReplacingModalMounts,
+  findFeaturedViewBackViolations,
   findFlowMountsMissingBackCallback,
   findPredictiveBackOptOutViolations,
   findSplitDismissalAuthority,
@@ -37,6 +38,11 @@ import {
   findViewerMountsThatCannotClearOpenState,
   flowMountSites,
   formatBackExitViolations,
+  gateTiedToFeaturedView,
+  hardwareBackCalls,
+  HOME_FEATURED_VIEW_CLOSE,
+  HOME_FEATURED_VIEW_PATH,
+  HOME_FEATURED_VIEW_STATE,
   isReturnedElement,
   pluginScanCandidates,
   registersHardwareBackHandler,
@@ -388,6 +394,135 @@ function liveScanTests(): void {
   );
 }
 
+// ─── 2b. The featured-view BACK gate (owner re-confirmed 09-25, build #3) ────
+//
+// Owner-reproduced in RC v26: Home's featured piece is rendered IN PLACE (the
+// screen returns it in place of its whole body), so its route never changes and
+// only a hardware-back handler can consume the press — without one, BACK reaches
+// React Navigation's last route and the app EXITS. The owner's specified
+// behaviour for the fixed screen, verbatim: BACK on the featured view returns to
+// the TOP OF THE HOME HERO, and BACK on the hero itself exits the app.
+//
+// The detector (findFeaturedViewBackViolations) is only half a fix: this section
+// proves it FAILS on the bug shape and on each half-fix, using the REAL Home
+// source mutated in place — a detector that only ever sees a healthy file proves
+// nothing.
+
+function featuredViewBackTests(files: SourceFile[]): void {
+  console.log('\nthe featured-view BACK gate (in-place flow, owner re-confirmed 09-25)');
+
+  const home = readAppFile(HOME_FEATURED_VIEW_PATH);
+  assert(home.length > 5000, `read ${HOME_FEATURED_VIEW_PATH} (${home.length} chars)`);
+
+  const calls = hardwareBackCalls(home);
+  assert(calls.length >= 1, `Home registers ${calls.length} hardware-back call(s) (≥ 1)`);
+  assertEq(
+    calls.some((c) => c.enabled === null),
+    false,
+    'no always-on hardware-back registration on Home (it would swallow BACK on the hero)',
+  );
+  const gated = calls.find(
+    (c) => c.enabled !== null && gateTiedToFeaturedView(home, c.enabled),
+  );
+  assert(!!gated, 'the call is gated on the featured view\'s own state');
+  if (gated) {
+    // The gate may be written inline or through an identifier — but whichever
+    // form it takes, it must LEAD BACK to the featured view's own state, or the
+    // handler is always-on (which swallows BACK on the hero).
+    const declaredFromState =
+      gated.enabled !== null && gated.enabled.includes(HOME_FEATURED_VIEW_STATE)
+        ? true
+        : new RegExp(
+            `const\\s+${gated.enabled}\\s*=[^;]*${HOME_FEATURED_VIEW_STATE}`,
+          ).test(home);
+    assert(
+      declaredFromState,
+      `the gate (${gated.enabled}) resolves to ${HOME_FEATURED_VIEW_STATE}`,
+    );
+  }
+  assert(
+    home.includes(HOME_FEATURED_VIEW_CLOSE),
+    `the BACK handler ${HOME_FEATURED_VIEW_CLOSE} (BACK leaves the featured view)`,
+  );
+
+  // The gate rule itself, both directions.
+  assert(
+    gateTiedToFeaturedView(home, `${HOME_FEATURED_VIEW_STATE} && dailyChallenge !== null`),
+    'a gate written directly from the state counts',
+  );
+  assertEq(gateTiedToFeaturedView(home, 'true'), false, 'a literal `true` gate never counts');
+  assertEq(gateTiedToFeaturedView(home, ''), false, 'a missing gate never counts');
+  assertEq(
+    gateTiedToFeaturedView(home, 'someUnrelatedFlag'),
+    false,
+    'a gate on unrelated state never counts',
+  );
+
+  // LIVE: the real app passes.
+  const violations: BackGuardViolation[] = findFeaturedViewBackViolations(files);
+  if (violations.length > 0) {
+    for (const line of formatBackExitViolations(violations)) console.error(`  ✗ ${line}`);
+  }
+  assertEq(
+    violations.length,
+    0,
+    'the app\'s featured view owns, gates and can leave the BACK press',
+  );
+
+  // ── the bug shape, and each half-fix, must FAIL the detector ──
+  const CALL = 'useHardwareBack(handleFeaturedViewBack, featuredViewOpen);';
+  assert(home.includes(CALL), 'the mutated call site was found verbatim');
+
+  // (a) no handler at all: the RC v26 defect.
+  const noHandler = home.replace(CALL, '// handler removed');
+  const a = findFeaturedViewBackViolations([
+    { path: HOME_FEATURED_VIEW_PATH, source: noHandler },
+  ]);
+  assertEq(a.length, 1, 'MUTATION (no handler): exactly one violation');
+  assertEq(a[0]?.kind, 'no-hardware-back-handler', 'MUTATION (no handler): the right kind');
+  assert(
+    !!a[0] && a[0].message.includes('EXITS'),
+    'MUTATION (no handler): the report explains that the app exits',
+  );
+
+  // (b) wired but ALWAYS-ON: BACK on the hero would be swallowed and the user
+  // could never leave Home — the other half of the owner's rule.
+  const alwaysOn = home.replace(CALL, 'useHardwareBack(handleFeaturedViewBack, true);');
+  assert(alwaysOn !== home, 'MUTATION (always-on): the fixture changed the call');
+  const b = findFeaturedViewBackViolations([
+    { path: HOME_FEATURED_VIEW_PATH, source: alwaysOn },
+  ]);
+  assertEq(b.length, 1, 'MUTATION (always-on gate): exactly one violation');
+  assertEq(
+    b[0]?.kind,
+    'featured-view-back-always-on',
+    'MUTATION (always-on gate): the right kind',
+  );
+
+  // (c) gated correctly, but the handler never LEAVES the featured view: BACK is
+  // swallowed and the user is stuck.
+  const cannotLeave = home
+    .split(HOME_FEATURED_VIEW_CLOSE)
+    .join('setDetailClosed()');
+  assert(cannotLeave !== home, 'MUTATION (cannot leave): the fixture changed the handler');
+  const c = findFeaturedViewBackViolations([
+    { path: HOME_FEATURED_VIEW_PATH, source: cannotLeave },
+  ]);
+  assertEq(c.length, 1, 'MUTATION (cannot leave): exactly one violation');
+  assertEq(
+    c[0]?.kind,
+    'featured-view-back-cannot-leave',
+    'MUTATION (cannot leave): the right kind',
+  );
+
+  // (d) the scan losing the file must be reported, never silently clean.
+  const d = findFeaturedViewBackViolations(
+    files.filter((f) => f.path !== HOME_FEATURED_VIEW_PATH),
+  );
+  assertEq(d.length, 1, 'a scan without HomeScreen is reported');
+  assertEq(d[0]?.kind, 'missing-file', 'a scan without HomeScreen reports missing-file');
+}
+
 // ─── 3. The blank-return contract (owner-reported blank white Home page) ─────
 
 const HOST = 'src/screens/HomeScreen.tsx';
@@ -706,6 +841,7 @@ function main(): void {
   console.log('\n=== hardware BACK exits in-place full-screen flows ===');
   detectorTests();
   liveScanTests();
+  featuredViewBackTests(appSources());
   main2(appSources());
   console.log(`\n${passes} passed, ${failures} failed\n`);
   process.exit(failures === 0 ? 0 : 1);

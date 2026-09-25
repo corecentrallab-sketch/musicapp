@@ -25,12 +25,13 @@
  * Plain Node, no react-native, no network. Run with: npm run test:tier1
  */
 import {
-  FALLBACK_MODERN_GENRE,
+  FALLBACK_MODERN_GENRE_RETIRED as FALLBACK_MODERN_GENRE,
   PUBLIC_DOMAIN_GENRE,
   RESULT_GENRE_MODULE_PATH,
   UNCATEGORISED_GENRE,
   formatGenreLabelOffenders,
   isModernResult,
+  modernGenreLabel,
   resultGenreLabel,
   savedGenreLabel,
   scanSourcesForClassicalGenreDefaults,
@@ -83,16 +84,29 @@ function labelTests(): void {
     catalog: null,
     is_public_domain: false,
   };
+  // BUILD #3 (owner 09-25): the retired neutral fallback is GONE. A modern match
+  // with no provider genre claims no category at all — the card omits its genre
+  // line; the stored/derived value is the honest "Uncategorised".
   assertEq(
     resultGenreLabel(zzTop),
-    FALLBACK_MODERN_GENRE,
-    'a modern (non-public-domain) match is categorised "Modern song"',
+    UNCATEGORISED_GENRE,
+    'a modern match with NO provider genre claims no category (never "Modern song")',
+  );
+  assertEq(
+    modernGenreLabel(zzTop as { genre?: string | null }),
+    null,
+    'the modern card\'s genre LINE is null when the provider sent none (line omitted)',
+  );
+  assertEq(
+    modernGenreLabel({ genre: 'Hard Rock' }),
+    'Hard Rock',
+    "the provider's own genre is what the card shows when there is one",
   );
   assert(
     !claimsClassical(resultGenreLabel(zzTop)),
     'a modern match is NEVER labelled classical',
   );
-  assertEq(FALLBACK_MODERN_GENRE, 'Modern song', 'the neutral modern category is stated plainly');
+  assertEq(FALLBACK_MODERN_GENRE, 'Modern song', 'the retired literal is recorded for the guard');
 
   // The same match with no explicit flag at all is still not public domain.
   assert(
@@ -310,9 +324,18 @@ function wiringTests(): void {
   );
 
   const interstitial = readAppFile(INTERSTITIAL);
+  // BUILD #3 (owner 09-25): the neutral "Modern song" line is RETIRED — the card
+  // shows the provider's own genre and omits the line entirely when the provider
+  // sent none. So the contract is not "the interstitial prints the fallback" (it
+  // never may again): it resolves its category through the shared helper AND
+  // renders the line conditionally, so no invented category can reach the card.
   assert(
-    interstitial.includes('{modernGenreLabel(match)}'),
-    'the modern-song interstitial states the neutral category "Modern song"',
+    interstitial.includes('modernGenreLabel(match)'),
+    'the modern-song interstitial resolves its category through modernGenreLabel()',
+  );
+  assert(
+    /\{genreLine \? <Text[^>]*>\{genreLine\}<\/Text> : null\}/.test(interstitial),
+    'the interstitial renders the category line ONLY when the provider sent one (no invented label)',
   );
   assert(
     !interstitial.includes("'Classical'"),
