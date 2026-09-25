@@ -10,6 +10,7 @@ import { generatePurchaseUrls } from "~/services/generate-purchase-urls";
 import { hasActiveSubscription } from "~/services/entitlement";
 import { applyMatchPolicy } from "~/services/match-policy";
 import { uploadScore } from "~/services/storage";
+import { logCaptureHeaders } from "~/services/capture-headers";
 import { createHash } from "node:crypto";
 
 // ---------------------------------------------------------------------------
@@ -145,7 +146,8 @@ async function persistRecognitionAudio(audioBuffer: Buffer): Promise<void> {
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Accept, x-user-id",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Accept, x-user-id, x-capture-duration-ms, x-capture-peak-dbfs, x-capture-bytes",
 };
 
 function corsResponse(
@@ -226,6 +228,9 @@ export async function handleRecognize(req: Request): Promise<Response> {
   }
 
   // --- Rate limiting ---
+  // What the phone actually captured (V26, 09-25): logged when the app sent the
+  // numbers, never echoed in the response.
+  logCaptureHeaders("[recognize]", req);
   // Devices that send x-user-id (the app's anonymous device UUID) are checked
   // against the subscriptions table: an active subscription bypasses the free
   // tier's 5/month limit. Clients without the header fall back to per-IP

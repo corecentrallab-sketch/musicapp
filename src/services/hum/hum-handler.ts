@@ -18,6 +18,7 @@ import { f0TrackToContour } from "./contour";
 import { matchMelody, applyHumMatchPolicy } from "./matcher";
 import { getMelodyStore, loadSkeletonsFromNeon } from "./store";
 import { uploadScore } from "~/services/storage";
+import { logCaptureHeaders } from "~/services/capture-headers";
 import { createHash } from "node:crypto";
 import type { MelodySkeleton } from "./skeleton";
 
@@ -85,6 +86,9 @@ export async function handleHum(req: Request): Promise<Response> {
   }
 
   const audioBuffer = Buffer.from(await audioFile.arrayBuffer());
+  // What the phone actually captured (V26, 09-25): logged when the app sent the
+  // numbers, never echoed in the response.
+  logCaptureHeaders("[hum]", req);
   // Debug-gated: persist the raw upload to R2 (best-effort, never blocks/breaks)
   // BEFORE decoding, so the original bytes are preserved for offline tuning.
   await persistHumAudio(audioBuffer);
