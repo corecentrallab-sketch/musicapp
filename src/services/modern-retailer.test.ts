@@ -46,6 +46,14 @@
  * `w` parameter — Musicnotes read `w=NoteSnap` AS THE QUERY on the owner's phone
  * and searched the literal word "NoteSnap".
  *
+ * And they pin the VERSION-DESCRIPTOR rule (owner on-device bug 09-25, RC v26
+ * re-test #2): the owner's modern card read `Fur Elise (Piano Version)` and its
+ * SMD CTA answered "No Results" — a version/edition descriptor in a parenthetical
+ * is metadata, not part of the title. `version` is a marker, so that card cleans
+ * to `Fur Elise`; the rest of the family (`Re-recorded`, `Remixed`, `Radio Edit`)
+ * is pinned too, together with the over-strip guards: title-bearing parens
+ * (`(I Can't Get No) Satisfaction`) and descriptor words INSIDE a title stay.
+ *
  * Run with: bun test src/services/modern-retailer.test.ts
  */
 import { describe, test, expect } from "bun:test";
@@ -409,5 +417,65 @@ describe("cleanSmdQuery — edition/bracket noise stripped from the SMD query", 
     expect(
       modernRetailerUrls("AUAP*600001 [2003 Remaster]", "Some Artist"),
     ).toEqual({});
+  });
+
+  test("OWNER 09-25 RC v26 (#2): 'Fur Elise (Piano Version)' -> 'Fur Elise'", () => {
+    // The owner's exact modern card (RC v26 on-device re-test #2): the SMD CTA
+    // for this title answered "No Results" because the version descriptor was not
+    // treated as metadata. `version` is a marker, so the paren goes; the card is
+    // pinned because it is the one that dead-ended on his phone.
+    expect(cleanSmdQuery("Fur Elise (Piano Version)")).toBe("Fur Elise");
+    // umlaut spelling: the accent is preserved, never transliterated
+    expect(cleanSmdQuery("Für Elise (Piano Version)")).toBe("Für Elise");
+    expect(cleanSmdQuery("Fur Elise (Guitar Version)")).toBe("Fur Elise");
+    expect(cleanSmdQuery("Fur Elise (Instrumental)")).toBe("Fur Elise");
+    expect(cleanSmdQuery("Fur Elise (Remastered)")).toBe("Fur Elise");
+    // `Piano` alone is NOT a version descriptor — the paren stays (conservative)
+    expect(cleanSmdQuery("Fur Elise (Piano)")).toBe("Fur Elise (Piano)");
+
+    const { primary, musicnotes } = modernRetailerUrls(
+      "Fur Elise (Piano Version)",
+      "Lang Lang",
+    );
+    // SMD primary: the searchable title only, descriptor gone, artist never added
+    expect(new URL(primary!).searchParams.get("query")).toBe("Fur Elise");
+    expect(primary!).not.toContain("Version");
+    expect(primary!).not.toContain("Lang");
+    expect(auditSmdAffiliateUrl(primary!).ok).toBe(true);
+    // Musicnotes backup: cleaned title + artist, and NO `w` parameter (the old
+    // live bug made Musicnotes search the literal word "NoteSnap")
+    expect(new URL(musicnotes!).searchParams.get("q")).toBe("Fur Elise Lang Lang");
+    expect(musicnotes!).not.toContain("w=");
+    expect(musicnotes!).not.toContain("NoteSnap");
+
+    // REGRESSION: title-bearing parens are never stripped by the version rule
+    expect(cleanSmdQuery("(I Can't Get No) Satisfaction")).toBe(
+      "(I Can't Get No) Satisfaction",
+    );
+  });
+
+  test("the re-record / remix / radio-edit variants are metadata too", () => {
+    // Same family as `(Piano Version)`: provider-side audio variants that SMD's
+    // token matcher scores to zero. `remaster` never covered `Re-recorded`, and
+    // `\bremix\b` never matched `Remixed`.
+    expect(cleanSmdQuery("Fur Elise (Re-recorded)")).toBe("Fur Elise");
+    expect(cleanSmdQuery("Fur Elise (rerecorded)")).toBe("Fur Elise");
+    expect(cleanSmdQuery("Fur Elise (re-recording)")).toBe("Fur Elise");
+    expect(cleanSmdQuery("Song (Remixed)")).toBe("Song");
+    expect(cleanSmdQuery("Song (Remixes)")).toBe("Song");
+    expect(cleanSmdQuery("Song (Radio Edit)")).toBe("Song");
+    expect(cleanSmdQuery("Song (Single Edit)")).toBe("Song");
+    // the spaced-dash spelling of the same metadata is cut like any other tail
+    expect(cleanSmdQuery("Song - Re-recorded")).toBe("Song");
+  });
+
+  test("a descriptor word INSIDE the title is never touched", () => {
+    // The over-strip guard for this pass: markers only ever remove a
+    // parenthetical section or a spaced-dash tail, never a title's own words.
+    expect(cleanSmdQuery("Live and Let Die")).toBe("Live and Let Die");
+    expect(cleanSmdQuery("Version of Me")).toBe("Version of Me");
+    expect(cleanSmdQuery("Mixed Messages")).toBe("Mixed Messages");
+    // a hyphen inside a word is not a spaced-dash tail
+    expect(cleanSmdQuery("Re-Recorded Love")).toBe("Re-Recorded Love");
   });
 });
