@@ -1,3 +1,5 @@
+import { musicnotesSearchUrlTemplate } from "./modern-retailer";
+
 export interface AffiliateRetailer {
   name: string;
   urlTemplate: string;
@@ -22,11 +24,22 @@ export interface AffiliateRetailer {
  * the opposite of what the old "not linked by default" comment claimed. Approved
  * retailers are Sheet Music Direct (primary) and Musicnotes (backup); nothing
  * here is linked unless `generate-purchase-urls.ts` names it as approved.
+ *
+ * LINK AUDIT 2026-09-25: the Musicnotes template is no longer written out here.
+ * It used to be a SECOND hand-written Musicnotes search URL ending in the tag
+ * `w=NoteSnap`
+ * — a "referrer tag" with no commission attached, which Musicnotes' search page
+ * reads AS THE QUERY (on the owner's phone the box showed "NoteSnap" and the
+ * engine searched the literal word, returning one unrelated result; owner 09-25,
+ * RC v26 Test 4a finding #3). It now comes from the ONE builder in
+ * `modern-retailer.ts` so the two copies can never drift again, and a source scan
+ * (`scanSourcesForNoteSnapReferrerTag`) fails the gate on either the `w=NoteSnap`
+ * tag or a fresh hand-written Musicnotes URL.
  */
 export const AFFILIATE_RETAILERS: Record<string, AffiliateRetailer> = {
   musicnotes: {
     name: "Musicnotes",
-    urlTemplate: "https://www.musicnotes.com/search/go?q={{query}}&w=NoteSnap",
+    urlTemplate: musicnotesSearchUrlTemplate(),
     commission: "5%",
     cookieWindow: "1 day",
     platform: "Rakuten/LinkShare (MID 13770)",

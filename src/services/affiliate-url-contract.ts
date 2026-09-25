@@ -160,9 +160,96 @@ export function looksLikeBareCatalogCode(query: string): boolean {
   return false;
 }
 
+/**
+ * ---------------------------------------------------------------------------
+ * OWNER ON-DEVICE BUG 2026-09-25 — the Musicnotes backup's `w=NoteSnap` tag
+ * ---------------------------------------------------------------------------
+ * The backup link (Musicnotes, zero commission — SMD carries affiliate ID 67650)
+ * used to end in `&w=NoteSnap`, a "referrer tag". Musicnotes' search page reads
+ * `w` as ITS OWN query parameter, so on the owner's phone the search box showed
+ * "NoteSnap" and the engine searched the literal word "NoteSnap", returning one
+ * irrelevant fuzzy result ("Sockerfens dans — Notknapparsviten") — the song query
+ * never reached the engine. Reproduced twice (RC v26 Test 4a finding #3 + Test 5).
+ * The same hand-written template sat in TWO files (`modern-retailer.ts` and
+ * `affiliates.ts`), which is how a fix in one place would have left the other
+ * broken — the two copies shared nothing.
+ *
+ * Both the tag and the duplicated builder are now contract violations:
+ * `scanSourcesForNoteSnapReferrerTag()` flags the `w` tag anywhere, and flags a
+ * hand-written Musicnotes search URL outside `modern-retailer.ts` (the single
+ * builder that also builds the registry's template).
+ */
+export const MUSICNOTES_RETAILER_HOST = "www.musicnotes.com";
+/** The parameter Musicnotes reads as its query. Never ours to send. */
+export const MUSICNOTES_FORBIDDEN_QUERY_PARAM = "w";
+/** The retired tag, exactly as it shipped. */
+export const MUSICNOTES_RETIRED_TAG = "w=NoteSnap";
+
+/** A `?w=`/`&w=` parameter carrying the retired NoteSnap tag. */
+export const MUSICNOTES_RETIRED_TAG_PATTERN = /[?&]w=NoteSnap\b/i;
+/**
+ * A Musicnotes search URL written out by hand (`musicnotes.com/search/go?q=`).
+ * Only ONE module may hold it (`modern-retailer.ts`); everywhere else must call
+ * `musicnotesSearchUrl()` / `musicnotesSearchUrlTemplate()`.
+ */
+export const MUSICNOTES_HARDCODED_URL_PATTERN =
+  /musicnotes\.com\/search\/(?:go|search)\b[^\s"'`]*\?[^\s"'`]*\bq=/i;
+
+/** Paths allowed to spell out a Musicnotes search URL (the one builder). */
+export const MUSICNOTES_URL_BUILDER_ALLOWLIST: readonly string[] = [
+  "services/modern-retailer.ts",
+];
+
 export interface ScannedSource {
   path: string;
   content: string;
+}
+
+export interface NoteSnapTagOffender extends DeadRouteOffender {
+  /** Which contract rule the line broke. */
+  rule: "w=NoteSnap tag" | "hand-written Musicnotes URL";
+}
+
+/**
+ * Pure source scanner (the team's source-contract pattern): returns every place
+ * a source file still carries the retired `w=NoteSnap` tag, or hand-writes a
+ * Musicnotes search URL outside the one builder. `allow` takes repo-relative
+ * paths — the test that pins the new shape plants both offenders on purpose, so
+ * it allowlists itself.
+ */
+export function scanSourcesForNoteSnapReferrerTag(
+  files: readonly ScannedSource[],
+  allow: readonly string[] = [],
+): NoteSnapTagOffender[] {
+  // The TAG rule scans every file the caller did not exempt (this module and the
+  // test that documents the retired shape are the only exemptions) — a real URL is
+  // the only way to match it, because a doc that merely *names* the tag writes
+  // `w=NoteSnap` with no `?`/`&` in front of it.
+  const tagExempt = new Set(allow);
+  // The URL rule additionally exempts the ONE builder module, and `.test.ts`
+  // files: a test cannot ship a link, and several legitimately assert the URL's
+  // prefix as a literal (`toContain("https://www.musicnotes.com/search/go?q=")`).
+  // Shipped code — routes, components, every other service — is always scanned.
+  const urlExempt = new Set([...allow, ...MUSICNOTES_URL_BUILDER_ALLOWLIST]);
+  const offenders: NoteSnapTagOffender[] = [];
+  for (const file of files) {
+    const isTestFile = /\.test\.tsx?$/.test(file.path);
+    file.content.split("\n").forEach((text, index) => {
+      const tag = !tagExempt.has(file.path) && MUSICNOTES_RETIRED_TAG_PATTERN.test(text);
+      const url =
+        !isTestFile &&
+        !urlExempt.has(file.path) &&
+        MUSICNOTES_HARDCODED_URL_PATTERN.test(text);
+      if (!tag && !url) return;
+      offenders.push({
+        path: file.path,
+        line: index + 1,
+        text: text.trim().slice(0, 200),
+        rule: tag ? "w=NoteSnap tag" : "hand-written Musicnotes URL",
+      });
+    });
+  }
+  return offenders;
 }
 
 export interface DeadRouteOffender {

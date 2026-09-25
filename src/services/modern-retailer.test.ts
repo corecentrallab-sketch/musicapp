@@ -29,9 +29,22 @@
  * 2): the owner's song arrived as `Bang a Gong (Get it on) [2003 Remaster]`
  * (T. Rex), and the bracketed edition suffix alone drives SMD's token matcher to
  * zero results — it is vendor metadata, not a title. `cleanSmdQuery()` drops every
- * `[ ... ]` section and collapses whitespace for the SMD primary ONLY; real
- * parenthesised title content is kept, and the Musicnotes backup query keeps the
- * raw title+artist.
+ * `[ ... ]` section and collapses whitespace; real parenthesised title content is
+ * kept.
+ *
+ * And they pin the RELEASE-METADATA rule + the Musicnotes backup shape (owner
+ * on-device bugs 09-25, RC v26 Test 4a findings #2/#3 and Test 5). Two real
+ * strings the owner saw on his phone:
+ *   `More Than This (2003 Digital Remaster)` (Roxy Music) — a widely sold digital
+ *   title — scored SMD's zero-result page because of the parenthetical;
+ *   `Just One More Day - Live at the Whisky a Go Go, 1966` (the exact card text)
+ *   did the same via its spaced-dash venue tail.
+ * `cleanSmdQuery()` now also drops parenthetical sections carrying a metadata
+ * marker or a 4-digit year and cuts a spaced-dash tail at the first noisy
+ * segment, while KEEPING title-bearing parens. The Musicnotes backup uses the
+ * SAME cleaned title (its engine reads `-` tokens as operators) and carries NO
+ * `w` parameter — Musicnotes read `w=NoteSnap` AS THE QUERY on the owner's phone
+ * and searched the literal word "NoteSnap".
  *
  * Run with: bun test src/services/modern-retailer.test.ts
  */
@@ -98,6 +111,51 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
     expect(musicnotes!).not.toContain("sheetmusicdirect.com");
     expect(musicnotes!).not.toContain(SMD_AFFILIATE_ID);
     expect(musicnotes!).not.toBe(primary);
+  });
+
+  test("OWNER 09-25 (#3): the Musicnotes backup carries NO w parameter — Musicnotes reads w AS the query", () => {
+    // On the owner's phone the search box showed "NoteSnap" and the engine searched
+    // that literal word, returning one unrelated fuzzy result; the song title never
+    // reached the engine. RC v26 Test 4a finding #3 + Test 5 (two reproductions).
+    for (const [title, artist] of [
+      ["Just One More Day - Live at the Whisky a Go Go, 1966", "Otis Redding"],
+      ["More Than This (2003 Digital Remaster)", "Roxy Music"],
+      ["Let It Be", "The Beatles"],
+    ] as const) {
+      const { musicnotes } = modernRetailerUrls(title, artist);
+      expect(musicnotes).toBeDefined();
+      const url = new URL(musicnotes!);
+      expect(url.hostname).toBe("www.musicnotes.com");
+      expect(url.pathname).toBe("/search/go");
+      expect(url.searchParams.has("w")).toBe(false);
+      expect(musicnotes!).not.toContain("w=NoteSnap");
+      expect(musicnotes!).not.toContain("NoteSnap");
+      // the query is the ONLY parameter — the engine's `q` is our cleaned title
+      expect([...url.searchParams.keys()]).toEqual(["q"]);
+    }
+  });
+
+  test("OWNER 09-25 (#2): the Musicnotes backup query is the CLEANED title + artist", () => {
+    // The backup used to receive the RAW title, so the venue tail
+    // (`Just One More Day - Live at the Whisky a Go Go, 1966`) reached Musicnotes'
+    // engine, which reads `-` tokens as operators and answered with an unrelated
+    // result (the owner's "Sockerfens dans" fuzzy hit, RC v26 Test 4a finding #2).
+    const dash = modernRetailerUrls(
+      "Just One More Day - Live at the Whisky a Go Go, 1966",
+      "Otis Redding",
+    );
+    expect(new URL(dash.musicnotes!).searchParams.get("q")).toBe(
+      "Just One More Day Otis Redding",
+    );
+    const paren = modernRetailerUrls(
+      "More Than This (2003 Digital Remaster)",
+      "Roxy Music",
+    );
+    expect(new URL(paren.musicnotes!).searchParams.get("q")).toBe(
+      "More Than This Roxy Music",
+    );
+    // the artist is still present (the backup keeps both tokens, unlike SMD)
+    expect(paren.musicnotes!).toContain("Roxy%20Music");
   });
 
   test("REGRESSION: the emitted query IS the title — neither artist nor code can slip in", () => {
@@ -223,10 +281,12 @@ describe("cleanSmdQuery — edition/bracket noise stripped from the SMD query", 
     expect(primary!).not.toContain("Remaster");
     expect(primary!).not.toContain("%5B");
     expect(auditSmdAffiliateUrl(primary!).ok).toBe(true);
-    // the Musicnotes backup is NOT cleaned: raw title+artist, as before
+    // the Musicnotes backup gets the SAME cleaned title + the artist (owner 09-25):
+    // the bracket noise is gone there too — only the SMD query drops the artist.
     expect(new URL(musicnotes!).searchParams.get("q")).toBe(
-      "Bang a Gong (Get it on) [2003 Remaster] T. Rex",
+      "Bang a Gong (Get it on) T. Rex",
     );
+    expect(musicnotes!).not.toContain("Remaster");
   });
 
   test("a trailing remaster bracket on a plain title is dropped", () => {
@@ -254,8 +314,9 @@ describe("cleanSmdQuery — edition/bracket noise stripped from the SMD query", 
   });
 
   test("interior whitespace collapses and the ends are trimmed", () => {
-    expect(cleanSmdQuery("  Yesterday   (Remaster 2023)  ")).toBe(
-      "Yesterday (Remaster 2023)",
+    // a title-bearing paren survives, spacing is normalised around it
+    expect(cleanSmdQuery("  Yesterday   (Get It On)  ")).toBe(
+      "Yesterday (Get It On)",
     );
     expect(cleanSmdQuery("Let   It\tBe\n")).toBe("Let It Be");
     // a title with no brackets and clean spacing is unchanged
@@ -271,6 +332,74 @@ describe("cleanSmdQuery — edition/bracket noise stripped from the SMD query", 
     expect(cleanSmdQuery("[2003 Remaster]")).toBe("");
     // existing degraded state: no SMD page that would answer "No Results"
     expect(modernRetailerUrls("[2003 Remaster]", "T. Rex")).toEqual({});
+  });
+
+  test("OWNER 09-25 (Test 5): 'More Than This (2003 Digital Remaster)' -> 'More Than This'", () => {
+    // Roxy Music's More Than This is widely sold as digital sheet music; the
+    // parenthetical alone put SMD on its zero-result page on the owner's phone
+    // (RC v26 Test 5). A 4-digit year inside a parenthetical is metadata.
+    expect(cleanSmdQuery("More Than This (2003 Digital Remaster)")).toBe(
+      "More Than This",
+    );
+    const { primary, musicnotes } = modernRetailerUrls(
+      "More Than This (2003 Digital Remaster)",
+      "Roxy Music",
+    );
+    expect(new URL(primary!).searchParams.get("query")).toBe("More Than This");
+    expect(primary!).not.toContain("Remaster");
+    expect(primary!).not.toContain("2003");
+    expect(auditSmdAffiliateUrl(primary!).ok).toBe(true);
+    expect(new URL(musicnotes!).searchParams.get("q")).toBe(
+      "More Than This Roxy Music",
+    );
+  });
+
+  test("OWNER 09-25 (Test 4a): the spaced-dash venue tail is dropped, dash AND paren form", () => {
+    // The exact title on the owner's card, plus the paren spelling the same
+    // metadata takes in other provider payloads.
+    expect(
+      cleanSmdQuery("Just One More Day - Live at the Whisky a Go Go, 1966"),
+    ).toBe("Just One More Day");
+    expect(
+      cleanSmdQuery("Just One More Day (Live at the Whisky a Go Go, 1966)"),
+    ).toBe("Just One More Day");
+    expect(cleanSmdQuery("Just One More Day (1966)")).toBe("Just One More Day");
+
+    const { primary, musicnotes } = modernRetailerUrls(
+      "Just One More Day - Live at the Whisky a Go Go, 1966",
+      "Otis Redding",
+    );
+    expect(new URL(primary!).searchParams.get("query")).toBe("Just One More Day");
+    expect(primary!).not.toContain("Whisky");
+    expect(primary!).not.toContain("1966");
+    expect(new URL(musicnotes!).searchParams.get("q")).toBe(
+      "Just One More Day Otis Redding",
+    );
+  });
+
+  test("REGRESSION: title-bearing parens are never stripped, and a real ' - ' duet survives", () => {
+    // The two "keep" cases the owner's data needs, plus the over-strip guard:
+    // only a segment carrying a marker/year is cut, so an ordinary dashed title
+    // is left alone.
+    expect(cleanSmdQuery("(I Can't Get No) Satisfaction")).toBe(
+      "(I Can't Get No) Satisfaction",
+    );
+    expect(cleanSmdQuery("Bang a Gong (Get It On)")).toBe("Bang a Gong (Get It On)");
+    expect(cleanSmdQuery("(Sittin' On) The Dock of the Bay")).toBe(
+      "(Sittin' On) The Dock of the Bay",
+    );
+    expect(cleanSmdQuery("Me and My Friend - Part 1")).toBe(
+      "Me and My Friend - Part 1",
+    );
+    expect(cleanSmdQuery("Islands - A Duet")).toBe("Islands - A Duet");
+    // a real paren title by an artist whose song ALSO has a live version: only the
+    // noisy paren goes when it is the noisy one.
+    expect(cleanSmdQuery("Get It On (Live at the Fillmore, 1971)")).toBe(
+      "Get It On",
+    );
+    expect(cleanSmdQuery("Get It On (Bang a Gong)")).toBe(
+      "Get It On (Bang a Gong)",
+    );
   });
 
   test("the bare-code guard runs on the CLEANED string", () => {

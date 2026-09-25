@@ -41,8 +41,26 @@
 // `/home/team/shared/SMD-NO-RESULTS-INVESTIGATION-2026-09-23.md`. The bare-code
 // guard runs on the CLEANED string, so `[2003 Remaster]` alone degrades to no link.
 //
-// The Musicnotes BACKUP link is deliberately unchanged: Musicnotes' search handles
-// `"<title> <artist>"` well, and it is the fallback for songs SMD scores badly.
+// AND RELEASE METADATA GOES TOO — PARENS INCLUDED (owner on-device bugs 09-25,
+// RC v26 Test 4a finding #2/#3 and Test 5). Bracket stripping was necessary but
+// still not sufficient:
+//   * `More Than This (2003 Digital Remaster)` (Roxy Music) — a WIDELY SOLD
+//     digital sheet-music title — scored SMD's own zero-result page; dropping the
+//     parenthetical is the difference between a sale and a dead end.
+//   * `Just One More Day - Live at the Whisky a Go Go, 1966` (the exact title on
+//     the owner's card) had the same effect via a spaced-dash venue tail.
+// `cleanSmdQuery()` now also drops parenthetical sections that carry a metadata
+// marker or a 4-digit year, and cuts a spaced-dash tail at the first noisy
+// segment — while KEEPING title-bearing parens (`(I Can't Get No)`, `(Get It On)`)
+// and keeping the whole string when no later segment matches (a real `A - B`
+// duet is never over-stripped). Evidence: `/home/team/shared/RC-V26-RESULTS.md`.
+//
+// The Musicnotes BACKUP link keeps `"<title> <artist>"` (its own search handles
+// both tokens) — but its title half is cleaned the same way and the URL carries
+// NO `w` parameter: on the owner's phone Musicnotes read `w=NoteSnap` AS the
+// query and searched the literal word "NoteSnap" (owner 09-25, finding #3). The
+// tag carried no commission (SMD carries the affiliate ID), so it is deleted;
+// `affiliate-url-contract.ts` holds a source scan that fails if it returns.
 //
 // AFFILIATE ACCOUNT (owner relayed 09-14): Sheet Music Direct approved
 // Affiliate ID 67650 — MUST be embedded in every SMD link so each click is
@@ -76,32 +94,84 @@ import {
 } from "./affiliate-url-contract";
 
 /**
- * Clean a song title for the SMD search box: strip edition/bracket noise, then
- * normalise whitespace (owner on-device bug 09-23, part 2 — the owner's match came
- * back as `Bang a Gong (Get it on) [2003 Remaster]` and the bracketed edition
- * suffix alone is enough to push SMD's token matcher to zero results; see the file
- * header and `/home/team/shared/SMD-NO-RESULTS-INVESTIGATION-2026-09-23.md`).
+ * Metadata markers that never belong in a retailer search box. A trailing
+ * `- Live at the Whisky a Go Go, 1966` or `(2003 Digital Remaster)` is release
+ * metadata, not the song title, and SMD's token matcher scores it to zero.
  *
- * Rules, deliberately narrow:
- *  - every `[ ... ]` section is removed outright (remaster / live / deluxe edition
- *    / `[feat. X]` style metadata — never part of the title SMD indexes);
- *  - parenthesised content is KEPT: real titles legitimately contain it
- *    (`(I Can't Get No) Satisfaction`, `Bang a Gong (Get It On)`);
- *  - internal whitespace runs collapse to one space, and the ends are trimmed.
+ * Deliberately CONSERVATIVE (owner-proven cases only + unambiguous equivalents):
+ * a marker only ever removes a *parenthetical section* or a *spaced-dash tail*,
+ * never a bare word inside the title, and a missed marker merely leaves the
+ * query slightly noisy (the old behaviour) while a false positive would delete a
+ * real title. Markers whose word appears in real titles ("take", "session") are
+ * excluded for that reason.
+ */
+const RETAILER_METADATA_MARKER =
+  /\b(?:live|remaster(?:ed)?|deluxe|feat|featuring|edition|demo|acoustic|anniversary|reissue|remix|mix|mono|stereo|instrumental|karaoke|version|bonus|expanded)\b/i;
+/** A 4-digit release year (19xx / 20xx) — `(1966)`, `- Live …, 1966`. */
+const RETAILER_METADATA_YEAR = /\b(?:19|20)\d{2}\b/;
+
+/** True when a title section/tail is release metadata rather than title text. */
+export function isRetailerMetadataNoise(section: string): boolean {
+  return (
+    RETAILER_METADATA_MARKER.test(section) || RETAILER_METADATA_YEAR.test(section)
+  );
+}
+
+/** Split a title on a spaced dash (` - `, ` – `, ` — `) — the venue-tail form. */
+const SPACED_DASH = /\s+[-\u2013\u2014]\s+/;
+
+/**
+ * Clean a song title for a retailer search box: strip release metadata, then
+ * normalise whitespace.
  *
- * Safe to hand any string: no brackets in, no change out. Exported so the query
- * contract is testable directly (and only ever used for the SMD primary query —
- * the Musicnotes backup keeps the untouched title+artist).
+ * History (each rule exists because the owner hit it on device):
+ *  - 09-23 part 2: `Bang a Gong (Get it on) [2003 Remaster]` arrived with a
+ *    bracketed edition suffix, which alone pushes SMD's token matcher to zero
+ *    results → every `[ ... ]` section is removed.
+ *  - 09-25: `More Than This (2003 Digital Remaster)` (Roxy Music) — a SALABLE
+ *    song — scored zero results for the same reason, and
+ *    `Just One More Day - Live at the Whisky a Go Go, 1966` (the owner's card
+ *    text, dash form) did too. See `/home/team/shared/RC-V26-RESULTS.md`
+ *    (Test 4a / Test 5).
+ *
+ * Rules, in order:
+ *  1. every `[ ... ]` section is removed outright (edition/bracket metadata);
+ *  2. a `( ... )` section is removed when it contains a metadata marker or a
+ *   4-digit year (`(2003 Digital Remaster)`, `(Live at the Whisky a Go Go, 1966)`,
+ *   `(1966)`) while title-bearing parens are KEPT (`(I Can't Get No)`,
+ *   `(Get It On)`, `(Sittin' On)`);
+ *  3. a spaced-dash tail is cut at the FIRST later segment that carries a
+ *   metadata marker or a year (`Just One More Day - Live at the Whisky a Go Go,
+ *   1966` → `Just One More Day`); when no later segment matches, the whole
+ *   string is kept, so a real `A - B` duet title is never over-stripped;
+ *  4. whitespace runs collapse to one space and the ends are trimmed.
+ *
+ * Safe to hand any string: no metadata in, no change out. Used for the SMD
+ * primary query AND for the title half of the Musicnotes backup query (owner
+ * 09-25: the backup must never carry a venue tail either — its own engine reads
+ * `-` tokens as operators and returned an unrelated result).
  */
 export function cleanSmdQuery(title: string): string {
-  return (
-    title
-      // Bracket sections go entirely. Replaced by a SPACE (not "") so a title that
-      // runs straight into a bracket does not fuse two words together.
-      .replace(/\[[^\]]*\]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-  );
+  // 1 + 2: bracket sections always go; parenthesised metadata goes.
+  let cleaned = title
+    // Replaced by a SPACE (not "") so a title that runs straight into a bracket
+    // does not fuse two words together.
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\(([^)]*)\)/g, (whole, inner: string) =>
+      isRetailerMetadataNoise(inner) ? " " : whole,
+    );
+
+  // 3: cut a metadata tail at the first noisy later segment.
+  const segments = cleaned.split(SPACED_DASH);
+  if (segments.length > 1) {
+    const cutAt = segments.findIndex(
+      (segment, index) => index > 0 && isRetailerMetadataNoise(segment),
+    );
+    if (cutAt > 0) cleaned = segments.slice(0, cutAt).join(" - ");
+  }
+
+  // 4: normalise.
+  return cleaned.replace(/\s+/g, " ").replace(/^[\s-]+|[\s-]+$/g, "").trim();
 }
 
 /**
@@ -130,12 +200,40 @@ export function sheetMusicDirectSearchUrl(query: string): string | undefined {
   return q === "" ? undefined : smdUrl(q);
 }
 
+/**
+ * ---------------------------------------------------------------------------
+ * Musicnotes backup link — the ONE shape, and never a `w` parameter
+ * ---------------------------------------------------------------------------
+ * Owner on-device bug 2026-09-25 (RC v26 Test 4a finding #3 + Test 5): the
+ * backup URL used to end with the tag `w=NoteSnap` (a "referrer tag" nobody ever
+ * passed to Musicnotes' engine). Musicnotes' search page reads `w` as ITS query — on the
+ * owner's phone the search box literally showed "NoteSnap" and the engine
+ * searched the word "NoteSnap", returning one irrelevant fuzzy result
+ * ("Sockerfens dans") instead of Otis Redding. The song query never reached the
+ * engine. The same template would have broken the Musicnotes links on all 528
+ * piece pages at publish.
+ *
+ * There is NO affiliate attribution on this link (Sheet Music Direct carries the
+ * affiliate ID 67650), so the tag bought nothing — the parameter is deleted
+ * outright, and `scanSourcesForNoteSnapReferrerTag()` (in
+ * `affiliate-url-contract.ts`) fails the gate if `w=NoteSnap` or a second
+ * hand-written Musicnotes URL builder ever reappears under `src/`.
+ */
+export const MUSICNOTES_SEARCH_ORIGIN = "https://www.musicnotes.com";
+export const MUSICNOTES_SEARCH_PATH = "/search/go";
+export const MUSICNOTES_SEARCH_QUERY_PARAM = "q";
+
+/** The single Musicnotes search template, for the affiliate registry. */
+export function musicnotesSearchUrlTemplate(): string {
+  return `${MUSICNOTES_SEARCH_ORIGIN}${MUSICNOTES_SEARCH_PATH}?${MUSICNOTES_SEARCH_QUERY_PARAM}={{query}}`;
+}
+
 /** Musicnotes search link for a free-text query — the backup retailer path. */
 export function musicnotesSearchUrl(query: string): string | undefined {
   const q = query.trim();
   return q === ""
     ? undefined
-    : `https://www.musicnotes.com/search/go?q=${encodeURIComponent(q)}&w=NoteSnap`;
+    : `${MUSICNOTES_SEARCH_ORIGIN}${MUSICNOTES_SEARCH_PATH}?${MUSICNOTES_SEARCH_QUERY_PARAM}=${encodeURIComponent(q)}`;
 }
 
 export function modernRetailerUrls(
@@ -169,9 +267,13 @@ export function modernRetailerUrls(
     // affiliate ID travels with it. There is no by-code branch any more.
     primary: sheetMusicDirectSearchUrl(titleQuery),
     // Backup retailer for the app's secondary CTA (owner-approved: Musicnotes).
-    // Unchanged: the RAW title+artist — Musicnotes' search handles both tokens,
-    // and its query is deliberately NOT passed through the SMD cleaner.
+    // Query = the CLEANED title + the artist (owner on-device bug 09-25, finding
+    // #2): the raw title carried the venue tail
+    // (`Just One More Day - Live at the Whisky a Go Go, 1966`) and Musicnotes'
+    // engine reads `-` tokens as operators, returning an unrelated result. Both
+    // tokens are kept — Musicnotes' multi-token search handles them — but the
+    // title half is metadata-stripped exactly like the SMD primary.
     // Carries NO SMD params and no affiliate ID — it is not our SMD link.
-    musicnotes: musicnotesSearchUrl(`${title} ${artist}`.trim()),
+    musicnotes: musicnotesSearchUrl(`${cleanSmdQuery(title)} ${artist}`.trim()),
   };
 }

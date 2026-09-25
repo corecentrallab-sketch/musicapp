@@ -187,6 +187,36 @@ describe("modern-song route — an AudD match must serialize to the live affilia
     expect(body.modern.isrc).toBe("QZTEST0000001");
   });
 
+  test("OWNER 09-25: a noisy provider title reaches BOTH retailers cleaned, and the backup carries no w tag", async () => {
+    // The owner's on-device repro (RC v26 Test 4a / Test 5): AudD handed back the
+    // release metadata as part of the title. The serialization must clean BOTH
+    // queries — SMD (title only) and the Musicnotes backup (cleaned title+artist)
+    // — and must never re-attach the `w=NoteSnap` tag Musicnotes read AS ITS QUERY.
+    stubAudD({
+      status: "success",
+      result: {
+        artist: "Roxy Music",
+        title: "More Than This (2003 Digital Remaster)",
+        album: "Avalon",
+        score: 100,
+      },
+    });
+    const { status, body } = await callModernRoute();
+    expect(status).toBe(200);
+
+    const retailerUrl: string = body.modern?.retailerUrl;
+    expect(new URL(retailerUrl).searchParams.get("query")).toBe("More Than This");
+    expect(retailerUrl).not.toContain("Remaster");
+
+    const musicnotesUrl: string = body.modern?.musicnotesUrl;
+    expect(new URL(musicnotesUrl).searchParams.get("q")).toBe(
+      "More Than This Roxy Music",
+    );
+    expect(musicnotesUrl).not.toContain("Remaster");
+    expect(musicnotesUrl).not.toContain("w=NoteSnap");
+    expect(new URL(musicnotesUrl).searchParams.has("w")).toBe(false);
+  });
+
   test("a provider no-match does not invent a retailer URL", async () => {
     stubAudD({ status: "success", result: null });
     const { status, body } = await callModernRoute();
