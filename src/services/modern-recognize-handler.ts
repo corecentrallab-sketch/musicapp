@@ -1,4 +1,6 @@
 import { modernRetailerUrls } from "./modern-retailer";
+import { pickModernGenre } from "./modern-genre";
+import { logCaptureHeaders } from "./capture-headers";
 
 // ---------------------------------------------------------------------------
 // Modern-song recognition wrapper — PREP/DRY-RUN skeleton (Backlog #12).
@@ -29,7 +31,10 @@ const ACR_SECRET = process.env.ACRCLOUD_ACCESS_SECRET || "";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Accept, x-user-id",
+  // x-capture-* are the app's on-device capture diagnostics (V26, 09-25) — logged
+  // server-side only, never echoed in a response body.
+  "Access-Control-Allow-Headers":
+    "Content-Type, Accept, x-user-id, x-capture-duration-ms, x-capture-peak-dbfs, x-capture-bytes",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -45,6 +50,14 @@ export interface ModernMatch {
   artist: string;
   album?: string;
   isrc?: string;
+  /**
+   * THE REAL GENRE, straight from the provider's own metadata (owner request
+   * 09-25: the app used to label every modern match "Modern song"). Apple Music
+   * wins over Spotify; first non-empty genre, provider wording kept. OMITTED
+   * entirely when the provider carried no genre — the app then shows its honest
+   * generic category rather than a guess.
+   */
+  genre?: string;
   albumArtUrl?: string;
   composer?: string;
   matchConfidence: number;
@@ -115,11 +128,15 @@ async function auddAdapter(buf: ArrayBuffer, name: string, token: string): Promi
   // call site documents that a code was available and was deliberately NOT used as
   // the query (owner on-device bug 09-22).
   const urls = modernRetailerUrls(r.title, r.artist, isrc);
+  // The provider's OWN genre, never an invented taxonomy (owner 09-25). Undefined
+  // when neither block carries one — then the key is left off the match entirely.
+  const genre = pickModernGenre(r);
   return {
     song: r.title,
     artist: r.artist,
     album: r.album,
     isrc,
+    ...(genre ? { genre } : {}),
     albumArtUrl: art,
     composer: am.composerName,
     matchConfidence: typeof r.score === "number" ? r.score : 1,
@@ -154,6 +171,9 @@ export async function handleModernRecognize(req: Request): Promise<Response> {
 
   let match: ModernMatch | null;
   const t0 = Date.now();
+  // What the phone actually captured (V26, 09-25): logged when the app sent the
+  // numbers, never echoed in the response.
+  logCaptureHeaders("[recognize-modern]", req);
   try {
     if (PROVIDER === "audd") match = await auddAdapter(audio.buf, audio.name, AUDD_API_TOKEN);
     else match = await acrcloudAdapter(audio.buf, ACR_KEY, ACR_SECRET);
