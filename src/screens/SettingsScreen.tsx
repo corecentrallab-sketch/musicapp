@@ -21,7 +21,22 @@ import {
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
 import { getNotificationEnabled, setNotificationEnabled, getProState, saveProState, type ProState } from '../services/storage';
-import { scheduleStreakNudge, cancelStreakNudge } from '../services/notifications';
+// The user's chosen practice-reminder time (owner request 09-25): the value, its
+// formatting and the row copy all come from one pure module (tier1-tested), so
+// this screen can never drift from what the scheduler actually arms.
+import {
+  DEFAULT_REMINDER_MINUTES,
+  formatReminderTime,
+  normalizeReminderMinutes,
+  reminderSettingCopy,
+  stepReminderMinutes,
+} from '../services/reminderTime';
+import {
+  scheduleStreakNudge,
+  cancelStreakNudge,
+  rescheduleStreakNudgeForTimeChange,
+} from '../services/notifications';
+import { getReminderMinutes, setReminderMinutes as persistReminderMinutes } from '../services/storage';
 import { createCheckoutSession, checkEntitlement } from '../services/api';
 import { getDeviceId } from '../services/device';
 
@@ -81,9 +96,13 @@ export const SettingsScreen: React.FC = () => {
   });
   const [checking, setChecking] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  // The practice-reminder time, in minutes since local midnight (owner 09-25).
+  // 18:00 until the user picks another time — the exact pre-existing behaviour.
+  const [reminderMinutes, setReminderMinutes] = useState(DEFAULT_REMINDER_MINUTES);
 
   useEffect(() => {
     getNotificationEnabled().then(setNotificationsEnabled);
+    getReminderMinutes().then(setReminderMinutes);
     (async () => {
       try {
         const cached = await getProState();
@@ -108,6 +127,23 @@ export const SettingsScreen: React.FC = () => {
     if (next) await scheduleStreakNudge();
     else await cancelStreakNudge();
   }, [notificationsEnabled]);
+
+  /**
+   * Change the practice-reminder time (owner request 09-25: "practice reminders
+   * at 6:00 PM" → the user picks the time). Persist the choice FIRST so the
+   * scheduler reads the new value, then cancel + re-arm the ONE pending one-shot
+   * at the new time. Nothing is ever stacked, and no notification can land during
+   * a practice run — the nudge stays a single one-shot outside play.
+   */
+  const onChangeReminderTime = useCallback(
+    async (next: number) => {
+      const normalized = normalizeReminderMinutes(next);
+      setReminderMinutes(normalized);
+      await persistReminderMinutes(normalized);
+      if (notificationsEnabled) await rescheduleStreakNudgeForTimeChange();
+    },
+    [notificationsEnabled],
+  );
 
   const refreshEntitlement = useCallback(async (deviceId: string): Promise<boolean> => {
     const fresh = await checkEntitlement(deviceId);
@@ -233,11 +269,60 @@ export const SettingsScreen: React.FC = () => {
           <View style={styles.reminderRow}>
             <View style={styles.reminderCopy}>
               <Text style={styles.reminderTitle}>Daily streak nudge</Text>
-              <Text style={styles.infoText}>At 6:00 PM, remind me if I have not practiced.</Text>
+              <Text style={styles.infoText}>{reminderSettingCopy(reminderMinutes)}</Text>
             </View>
             <TouchableOpacity onPress={toggleNotifications} style={[styles.toggle, notificationsEnabled && styles.toggleOn]} accessibilityRole="switch" accessibilityState={{ checked: notificationsEnabled }}>
               <Text style={styles.toggleText}>{notificationsEnabled ? 'ON' : 'OFF'}</Text>
             </TouchableOpacity>
+          </View>
+          {/* The reminder TIME the user chooses (owner 09-25). Deliberately a
+              lightweight in-repo picker — hour and 5-minute steppers — rather than
+              a native time dialog: no new dependency, no OS-styled modal, and the
+              chosen value is the same minutes-of-day the scheduler arms. */}
+          <View style={styles.timePickerRow}>
+            <View style={styles.timeStepper}>
+              <TouchableOpacity
+                style={styles.timeStepBtn}
+                disabled={!notificationsEnabled}
+                accessibilityRole="button"
+                accessibilityLabel="Remind me an hour earlier"
+                onPress={() => onChangeReminderTime(stepReminderMinutes(reminderMinutes, -60))}
+              >
+                <Text style={styles.timeStepText}>-</Text>
+              </TouchableOpacity>
+              <Text style={styles.timeStepLabel}>Hour</Text>
+              <TouchableOpacity
+                style={styles.timeStepBtn}
+                disabled={!notificationsEnabled}
+                accessibilityRole="button"
+                accessibilityLabel="Remind me an hour later"
+                onPress={() => onChangeReminderTime(stepReminderMinutes(reminderMinutes, 60))}
+              >
+                <Text style={styles.timeStepText}>+</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.timePickerValue}>{formatReminderTime(reminderMinutes)}</Text>
+            <View style={styles.timeStepper}>
+              <TouchableOpacity
+                style={styles.timeStepBtn}
+                disabled={!notificationsEnabled}
+                accessibilityRole="button"
+                accessibilityLabel="Remind me five minutes earlier"
+                onPress={() => onChangeReminderTime(stepReminderMinutes(reminderMinutes, -5))}
+              >
+                <Text style={styles.timeStepText}>-</Text>
+              </TouchableOpacity>
+              <Text style={styles.timeStepLabel}>5 min</Text>
+              <TouchableOpacity
+                style={styles.timeStepBtn}
+                disabled={!notificationsEnabled}
+                accessibilityRole="button"
+                accessibilityLabel="Remind me five minutes later"
+                onPress={() => onChangeReminderTime(stepReminderMinutes(reminderMinutes, 5))}
+              >
+                <Text style={styles.timeStepText}>+</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
@@ -289,6 +374,14 @@ const styles = StyleSheet.create({
   reminderRow: { flexDirection: 'row', alignItems: 'center' },
   reminderCopy: { flex: 1, marginRight: 12 },
   reminderTitle: { color: '#fff', fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  // The reminder-time picker (owner 09-25): one row, two steppers, the chosen
+  // time in the middle.
+  timePickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+  timeStepper: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  timeStepBtn: { backgroundColor: '#3a3a5c', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  timeStepText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  timeStepLabel: { color: '#8f8fa8', fontSize: 12 },
+  timePickerValue: { color: '#fff', fontSize: 15, fontWeight: '700' },
   toggle: { backgroundColor: '#3a3a5c', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 },
   toggleOn: { backgroundColor: '#e94560' },
   toggleText: { color: '#fff', fontWeight: '800', fontSize: 12 },

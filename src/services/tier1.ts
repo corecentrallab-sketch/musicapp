@@ -193,6 +193,12 @@ export function parseModernResponse(raw: unknown): ModernResponse | null {
           typeof mm.artist === "string" && mm.artist ? mm.artist : "Unknown",
         album: typeof mm.album === "string" ? mm.album : undefined,
         isrc: typeof mm.isrc === "string" ? mm.isrc : undefined,
+        // The provider's own genre (owner 09-25). A blank/absent value stays
+        // undefined so the card resolves the honest generic category instead.
+        genre:
+          typeof mm.genre === "string" && mm.genre.trim().length > 0
+            ? mm.genre.trim()
+            : undefined,
         albumArtUrl:
           typeof mm.albumArtUrl === "string" ? mm.albumArtUrl : undefined,
         composer: typeof mm.composer === "string" ? mm.composer : undefined,

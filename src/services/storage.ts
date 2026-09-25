@@ -3,6 +3,11 @@
  * Keys are namespaced under @notesnap/.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  DEFAULT_REMINDER_MINUTES,
+  normalizeReminderMinutes,
+  parseStoredReminderMinutes,
+} from './reminderTime';
 import type {
   OnboardingAnswers,
   StreakData,
@@ -21,6 +26,10 @@ const KEYS = {
   DAILY_CHALLENGE_DONE: '@notesnap/dailyChallengeDone',
   PRACTICE_MINUTES: '@notesnap/practiceMinutes',
   NOTIFICATIONS_ENABLED: '@notesnap/notificationsEnabled',
+  // The user's chosen practice-reminder time as minutes-of-day (owner 09-25).
+  // Absent → DEFAULT_REMINDER_MINUTES (18:00, the previous fixed behaviour).
+  // See src/services/reminderTime.ts, which owns the value's shape and copy.
+  REMINDER_MINUTES: '@notesnap/reminderMinutes',
   PRO_STATE: '@notesnap/proState',
 } as const;
 
@@ -256,6 +265,26 @@ export async function getNotificationEnabled(): Promise<boolean> {
 
 export async function setNotificationEnabled(enabled: boolean): Promise<void> {
   await AsyncStorage.setItem(KEYS.NOTIFICATIONS_ENABLED, String(enabled));
+}
+
+// ─── Practice-reminder time (owner request 09-25) ───────────────
+/**
+ * The user's chosen reminder time, in minutes since local midnight. An unset (or
+ * corrupt) value reads back as the historical default 18:00, so every existing
+ * user keeps exactly the reminder behaviour they had.
+ */
+export async function getReminderMinutes(): Promise<number> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.REMINDER_MINUTES);
+    return parseStoredReminderMinutes(raw);
+  } catch {
+    return DEFAULT_REMINDER_MINUTES;
+  }
+}
+
+/** Persist the chosen reminder time (normalized to a real minute of the day). */
+export async function setReminderMinutes(minutes: number): Promise<void> {
+  await AsyncStorage.setItem(KEYS.REMINDER_MINUTES, String(normalizeReminderMinutes(minutes)));
 }
 
 // ─── Practice minutes ──────────────────────────────────────────

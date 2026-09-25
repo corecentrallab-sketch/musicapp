@@ -75,7 +75,7 @@ import {
   humMatchToResultResponse,
 } from '../services/frontDoor';
 // The categories a result is allowed to claim — never a hardcoded genre.
-import { MODERN_SONG_GENRE, PUBLIC_DOMAIN_GENRE } from '../services/resultGenre';
+import { PUBLIC_DOMAIN_GENRE } from '../services/resultGenre';
 import {
   recordPractice,
   getWeeklyGoal,
@@ -131,8 +131,9 @@ import {
 import { checkAndAwardMedals } from '../services/medalStore';
 // The category a recognized match is saved with. The card used to store the
 // catalog NUMBER in the genre slot (and a genre-less match fell through to a
-// hardcoded one); the genre module owns that decision.
-import { resultGenreLabel } from '../services/resultGenre';
+// hardcoded one); the genre module owns that decision. A modern match resolves
+// through modernGenreLabel() — the provider's real genre, else "Modern song".
+import { modernGenreLabel, resultGenreLabel } from '../services/resultGenre';
 import { getTodayChallenge } from '../services/dailyChallenge';
 import type {
   WeeklyGoal,
@@ -489,7 +490,7 @@ export const HomeScreen: React.FC = () => {
       setRecognitionPhase({ type: 'loading' });
       setShowRecognitionResults(true);
       try {
-        const result = await recognizeAudio(uri);
+        const result = await recognizeAudio(uri, diagnostics);
 
         if (result.matches && result.matches.length > 0) {
           recorder.completeRecording();
@@ -508,7 +509,7 @@ export const HomeScreen: React.FC = () => {
         // gets the no-match answer and the hum fallback (never a silent miss).
         let modern: ModernOutcome | null = null;
         try {
-          modern = modernOutcome(await recognizeModernSong(uri));
+          modern = modernOutcome(await recognizeModernSong(uri, diagnostics));
         } catch {
           modern = null;
         }
@@ -524,8 +525,9 @@ export const HomeScreen: React.FC = () => {
             composer: m.artist,
             savedAt: new Date().toISOString(),
             // Save the category WITH the record: a modern song must never reach
-            // History genre-less and be filled in by a fallback later.
-            genre: MODERN_SONG_GENRE,
+            // History genre-less and be filled in by a fallback later. The
+            // provider's REAL genre when it sent one (owner request 09-25).
+            genre: modernGenreLabel(m),
           });
           recorder.completeRecording();
           setShowRecognitionResults(false);
@@ -580,13 +582,13 @@ export const HomeScreen: React.FC = () => {
    * don't hold is never a dead end.
    */
   const runHumPass = useCallback(
-    async (uri: string) => {
+    async (uri: string, diagnostics?: CaptureDiagnostics) => {
       requestInFlightRef.current = true;
       setHeroBusy(true);
       setRecognitionPhase({ type: 'loading' });
       setShowRecognitionResults(true);
       try {
-        const resp = await humToSearch(uri);
+        const resp = await humToSearch(uri, diagnostics);
         const outcome = humOutcome(resp);
         if (outcome.ok && outcome.topMatch) {
           // Recognition of a hum counts as a practice day, exactly as the hum
@@ -615,6 +617,9 @@ export const HomeScreen: React.FC = () => {
         setRecognitionPhase({
           type: 'no-match',
           message: hint ? `${reason}\n\n${hint}` : reason,
+          // The hum pass's own capture numbers, so the no-match card can say
+          // whether the microphone heard enough (V26, owner 09-25).
+          diagnostics,
         });
         setNoMatchOffer('modern');
       } catch (err) {
@@ -696,7 +701,7 @@ export const HomeScreen: React.FC = () => {
       }
       const { uri, diagnostics } = stopped;
       if (captureModeRef.current === 'hum') {
-        await runHumPass(uri);
+        await runHumPass(uri, diagnostics);
         return;
       }
       await runAmbientPipeline(uri, diagnostics);

@@ -46,6 +46,12 @@ import { resultGenreLabel } from '../services/resultGenre';
 // the card, the screen and the tier1 gate read the SAME words.
 import { HUM_FALLBACK_BUTTON } from '../services/frontDoor';
 import { HUM_TO_MODERN_BLURB, HUM_TO_MODERN_CTA } from '../services/humBridge';
+// V26 honest capture feedback (owner 09-25): WHY this pass found nothing. A tiny
+// capture says so and is retry-first; a real listen that is simply not in our
+// library offers the hum/whistle way in. The small capture line (duration +
+// level) makes a screenshot measurable without a debug build. The copy lives in
+// the module the tier1 gate reads.
+import { captureDiagnosticLine, noMatchCardCopy } from '../services/captureFeedback';
 
 export type RecognitionPhase =
   | { type: 'loading' }
@@ -248,6 +254,13 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
 
   // ── No-Match Phase ──
   if (phase.type === 'no-match') {
+    // The REAL reason, from the capture numbers the recorder measured (V26,
+    // owner 09-25). Two honest states: the microphone barely recorded anything
+    // (<4KB / <0.5s) → say so, because retrying is the fix; otherwise we heard
+    // the clip and do not hold the piece → offer the hum/whistle way in. The
+    // card keeps BOTH ways forward below, so a miss is never a dead end.
+    const copy = noMatchCardCopy(phase.diagnostics, phase.message);
+    const captureLine = captureDiagnosticLine(phase.diagnostics);
     return (
       <Modal
         visible={true}
@@ -258,11 +271,9 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
         <View style={styles.overlay}>
           <View style={styles.card}>
             <Text style={styles.noMatchEmoji}>🔍</Text>
-            <Text style={styles.cardTitle}>No Match Found</Text>
-            <Text style={styles.noMatchText}>
-              {phase.message ??
-                "We couldn't identify this piece — try again closer to the speaker, or in a quieter environment."}
-            </Text>
+            <Text style={styles.cardTitle}>{copy.title}</Text>
+            <Text style={styles.noMatchText}>{copy.body}</Text>
+            {captureLine ? <Text style={styles.captureLine}>{captureLine}</Text> : null}
             <View style={styles.buttonRow}>
               <TouchableOpacity style={styles.secondaryBtn} onPress={onClose}>
                 <Text style={styles.secondaryBtnText}>Cancel</Text>
@@ -540,6 +551,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 21,
     marginBottom: 20,
+  },
+  // The capture diagnostics line (V26): small, muted, no verdict words — it
+  // exists so a screenshot is measurable ("Captured 12.4s · level -18 dBFS")
+  // without shipping a debug readout to a musician.
+  captureLine: {
+    fontSize: 12,
+    color: '#6f6f88',
+    textAlign: 'center',
+    marginTop: -12,
+    marginBottom: 16,
   },
   buttonRow: {
     flexDirection: 'row',

@@ -153,17 +153,25 @@ export function buildReinforcementMoment(
 export const NUDGE_HOUR = 18;
 
 /**
- * The next nudge moment — today at `hour`, or null when that moment has already
- * passed. Pure and injected-`now`, so it is covered by the tier-1 suite.
+ * The next nudge moment — today at `hour:minute`, or null when that moment has
+ * already passed. Pure and injected-`now`, so it is covered by the tier-1 suite.
  *
  * Returning null rather than "tomorrow at 18:00" is deliberate: a nudge whose
  * copy says "today" must never be delivered tomorrow, and we do not nag late at
  * night about a day that is nearly over.
+ *
+ * `hour`/`minute` default to the historical 18:00. The user's chosen reminder
+ * time (owner 09-25, see services/reminderTime.ts) is passed in by the nudge
+ * scheduler; nothing else changed about the one-shot semantics.
  */
-export function nextNudgeTime(now: Date, hour: number = NUDGE_HOUR): Date | null {
+export function nextNudgeTime(
+  now: Date,
+  hour: number = NUDGE_HOUR,
+  minute: number = 0,
+): Date | null {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) return null;
   const at = new Date(now.getTime());
-  at.setHours(hour, 0, 0, 0);
+  at.setHours(hour, minute, 0, 0);
   return at.getTime() > now.getTime() ? at : null;
 }
 
