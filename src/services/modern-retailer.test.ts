@@ -42,9 +42,14 @@
  * `cleanSmdQuery()` now also drops parenthetical sections carrying a metadata
  * marker or a 4-digit year and cuts a spaced-dash tail at the first noisy
  * segment, while KEEPING title-bearing parens. The Musicnotes backup uses the
- * SAME cleaned title (its engine reads `-` tokens as operators) and carries NO
- * `w` parameter — Musicnotes read `w=NoteSnap` AS THE QUERY on the owner's phone
- * and searched the literal word "NoteSnap".
+ * SAME cleaned title (its engine reads `-` tokens as operators) and its LIVE
+ * shape is `GET /search` with the query carried in `w` — both halves are pinned
+ * from the contract constants, never as literals (owner on-device bug 09-28,
+ * RC v28 Test 12 / fc19fe16). The retired sub-route plus the `q` parameter (which
+ * Musicnotes does not read) each made the retailer answer with its EMPTY-QUERY
+ * "Popular" grid — Für Elise on top — i.e. the wrong-sheet page the owner saw.
+ * The retired TAG VALUE (`w=NoteSnap`) stays banned: `w` is the query, so that
+ * tag made Musicnotes search the literal word "NoteSnap".
  *
  * And they pin the VERSION-DESCRIPTOR rule (owner on-device bug 09-25, RC v26
  * re-test #2): the owner's modern card read `Fur Elise (Piano Version)` and its
@@ -59,8 +64,13 @@
 import { describe, test, expect } from "bun:test";
 import { cleanSmdQuery, modernRetailerUrls } from "./modern-retailer";
 import {
+  MUSICNOTES_RETIRED_QUERY_PARAM,
+  MUSICNOTES_RETIRED_SEARCH_PATH,
+  MUSICNOTES_SEARCH_PATH,
+  MUSICNOTES_SEARCH_QUERY_PARAM,
   SMD_AFFILIATE_ID,
   SMD_SEARCH_PATH,
+  auditMusicnotesSearchUrl,
   auditSmdAffiliateUrl,
   isDeadSmdSearchUrl,
   looksLikeBareCatalogCode,
@@ -111,7 +121,7 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
     expect(musicnotes!).toContain("musicnotes.com");
     // The backup keeps BOTH tokens (its own search handles them) while the SMD
     // primary is title-only — the two queries deliberately differ.
-    expect(new URL(musicnotes!).searchParams.get("q")).toBe(
+    expect(new URL(musicnotes!).searchParams.get(MUSICNOTES_SEARCH_QUERY_PARAM)).toBe(
       "Let It Be The Beatles",
     );
     expect(new URL(primary!).searchParams.get("query")).toBe("Let It Be");
@@ -121,10 +131,14 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
     expect(musicnotes!).not.toBe(primary);
   });
 
-  test("OWNER 09-25 (#3): the Musicnotes backup carries NO w parameter — Musicnotes reads w AS the query", () => {
-    // On the owner's phone the search box showed "NoteSnap" and the engine searched
-    // that literal word, returning one unrelated fuzzy result; the song title never
-    // reached the engine. RC v26 Test 4a finding #3 + Test 5 (two reproductions).
+  test("OWNER 09-28 (RC v28 Test 12): the backup uses Musicnotes' LIVE route AND parameter", () => {
+    // The wrong-page bug (fc19fe16). The owner tapped the backup CTA and got
+    // Für Elise instead of his song, because the link carried the RETIRED
+    // sub-route and the `q` parameter — Musicnotes reads neither, so it answered
+    // with its EMPTY-QUERY "Popular" browse grid, whose all-time top seller is
+    // Für Elise. Both halves are asserted here against the contract constants (a
+    // literal here would be a source-scan violation) and the emitted URL is put
+    // through the contract audit.
     for (const [title, artist] of [
       ["Just One More Day - Live at the Whisky a Go Go, 1966", "Otis Redding"],
       ["More Than This (2003 Digital Remaster)", "Roxy Music"],
@@ -134,12 +148,16 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
       expect(musicnotes).toBeDefined();
       const url = new URL(musicnotes!);
       expect(url.hostname).toBe("www.musicnotes.com");
-      expect(url.pathname).toBe("/search/go");
-      expect(url.searchParams.has("w")).toBe(false);
+      // the LIVE path, never the retired sub-route
+      expect(url.pathname).toBe(MUSICNOTES_SEARCH_PATH);
+      expect(musicnotes!).not.toContain(MUSICNOTES_RETIRED_SEARCH_PATH);
+      // the query rides in `w`; `q` (which Musicnotes does not read) is absent
+      expect([...url.searchParams.keys()]).toEqual([MUSICNOTES_SEARCH_QUERY_PARAM]);
+      expect(url.searchParams.has(MUSICNOTES_RETIRED_QUERY_PARAM)).toBe(false);
+      // and the retired tag VALUE stays banned
       expect(musicnotes!).not.toContain("w=NoteSnap");
       expect(musicnotes!).not.toContain("NoteSnap");
-      // the query is the ONLY parameter — the engine's `q` is our cleaned title
-      expect([...url.searchParams.keys()]).toEqual(["q"]);
+      expect(auditMusicnotesSearchUrl(musicnotes!).problems).toEqual([]);
     }
   });
 
@@ -152,14 +170,14 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
       "Just One More Day - Live at the Whisky a Go Go, 1966",
       "Otis Redding",
     );
-    expect(new URL(dash.musicnotes!).searchParams.get("q")).toBe(
+    expect(new URL(dash.musicnotes!).searchParams.get(MUSICNOTES_SEARCH_QUERY_PARAM)).toBe(
       "Just One More Day Otis Redding",
     );
     const paren = modernRetailerUrls(
       "More Than This (2003 Digital Remaster)",
       "Roxy Music",
     );
-    expect(new URL(paren.musicnotes!).searchParams.get("q")).toBe(
+    expect(new URL(paren.musicnotes!).searchParams.get(MUSICNOTES_SEARCH_QUERY_PARAM)).toBe(
       "More Than This Roxy Music",
     );
     // the artist is still present (the backup keeps both tokens, unlike SMD)
@@ -248,7 +266,7 @@ describe("modernRetailerUrls (Sheet Music Direct affiliate)", () => {
     expect(params.get("affiliateId")).toBe(SMD_AFFILIATE_ID);
     // title only — the raw `&`/`#` in the artist must not even be part of it
     expect(params.get("query")).toBe("Me & You #1");
-    expect(new URL(musicnotes!).searchParams.get("q")).toBe(
+    expect(new URL(musicnotes!).searchParams.get(MUSICNOTES_SEARCH_QUERY_PARAM)).toBe(
       "Me & You #1 A & B",
     );
   });
@@ -291,7 +309,7 @@ describe("cleanSmdQuery — edition/bracket noise stripped from the SMD query", 
     expect(auditSmdAffiliateUrl(primary!).ok).toBe(true);
     // the Musicnotes backup gets the SAME cleaned title + the artist (owner 09-25):
     // the bracket noise is gone there too — only the SMD query drops the artist.
-    expect(new URL(musicnotes!).searchParams.get("q")).toBe(
+    expect(new URL(musicnotes!).searchParams.get(MUSICNOTES_SEARCH_QUERY_PARAM)).toBe(
       "Bang a Gong (Get it on) T. Rex",
     );
     expect(musicnotes!).not.toContain("Remaster");
@@ -357,7 +375,7 @@ describe("cleanSmdQuery — edition/bracket noise stripped from the SMD query", 
     expect(primary!).not.toContain("Remaster");
     expect(primary!).not.toContain("2003");
     expect(auditSmdAffiliateUrl(primary!).ok).toBe(true);
-    expect(new URL(musicnotes!).searchParams.get("q")).toBe(
+    expect(new URL(musicnotes!).searchParams.get(MUSICNOTES_SEARCH_QUERY_PARAM)).toBe(
       "More Than This Roxy Music",
     );
   });
@@ -380,7 +398,7 @@ describe("cleanSmdQuery — edition/bracket noise stripped from the SMD query", 
     expect(new URL(primary!).searchParams.get("query")).toBe("Just One More Day");
     expect(primary!).not.toContain("Whisky");
     expect(primary!).not.toContain("1966");
-    expect(new URL(musicnotes!).searchParams.get("q")).toBe(
+    expect(new URL(musicnotes!).searchParams.get(MUSICNOTES_SEARCH_QUERY_PARAM)).toBe(
       "Just One More Day Otis Redding",
     );
   });
@@ -442,10 +460,17 @@ describe("cleanSmdQuery — edition/bracket noise stripped from the SMD query", 
     expect(primary!).not.toContain("Version");
     expect(primary!).not.toContain("Lang");
     expect(auditSmdAffiliateUrl(primary!).ok).toBe(true);
-    // Musicnotes backup: cleaned title + artist, and NO `w` parameter (the old
-    // live bug made Musicnotes search the literal word "NoteSnap")
-    expect(new URL(musicnotes!).searchParams.get("q")).toBe("Fur Elise Lang Lang");
-    expect(musicnotes!).not.toContain("w=");
+    // Musicnotes backup: cleaned title + artist, on the LIVE route with the query
+    // in `w` — and never the retired tag value (the old live bug made Musicnotes
+    // search the literal word "NoteSnap")
+    expect(new URL(musicnotes!).searchParams.get(MUSICNOTES_SEARCH_QUERY_PARAM)).toBe(
+      "Fur Elise Lang Lang",
+    );
+    expect(new URL(musicnotes!).pathname).toBe(MUSICNOTES_SEARCH_PATH);
+    expect(musicnotes!).not.toContain(MUSICNOTES_RETIRED_SEARCH_PATH);
+    expect(new URL(musicnotes!).searchParams.has(MUSICNOTES_RETIRED_QUERY_PARAM)).toBe(
+      false,
+    );
     expect(musicnotes!).not.toContain("NoteSnap");
 
     // REGRESSION: title-bearing parens are never stripped by the version rule

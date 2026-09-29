@@ -15,16 +15,23 @@ import { describe, test, expect } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import {
+  MUSICNOTES_RETIRED_QUERY_PARAM,
+  MUSICNOTES_RETIRED_SEARCH_PATH,
   MUSICNOTES_RETIRED_TAG,
+  MUSICNOTES_SEARCH_ORIGIN,
+  MUSICNOTES_SEARCH_PATH,
+  MUSICNOTES_SEARCH_QUERY_PARAM,
   SMD_AFFILIATE_ID,
   SMD_DEAD_SEARCH_PATHS,
   SMD_SEARCH_PATH,
   SMD_SEARCH_QUERY_PARAM,
+  auditMusicnotesSearchUrl,
   auditSmdAffiliateUrl,
   isDeadSmdSearchPath,
   isDeadSmdSearchUrl,
   scanSourcesForDeadSmdRoute,
   scanSourcesForNoteSnapReferrerTag,
+  scanSourcesForRetiredMusicnotesRoute,
   type ScannedSource,
 } from "./affiliate-url-contract";
 import {
@@ -32,6 +39,7 @@ import {
   sheetMusicDirectSearchUrl,
 } from "./modern-retailer";
 import { pieceAffiliateUrl } from "./piece-affiliate";
+import { probeMusicnotesSearch } from "./musicnotes-search-probe";
 
 const SRC_ROOT = join(import.meta.dir, "..");
 const THIS_FILE = "services/affiliate-url-contract.test.ts";
@@ -208,13 +216,21 @@ describe("source scan — the Musicnotes backup shape cannot regress", () => {
     );
   });
 
-  test("the live backup URL satisfies the contract (only `q`, no `w`)", () => {
+  test("the live backup URL carries the query in `w` on the LIVE route (owner 09-28)", () => {
     const { musicnotes } = modernRetailerUrls("Let It Be", "The Beatles");
     const url = new URL(musicnotes!);
     expect(url.hostname).toBe("www.musicnotes.com");
-    expect([...url.searchParams.keys()]).toEqual(["q"]);
+    expect(url.pathname).toBe(MUSICNOTES_SEARCH_PATH);
+    expect([...url.searchParams.keys()]).toEqual([MUSICNOTES_SEARCH_QUERY_PARAM]);
+    expect(url.searchParams.get(MUSICNOTES_SEARCH_QUERY_PARAM)).toBe(
+      "Let It Be The Beatles",
+    );
+    expect(musicnotes!).not.toContain(MUSICNOTES_RETIRED_SEARCH_PATH);
+    expect(url.searchParams.has(MUSICNOTES_RETIRED_QUERY_PARAM)).toBe(false);
     expect(musicnotes!).not.toContain(MUSICNOTES_RETIRED_TAG);
     expect(musicnotes!).not.toContain("NoteSnap");
+    // and the emitted link satisfies the Musicnotes audit
+    expect(auditMusicnotesSearchUrl(musicnotes!).problems).toEqual([]);
   });
 
   test("the scanner catches a planted w tag (guard cannot silently no-op)", () => {
@@ -271,5 +287,147 @@ describe("source scan — the Musicnotes backup shape cannot regress", () => {
       { path: "services/notes.ts", content: "// the retired w=NoteSnap tag\n" },
     ];
     expect(scanSourcesForNoteSnapReferrerTag(doc, [])).toEqual([]);
+  });
+});
+
+/**
+ * Musicnotes LIVE route + parameter (owner on-device bug 2026-09-28, RC v28
+ * Test 12 / fc19fe16) — "the Musicnotes CTA shows the wrong page".
+ *
+ * TWO wrong-URL bugs lived in the backup link, and both produced the SAME page:
+ *   * the builder emitted the RETIRED Musicnotes sub-route, and
+ *   * `q` is not Musicnotes' search parameter either (its own form is
+ *     `GET /search` with a single text field `w`).
+ * The retailer answers a URL carrying neither with its EMPTY-QUERY "Popular"
+ * browse grid — HTTP 200, `<title>Search:  | Musicnotes</title>` — whose all-time
+ * top seller is Für Elise, i.e. exactly the wrong sheet the owner saw.
+ *
+ * Three layers guard it now: `auditMusicnotesSearchUrl()` on every emitted link,
+ * a source scan for the retired route, and a LIVE probe that checks the rendered
+ * document actually ran the query (Cloudflare can block this box — that verdict is
+ * reported, never a failure).
+ */
+describe("Musicnotes LIVE route + parameter (owner 09-28, RC v28 Test 12)", () => {
+  const QUERY = "Let It Be The Beatles";
+  /** The emitted backup link — the artefact the device opens. */
+  const liveUrl = modernRetailerUrls("Let It Be", "The Beatles").musicnotes!;
+  /** The retired shape, reconstructed from the contract constants. */
+  const retiredUrl =
+    `${MUSICNOTES_SEARCH_ORIGIN}${MUSICNOTES_RETIRED_SEARCH_PATH}` +
+    `?${MUSICNOTES_RETIRED_QUERY_PARAM}=${encodeURIComponent(QUERY)}`;
+
+  test("the emitter's audit accepts the builder output and pins the exact query", () => {
+    const audit = auditMusicnotesSearchUrl(liveUrl, QUERY);
+    expect(audit.problems).toEqual([]);
+    expect(audit.ok).toBe(true);
+  });
+
+  test("the audit REJECTS the retired sub-route (the wrong-page bug)", () => {
+    const audit = auditMusicnotesSearchUrl(retiredUrl);
+    expect(audit.ok).toBe(false);
+    expect(audit.problems.join(" | ")).toContain("retired Musicnotes route");
+    // `q` is not Musicnotes' parameter either, so this URL is doubly wrong
+    expect(audit.problems.join(" | ")).toContain(
+      `retired parameter present: ${MUSICNOTES_RETIRED_QUERY_PARAM}`,
+    );
+  });
+
+  test("the audit REJECTS the live path carrying the retired parameter (empty-query page)", () => {
+    // Repointing the ROUTE alone is not the fix: `?q=` on `/search` renders the
+    // same empty-query "Popular" grid (probe-verified 09-28).
+    const routeOnly =
+      `${MUSICNOTES_SEARCH_ORIGIN}${MUSICNOTES_SEARCH_PATH}` +
+      `?${MUSICNOTES_RETIRED_QUERY_PARAM}=${encodeURIComponent(QUERY)}`;
+    const audit = auditMusicnotesSearchUrl(routeOnly);
+    expect(audit.ok).toBe(false);
+    expect(audit.problems.join(" | ")).toContain("retired parameter present");
+    expect(audit.problems.join(" | ")).toContain("missing/empty w parameter");
+  });
+
+  test("the audit rejects an empty query, a wrong query and the retired tag", () => {
+    const noQuery = `${MUSICNOTES_SEARCH_ORIGIN}${MUSICNOTES_SEARCH_PATH}`;
+    expect(auditMusicnotesSearchUrl(noQuery).ok).toBe(false);
+    expect(auditMusicnotesSearchUrl(noQuery).problems.join(" | ")).toContain(
+      "missing/empty w parameter",
+    );
+    const blank =
+      `${MUSICNOTES_SEARCH_ORIGIN}${MUSICNOTES_SEARCH_PATH}?${MUSICNOTES_SEARCH_QUERY_PARAM}=`;
+    expect(auditMusicnotesSearchUrl(blank).ok).toBe(false);
+    // the query is the shopper's song, not whatever the caller thought
+    expect(auditMusicnotesSearchUrl(liveUrl, "Some Other Song").ok).toBe(false);
+    // the retired TAG VALUE is still banned: `w` is the query itself
+    const tag =
+      `${MUSICNOTES_SEARCH_ORIGIN}${MUSICNOTES_SEARCH_PATH}` +
+      `?${MUSICNOTES_SEARCH_QUERY_PARAM}=${MUSICNOTES_RETIRED_TAG.split("=")[1]}`;
+    const tagAudit = auditMusicnotesSearchUrl(tag);
+    expect(tagAudit.ok).toBe(false);
+    expect(tagAudit.problems.join(" | ")).toContain("retired w=NoteSnap tag present");
+    expect(auditMusicnotesSearchUrl("not a url").ok).toBe(false);
+    expect(auditMusicnotesSearchUrl("https://example.test/search?w=x").ok).toBe(false);
+  });
+
+  test("no source file spells the RETIRED Musicnotes route any more", () => {
+    const files = walkSources(SRC_ROOT);
+    // Floors: an empty/failed walk must never pass.
+    expect(files.length).toBeGreaterThan(20);
+    expect(files.some((f) => f.content.includes("musicnotes.com"))).toBe(true);
+
+    const offenders = scanSourcesForRetiredMusicnotesRoute(files, [
+      CONTRACT_FILE,
+      THIS_FILE,
+    ]);
+    expect(offenders.map((o) => `${o.path}:${o.line} ${o.text}`)).toEqual([]);
+  });
+
+  test("the retired-route scanner catches a planted template (guard cannot silently no-op)", () => {
+    const planted: ScannedSource[] = [
+      {
+        path: "services/planted-musicnotes.ts",
+        content:
+          `const u = "https://www.musicnotes.com${MUSICNOTES_RETIRED_SEARCH_PATH}` +
+          `?${MUSICNOTES_RETIRED_QUERY_PARAM}=\${q}";\n`,
+      },
+    ];
+    const found = scanSourcesForRetiredMusicnotesRoute(planted, []);
+    expect(found.length).toBe(1);
+    expect(found[0].path).toBe("services/planted-musicnotes.ts");
+    expect(found[0].line).toBe(1);
+  });
+
+  test("the retired-route scanner ignores the LIVE /search route", () => {
+    const live: ScannedSource[] = [
+      {
+        path: "services/live.ts",
+        content: `const u = "https://www.musicnotes.com${MUSICNOTES_SEARCH_PATH}?${MUSICNOTES_SEARCH_QUERY_PARAM}=x";\n`,
+      },
+    ];
+    expect(scanSourcesForRetiredMusicnotesRoute(live, [])).toEqual([]);
+  });
+
+  test("LIVE PROBE: the retailer's rendered page runs the query the URL carries", async () => {
+    // The only assertion that can see the wrong-page bug: the URL was always
+    // well-formed. Musicnotes sits behind Cloudflare and a datacenter IP can get
+    // its bot check (HTTP 403 "Just a moment...") — that is an environment fact,
+    // NOT a product defect, so it is reported and the gate falls back to the
+    // shape + source-scan assertions above. Real evidence of the bug (a Search
+    // page with an EMPTY query) fails, because that is the owner's wrong sheet.
+    const probe = await probeMusicnotesSearch(liveUrl, { timeoutMs: 15000 });
+    console.log(`[musicnotes live probe] ${probe.requestedUrl} -> ${probe.detail}`);
+    if (
+      probe.verdict === "cloudflare-challenge" ||
+      probe.verdict === "http-error" ||
+      probe.verdict === "unrecognized-page"
+    ) {
+      // Fallback (documented, not silent): the link's shape is the contract.
+      expect(auditMusicnotesSearchUrl(liveUrl, QUERY).problems).toEqual([]);
+      return;
+    }
+    expect(
+      probe.verdict,
+      `Musicnotes rendered ${JSON.stringify(probe.title)} for ${probe.requestedUrl}`,
+    ).toBe("query-executed");
+    expect(probe.queryExecuted).toBe(true);
+    // the page echoes the query it actually ran
+    expect(probe.title).toContain("Musicnotes");
   });
 });

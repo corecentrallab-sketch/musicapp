@@ -180,20 +180,28 @@ export function looksLikeBareCatalogCode(query: string): boolean {
  * builder that also builds the registry's template).
  */
 export const MUSICNOTES_RETAILER_HOST = "www.musicnotes.com";
-/** The parameter Musicnotes reads as its query. Never ours to send. */
-export const MUSICNOTES_FORBIDDEN_QUERY_PARAM = "w";
-/** The retired tag, exactly as it shipped. */
+/** Musicnotes origin — the site every backup link points at. */
+export const MUSICNOTES_SEARCH_ORIGIN = "https://www.musicnotes.com";
+/**
+ * The `w` parameter is NOT a referrer tag: it is Musicnotes' QUERY parameter
+ * (probe-verified 2026-09-28 — its own search form is `GET /search` with the
+ * single text field `w`, and the page title echoes it). `w=NoteSnap` therefore
+ * made Musicnotes search for the literal word "NoteSnap"; the parameter stays in
+ * the live URL, and only that VALUE is banned.
+ */
 export const MUSICNOTES_RETIRED_TAG = "w=NoteSnap";
 
 /** A `?w=`/`&w=` parameter carrying the retired NoteSnap tag. */
 export const MUSICNOTES_RETIRED_TAG_PATTERN = /[?&]w=NoteSnap\b/i;
 /**
- * A Musicnotes search URL written out by hand (`musicnotes.com/search/go?q=`).
- * Only ONE module may hold it (`modern-retailer.ts`); everywhere else must call
- * `musicnotesSearchUrl()` / `musicnotesSearchUrlTemplate()`.
+ * A Musicnotes search URL written out by hand — either the live shape
+ * (`musicnotes.com/search?w=`) or the retired one (`musicnotes.com/search/go?q=`).
+ * Only ONE module may hold it (`modern-retailer.ts`, which re-exports the shape
+ * from this module); everywhere else must call `musicnotesSearchUrl()` /
+ * `musicnotesSearchUrlTemplate()`.
  */
 export const MUSICNOTES_HARDCODED_URL_PATTERN =
-  /musicnotes\.com\/search\/(?:go|search)\b[^\s"'`]*\?[^\s"'`]*\bq=/i;
+  /musicnotes\.com\/search(?:\/(?:go|search))?\?[^\s"'`]*\b(?:q|w)=/i;
 
 /** Paths allowed to spell out a Musicnotes search URL (the one builder). */
 export const MUSICNOTES_URL_BUILDER_ALLOWLIST: readonly string[] = [
@@ -276,6 +284,120 @@ export function scanSourcesForDeadSmdRoute(
     const lines = file.content.split("\n");
     lines.forEach((text, index) => {
       if (SMD_DEAD_ROUTE_SOURCE_PATTERN.test(text) || /[?&]searchText=/.test(text)) {
+        offenders.push({ path: file.path, line: index + 1, text: text.trim() });
+      }
+    });
+  }
+  return offenders;
+}
+
+/**
+ * ---------------------------------------------------------------------------
+ * Musicnotes live shape + the RETIRED Musicnotes route (owner on-device bug
+ * 2026-09-28, RC v28 Test 12 — "the Musicnotes CTA shows the wrong page")
+ * ---------------------------------------------------------------------------
+ * The owner tapped the Musicnotes CTA and got Für Elise's page instead of his
+ * song. Root cause: the builder emitted a RETIRED Musicnotes path, and the live
+ * retailer answered it with its EMPTY-QUERY "Popular" browse grid (HTTP 200, not
+ * an error) — whose all-time top seller is Für Elise. App + backend wiring were
+ * correct; the URL was wrong.
+ *
+ * The retired parameter was wrong too, and in the same way: `q` is not
+ * Musicnotes' search parameter. Probed 2026-09-28 with a JS-executing browser
+ * (headless Chromium → real DOM, HTTP 200 in every case, query
+ * `Let It Be The Beatles`); the page's own `<title>` is the verdict:
+ *
+ *   retired path + `q` → `<title>Search:  | Musicnotes</title>`  (0 hits, "Popular")
+ *   live path    + `q` → `<title>Search:  | Musicnotes</title>`  (0 hits, "Popular")
+ *   live path    + `w` → `<title>Search: Let It Be The Beatles | Musicnotes</title>`
+ *                        (56 hits; the search box carries the query)
+ *
+ * The live shape is therefore the path `/search` with the parameter `w` — which
+ * is also why the earlier `w=NoteSnap` tag was searched as a song title. Both the
+ * retired path and the retired parameter are pinned here: the source scan below
+ * fails the gate if the retired route is spelled anywhere but the contract module
+ * (and its test), and `auditMusicnotesSearchUrl()` fails if an emitted URL does
+ * not carry the query in `w`.
+ */
+export const MUSICNOTES_SEARCH_PATH = "/search";
+export const MUSICNOTES_SEARCH_QUERY_PARAM = "w";
+/** The retired route, exactly as it shipped (empty-query "Popular" page). */
+export const MUSICNOTES_RETIRED_SEARCH_PATH = "/search/go";
+/** The retired query parameter (never read by Musicnotes' search page). */
+export const MUSICNOTES_RETIRED_QUERY_PARAM = "q";
+/**
+ * Source-text tripwire for the scanner: the retired Musicnotes sub-route,
+ * wherever it is spelled (a path literal, a template, a hand-written URL).
+ */
+export const MUSICNOTES_RETIRED_ROUTE_SOURCE_PATTERN = /\/search\/go\b/i;
+
+/**
+ * The contract every emitted Musicnotes backup link must satisfy: live path,
+ * the shopper's query carried in `w`, and NO trace of the retired route or
+ * parameter. `expectedQuery` is optional so a caller can also assert the exact
+ * query the link should search.
+ */
+export function auditMusicnotesSearchUrl(
+  url: string,
+  expectedQuery?: string,
+): SmdUrlAudit {
+  const problems: string[] = [];
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { ok: false, problems: ["not a parseable absolute URL"] };
+  }
+  if (parsed.protocol !== "https:") problems.push("not https");
+  if (parsed.hostname !== MUSICNOTES_RETAILER_HOST) {
+    problems.push(`unexpected host: ${parsed.hostname}`);
+  }
+  const path = parsed.pathname.replace(/\/+$/, "");
+  if (MUSICNOTES_RETIRED_ROUTE_SOURCE_PATTERN.test(path)) {
+    problems.push(`retired Musicnotes route: ${parsed.pathname}`);
+  }
+  if (path !== MUSICNOTES_SEARCH_PATH) {
+    problems.push(
+      `path is not the live search page (${MUSICNOTES_SEARCH_PATH}): ${parsed.pathname}`,
+    );
+  }
+  if (parsed.searchParams.has(MUSICNOTES_RETIRED_QUERY_PARAM)) {
+    // `q` is not read by Musicnotes — its presence means the empty-query page,
+    // i.e. the wrong-sheet bug, not a search.
+    problems.push(`retired parameter present: ${MUSICNOTES_RETIRED_QUERY_PARAM}`);
+  }
+  const query = parsed.searchParams.get(MUSICNOTES_SEARCH_QUERY_PARAM);
+  if (query === null || query.trim() === "") {
+    problems.push(`missing/empty ${MUSICNOTES_SEARCH_QUERY_PARAM} parameter`);
+  } else if (expectedQuery !== undefined && query !== expectedQuery) {
+    problems.push(
+      `${MUSICNOTES_SEARCH_QUERY_PARAM} is not the expected query: ${query}`,
+    );
+  }
+  if (MUSICNOTES_RETIRED_TAG_PATTERN.test(url)) {
+    problems.push(`retired ${MUSICNOTES_RETIRED_TAG} tag present`);
+  }
+  return { ok: problems.length === 0, problems };
+}
+
+/**
+ * Pure source scanner (the team's source-contract pattern): returns every place
+ * a source file still spells the RETIRED Musicnotes route, so a re-pointed
+ * constant or a copy-pasted template cannot quietly bring the wrong-page bug
+ * back. Files in `allow` (the contract module itself and its test, which document
+ * the retired route on purpose) are skipped.
+ */
+export function scanSourcesForRetiredMusicnotesRoute(
+  files: readonly ScannedSource[],
+  allow: readonly string[] = [],
+): DeadRouteOffender[] {
+  const allowed = new Set(allow);
+  const offenders: DeadRouteOffender[] = [];
+  for (const file of files) {
+    if (allowed.has(file.path)) continue;
+    const lines = file.content.split("\n");
+    lines.forEach((text, index) => {
+      if (MUSICNOTES_RETIRED_ROUTE_SOURCE_PATTERN.test(text)) {
         offenders.push({ path: file.path, line: index + 1, text: text.trim() });
       }
     });

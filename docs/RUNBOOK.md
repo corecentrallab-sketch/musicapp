@@ -220,3 +220,49 @@ All three links must appear (they are in the owner's account, not the platform's
    `/api/recognize` returns `405 {"error":"Method not allowed. Use POST."}` (function
    healthy with env). Production deployment `site-9jlwp9sox-notesnap.vercel.app` aliased
    to the stable URL.
+
+## 7. Musicnotes backup-CTA live probe (retired-route bug fc19fe16, owner 09-28)
+
+**Why.** The app's secondary "Try Musicnotes" CTA opened Musicnotes' EMPTY-QUERY
+"Popular" browse grid instead of the recognized song (RC v28 Test 12). The URL was
+well-formed, HTTPS, on the right host and carried a query parameter — every
+URL-shape assertion passed — so only the RENDERED page can tell you which query the
+retailer actually ran. Root cause: the builder emitted a RETIRED path
+(`/search` + `/go` sub-route) AND a parameter Musicnotes does not read (`q`). Both
+were wrong; both produced the same page. The live shape is the path `/search` with
+the query in `w` (the parameter that made `&w=NoteSnap` search the literal word
+"NoteSnap" — that is the on-device proof that `w` is the query, not a referrer tag).
+
+**The three shapes and what each renders** (query used: `Let It Be The Beatles`;
+`<title>` is the verdict — Musicnotes echoes the query it ran):
+
+| URL | `<title>` | meaning |
+| --- | --- | --- |
+| `…/search/go?q=Let+It+Be+The+Beatles` | `Search:  \| Musicnotes` | retired: 0 hits, "Popular" grid (Für Elise on top) — THE BUG |
+| `…/search?q=Let+It+Be+The+Beatles` | `Search:  \| Musicnotes` | route-only fix is NOT enough — `q` is not read |
+| `…/search?w=Let+It+Be+The+Beatles` | `Search: Let It Be The Beatles \| Musicnotes` | LIVE (56 hits; the search box carries the query) |
+
+**How to run it**
+
+1. In the gate (recommended, no setup):
+   `cd /home/team/shared/site-fresh && bun test --timeout 60000 src/services/affiliate-url-contract.test.ts`
+   The live test prints `[musicnotes live probe] <url> -> HTTP <n> title="…" verdict=…`.
+   Code: `src/services/musicnotes-search-probe.ts`; the assertion is the last test of
+   the `Musicnotes LIVE route + parameter (owner 09-28, RC v28 Test 12)` describe block.
+2. Ad hoc, one shape at a time:
+   `bun -e 'import {probeMusicnotesSearch} from "./src/services/musicnotes-search-probe.ts"; console.log(await probeMusicnotesSearch("https://www.musicnotes.com/search?w=" + encodeURIComponent("Let It Be The Beatles")))'`
+
+**Cloudflare is expected from this box, and is NOT a failure.** A plain `fetch()`
+(and headless Chromium via CDP, re-tried 2026-09-28) from the build box gets
+`HTTP 403 <title>Just a moment...</title>`. The probe reports that as
+`cloudflare-challenge`; the gate then falls back to the two assertions that do not
+need the network — `auditMusicnotesSearchUrl()` (live path, query in `w`, no `q`, no
+retired tag) and `scanSourcesForRetiredMusicnotesRoute()` (the retired route cannot
+be spelled anywhere under `src/`). A JS-executing browser from a residential/owner
+IP is what produces the real titles; the **owner's device is the ground truth**, so
+this CTA must also be re-tested on-device in each build that touches it.
+
+**Failing condition.** The gate fails only on REAL evidence: a Search page with an
+EMPTY query (`empty-query-page`) — i.e. the retailer rendered the wrong-page grid the
+owner saw. Anything inconclusive (challenge / HTTP error / unrecognized document
+from a proxy) is printed and falls back to the shape + source-scan assertions.

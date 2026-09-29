@@ -27,6 +27,10 @@ import {
   scanCopyForRetiredRetailers,
 } from "./retailer-copy-contract";
 import {
+  MUSICNOTES_RETIRED_QUERY_PARAM,
+  MUSICNOTES_RETIRED_SEARCH_PATH,
+  MUSICNOTES_SEARCH_PATH,
+  MUSICNOTES_SEARCH_QUERY_PARAM,
   SMD_AFFILIATE_ID,
   SMD_SEARCH_PATH,
   auditSmdAffiliateUrl,
@@ -176,8 +180,16 @@ describe("modern-song route — an AudD match must serialize to the live affilia
     const backup = new URL(musicnotesUrl!);
     expect(backup.hostname).toBe("www.musicnotes.com");
     // The backup keeps title+artist (Musicnotes' search handles both tokens) —
-    // deliberately a different query from the title-only SMD primary above.
-    expect(backup.searchParams.get("q")).toBe("Elise's Serenade Trito Music");
+    // deliberately a different query from the title-only SMD primary above — and
+    // carries it in the LIVE `w` parameter on the live `/search` path (owner
+    // 09-28, RC v28 Test 12: the retired sub-route + `q` shape opened the
+    // retailer's empty-query "Popular" grid instead of the song).
+    expect(backup.pathname).toBe(MUSICNOTES_SEARCH_PATH);
+    expect(backup.searchParams.get(MUSICNOTES_SEARCH_QUERY_PARAM)).toBe(
+      "Elise's Serenade Trito Music",
+    );
+    expect(musicnotesUrl!).not.toContain(MUSICNOTES_RETIRED_SEARCH_PATH);
+    expect(backup.searchParams.has(MUSICNOTES_RETIRED_QUERY_PARAM)).toBe(false);
     // attribution belongs to our SMD link only
     expect(musicnotesUrl!).not.toContain("sheetmusicdirect.com");
     expect(musicnotesUrl!).not.toContain(SMD_AFFILIATE_ID);
@@ -209,12 +221,19 @@ describe("modern-song route — an AudD match must serialize to the live affilia
     expect(retailerUrl).not.toContain("Remaster");
 
     const musicnotesUrl: string = body.modern?.musicnotesUrl;
-    expect(new URL(musicnotesUrl).searchParams.get("q")).toBe(
+    expect(new URL(musicnotesUrl).searchParams.get(MUSICNOTES_SEARCH_QUERY_PARAM)).toBe(
       "More Than This Roxy Music",
     );
     expect(musicnotesUrl).not.toContain("Remaster");
     expect(musicnotesUrl).not.toContain("w=NoteSnap");
-    expect(new URL(musicnotesUrl).searchParams.has("w")).toBe(false);
+    // the LIVE Musicnotes shape only (owner 09-28, RC v28 Test 12): the retired
+    // sub-route and the `q` parameter both made the retailer answer with its
+    // empty-query "Popular" grid — Für Elise on top, not the song.
+    expect(new URL(musicnotesUrl).pathname).toBe(MUSICNOTES_SEARCH_PATH);
+    expect(musicnotesUrl).not.toContain(MUSICNOTES_RETIRED_SEARCH_PATH);
+    expect(new URL(musicnotesUrl).searchParams.has(MUSICNOTES_RETIRED_QUERY_PARAM)).toBe(
+      false,
+    );
   });
 
   test("a provider no-match does not invent a retailer URL", async () => {

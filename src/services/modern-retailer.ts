@@ -65,12 +65,34 @@
 // half of that owner report (the Musicnotes CTA searching the literal word
 // "NoteSnap") was the `w=NoteSnap` tag, deleted in the same fix.
 //
+// MUSICNOTES BACKUP LINK — THE LIVE ROUTE **AND** THE LIVE PARAMETER (owner
+// on-device bug 09-28, RC v28 Test 12; retired-route bug fc19fe16). TWO wrong-URL
+// bugs lived in this one link, and both produced the SAME page:
+//   * the builder emitted a RETIRED Musicnotes path (the `/search` + `/go`
+//     sub-route — exact string pinned as `MUSICNOTES_RETIRED_SEARCH_PATH` in
+//     `affiliate-url-contract.ts`, which is the only file allowed to name it);
+//   * and `q` is not Musicnotes' search parameter either: its search form is
+//     `GET /search` with the single text field `w`.
+// Probed 2026-09-28 with a JS-executing browser (headless Chromium, real DOM,
+// HTTP 200 in all three cases; query sent: `Let It Be The Beatles`). The page's
+// own <title> is the verdict — the exact retired/live URL shapes are reconstructed
+// from the constants below and live in `affiliate-url-contract.test.ts`:
+//   retired path + `q` → `<title>Search:  | Musicnotes</title>`   (0 hits)
+//   live path    + `q` → `<title>Search:  | Musicnotes</title>`   (0 hits)
+//   live path    + `w` → `<title>Search: Let It Be The Beatles | Musicnotes</title>`
+//                        (56 hits, search box pre-filled with the query)
+// An "empty query" answer is NOT an error page: it is Musicnotes' "Popular" browse
+// grid, whose top item is Für Elise (all-time bestseller) — exactly the wrong-sheet
+// page the owner reported. That is why `?q=` is pinned as WRONG (not as the fix)
+// and why the emitted URL is validated by `auditMusicnotesSearchUrl()` plus a live
+// probe that asserts the page executes the query.
+//
 // The Musicnotes BACKUP link keeps `"<title> <artist>"` (its own search handles
-// both tokens) — but its title half is cleaned the same way and the URL carries
-// NO `w` parameter: on the owner's phone Musicnotes read `w=NoteSnap` AS the
-// query and searched the literal word "NoteSnap" (owner 09-25, finding #3). The
-// tag carried no commission (SMD carries the affiliate ID), so it is deleted;
-// `affiliate-url-contract.ts` holds a source scan that fails if it returns.
+// both tokens) — but its title half is cleaned the same way. It carries NO SMD
+// params and no affiliate ID (SMD carries affiliate ID 67650). The retired tag
+// `w=NoteSnap` (owner 09-25, finding #3) was never a "referrer tag" — `w` is the
+// query parameter, which is why the owner's phone searched the literal word
+// "NoteSnap". That TAG VALUE stays banned (`scanSourcesForNoteSnapReferrerTag`).
 //
 // AFFILIATE ACCOUNT (owner relayed 09-14): Sheet Music Direct approved
 // Affiliate ID 67650 — MUST be embedded in every SMD link so each click is
@@ -100,6 +122,9 @@ import {
   SMD_SEARCH_PATH,
   SMD_SEARCH_ORIGIN,
   SMD_SEARCH_QUERY_PARAM,
+  MUSICNOTES_SEARCH_ORIGIN,
+  MUSICNOTES_SEARCH_PATH,
+  MUSICNOTES_SEARCH_QUERY_PARAM,
   looksLikeBareCatalogCode,
 } from "./affiliate-url-contract";
 
@@ -224,26 +249,45 @@ export function sheetMusicDirectSearchUrl(query: string): string | undefined {
 
 /**
  * ---------------------------------------------------------------------------
- * Musicnotes backup link — the ONE shape, and never a `w` parameter
+ * Musicnotes backup link — the ONE live shape (route + parameter)
  * ---------------------------------------------------------------------------
  * Owner on-device bug 2026-09-25 (RC v26 Test 4a finding #3 + Test 5): the
  * backup URL used to end with the tag `w=NoteSnap` (a "referrer tag" nobody ever
- * passed to Musicnotes' engine). Musicnotes' search page reads `w` as ITS query — on the
+ * passed to Musicnotes' engine). `w` is Musicnotes' OWN query parameter — on the
  * owner's phone the search box literally showed "NoteSnap" and the engine
  * searched the word "NoteSnap", returning one irrelevant fuzzy result
  * ("Sockerfens dans") instead of Otis Redding. The song query never reached the
- * engine. The same template would have broken the Musicnotes links on all 528
- * piece pages at publish.
+ * engine. The same template would have broken the Musicnotes links on every
+ * piece page at publish.
+ *
+ * Owner on-device bug 2026-09-28 (RC v28 Test 12): the CTA opened Musicnotes'
+ * EMPTY-QUERY "Popular" grid instead of the song. Root cause was the ROUTE (and,
+ * behind it, the parameter) — the module header above carries the three-shape
+ * probe evidence. The tag fix is what made `w` look forbidden; it never was: `w`
+ * IS the query, which is why the tag value "NoteSnap" got searched.
  *
  * There is NO affiliate attribution on this link (Sheet Music Direct carries the
- * affiliate ID 67650), so the tag bought nothing — the parameter is deleted
- * outright, and `scanSourcesForNoteSnapReferrerTag()` (in
- * `affiliate-url-contract.ts`) fails the gate if `w=NoteSnap` or a second
- * hand-written Musicnotes URL builder ever reappears under `src/`.
+ * affiliate ID 67650). The retired TAG VALUE and the retired ROUTE/PARAMETER are
+ * separate violations, and `affiliate-url-contract.ts` fails the gate for all
+ * three: `scanSourcesForNoteSnapReferrerTag()` (the tag + a second hand-written
+ * builder), `scanSourcesForRetiredMusicnotesRoute()` (the retired path), and
+ * `auditMusicnotesSearchUrl()` (the emitted shape: live path, `w` carrying the
+ * query, no `q`, no `NoteSnap`).
  */
-export const MUSICNOTES_SEARCH_ORIGIN = "https://www.musicnotes.com";
-export const MUSICNOTES_SEARCH_PATH = "/search/go";
-export const MUSICNOTES_SEARCH_QUERY_PARAM = "q";
+/**
+ * The live Musicnotes shape, RE-EXPORTED from `affiliate-url-contract.ts` — that
+ * module is the ONE place that knows it (the same pattern as
+ * `SMD_SEARCH_ORIGIN`/`SMD_SEARCH_PATH`/`SMD_SEARCH_QUERY_PARAM`, which this
+ * builder also imports). Every consumer keeps importing these names from here.
+ * NEVER re-declare them as literals in this file: the retired route is a
+ * source-scan violation (`scanSourcesForRetiredMusicnotesRoute`) and the emitted
+ * URL is audited by `auditMusicnotesSearchUrl()`.
+ */
+export {
+  MUSICNOTES_SEARCH_ORIGIN,
+  MUSICNOTES_SEARCH_PATH,
+  MUSICNOTES_SEARCH_QUERY_PARAM,
+};
 
 /** The single Musicnotes search template, for the affiliate registry. */
 export function musicnotesSearchUrlTemplate(): string {
