@@ -21,6 +21,7 @@ import { ScoreViewer } from '../components/ScoreViewer';
 import { ShareCard } from '../components/ShareCard';
 import { CoachPracticeCard } from '../components/CoachPracticeCard';
 import { StreakNudgeCard } from '../components/StreakNudgeCard';
+import { PurchaseWebView } from '../components/PurchaseWebView';
 import { useHardwareBack } from '../hooks/useHardwareBack';
 import {
   addPracticeMinutes,
@@ -35,6 +36,13 @@ import {
   sharePreviewAccessibilityLabel,
 } from '../services/shareCardShare';
 import { scoreAudioDecision } from '../services/scoreAudioSource';
+// The sheet-music card for a piece with no score we may host but a licensed
+// retailer link (a modern song opened from History — owner 10-01: "pressing the
+// sheet-music card must take the user AUTOMATICALLY TO PURCHASE").
+import { modernSheetCard } from '../services/historyPiece';
+// THE money path: the primary (Sheet Music Direct) link, resolved from the map —
+// never by naming a retailer key here.
+import { primaryPurchaseUrl, secondaryPurchaseUrl } from '../services/purchaseCta';
 
 interface PieceDetailScreenProps {
   piece: DailyChallengePiece;
@@ -62,6 +70,42 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
   // True while the coach is recording/scoring — keeps the outside-play nudge
   // card off the screen during a run (the engine's Nudge is playSafeOnly).
   const [coachActive, setCoachActive] = useState(false);
+
+  /**
+   * The ONE in-app retailer shell on this page (History dead-end sprint, owner
+   * 10-01): the sheet-music card and the coached-practice "hear the melody at the
+   * official sheet music" action both open it, so a piece page has exactly one
+   * WebView and one BACK rule. Null = closed.
+   */
+  const [purchaseWebUrl, setPurchaseWebUrl] = useState<string | null>(null);
+
+  const openInAppPurchase = useCallback((url: string | null | undefined) => {
+    const trimmed = typeof url === 'string' ? url.trim() : '';
+    if (!trimmed) return; // never open an empty page
+    setPurchaseWebUrl(trimmed);
+  }, []);
+
+  const closeInAppPurchase = useCallback(() => setPurchaseWebUrl(null), []);
+
+  /**
+   * The piece's licensed purchase links, resolved in THIS order:
+   *   • `primaryPurchaseUrl` — the PRIMARY retailer (Sheet Music Direct, the
+   *     money path) unless only the backup exists; this is the sheet-music card's
+   *     automatic destination and the coach card's retailer action;
+   *   • `secondaryPurchaseUrl` — the other retailer, shown as the small
+   *     "Try Musicnotes" line ONLY when it is a different page.
+   * Both are the saved list's own URLs: nothing is built or guessed here.
+   */
+  const purchaseUrl = primaryPurchaseUrl(piece.purchaseUrls) ?? null;
+  const secondaryPurchaseLink = secondaryPurchaseUrl(piece.purchaseUrls) ?? null;
+
+  /**
+   * The sheet-music card for a piece with NO curated score we may host but a
+   * licensed link — a modern song opened from History. Null keeps today's honest
+   * "coming soon" state (no card, no dead button).
+   */
+  const sheetCard = modernSheetCard(piece);
+  const sheetCardUrl = sheetCard?.url ?? null;
 
   useEffect(() => {
     if (!showScoreViewer) return;
@@ -182,6 +226,13 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
   // through to the exiting behaviour this exists to prevent.
   // src/services/backExitContract.ts guards the whole class in the tier1 gate.
   useHardwareBack(() => {
+    if (purchaseWebUrl) {
+      // Belt-and-braces: the shell's Modal consumes BACK itself via
+      // onRequestClose (inAppBrowserContract), so this branch is the same
+      // transition if the press ever reaches here first.
+      closeInAppPurchase();
+      return true;
+    }
     if (showScoreViewer) {
       void handleCloseScoreViewer();
       return true;
@@ -276,6 +327,45 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           >
             <Text style={styles.viewSheetText}>🎵 View Sheet Music</Text>
           </TouchableOpacity>
+        ) : sheetCard ? (
+          /* THE sheet-music card (owner 10-01, messages a/b/c). This piece has
+             no score we may host — a modern song — but it was saved WITH the
+             licensed retailer link, so the card carries the song's OWN header
+             (title — official sheet music, then composer/artist · genre) and the
+             WHOLE CARD is one press: no interstitial, no confirmation, straight
+             to the retailer's page for that song inside our app shell. */
+          <TouchableOpacity
+            style={styles.sheetCardBtn}
+            onPress={() => openInAppPurchase(sheetCardUrl)}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={`Open the official sheet music for ${piece.title}`}
+            accessibilityHint="Opens the licensed retailer page for this song"
+          >
+            <Text style={styles.sheetCardTitle}>{sheetCard.title}</Text>
+            {sheetCard.subtitle ? (
+              <Text style={styles.sheetCardSubtitle}>{sheetCard.subtitle}</Text>
+            ) : null}
+            <Text style={styles.sheetCardCta}>
+              Tap to open the official sheet music →
+            </Text>
+            {/* The secondary retailer exists ONLY when it is a different page
+                (owner-approved "Try Musicnotes" secondary CTA). A nested
+                Touchable wins the responder, so this never triggers the card's
+                own press. */}
+            {secondaryPurchaseLink ? (
+              <TouchableOpacity
+                style={styles.sheetCardSecondary}
+                onPress={() => openInAppPurchase(secondaryPurchaseLink)}
+                accessibilityRole="button"
+                accessibilityLabel={`Try Musicnotes for ${piece.title}`}
+              >
+                <Text style={styles.sheetCardSecondaryText}>
+                  🎼 Try Musicnotes
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </TouchableOpacity>
         ) : (
           /* Honest "coming soon" state: piece with no curated sheet yet — no
              broken button, no dead end. */
@@ -305,13 +395,18 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           Lives on the piece screen (not Home): the sheet music, the loop/
           time-stretch player and this coach all belong to the piece in hand.
           The reference melody resolves from the catalog's abc when present,
-          otherwise from the bundled public-domain seeds; a piece with neither
-          gets an honest "coming soon" line instead of a dead button. */}
+          otherwise from the bundled public-domain seeds. A piece with NO melody
+          we may use either says so honestly (nothing to offer) or — when it
+          carries a licensed link, i.e. a modern song — becomes a LIVE card that
+          opens the official page (owner 10-01); we never host a copyrighted
+          melody and never fabricate one. */}
       <CoachPracticeCard
         pieceId={piece.id}
         title={piece.title}
         composer={piece.composer}
         abc={piece.abc}
+        purchaseUrl={purchaseUrl}
+        onOpenPurchase={openInAppPurchase}
         onSessionActiveChange={setCoachActive}
       />
 
@@ -369,6 +464,20 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           onClose={handleCloseScoreViewer}
           audioSource={scoreAudio.source}
           audioLabel={scoreAudio.label}
+        />
+      )}
+
+      {/* The page's ONE in-app retailer shell (owner 10-01): the sheet-music
+          card and the coach's "hear the melody" action both land here, so the
+          browser, its BACK behaviour and the "← Back to NoteSnap" header are one
+          implementation, opened as a full-screen Modal over this page
+          (src/components/PurchaseWebView.tsx — BACK returns to the piece page,
+          never out of the app). */}
+      {purchaseWebUrl && (
+        <PurchaseWebView
+          url={purchaseWebUrl}
+          title={`${piece.title} — official sheet music`}
+          onClose={closeInAppPurchase}
         />
       )}
     </View>
@@ -478,6 +587,46 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     textAlign: 'center',
+  },
+  /** The purchase card a modern song shows instead of "coming soon" — the whole
+   *  card is the CTA to the official sheet music for THIS song. */
+  sheetCardBtn: {
+    flex: 1,
+    backgroundColor: '#0f3460',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#e94560',
+  },
+  sheetCardTitle: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  sheetCardSubtitle: {
+    color: '#c0c0d0',
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  sheetCardCta: {
+    color: '#4ecdc4',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  sheetCardSecondary: {
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1a1a2e',
+    alignItems: 'center',
+  },
+  sheetCardSecondaryText: {
+    color: '#e94560',
+    fontSize: 12,
+    fontWeight: '700',
   },
   shareBtn: {
     flex: 1,

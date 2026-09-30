@@ -235,6 +235,51 @@ export function coachNoReferenceOutcome(input: {
   };
 }
 
+// ─── The reference-melody card's state (History dead-end sprint, owner 10-01) ──
+
+/**
+ * Which reference-melody state the coach card on a piece page must render:
+ *
+ *   'scored'      — the piece HAS a reference melody (catalog abc or a bundled
+ *                   public-domain seed): the record/score flow runs, exactly as
+ *                   today.
+ *   'retailer'    — the piece has NO melody we may use AND a licensed retailer
+ *                   link: a MODERN song. We must never host, cache or fabricate a
+ *                   copyrighted melody (standing owner rule) and we must never
+ *                   seed-match a copyrighted song to a public-domain phrase, so
+ *                   there is nothing to score against — but the page is NOT a
+ *                   dead end (owner 10-01: "the 'Reference melody coming soon'
+ *                   card must be fixed into a LIVE reference melody"). The card
+ *                   tells the truth — we do not host the melody, the licensed
+ *                   page plays it — and its action opens that page.
+ *   'coming-soon' — no melody AND no retailer link: a piece we have not typeset
+ *                   yet (a public-domain score still being prepared). This is the
+ *                   ONE remaining honest dead end, and it is genuinely a dead end
+ *                   — there is no path to offer — so its copy stays unchanged.
+ *
+ * `hasReference` is the coach's own signal (the resolved abc was non-empty), so
+ * this can never disagree with what the record button would use. A blank
+ * `purchaseUrl` is treated as absent: a card must never open an empty page.
+ */
+export type CoachMelodyCardKind = 'scored' | 'retailer' | 'coming-soon';
+
+export function coachMelodyCard(input: {
+  hasReference: boolean;
+  purchaseUrl?: string | null;
+}): { kind: CoachMelodyCardKind } {
+  if (input?.hasReference) return { kind: 'scored' };
+  const url = typeof input?.purchaseUrl === 'string' ? input.purchaseUrl.trim() : '';
+  return { kind: url ? 'retailer' : 'coming-soon' };
+}
+
+/** The live-card copy for a modern song whose melody lives at the retailer. */
+export const COACH_RETAILER_HEADLINE = 'Hear the melody at the official sheet music';
+export const COACH_RETAILER_LINES: readonly string[] = [
+  'We do not host this song\u2019s melody \u2014 the official sheet music page plays it.',
+  'Note-level coaching needs a written melody we own, so there is nothing to score here yet.',
+];
+export const COACH_RETAILER_ACTION = 'Open the official sheet music';
+
 // ─── History view ──────────────────────────────────────────────
 
 export interface CoachHistoryView {

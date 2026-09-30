@@ -32,6 +32,10 @@ import {
   coachRunReducer,
   coachUnavailableOutcome,
   coachNoReferenceOutcome,
+  coachMelodyCard,
+  COACH_RETAILER_ACTION,
+  COACH_RETAILER_HEADLINE,
+  COACH_RETAILER_LINES,
   initialCoachRunState,
   isScorableOutcome,
   scoreCoachRun,
@@ -559,6 +563,80 @@ console.log('\n── coachRun: honest outcomes ──');
     'the no-reference headline says "coming soon" rather than pretending',
   );
   assertEq(MIN_COACH_RUN_SECONDS, 1, 'the minimum scorable take is one second');
+}
+console.log('\n── coachRun: the reference-melody card state (owner 10-01) ──');
+{
+  // A written melody always wins: the record/score flow is untouched.
+  assertEq(
+    coachMelodyCard({ hasReference: true, purchaseUrl: null }).kind,
+    'scored',
+    'a piece WITH a reference melody keeps the scored flow',
+  );
+  assertEq(
+    coachMelodyCard({
+      hasReference: true,
+      purchaseUrl: 'https://example.test/sheet/123',
+    }).kind,
+    'scored',
+    'a reference melody wins even when the piece also carries a retailer link',
+  );
+
+  // No melody + a licensed link (a modern song) → LIVE, not dead text.
+  assertEq(
+    coachMelodyCard({ hasReference: false, purchaseUrl: 'https://example.test/sheet/123' })
+      .kind,
+    'retailer',
+    'no melody BUT a licensed link → the live retailer card (never "coming soon")',
+  );
+  assertEq(
+    coachMelodyCard({ hasReference: false, purchaseUrl: '  https://example.test/x  ' }).kind,
+    'retailer',
+    'a URL with surrounding whitespace is still a real link',
+  );
+
+  // No melody, no link → the one honest remaining dead end, unchanged.
+  assertEq(
+    coachMelodyCard({ hasReference: false, purchaseUrl: null }).kind,
+    'coming-soon',
+    'no melody and no link keeps the honest "Reference melody coming soon" state',
+  );
+  assertEq(
+    coachMelodyCard({ hasReference: false, purchaseUrl: undefined }).kind,
+    'coming-soon',
+    'an absent link is the same as none',
+  );
+  assertEq(
+    coachMelodyCard({ hasReference: false, purchaseUrl: '   ' }).kind,
+    'coming-soon',
+    'a blank link is NOT a link — the card never opens an empty page',
+  );
+
+  // The copy the live card renders: it tells the truth about the melody.
+  assert(
+    COACH_RETAILER_HEADLINE.toLowerCase().includes('official sheet music'),
+    'the live card names where the melody actually is',
+  );
+  assert(
+    !/coming soon/i.test(COACH_RETAILER_HEADLINE),
+    'the live card is NOT the "coming soon" text (the owner’s dead end)',
+  );
+  assert(
+    COACH_RETAILER_LINES.some((l) => /do not host/i.test(l)),
+    'the copy says we do not host the melody — the licensed page plays it',
+  );
+  assert(
+    COACH_RETAILER_LINES.some((l) => /nothing to score/i.test(l)),
+    'the copy never claims note-level coaching for a melody we do not hold',
+  );
+  assert(
+    COACH_RETAILER_ACTION.length > 0 && /official sheet music/i.test(COACH_RETAILER_ACTION),
+    'the live card’s action names the destination',
+  );
+  assertEq(
+    coachNoReferenceOutcome({ abc: '' }).headline,
+    'Reference melody coming soon.',
+    'the honest PD-no-score copy is byte-for-byte unchanged',
+  );
 }
 
 console.log('\n── coachRun: state machine ──');

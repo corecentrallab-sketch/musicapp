@@ -22,6 +22,27 @@ export interface SavedPiece {
    * "Export MIDI" action only ever appears where a real take exists.
    */
   capture?: SavedCaptureTake;
+  /**
+   * ADDITIVE (History dead-end sprint, owner 10-01): the licensed retailer links
+   * a MODERN-song recognition was saved WITH, so the History row can still reach
+   * the sheet music that was on offer when the user recognized it.
+   *
+   * This exists because the row used to carry identity only: the modern-match
+   * retailer URLs were dropped at save time (a modern ISRC is not a catalog piece
+   * id, so `GET /api/pieces/:id` returns nothing and nothing merged), and tapping
+   * the saved row landed on the piece page's honest "🎼 Sheet music coming soon"
+   * — a dead end at the exact moment the user wanted to buy (owner: "pressing the
+   * sheet-music card must take the user AUTOMATICALLY TO PURCHASE").
+   *
+   * Honesty rules — the whole reason this is a SAVED value and not a lookup:
+   *   • present ONLY on rows whose recognition actually carried a retailer URL,
+   *     built by `modernPurchaseUrls()` (never invented, never guessed);
+   *   • never filled in from the catalog — `mergeCatalogIntoDetail` cannot supply
+   *     one (CatalogPieceInfo has no such field) and never clears one;
+   *   • absent/null on public-domain, hum and find-a-piece saves: those rows keep
+   *     today's behaviour, and on every row saved before this change.
+   */
+  purchaseUrls?: PurchaseUrls | null;
 }
 
 // ─── API types ─────────────────────────────────────────────────
@@ -418,4 +439,17 @@ export interface DailyChallengePiece {
   catalog?: string | null;
   /** The date this piece was featured for (YYYY-MM-DD). */
   challengeDate?: string;
+  /**
+   * ADDITIVE (History dead-end sprint, owner 10-01): the licensed retailer links
+   * the piece was saved with, when it came from a MODERN-song recognition.
+   *
+   * The piece page needs them for two surfaces that would otherwise be dead ends:
+   * the sheet-music card (a modern song has no curated score we may host, so the
+   * card becomes the purchase link — owner: "pressing the sheet-music card must
+   * take the user AUTOMATICALLY TO PURCHASE") and the coached-practice card's
+   * reference-melody state (we never host a copyrighted melody; the official page
+   * plays it). Absent on every public-domain / catalog / daily-challenge piece
+   * and on rows saved before this change, which keep their honest states.
+   */
+  purchaseUrls?: PurchaseUrls | null;
 }

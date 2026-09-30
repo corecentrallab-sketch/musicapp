@@ -27,6 +27,7 @@
  */
 import type { DailyChallengePiece, SavedPiece } from '../types';
 import { UNCATEGORISED_GENRE } from './resultGenre';
+import { primaryPurchaseUrl } from './purchaseCta';
 
 /**
  * Genre shown when the saved record carries no genre tag. A legacy History row
@@ -80,6 +81,12 @@ function grade(value: number | null | undefined): number | null {
  * NOT hold a sheet URL. So the honest starting state is "no sheet yet"; the
  * caller follows up with `fetchPieceById` + `mergeCatalogIntoDetail` and the
  * "View Sheet Music" button appears only if the catalog really has a score.
+ *
+ * The ONE thing the saved record may carry beyond identity is `purchaseUrls`
+ * (History dead-end sprint, owner 10-01): the licensed retailer links a modern
+ * recognition was saved with. They are copied through verbatim — this module
+ * never builds, edits or invents one — so the piece page can offer the purchase
+ * instead of a dead "coming soon" card.
  */
 export function savedPieceToDetail(piece: SavedPiece): DailyChallengePiece {
   return {
@@ -90,6 +97,7 @@ export function savedPieceToDetail(piece: SavedPiece): DailyChallengePiece {
     difficulty: HISTORY_DEFAULT_DIFFICULTY,
     difficultyGrade: grade(piece.difficulty),
     description: HISTORY_DETAIL_DESCRIPTION,
+    purchaseUrls: piece.purchaseUrls ?? null,
   };
 }
 
@@ -104,7 +112,12 @@ export function savedPieceToDetail(piece: SavedPiece): DailyChallengePiece {
  *     partial response, and what keeps a null `sheet_music_url`
  *     (`sheet_music_available: false`) from looking like a score;
  *   • a null `info` (offline, unknown id, malformed body) returns the base
- *     untouched — never an error, never a fabricated sheet.
+ *     untouched — never an error, never a fabricated sheet;
+ *   • the catalog can NEITHER supply NOR clear `purchaseUrls` (History dead-end
+ *     sprint, owner 10-01): `CatalogPieceInfo` has no such field at all (the
+ *     catalog's purchase map belongs to fresh recognition responses), and the
+ *     saved map is carried through unconditionally. A merge with a hostile body
+ *     that happens to carry a `purchaseUrls` key cannot overwrite the saved one.
  */
 export function mergeCatalogIntoDetail(
   base: DailyChallengePiece,
@@ -135,5 +148,95 @@ export function mergeCatalogIntoDetail(
     abc,
     isPublicDomain,
     sheetMusicAvailable,
+    // Straight from the SAVED piece — never from the catalog response.
+    purchaseUrls: base.purchaseUrls ?? null,
   };
+}
+
+// ─── The sheet-music card (History dead-end sprint, owner 10-01) ──
+
+/**
+ * The card a piece page shows when the piece has NO curated score we may host
+ * but DOES have a licensed retailer link — i.e. a modern song opened from
+ * History. It replaces the old "🎼 Sheet music coming soon" text, which was a
+ * dead end exactly where the user wanted to buy (owner: "pressing the
+ * sheet-music card must take the user AUTOMATICALLY TO PURCHASE") and, worse,
+ * claimed we were still curating a score for a song we will never host.
+ *
+ * The header is the SONG'S OWN identity — `{title} — official sheet music`, plus
+ * the composer/artist line and the genre when the saved row carries one — so the
+ * user can see which song's sheet music the card is about (owner: "the song's
+ * sheet-music header must be CLEAR in the card").
+ *
+ * `url` is resolved through `primaryPurchaseUrl()` (Sheet Music Direct primary,
+ * Musicnotes backup) — never by naming a retailer key, so the value the card
+ * opens is the same one every other CTA in the app opens.
+ *
+ * Returns null when there is no USABLE purchase URL: the caller then keeps the
+ * honest "coming soon" state instead of an empty, unpressable card. Pure — no
+ * react / react-native / network, so the tier1 gate can pin every branch.
+ */
+export function modernSheetCard(
+  piece: DailyChallengePiece | null | undefined,
+): { title: string; subtitle: string; url: string | null } | null {
+  const url = primaryPurchaseUrl(piece?.purchaseUrls ?? null);
+  if (!url) return null;
+
+  const title = clean(piece?.title);
+  if (!title) return null;
+
+  const composer = clean(piece?.composer);
+  const genre = clean(piece?.genre);
+  const subtitle = [composer, genre].filter((part) => !!part).join(' · ');
+
+  return {
+    title: `${title} — official sheet music`,
+    subtitle,
+    url,
+  };
+}
+
+// ─── History search scope (owner 10-01) ────────────────────────
+
+/**
+ * Fold a query (or a field of a saved row) for matching: lower-case, diacritics
+ * stripped, whitespace collapsed. "Fur Elise" must find "Für Elise" and vice
+ * versa — the user's keyboard has no umlaut and the catalog carries one.
+ */
+export function normalizeHistoryQuery(value: string | null | undefined): string {
+  if (typeof value !== 'string') return '';
+  return value
+    .normalize('NFD')
+    // Combining marks left behind by NFD — the diacritic itself, not the letter.
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Filter the SAVED recognitions by title/composer, in memory (owner 10-01: in
+ * History, looking for a piece must only ever show what the user actually
+ * recognized — never a general catalog/internet search).
+ *
+ *   • an empty/blank query returns the full list, in order (no filtering);
+ *   • every other query is matched as a substring of the normalized title OR
+ *     composer, so "bach" finds the composer and "elise" finds the title;
+ *   • it never touches the network and never invents a row: a non-matching query
+ *     yields an empty list and the screen renders its own honest empty state.
+ */
+export function filterSavedPieces(
+  items: readonly SavedPiece[] | null | undefined,
+  query: string | null | undefined,
+): SavedPiece[] {
+  const list = Array.isArray(items) ? items.slice() : [];
+  const needle = normalizeHistoryQuery(query);
+  if (!needle) return list;
+  return list.filter((item) => {
+    if (!item) return false;
+    return (
+      normalizeHistoryQuery(item.title).includes(needle) ||
+      normalizeHistoryQuery(item.composer).includes(needle)
+    );
+  });
 }
