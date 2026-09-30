@@ -59,11 +59,20 @@ import {
   humFallbackIsInline,
   humMatchToResultResponse,
   noMatchOffersNextStep,
+  CAPTURE_MODES,
+  RETIRED_HUM_ONLY_COPY,
+  captureModesNamed,
+  copyNamesAllCaptureModes,
+  captureCopyIsHonest,
+  humOnlyCopyRetired,
 } from '../src/services/frontDoor';
 import {
+  HUM_CLOSE_MESSAGE,
+  HUM_DEFAULT_NO_MATCH_REASON,
   humOutcome,
   type HumOutcome,
 } from '../src/services/tier1';
+import { HUM_RETRY_CTA, HUM_TO_MODERN_BLURB } from '../src/services/humBridge';
 import { START_FAILURE_COPY } from '../src/services/recognitionRetry';
 import { maskComments } from '../src/services/modalBackContract';
 import type { HumResponse } from '../src/types';
@@ -126,8 +135,9 @@ function copyTests(): void {
   assertEq(heroLabel('hum'), HERO_CTA_HUM, 'hum mode relabels the SAME button');
   const secondaryCta: string = HUM_SECONDARY_CTA;
   assert(
-    /hum it/i.test(secondaryCta) && secondaryCta !== (HERO_CTA_HUM as string),
-    'the hum way in is offered as a labelled SECONDARY affordance, never the primary CTA',
+    copyNamesAllCaptureModes(secondaryCta) &&
+      secondaryCta !== (HERO_CTA_HUM as string),
+    'the hum way in is offered as a labelled SECONDARY affordance naming all three modes, never the primary CTA',
   );
   assert(
     /tap/i.test(heroLabel('hum')),
@@ -870,6 +880,180 @@ function humEntryTests(): void {
   );
 }
 
+// ─── the capture mode is named honestly (RC v28 Test 4b) ─────────
+
+/**
+ * Owner-reported (RC v28 Test 4b, 09-28): "A hum is a hum — a whistle is a
+ * whistle and a sing is a sing." The capture surface ACCEPTS all three, but the
+ * CTA read "Can't play it? Hum it" — so a whistler or a singer was told the
+ * feature is not for them. The copy now names all three modes on every surface
+ * that names the capture mode, and the retired hum-only strings are rejected by
+ * a live scan of the real screens (with mutation probes, so a healthy file is
+ * not the only thing the guard ever sees).
+ */
+function humLabelCopyTests(): void {
+  console.log('\nthe capture mode is named honestly (hum, whistle or sing)');
+
+  // ── the rule ──
+  assertEq(CAPTURE_MODES.length, 3, 'the capture accepts exactly three named modes');
+  assertEq(
+    captureModesNamed('Hum, whistle or sing the melody').length,
+    3,
+    'the rule finds all three accepted modes in honest copy',
+  );
+  assertEq(
+    captureCopyIsHonest("Can't play it? Hum it"),
+    false,
+    'PRE-FIX: the hum-only CTA is dishonest (the reported Test 4b defect)',
+  );
+  assertEq(captureCopyIsHonest('Hum it'), false, 'PRE-FIX: the bare "Hum it" CTA is dishonest');
+  assertEq(
+    captureCopyIsHonest('Humming... tap again to stop & search.'),
+    false,
+    'PRE-FIX: "Humming..." names one mode only',
+  );
+  assertEq(
+    captureCopyIsHonest('hum or whistle a longer, clearer phrase and try again'),
+    false,
+    'PRE-FIX: two of the three modes is still the defect',
+  );
+  assertEq(
+    captureCopyIsHonest('Recording your melody…'),
+    true,
+    'a mode-NEUTRAL state label is honest (it names no mode)',
+  );
+
+  // ── the copy the app ships ──
+  assert(
+    copyNamesAllCaptureModes(HUM_SECONDARY_CTA),
+    `the shared secondary CTA names all three modes: "${HUM_SECONDARY_CTA}"`,
+  );
+  assert(
+    copyNamesAllCaptureModes(HERO_CTA_HUM),
+    `the hero's hum-fallback label names all three: "${HERO_CTA_HUM}"`,
+  );
+  assert(
+    copyNamesAllCaptureModes(HUM_FALLBACK_HINT),
+    `the fallback hint names all three: "${HUM_FALLBACK_HINT}"`,
+  );
+  assert(
+    copyNamesAllCaptureModes(HUM_FALLBACK_PROMPT),
+    `the fallback prompt names all three: "${HUM_FALLBACK_PROMPT}"`,
+  );
+  assert(
+    copyNamesAllCaptureModes(HUM_TO_MODERN_BLURB),
+    `the bridge blurb names all three: "${HUM_TO_MODERN_BLURB}"`,
+  );
+  assert(
+    copyNamesAllCaptureModes(HUM_CLOSE_MESSAGE),
+    `the close-band no-match copy names all three: "${HUM_CLOSE_MESSAGE}"`,
+  );
+  assert(
+    copyNamesAllCaptureModes(HUM_DEFAULT_NO_MATCH_REASON),
+    `the default no-match copy names all three: "${HUM_DEFAULT_NO_MATCH_REASON}"`,
+  );
+  assert(
+    captureCopyIsHonest(HERO_CTA_HUMMING),
+    `the live-capture label is mode-neutral: "${HERO_CTA_HUMMING}"`,
+  );
+  assert(
+    captureCopyIsHonest(HUM_RETRY_CTA),
+    `the retry label is mode-neutral: "${HUM_RETRY_CTA}"`,
+  );
+  for (const retired of RETIRED_HUM_ONLY_COPY) {
+    assert(
+      captureCopyIsHonest(retired) === false,
+      `every retired hum-only string is rejected by the rule: "${retired}"`,
+    );
+  }
+
+  // ── live scan of every surface that names the capture mode ──
+  const surfaces = [
+    'src/screens/HomeScreen.tsx',
+    'src/components/RecognitionResultView.tsx',
+    'src/screens/HumSearchScreen.tsx',
+    'src/components/ModernSongInterstitial.tsx',
+  ];
+  for (const rel of surfaces) {
+    const src = readAppFile(rel);
+    assert(src.length > 4000, `read ${rel} (${src.length} chars)`);
+    assertEq(humOnlyCopyRetired(src), true, `${rel} carries no retired hum-only copy`);
+  }
+
+  const home = readAppFile('src/screens/HomeScreen.tsx');
+  const card = readAppFile('src/components/RecognitionResultView.tsx');
+  const hum = readAppFile('src/screens/HumSearchScreen.tsx');
+  const interstitial = readAppFile('src/components/ModernSongInterstitial.tsx');
+
+  // Home + the result card render the SHARED CTA (whose copy is asserted above).
+  assert(home.indexOf('HUM_SECONDARY_CTA') >= 0, 'Home renders the shared secondary CTA');
+  assert(card.indexOf('HUM_SECONDARY_CTA') >= 0, 'the result card renders the shared secondary CTA');
+
+  // The capture screen's own labels.
+  assert(
+    /hum, whistle or sing the melody/i.test(hum),
+    'the hum screen headline names all three modes',
+  );
+  assert(
+    /hum, whistle or sing the\s+tune/i.test(hum),
+    'the capture screen intro names all three modes',
+  );
+  assert(
+    /hum, whistle or sing a phrase/i.test(hum),
+    'the capture screen idle hint names all three modes',
+  );
+  assert(
+    hum.indexOf('Recording your melody...') >= 0,
+    'the live-recording label is mode-neutral (was "Humming...")',
+  );
+  assert(
+    hum.indexOf('No match for that melody') >= 0,
+    'the no-match title is mode-neutral (was "No match for that hum")',
+  );
+
+  // The modern-song interstitial (the other reported surface).
+  const cta = /Can't play it\?[^<]*/.exec(interstitial);
+  assert(
+    cta !== null && copyNamesAllCaptureModes(cta[0]),
+    `the interstitial hum CTA names all three modes: "${cta ? cta[0].trim() : '(not found)'}"`,
+  );
+  assert(
+    /or hum, whistle or sing the melody to find a free\s+public-domain piece/.test(interstitial),
+    'the interstitial no-modern-match body names all three modes',
+  );
+  assert(
+    interstitial.indexOf('>Hum, whistle or sing</Text>') >= 0,
+    'the no-modern-match button is mode-neutral (was "Hum it")',
+  );
+
+  // ── mutation probes on the REAL sources ──
+  const humOnlyHome = home.split('HUM_SECONDARY_CTA').join('"Can\'t play it? Hum it"');
+  assert(humOnlyHome !== home, 'the Home mutation fixture changed the real source');
+  assertEq(
+    humOnlyCopyRetired(humOnlyHome),
+    false,
+    'MUTATION: the hum-only CTA coming back to Home fails the live scan',
+  );
+
+  const hummedCapture = hum.replace('Recording your melody...', 'Humming...');
+  assert(hummedCapture !== hum, 'the capture-screen mutation fixture changed the real source');
+  assertEq(
+    humOnlyCopyRetired(hummedCapture),
+    false,
+    'MUTATION: the retired "Humming..." capture label coming back fails the live scan',
+  );
+
+  const humOnlyInterstitial = interstitial.replace(
+    '>Hum, whistle or sing</Text>',
+    '>Hum it</Text>',
+  );
+  assertEq(
+    humOnlyCopyRetired(humOnlyInterstitial),
+    false,
+    'MUTATION: the retired "Hum it" interstitial button coming back fails the live scan',
+  );
+}
+
 // ─── run ────────────────────────────────────────────────────────
 
 function main(): void {
@@ -879,6 +1063,7 @@ function main(): void {
   stateTests();
   humResultTests();
   humEntryTests();
+  humLabelCopyTests();
   fixtureTests();
   liveScanTests();
   console.log(`\n${passes} passed, ${failures} failed\n`);

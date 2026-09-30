@@ -274,10 +274,13 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
                 </TouchableOpacity>
               ) : null}
 
-              {/* Retention levers */}
+              {/* Retention levers. The CTA names ALL THREE modes the capture
+                  accepts (owner 09-28, RC v28 Test 4b: "A hum is a hum — a
+                  whistle is a whistle and a sing is a sing"), never a
+                  hum-only label. */}
               <TouchableOpacity style={styles.humBtn} onPress={onHumIt}>
                 <Text style={styles.humBtnText}>
-                  🎤 Can't play it? Hum the melody to find a free public-domain piece
+                  🎤 Can't play it? Hum, whistle or sing the melody to find a free public-domain piece
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -308,12 +311,12 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
           <Text style={styles.cardTitle}>No modern song found</Text>
           <Text style={styles.bodyText}>
             We couldn't identify that as a modern song. Try again closer to the
-            speaker — or hum the melody to find a free public-domain piece you
-            can play now.
+            speaker — or hum, whistle or sing the melody to find a free
+            public-domain piece you can play now.
           </Text>
           <View style={styles.buttonRow}>
             <TouchableOpacity style={styles.secondaryBtn} onPress={onHumIt}>
-              <Text style={styles.secondaryBtnText}>Hum it</Text>
+              <Text style={styles.secondaryBtnText}>Hum, whistle or sing</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.primaryBtn} onPress={onRetry}>
               <Text style={styles.primaryBtnText}>Try Again</Text>

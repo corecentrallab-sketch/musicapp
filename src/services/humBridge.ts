@@ -47,8 +47,12 @@ import {
 
 // ──────────────────────── the no-match card's actions ────────────────────
 
-/** The no-match card's retry label (unchanged — the user can always hum again). */
-export const HUM_RETRY_CTA = 'Hum Again';
+/**
+ * The no-match card's retry label. Mode-neutral (owner 09-28, RC v28 Test 4b):
+ * the capture takes a hum, a whistle OR a sung melody, so the retry may not say
+ * "Hum Again" — a singer is recording a melody, not a hum.
+ */
+export const HUM_RETRY_CTA = 'Record Again';
 
 /** The bridge CTA. Short, actionable, and about the ONE thing this route does:
  *  listen to the song itself rather than to the user's voice. */
@@ -56,10 +60,11 @@ export const HUM_TO_MODERN_CTA = 'Play the song instead';
 
 /** The honest sentence under the bridge CTA. It says what actually happens on
  *  the other side: the recording is identified, and the official sheet music is
- *  linked when we have a match. No overclaim about our own library. */
+ *  linked when we have a match. No overclaim about our own library. The opening
+ *  names all three accepted input modes (RC v28 Test 4b). */
 export const HUM_TO_MODERN_BLURB =
-  "Can't hum it? Play the song out loud and we'll identify the recording — " +
-  'and link the official sheet music if there is a match.';
+  "Can't hum, whistle or sing it? Play the song out loud and we'll identify the " +
+  'recording — and link the official sheet music if there is a match.';
 
 /** The two actions the hum no-match card must offer. */
 export type HumNoMatchActionId = 'retry' | 'find-any-song';

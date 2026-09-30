@@ -44,6 +44,7 @@
     "src/services/captureFeedback.ts",
     "src/services/pdRouting.ts",
     "src/services/reminderTime.ts",
+    "src/services/scoreAudioSource.ts",
     "src/services/abcTranspose.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
@@ -71,6 +72,7 @@
     "scripts/medals.test.ts",
     "scripts/uploadFieldContract.test.ts",
     "scripts/captureFeedback.test.ts",
-    "scripts/reminderTime.test.ts"
+    "scripts/reminderTime.test.ts",
+    "scripts/scoreAudioSource.test.ts"
   ]
 }

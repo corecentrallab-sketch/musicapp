@@ -199,16 +199,16 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
         <TouchableOpacity style={styles.backBtn} onPress={onClose}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Hum it</Text>
+        <Text style={styles.headerTitle}>Hum, whistle or sing</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Text style={styles.heroEmoji}>🎤</Text>
         <Text style={styles.title}>Hum, whistle or sing the melody</Text>
         <Text style={styles.subtitle}>
-          Can't play the audio out loud? No problem — hum the tune you hear in
-          your head and we'll find the piece. It's like recognition, but from
-          your voice.
+          Can't play the audio out loud? No problem — hum, whistle or sing the
+          tune you hear in your head and we'll find the piece. It's like
+          recognition, but from your voice.
         </Text>
 
         {recorder.error && !recorder.isRecording && (
@@ -246,13 +246,14 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
 
         {recorder.isRecording && (
           <Text style={styles.recordingHint}>
-            Humming... tap again to stop & search.
+            Recording your melody... tap again to stop & search.
           </Text>
         )}
         {!recorder.isRecording && stage === 'idle' && (
           <>
             <Text style={styles.recordingHint}>
-              Tap the mic, hum a phrase (8–12s is ideal), then stop.
+              Tap the mic, hum, whistle or sing a phrase (8–12s is ideal), then
+              stop.
             </Text>
             <Text style={styles.idleBetaNote}>
               Library is still growing — try a well-known melody (Für Elise, Ode to Joy).
@@ -281,7 +282,7 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
         {stage === 'no-match' && outcome && (
           <View style={styles.resultCard}>
             <Text style={styles.resultEmoji}>🔍</Text>
-            <Text style={styles.resultTitle}>No match for that hum</Text>
+            <Text style={styles.resultTitle}>No match for that melody</Text>
             <Text style={styles.resultText}>{humNoMatchMessage(outcome)}</Text>
             {hub && <Text style={styles.hintText}>{hub}</Text>}
             <TouchableOpacity style={styles.primaryBtn} onPress={handleRetry}>
