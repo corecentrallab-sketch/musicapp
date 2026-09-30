@@ -42,6 +42,21 @@ import { maskComments } from './modalBackContract';
  *  retailers inside the patterns below, exactly as the backend's scanner allows
  *  itself). */
 export const PURCHASE_CTA_MODULE_PATH = 'src/services/purchaseCta.ts';
+/**
+ * The ONE other module allowed to spell a retailer hostname (owner 10-01).
+ *
+ * Every PURCHASE url the app opens is built by the backend and resolved through
+ * `primaryPurchaseUrl()` — this scanner keeps that true. The Find-a-Piece SEARCH
+ * BOX is the single exception: the backend has no free-text search endpoint (only
+ * `/api/recognize-modern`, which needs audio), so the box builds its own SMD /
+ * Musicnotes *search* links from what the user typed. One module, one attribution
+ * path (tid/affiliateId 67650), pinned by src/services/searchExternalContract.ts —
+ * not a licence to hand-write URLs in screens.
+ */
+export const RETAILER_URL_BUILDER_ALLOWLIST: readonly string[] = [
+  PURCHASE_CTA_MODULE_PATH,
+  'src/services/searchExternal.ts',
+];
 
 // ─── Retailer registry (mirrors the backend's approved set) ─────
 
@@ -209,7 +224,7 @@ function retailerOf(line: string): string | null {
  */
 export function scanSourcesForHardwiredRetailerKey(
   files: readonly { path: string; source: string }[],
-  allow: readonly string[] = [PURCHASE_CTA_MODULE_PATH],
+  allow: readonly string[] = RETAILER_URL_BUILDER_ALLOWLIST,
 ): RetailerCtaOffender[] {
   const allowed = new Set(allow);
   const offenders: RetailerCtaOffender[] = [];
