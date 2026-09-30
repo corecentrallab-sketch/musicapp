@@ -39,7 +39,17 @@ import {
   HUM_TO_MODERN_CTA,
   humStartFailureOutcome,
 } from '../services/humBridge';
-import { saveRecognition } from '../services/storage';
+import { saveRecognition, updateRecognitionCapture } from '../services/storage';
+import { exportCaptureMidiFromRecording } from '../services/captureMidiExport';
+import {
+  MIDI_EXPORT_BUSY_LABEL,
+  MIDI_EXPORT_HINT,
+  MIDI_EXPORT_LABEL,
+} from '../services/midiExport';
+// The detected key of the exported take, as text — "Key: G major" — or null
+// when the take had no detected key (Batch A: the key the .mid was written in
+// is shown, and nothing at all is shown when there was no verdict).
+import { keyCaption } from '../services/keyDetection';
 // A hum/whistle/sing match is identified against our own public-domain melody
 // library, so its category is a fact the app knows — not an invented genre.
 import { PUBLIC_DOMAIN_GENRE } from '../services/resultGenre';
@@ -92,6 +102,14 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [hub, setHub] = useState<string | undefined>(undefined);
   const [showDetail, setShowDetail] = useState<DailyChallengePiece | null>(null);
+  // The take the user just recorded (MIDI export Batch A). Kept as the
+  // recording's own URI: "Export MIDI" serializes THIS take and nothing else.
+  const [takeUri, setTakeUri] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
+  // The key the exported .mid was written in ("Key: G major"), set from the
+  // export outcome's own key and null when the take had none.
+  const [exportKey, setExportKey] = useState<string | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -137,6 +155,9 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
       return;
     }
     const { uri } = stopped;
+    // The take we can export later (MIDI export Batch A).
+    setTakeUri(stopped.uri);
+    setExportNote(null);
     setStage('uploading');
     try {
       const resp = await humToSearch(uri);
@@ -170,6 +191,50 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
     setStage('idle');
     setTimeout(() => handleStart(), 300);
   }, [handleStart]);
+
+  /**
+   * "Export MIDI" (Batch A): the user's own take as a Standard MIDI File. The
+   * recorded clip is decoded through the app's existing capture seam, tracked by
+   * the existing pitch tracker, and written to a .mid that opens in any DAW.
+   * Every outcome is surfaced in the card — no silent dead button, and a take
+   * with no melody says so instead of writing an empty file. On success the take
+   * is stored on the History row so History can export it again later.
+   */
+  const handleExportMidi = useCallback(async () => {
+    if (exporting) return;
+    if (!takeUri) {
+      setExportNote('Record a take first — then we can write it out as MIDI.');
+      return;
+    }
+    setExporting(true);
+    setExportNote(null);
+    setExportKey(null);
+    try {
+      const piece = outcome?.topMatch;
+      const result = await exportCaptureMidiFromRecording({
+        uri: takeUri,
+        title: piece?.title,
+      });
+      setExportNote(result.message);
+      // The key the FILE was written in (the SMF key-signature verdict), or null
+      // when the take was too thin to name one — in which case the card prints
+      // no key line at all.
+      setExportKey(keyCaption(result.key));
+      if (result.status === 'exported' && result.take && piece?.piece_id) {
+        // Keep the take on the saved row so History can export it again
+        // (offline, no re-decode). A missing row is not a failure.
+        await updateRecognitionCapture(piece.piece_id, result.take);
+      }
+    } catch (err) {
+      setExportNote(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not write the MIDI file on this device — please try again.',
+      );
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting, takeUri, outcome]);
 
   // Android hardware BACK (in-place flow — owner bug class 09-23). This screen
   // is not a route and not a modal: its host tab replaces its whole body with it,
@@ -337,6 +402,28 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
             >
               <Text style={styles.primaryBtnText}>View Piece Details</Text>
             </TouchableOpacity>
+            {/* EXPORT MIDI (Batch A, owner backlog b1b8f380 / 33e1e7d4): the
+                user's OWN take as a Standard MIDI File. Always offered on a
+                result card — the take exists as soon as the recording stopped —
+                and the outcome sentence below is the honest state (exported /
+                no melody heard / decoder unavailable). */}
+            <TouchableOpacity
+              style={styles.midiBtn}
+              onPress={handleExportMidi}
+              disabled={exporting || !takeUri}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={MIDI_EXPORT_LABEL}
+            >
+              <Text style={styles.midiBtnText}>
+                {exporting ? MIDI_EXPORT_BUSY_LABEL : MIDI_EXPORT_LABEL}
+              </Text>
+              <Text style={styles.midiBtnHint}>{MIDI_EXPORT_HINT}</Text>
+            </TouchableOpacity>
+            {exportNote && <Text style={styles.hintText}>{exportNote}</Text>}
+            {/* The key the exported .mid was written in — rendered ONLY when a
+                key was detected (the outcome carried one), never a placeholder. */}
+            {exportKey && <Text style={styles.exportKeyText}>{exportKey}</Text>}
             <TouchableOpacity style={styles.secondaryBtn} onPress={onClose}>
               <Text style={styles.secondaryBtnText}>Done</Text>
             </TouchableOpacity>
@@ -590,6 +677,40 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     textAlign: 'center',
     marginTop: 4,
+  },
+  /** The MIDI export action: bordered in the app's teal accent (like the hum →
+   *  modern bridge) so it reads as an added capability, not a second retry. */
+  midiBtn: {
+    backgroundColor: '#0f3460',
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  midiBtnText: {
+    color: '#4ecdc4',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  midiBtnHint: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  /** The detected key of the exported take ("Key: G major") — shown only when
+   *  the take really had one, so it reads as a fact about the file. */
+  exportKeyText: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 6,
   },
   secondaryBtn: {
     marginTop: 10,

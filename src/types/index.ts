@@ -2,6 +2,8 @@
  * Core type definitions for NoteSnap.
  */
 
+import type { SavedCaptureTake } from '../services/midiExport';
+
 /** Represents a recognized piece of music saved to History. */
 export interface SavedPiece {
   id: string;
@@ -13,6 +15,13 @@ export interface SavedPiece {
   genre?: string;
   /** Optional difficulty rating 1-10. */
   difficulty?: number;
+  /**
+   * ADDITIVE (MIDI export Batch A): the user's own captured take, when this row
+   * came from a hum/whistle/sing capture that was exported as MIDI. Absent on
+   * every other row (and on every row saved before Batch A), so the History
+   * "Export MIDI" action only ever appears where a real take exists.
+   */
+  capture?: SavedCaptureTake;
 }
 
 // ─── API types ─────────────────────────────────────────────────

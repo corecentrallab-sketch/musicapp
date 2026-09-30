@@ -45,6 +45,16 @@ import {
 import { PieceDetailScreen } from './PieceDetailScreen';
 import { FindPieceScreen } from './FindPieceScreen';
 import { PracticeWeekScreen } from './PracticeWeekScreen';
+import { exportCaptureMidiFromTake } from '../services/captureMidiExport';
+import {
+  MIDI_EXPORT_BUSY_LABEL,
+  MIDI_EXPORT_LABEL,
+  captureTakeLabel,
+} from '../services/midiExport';
+// The detected key of the row's own take, as text — "Key: C minor" — or null
+// when the take was too thin to name one (Batch A: the key the export writes
+// into the .mid is the key the row shows, and nothing is shown without one).
+import { keyCaption } from '../services/keyDetection';
 import type { DailyChallengePiece, SavedPiece } from '../types';
 
 /** Zeroed streak (engine-derived) used until the first read resolves. */
@@ -79,6 +89,10 @@ export const HistoryScreen: React.FC = () => {
   const [showPracticeWeek, setShowPracticeWeek] = useState(false);
   // Guards the catalog lookup against a stale response (tap A, back, tap B).
   const detailRequestRef = useRef(0);
+  // MIDI export (Batch A): which row is mid-export, and the honest sentence the
+  // finished attempt left behind — shown on that row only.
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const [exportNote, setExportNote] = useState<{ id: string; text: string } | null>(null);
 
   const reload = useCallback(async () => {
     // Streak from the reinforcement engine (practice history) — same number as
@@ -104,6 +118,35 @@ export const HistoryScreen: React.FC = () => {
     await reload();
     setRefreshing(false);
   }, [reload]);
+
+  /**
+   * "Export MIDI" on a capture row (Batch A). The row carries the take that was
+   * derived from the user's own hum/whistle/sing recording, so this needs no
+   * network and no re-decode: encode the stored take, write the .mid, open the
+   * share sheet. Every outcome lands in a sentence on that row.
+   */
+  const handleExportTake = useCallback(
+    async (item: SavedPiece) => {
+      if (exportingId || !item.capture) return;
+      setExportingId(item.id);
+      setExportNote(null);
+      try {
+        const result = await exportCaptureMidiFromTake(item.capture, { title: item.title });
+        setExportNote({ id: item.id, text: result.message });
+      } catch (err) {
+        setExportNote({
+          id: item.id,
+          text:
+            err instanceof Error && err.message
+              ? err.message
+              : 'Could not write the MIDI file on this device — please try again.',
+        });
+      } finally {
+        setExportingId(null);
+      }
+    },
+    [exportingId],
+  );
 
   /**
    * The History streak card's tap (v22). This is the SAME card Home shows (same
@@ -216,6 +259,38 @@ export const HistoryScreen: React.FC = () => {
             {formatSavedDate(item.savedAt)}
           </Text>
         </View>
+        {/* A row saved from a hum/whistle/sing capture carries the user's OWN
+            take — so it can write it out as MIDI (Batch A). Rows without a
+            capture get no button (nothing to export). The take's DETECTED KEY
+            is rendered from that same take, exactly as detected: with no key
+            there is no key line at all (never a placeholder, never a guess). */}
+        {item.capture?.notes?.length ? (
+          <>
+            <Text style={styles.itemTakeLabel} numberOfLines={1}>
+              {captureTakeLabel(item.capture)}
+            </Text>
+            {keyCaption(item.capture?.key) && (
+              <Text style={styles.itemTakeKey} numberOfLines={1}>
+                {keyCaption(item.capture?.key)}
+              </Text>
+            )}
+            <TouchableOpacity
+              style={styles.midiBtn}
+              onPress={() => handleExportTake(item)}
+              disabled={exportingId === item.id}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`${MIDI_EXPORT_LABEL} for ${item.title}`}
+            >
+              <Text style={styles.midiBtnText}>
+                {exportingId === item.id ? MIDI_EXPORT_BUSY_LABEL : MIDI_EXPORT_LABEL}
+              </Text>
+            </TouchableOpacity>
+            {exportNote?.id === item.id && (
+              <Text style={styles.midiNote}>{exportNote.text}</Text>
+            )}
+          </>
+        ) : null}
       </View>
       <TouchableOpacity
         style={styles.removeBtn}
@@ -477,6 +552,42 @@ const styles = StyleSheet.create({
   itemDate: {
     fontSize: 12,
     color: '#a0a0b8',
+  },
+  /** The captured take line on a row that came from a hum/whistle/sing capture. */
+  itemTakeLabel: {
+    fontSize: 12,
+    color: '#4ecdc4',
+    marginTop: 6,
+  },
+  /** The take's detected key ("Key: G major") — rendered only when the take
+   *  really had one, so the row never claims a key it cannot support. */
+  itemTakeKey: {
+    fontSize: 12,
+    color: '#a0a0b8',
+    marginTop: 2,
+  },
+  /** The row's MIDI export action (v29 Batch A) — teal outline, like the app's
+   *  other "extra capability" actions. It presses independently of the card. */
+  midiBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#0f3460',
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    marginTop: 8,
+  },
+  midiBtnText: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  midiNote: {
+    fontSize: 12,
+    color: '#a0a0b8',
+    lineHeight: 17,
+    marginTop: 6,
   },
   removeBtn: {
     width: 32,
