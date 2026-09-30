@@ -45,6 +45,9 @@
     "src/services/pdRouting.ts",
     "src/services/reminderTime.ts",
     "src/services/scoreAudioSource.ts",
+    "src/services/midiExport.ts",
+    "src/services/keyDetection.ts",
+    "src/services/midiExportContract.ts",
     "src/services/abcTranspose.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
@@ -73,6 +76,7 @@
     "scripts/uploadFieldContract.test.ts",
     "scripts/captureFeedback.test.ts",
     "scripts/reminderTime.test.ts",
-    "scripts/scoreAudioSource.test.ts"
+    "scripts/scoreAudioSource.test.ts",
+    "scripts/midiExport.test.ts"
   ]
 }

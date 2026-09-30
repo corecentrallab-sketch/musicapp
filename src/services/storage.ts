@@ -15,6 +15,7 @@ import type {
   WeeklyGoal,
   SavedPiece,
 } from '../types';
+import type { SavedCaptureTake } from './midiExport';
 
 const KEYS = {
   ONBOARDING: '@notesnap/onboarding',
@@ -244,6 +245,28 @@ export async function saveRecognition(piece: SavedPiece): Promise<void> {
       JSON.stringify(history),
     );
   }
+}
+
+/**
+ * Attach the derived capture take to an existing History row (MIDI export
+ * Batch A). Returns false when the row is not in History (e.g. the user removed
+ * it while exporting) — the export itself still succeeded, so callers treat
+ * this as "nothing to store", never as a failure.
+ *
+ * Additive: rows without a take are untouched, and a later write replaces the
+ * take only for the row named here.
+ */
+export async function updateRecognitionCapture(
+  pieceId: string,
+  capture: SavedCaptureTake,
+): Promise<boolean> {
+  if (typeof pieceId !== 'string' || pieceId.length === 0) return false;
+  const history = await getRecognitionHistory();
+  const index = history.findIndex((p) => p.id === pieceId);
+  if (index < 0) return false;
+  history[index] = { ...history[index], capture };
+  await AsyncStorage.setItem(KEYS.RECOGNITION_HISTORY, JSON.stringify(history));
+  return true;
 }
 
 /** Remove a single saved recognition by piece id (History tab). */
