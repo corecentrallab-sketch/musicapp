@@ -520,6 +520,75 @@ export function findPieceIsSearchEntry(source: string): boolean {
   return /onPress=\{handleOpenFindPiece\}/.test(tag);
 }
 
+/**
+ * True when that secondary entry actually OPENS the "Find a piece" screen and the
+ * screen is mounted behind it. `findPieceIsSearchEntry` proves the entry exists
+ * and is styled as a search field; this proves the tap lands somewhere — the
+ * version of the entry that renders but opens nothing is the dead CTA this app
+ * keeps getting bitten by (owner: "NO DEAD AREAS").
+ *
+ * It matters more since the search box gained its EXTERNAL results section
+ * (owner 10-01: internal library + "Official sheet music" retailers), because
+ * that section is reached through this one entry — the front door must not
+ * quietly detach it.
+ */
+export function findPieceOpensScreen(source: string): boolean {
+  const masked = maskComments(source);
+  if (!/import\s*\{[^}]*\bFindPieceScreen\b/.test(masked)) return false;
+  const declaration = masked.indexOf('const handleOpenFindPiece');
+  if (declaration < 0) return false;
+  const body = braceBlockFrom(masked, declaration);
+  if (!/setShowFindPiece\s*\(\s*true\s*\)/.test(body)) return false;
+  // The screen is mounted behind that flag (the `if (showFindPiece) return …`
+  // early-return the screen uses), not merely imported.
+  const mount = /<FindPieceScreen\s/.exec(masked);
+  if (!mount) return false;
+  const flagAt = masked.lastIndexOf('showFindPiece', mount.index);
+  if (flagAt < 0 || mount.index - flagAt > 400) return false;
+  return /onClose=\{\(\) => setShowFindPiece\(false\)\}/.test(masked);
+}
+
+// ────────────── the front door's dev affordance (spec 09-24) ────────────────
+
+/** The style marker of the demo button (the dev-only shortcut on Home). */
+export const DEMO_BUTTON_STYLE = 'styles.demoBtn';
+/** The handler the demo button calls (mock results, no microphone). */
+export const DEMO_HANDLER = 'handleDemo';
+
+/**
+ * True when the demo button is a DEV-ONLY affordance.
+ *
+ * Spec (owner 09-24): "Demo button: dev-only shortcut — hide in production
+ * builds (or keep a tiny dev affordance; owner-facing builds never show it)."
+ * The owner tests the app from the Play closed-test track, so a demo button that
+ * survived into a release bundle would sit right under the ONE hero CTA of an
+ * owner-facing build and hand out mock results. Two things have to hold, and a
+ * half fix fails this contract:
+ *
+ *   1. the button's own render site is gated (`{__DEV__ && …}` immediately
+ *      around it) and there is exactly ONE such button — a second, ungated copy
+ *      is the same defect wearing a different tag;
+ *   2. the handler itself bails out in a production bundle (`if (!__DEV__)`)
+ *      so the mock path cannot run even when something else calls it.
+ */
+export function demoButtonHiddenInProd(source: string): boolean {
+  const masked = maskComments(source);
+  const usages = masked.match(new RegExp(`style=\\{${DEMO_BUTTON_STYLE}\\}`, 'g')) ?? [];
+  if (usages.length !== 1) return false;
+  const at = masked.indexOf(`style={${DEMO_BUTTON_STYLE}}`);
+  const open = masked.lastIndexOf('<TouchableOpacity', at);
+  if (open < 0) return false;
+  // The render gate sits immediately before the button, in the same tag chain.
+  const before = masked.slice(Math.max(0, open - 160), open);
+  if (!/\{\s*__DEV__\s*&&/.test(before)) return false;
+  // …and the handler refuses to do anything outside a dev bundle.
+  const declaration = masked.indexOf(`const ${DEMO_HANDLER}`);
+  if (declaration < 0) return false;
+  const body = braceBlockFrom(masked, declaration);
+  if (!/if\s*\(\s*!\s*__DEV__\s*\)/.test(body)) return false;
+  return true;
+}
+
 // ─────────────────────── the HOME hum entry (owner 09-25, build #3) ─────────
 
 /**

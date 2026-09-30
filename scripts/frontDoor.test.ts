@@ -39,8 +39,12 @@ import {
   HUM_FALLBACK_PROMPT,
   HUM_SECONDARY_CTA,
   RIVAL_MODE_HANDLERS,
+  DEMO_BUTTON_STYLE,
+  DEMO_HANDLER,
+  demoButtonHiddenInProd,
   elementWithMarker,
   findPieceIsSearchEntry,
+  findPieceOpensScreen,
   frontDoorStartFailure,
   hasSingleHeroCta,
   heroAccessibilityLabel,
@@ -1054,6 +1058,203 @@ function humLabelCopyTests(): void {
   );
 }
 
+// ─── the dev affordance + the search entry's landing ────────────
+
+/**
+ * Two things the spec asks for that no pure-logic test can see: the demo button
+ * must never reach an owner-facing (production) build, and the one secondary
+ * "Find a piece" entry must still LAND on the piece search — the search box
+ * gained its external "Official sheet music" results section (owner 10-01), and
+ * that section is reached through this single entry, so a front-door change must
+ * not quietly detach it.
+ *
+ * Both are live scans of the real Home screen with mutation probes on the real
+ * source, so a healthy file is never the only thing the guard ever sees.
+ */
+function devAffordanceTests(): void {
+  console.log('\nthe demo button is a dev-only shortcut');
+
+  const gatedDemo = [
+    '  const handleDemo = useCallback(async () => {',
+    '    // Dev-only.',
+    '    if (!__DEV__) {',
+    '      return;',
+    '    }',
+    '    setShowRecognitionResults(true);',
+    '  }, []);',
+    '          {__DEV__ && !recorder.isRecording && (',
+    '            <TouchableOpacity style={styles.demoBtn} onPress={handleDemo}>',
+    '              <Text style={styles.demoBtnText}>🧪 Try Demo</Text>',
+    '            </TouchableOpacity>',
+    '          )}',
+  ].join('\n');
+  assertEq(demoButtonHiddenInProd(gatedDemo), true, 'the dev-gated shortcut passes');
+  assert(
+    gatedDemo.indexOf(`onPress={${DEMO_HANDLER}}`) >= 0 &&
+      gatedDemo.indexOf(DEMO_BUTTON_STYLE) >= 0,
+    'the fixture is the real demo button shape (gated render + its own handler)',
+  );
+
+  // PRE-FIX shape: the button renders unconditionally, right under the ONE hero
+  // CTA — a mock-result button in an owner-facing build.
+  const unGated = [
+    '  const handleDemo = useCallback(async () => {',
+    '    if (!__DEV__) {',
+    '      return;',
+    '    }',
+    '  }, []);',
+    '          {!recorder.isRecording && (',
+    '            <TouchableOpacity style={styles.demoBtn} onPress={handleDemo}>',
+    '            </TouchableOpacity>',
+    '          )}',
+  ].join('\n');
+  assertEq(
+    demoButtonHiddenInProd(unGated),
+    false,
+    'PRE-FIX: a demo button rendered unconditionally fails the contract',
+  );
+
+  // Half fix: the render is gated but the handler still runs in production.
+  const halfGated = gatedDemo.replace('    if (!__DEV__) {\n      return;\n    }\n', '');
+  assert(halfGated !== gatedDemo, 'the half-fix fixture changed the source');
+  assertEq(
+    demoButtonHiddenInProd(halfGated),
+    false,
+    'a half fix (render gate only, handler still live) is still caught',
+  );
+
+  // A second, ungated copy is the same defect wearing a different tag.
+  const duplicated =
+    gatedDemo +
+    '\n            <TouchableOpacity style={styles.demoBtn} onPress={handleDemo}>';
+  assertEq(
+    demoButtonHiddenInProd(duplicated),
+    false,
+    'PRE-FIX: a second ungated demo button fails the contract',
+  );
+
+  // ── live scan + mutation probes on the REAL Home screen ──
+  const home = readAppFile('src/screens/HomeScreen.tsx');
+  assertEq(
+    demoButtonHiddenInProd(home),
+    true,
+    'the REAL Home screen gates its demo button behind __DEV__ (dev-only shortcut)',
+  );
+
+  const unmastered = home.replace(
+    '{__DEV__ && !recorder.isRecording && (',
+    '{!recorder.isRecording && (',
+  );
+  assert(unmastered !== home, 'the demo-render mutation fixture changed the real source');
+  assertEq(
+    demoButtonHiddenInProd(unmastered),
+    false,
+    'MUTATION: the demo button losing its __DEV__ render gate FAILS the contract',
+  );
+
+  const liveHandler = home.replace(
+    '    if (!__DEV__) {\n      return;\n    }\n',
+    '',
+  );
+  assert(liveHandler !== home, 'the demo-handler mutation fixture changed the real handler');
+  assertEq(
+    demoButtonHiddenInProd(liveHandler),
+    false,
+    'MUTATION: the demo handler running in production (no `!__DEV__` bail-out) FAILS',
+  );
+
+  console.log('\nthe secondary search entry still lands on the piece search');
+
+  assertEq(
+    findPieceOpensScreen(home),
+    true,
+    '"Find a piece" opens FindPieceScreen (the search box keeps its landing)',
+  );
+
+  const detached = home.replace('<FindPieceScreen', '<FindPieceScreenAbsent');
+  assert(detached !== home, 'the mount mutation fixture changed the real source');
+  assertEq(
+    findPieceOpensScreen(detached),
+    false,
+    'MUTATION: a search entry whose screen is not mounted FAILS (the tap opens nothing)',
+  );
+
+  const closedHandler = home.replace(
+    /const handleOpenFindPiece = useCallback\(\(\) => \{\n\s*setShowFindPiece\(true\);\n\s*\}, \[\]\);/,
+    'const handleOpenFindPiece = useCallback(() => {}, []);',
+  );
+  assert(closedHandler !== home, 'the open-handler mutation fixture changed the real handler');
+  assertEq(
+    findPieceOpensScreen(closedHandler),
+    false,
+    'MUTATION: an entry whose handler never sets the flag FAILS (a dead CTA)',
+  );
+
+  // The screen behind that one entry still carries the external retailer results
+  // (owner 10-01, PR #142) — the front door must never drop it.
+  const findPiece = readAppFile('src/screens/FindPieceScreen.tsx');
+  assert(findPiece.length > 4000, `read FindPieceScreen.tsx (${findPiece.length} chars)`);
+  assert(
+    findPiece.indexOf('Official sheet music') >= 0,
+    'FindPieceScreen still renders the "Official sheet music" retailer section',
+  );
+  assert(
+    /from '\.\.\/services\/searchExternal'/.test(findPiece),
+    'FindPieceScreen still resolves those results through the searchExternal service',
+  );
+  const stripped = findPiece.split('Official sheet music').join('Sheet music');
+  assert(stripped !== findPiece, 'the external-section mutation fixture changed the real screen');
+  assert(
+    stripped.indexOf('Official sheet music') < 0,
+    'MUTATION: dropping the retailer section is exactly what this live assert reads',
+  );
+}
+
+// ─── the one-CTA contract on the REAL source ────────────────────
+
+/**
+ * The one-CTA contract is asserted on a fixture above; these are the two defects
+ * a future change would realistically inject into the REAL Home screen — a rival
+ * hero returning, and the search entry being promoted back into a second hero
+ * button. Both must fail the contract on the real source, not just a fixture.
+ */
+function rivalHeroMutationTests(): void {
+  console.log('\nthe one-CTA contract catches a rival hero on the REAL source');
+
+  const home = readAppFile('src/screens/HomeScreen.tsx');
+  const homeBefore = home;
+  assertEq(hasSingleHeroCta(homeBefore), true, 'the real Home screen wires exactly ONE hero CTA');
+  assertEq(humEntryWired(homeBefore), true, 'the real hum entry is the labelled secondary path');
+
+  // Defect 1: the old hum opener restored as a rival button.
+  const rivalHum = home.replace('onPress={handleHumEntry}', 'onPress={handleOpenHumSearch}');
+  assert(rivalHum !== home, 'the rival-hum mutation fixture changed the real source');
+  assertEq(
+    hasSingleHeroCta(rivalHum),
+    false,
+    'MUTATION: a rival hum hero coming back FAILS the one-CTA contract',
+  );
+  assertEq(
+    humEntryWired(rivalHum),
+    false,
+    'MUTATION: the hum path restored as a rival opener FAILS the inline-fallback contract',
+  );
+
+  // Defect 2: a SECOND hero — the search entry promoted back to the hero handler.
+  const twoHeroes = home.replace('onPress={handleOpenFindPiece}', 'onPress={handleHeroTap}');
+  assert(twoHeroes !== home, 'the second-hero mutation fixture changed the real source');
+  assertEq(
+    hasSingleHeroCta(twoHeroes),
+    false,
+    'MUTATION: a second hero CTA added to Home FAILS the one-CTA contract',
+  );
+  assertEq(
+    findPieceIsSearchEntry(twoHeroes),
+    false,
+    'MUTATION: a promoted search entry FAILS the "search field, not a hero" contract',
+  );
+}
+
 // ─── run ────────────────────────────────────────────────────────
 
 function main(): void {
@@ -1066,6 +1267,8 @@ function main(): void {
   humLabelCopyTests();
   fixtureTests();
   liveScanTests();
+  rivalHeroMutationTests();
+  devAffordanceTests();
   console.log(`\n${passes} passed, ${failures} failed\n`);
   process.exit(failures === 0 ? 0 : 1);
 }
