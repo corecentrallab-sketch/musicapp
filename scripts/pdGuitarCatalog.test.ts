@@ -24,7 +24,9 @@ import {
 } from '../src/services/pdGuitarCatalog';
 import {
   APPROVED_SOURCE_HOSTS,
+  ENGRAVING_SOURCE_RE,
   PD_DEATH_YEAR_BASELINE,
+  composerDeathYear,
   R2_SHEET_KEY_PREFIX,
   SHEET_URL_BASE,
   auditGuitarPdCatalog,
@@ -144,6 +146,62 @@ assert(empty.problems.some((p) => /empty/.test(p)), 'MUTATION: an empty batch FA
 assert(
   PD_DEATH_YEAR_BASELINE === 1929,
   `the PD baseline is ${PD_DEATH_YEAR_BASELINE} (published-before-1930 + life+70), same as the classtab gate`,
+);
+
+console.log('\n— IMSLP refusal discipline (audit 2026-10-01: 140 work pages / 739 file blocks, 13 composers) —');
+// Every string below is REAL: the URL survives only as the file's identity on the work page
+// (imslp.org /files/… 502s, and File:/Special: pages are JS-gated — see IMSLP-VERDICT.md).
+// The audit found NO IMSLP guitar/lute file that is at once permissively licensed, provably
+// typeset AND accompanied by an engraving source, so these probes pin the refusals in place:
+// a future session must not loosen the gate to make IMSLP fit.
+const IMSLP_TYPESET_PDF_UNTAGGED = 'https://vmirror.imslp.org/files/imglnks/usimg/2/25/PMLP77285-Carcassi%2C_Matteo_-_op18_La_Hongrois_v2.pdf';
+const IMSLP_ENGRAVING_ZIP_NC = 'https://vmirror.imslp.org/files/imglnks/usimg/7/79/PMLP77285-Matteo-Carcassi-La_Hongroise.zip';
+const IMSLP_IMAGE_LINK = 'https://imslp.org/wiki/Special:ImagefromIndex/688203';
+const IMSLP_WORK_PAGE = 'https://imslp.org/wiki/6_Airs_vari%C3%A9s_d%27une_ex%C3%A9cution_brillante_et_facile,_Op.18_(Carcassi,_Matteo)';
+
+assert(!isApprovedSourceUrl(IMSLP_TYPESET_PDF_UNTAGGED), 'IMSLP mirror URLs are NOT on the approved host list (no host without an audit)');
+assert(!isApprovedSourceUrl('https://imslp.org/wiki/Special:ImagefromIndex/688203'), 'the session-gated IMSLP download route stays refused');
+assert(!isApprovedSourceUrl('https://imslp.org/wiki/Special:ReverseLookup/688203'), 'the IMSLP ReverseLookup route stays refused');
+assert(!ENGRAVING_SOURCE_RE.test(IMSLP_ENGRAVING_ZIP_NC), 'an IMSLP engraving .zip is NOT accepted as typeset proof (the rule is Mutopia .ly only)');
+// The three audit outcomes, fed through the real gate as real-source mutation probes:
+const imslpSilentTypeset = gateGuitarSheet(copy({
+  sourceInfoUrl: IMSLP_WORK_PAGE,
+  sourcePdfUrl: IMSLP_TYPESET_PDF_UNTAGGED,
+  engravingSourceUrl: IMSLP_ENGRAVING_ZIP_NC,
+  licenseLabel: '',
+}));
+assert(
+  imslpSilentTypeset.included === false && imslpSilentTypeset.verdict === 'NO_LICENSE_STATEMENT',
+  `IMSLP typeset upload with no copyright row is REFUSED (${imslpSilentTypeset.reason})`,
+);
+const imslpNcEngraving = gateGuitarSheet(copy({
+  composer: 'Sylvius Leopold Weiss',
+  sourceInfoUrl: 'https://imslp.org/wiki/Lute_Sonata_in_A_major,_WeissSW_12_(Weiss,_Sylvius_Leopold)',
+  sourcePdfUrl: IMSLP_TYPESET_PDF_UNTAGGED,
+  engravingSourceUrl: IMSLP_ENGRAVING_ZIP_NC,
+  licenseLabel: 'Creative Commons Attribution-NonCommercial-ShareAlike 4.0',
+}));
+assert(
+  imslpNcEngraving.included === false && imslpNcEngraving.verdict === 'RESTRICTED',
+  `IMSLP MuseScore/LilyPond engraving beside the PDF is REFUSED when non-commercial (${imslpNcEngraving.reason})`,
+);
+const imslpPdTypesetNoSource = gateGuitarSheet(copy({
+  sourceInfoUrl: 'https://imslp.org/wiki/22_Easy_Pieces,_Op.14_(Carcassi,_Matteo)',
+  sourcePdfUrl: 'https://vmirror.imslp.org/files/imglnks/usimg/0/00/PMLP72661-Carcassi_Op_14_full_score.pdf',
+  engravingSourceUrl: '',
+  licenseLabel: 'Public Domain (dedicated)',
+}));
+assert(
+  imslpPdTypesetNoSource.included === false && /no LilyPond\/engraving source/.test(imslpPdTypesetNoSource.reason),
+  `IMSLP's one Public-Domain-dedicated typeset is still REFUSED without an engraving source (${imslpPdTypesetNoSource.reason})`,
+);
+assert(
+  composerDeathYear('Sylvius Leopold Weiss') === null && composerDeathYear('Mauro Giuliani') === null,
+  'IMSLP lute names are NOT in the audited PD set until a batch that passes the gate adds them',
+);
+assert(
+  isApprovedSourceUrl('https://www.mutopiaproject.org/ftp/x/y.pdf') && APPROVED_SOURCE_HOSTS.length === 1,
+  'the approved source list is still Mutopia-only — IMSLP was NOT added',
 );
 
 console.log(`\n${passes} passed, ${failures} failed`);
