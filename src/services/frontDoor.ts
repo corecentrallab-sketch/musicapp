@@ -43,10 +43,14 @@ import {
 export const HERO_CTA_IDENTIFY = 'Tap to identify';
 /** A live ambient capture. */
 export const HERO_CTA_LISTENING = 'Listening…';
-/** The hum fallback state — the SAME button, after an ambient miss. */
-export const HERO_CTA_HUM = 'Tap to hum it';
-/** A live hum capture. */
-export const HERO_CTA_HUMMING = 'Humming…';
+/**
+ * The hum fallback state — the SAME button, after an ambient miss. It names ALL
+ * THREE input modes the capture accepts (owner 09-28, RC v28 Test 4b: "A hum is
+ * a hum — a whistle is a whistle and a sing is a sing").
+ */
+export const HERO_CTA_HUM = 'Tap to hum, whistle or sing';
+/** A live hum/whistle/sing capture. Says what it records, not which mode. */
+export const HERO_CTA_HUMMING = 'Recording your melody…';
 /** A recognition/hum request is in flight. */
 export const HERO_CTA_BUSY = 'Identifying…';
 
@@ -76,15 +80,18 @@ export const HUM_FALLBACK_PROMPT =
   "Couldn't hear it — hum, whistle or sing the melody";
 /** How the fallback works, in one line (shown while the door is in hum mode). */
 export const HUM_FALLBACK_HINT =
-  'Tap the button and hum a phrase (8–12s), then tap again to find it.';
+  'Tap the button and hum, whistle or sing a phrase (8–12s), then tap again to find it.';
 /** The no-match card's action that hands the user into the hum fallback. */
 export const HUM_FALLBACK_BUTTON = '🎤 Hum, whistle or sing the melody';
 /**
  * The line that LABELS that action as the secondary way in (owner 09-25): the
  * big red button is identify-first, so the card says in words that humming is
  * the alternative — it is not the door's primary action any more.
+ *
+ * All THREE input modes are named (owner 09-28, RC v28 Test 4b): the capture
+ * accepts a hum, a whistle or a sung melody, so the CTA may not say "Hum it".
  */
-export const HUM_SECONDARY_CTA = "Can't play it? Hum it";
+export const HUM_SECONDARY_CTA = "Can't play it? Hum, whistle or sing the melody";
 /** The honest library-size note under the fallback (same as the hum screen's). */
 export const HUM_FALLBACK_LIBRARY_NOTE =
   'Library still growing — try a well-known melody (Für Elise, Ode to Joy).';
@@ -124,6 +131,61 @@ export function homePromiseCopy(instrument: Instrument | null | undefined): stri
 export const FIND_PIECE_ENTRY_LABEL = 'Find a piece — search by title or composer';
 /** The field's placeholder-ish hint, so the row reads as a search box. */
 export const FIND_PIECE_ENTRY_HINT = 'Search by title or composer';
+
+// ─────────────────── the capture mode is named honestly ─────────────────
+
+/**
+ * The three input modes the capture surface ACCEPTS. The owner's rule (RC v28
+ * Test 4b, 09-28): "A hum is a hum — a whistle is a whistle and a sing is a
+ * sing." Copy that names one of these for a surface that takes all three tells a
+ * whistler or a singer the feature is not for them.
+ */
+export const CAPTURE_MODES = ['hum', 'whistle', 'sing'] as const;
+
+/** Which of the three modes a piece of copy names (lower-case word match). */
+export function captureModesNamed(copy: string): string[] {
+  const lower = copy.toLowerCase();
+  return CAPTURE_MODES.filter((mode) => lower.indexOf(mode) >= 0);
+}
+
+/**
+ * True when copy about the capture surface is HONEST: it either names all three
+ * accepted modes, or names NO mode at all (a neutral state label such as
+ * "Recording your melody…" is fine). Naming one or two is the defect — it is
+ * literally the "Can't play it? Hum it" bug.
+ */
+export function copyNamesAllCaptureModes(copy: string): boolean {
+  return captureModesNamed(copy).length === CAPTURE_MODES.length;
+}
+
+/** The honest-copy rule: all three modes, or no mode named. */
+export function captureCopyIsHonest(copy: string): boolean {
+  const named = captureModesNamed(copy).length;
+  return named === 0 || named === CAPTURE_MODES.length;
+}
+
+/**
+ * The retired hum-only copy (RC v28 Test 4b). Any of these reappearing on a
+ * capture surface — a CTA, a state label, a hint, a card title — is the reported
+ * defect coming back, so the tier1 scan rejects every one of them.
+ */
+export const RETIRED_HUM_ONLY_COPY = [
+  "Can't play it? Hum it",
+  'Hum it',
+  'Hum Again',
+  'Humming…',
+  'Humming...',
+  'hum a phrase',
+  'hum the melody',
+  'hum or whistle',
+  'No match for that hum',
+] as const;
+
+/** True when a surface's source carries none of the retired hum-only copy. */
+export function humOnlyCopyRetired(source: string): boolean {
+  const masked = maskComments(source);
+  return RETIRED_HUM_ONLY_COPY.every((retired) => masked.indexOf(retired) < 0);
+}
 
 // ─────────────────────── the hero state machine ───────────────────────
 

@@ -34,6 +34,7 @@ import {
   resolveShareCardPreviewData,
   sharePreviewAccessibilityLabel,
 } from '../services/shareCardShare';
+import { scoreAudioDecision } from '../services/scoreAudioSource';
 
 interface PieceDetailScreenProps {
   piece: DailyChallengePiece;
@@ -189,20 +190,17 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
     return true;
   });
 
-  // Practice audio for the sheet viewer: use curated score audio when the backend
-  // supplies it; otherwise fall back to a bundled public-domain preview so the
-  // loop/time-stretch player is always usable for public-domain scores. The label
-  // stays honest about which one is playing.
+  // Practice audio for the sheet viewer (RC-v28 fix acfb6a57): ONLY the piece's
+  // OWN curated score audio ever plays. There is NO universal fallback — the old
+  // code fell back to a bundled Für Elise preview for ANY public-domain piece, so
+  // Air on the G String's Preview button played a different piece's music. With no
+  // curated audio the viewer shows its honest "practice audio coming soon" hint
+  // instead of a player (never another piece's recording). The decision and its
+  // regression guard live in src/services/scoreAudioSource.ts.
   //
   // Computed here (unconditionally, like every hook above) because the viewer is
   // now an overlay inside the page body below — not a body-replacing early return.
-  const hasCuratedScoreAudio = !!piece.audioUrl;
-  const bundledScoreAudio = require('../../assets/audio/preview-fur-elise.wav');
-  const scoreAudioSource = hasCuratedScoreAudio
-    ? (piece.audioUrl as string)
-    : piece.isPublicDomain !== false
-    ? bundledScoreAudio
-    : null;
+  const scoreAudio = scoreAudioDecision(piece);
 
   const handleShare = useCallback(async () => {
     setSharing(true);
@@ -369,8 +367,8 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           title={piece.title}
           composer={piece.composer}
           onClose={handleCloseScoreViewer}
-          audioSource={scoreAudioSource}
-          audioLabel={hasCuratedScoreAudio ? 'Score audio' : 'Preview'}
+          audioSource={scoreAudio.source}
+          audioLabel={scoreAudio.label}
         />
       )}
     </View>

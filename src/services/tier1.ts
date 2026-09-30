@@ -35,13 +35,13 @@ export const HUM_CLOSE_BAND_MIN = 0.55;
 
 /** No-match copy when the best candidate was near/above the floor. */
 export const HUM_CLOSE_MESSAGE =
-  'We were close — hum or whistle a longer, clearer phrase and try again.';
+  'We were close — hum, whistle or sing a longer, clearer phrase and try again.';
 /** No-match copy when no candidate came close (or the score is unknown). */
 export const HUM_NOT_SURE_MESSAGE =
   "We're not sure — try a more well-known melody (our recognition library is still growing).";
 /** Fallback reason used when the server sent no no_confident_match_reason. */
 export const HUM_DEFAULT_NO_MATCH_REASON =
-  "We couldn't identify that melody — hum or whistle a longer, clearer phrase and try again.";
+  "We couldn't identify that melody — hum, whistle or sing a longer, clearer phrase and try again.";
 
 // ─── /api/hum — validate + normalize ─────────────────────────
 
@@ -147,7 +147,7 @@ export function humPhraseHint(resp: HumResponse): string | undefined {
   if (!resp.contour_stats) return undefined;
   const deltas = resp.contour_stats.deltas;
   if (deltas > 0 && deltas < MIN_HUM_PHRASE_DELTAS) {
-    return "That phrase was quite short — hum or whistle a longer melody for a more confident match.";
+    return "That phrase was quite short — hum, whistle or sing a longer melody for a more confident match.";
   }
   return undefined;
 }
