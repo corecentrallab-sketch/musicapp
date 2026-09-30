@@ -46,6 +46,10 @@ import {
   MIDI_EXPORT_HINT,
   MIDI_EXPORT_LABEL,
 } from '../services/midiExport';
+// The detected key of the exported take, as text — "Key: G major" — or null
+// when the take had no detected key (Batch A: the key the .mid was written in
+// is shown, and nothing at all is shown when there was no verdict).
+import { keyCaption } from '../services/keyDetection';
 // A hum/whistle/sing match is identified against our own public-domain melody
 // library, so its category is a fact the app knows — not an invented genre.
 import { PUBLIC_DOMAIN_GENRE } from '../services/resultGenre';
@@ -103,6 +107,9 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
   const [takeUri, setTakeUri] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
+  // The key the exported .mid was written in ("Key: G major"), set from the
+  // export outcome's own key and null when the take had none.
+  const [exportKey, setExportKey] = useState<string | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -201,6 +208,7 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
     }
     setExporting(true);
     setExportNote(null);
+    setExportKey(null);
     try {
       const piece = outcome?.topMatch;
       const result = await exportCaptureMidiFromRecording({
@@ -208,6 +216,10 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
         title: piece?.title,
       });
       setExportNote(result.message);
+      // The key the FILE was written in (the SMF key-signature verdict), or null
+      // when the take was too thin to name one — in which case the card prints
+      // no key line at all.
+      setExportKey(keyCaption(result.key));
       if (result.status === 'exported' && result.take && piece?.piece_id) {
         // Keep the take on the saved row so History can export it again
         // (offline, no re-decode). A missing row is not a failure.
@@ -409,6 +421,9 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
               <Text style={styles.midiBtnHint}>{MIDI_EXPORT_HINT}</Text>
             </TouchableOpacity>
             {exportNote && <Text style={styles.hintText}>{exportNote}</Text>}
+            {/* The key the exported .mid was written in — rendered ONLY when a
+                key was detected (the outcome carried one), never a placeholder. */}
+            {exportKey && <Text style={styles.exportKeyText}>{exportKey}</Text>}
             <TouchableOpacity style={styles.secondaryBtn} onPress={onClose}>
               <Text style={styles.secondaryBtnText}>Done</Text>
             </TouchableOpacity>
@@ -687,6 +702,15 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     textAlign: 'center',
     marginTop: 4,
+  },
+  /** The detected key of the exported take ("Key: G major") — shown only when
+   *  the take really had one, so it reads as a fact about the file. */
+  exportKeyText: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 6,
   },
   secondaryBtn: {
     marginTop: 10,

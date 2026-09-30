@@ -84,6 +84,16 @@ export interface MidiExportOutcome {
   fileUri?: string;
   /** The take that was written (present only for 'exported'). */
   take?: SavedCaptureTake;
+  /**
+   * The key the written file carries — the same verdict the SMF key-signature
+   * meta event (FF 59 02 sf mi) was written from — or `null` when the take was
+   * too thin to name one. Present only for 'exported'.
+   *
+   * The surfaces turn it into text with keyDetection.keyCaption and render
+   * NOTHING when it is null: a take with no detected key must never show a
+   * placeholder or a guessed key.
+   */
+  key?: KeyDecision | null;
   /** One honest sentence for the user. Never empty. */
   message: string;
 }
@@ -505,11 +515,14 @@ export function midiFileName(title?: string | null): string {
 
 // ─── Outcome copy ───────────────────────────────────────────────
 
+/** The success sentence: the note count the written file really holds. The
+ *  detected key is NOT repeated here — the card renders it from the outcome's
+ *  own `key` (keyDetection.keyCaption), so the key appears exactly once per
+ *  surface and never as a second, possibly drifting, copy of the same text. */
 export function exportedMidiMessage(take: SavedCaptureTake): string {
   const count = take.notes.length;
   const notesLabel = count === 1 ? '1 note' : `${count} notes`;
-  const key = take.key ? ` in ${take.key.label}` : '';
-  return `Exported your take — ${notesLabel}${key}. Open the .mid in any DAW or notation app.`;
+  return `Exported your take — ${notesLabel}. Open the .mid in any DAW or notation app.`;
 }
 
 export const MIDI_NO_MELODY_MESSAGE =
@@ -522,8 +535,11 @@ export const MIDI_FAILED_MESSAGE =
   'Could not write the MIDI file on this device — please try again.';
 
 /**
- * The one-line label for the take on a History row (and nowhere else): the
- * note count always, the key only when the take was rich enough to name one.
+ * The one-line label for the take on a History row: the note count. The DETECTED
+ * KEY is not repeated here either — the row renders its own key caption
+ * (keyDetection.keyCaption on the take the row carries), so the key is printed
+ * once per row, from the take that the export writes into the file.
+ *
  * Returns null for a row with no take, so the UI can hide the whole affordance
  * rather than offer an export that could only fail.
  */
@@ -531,7 +547,7 @@ export function captureTakeLabel(take: SavedCaptureTake | null | undefined): str
   const notes = take?.notes;
   if (!Array.isArray(notes) || notes.length === 0) return null;
   const count = notes.length === 1 ? '1 note' : `${notes.length} notes`;
-  return take?.key ? `Your take · ${count} · ${take.key.label}` : `Your take · ${count}`;
+  return `Your take · ${count}`;
 }
 
 // ─── Internals ──────────────────────────────────────────────────

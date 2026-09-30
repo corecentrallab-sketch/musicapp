@@ -82,6 +82,33 @@ export function keyLabel(tonic: number, mode: KeyMode): string {
   return `${pitchClassName(tonic)} ${mode}`;
 }
 
+/**
+ * The key caption the Batch-A surfaces render for a DETECTED key — "Key: G
+ * major" — or `null` when there was no verdict at all (a take too thin to name
+ * a key) or the verdict is unusable.
+ *
+ * `null` means the screen prints NOTHING: never a placeholder, never a guessed
+ * key. That is the whole point of detectKeyFromHistogram returning null instead
+ * of a confident wrong answer, and it is why this helper takes the decision (or
+ * its absence) rather than a default.
+ *
+ * MIDI export Batch A: this is the ONE place the key the SMF key-signature
+ * (FF 59 02 sf mi) carries is turned into text for the user — the hum result
+ * card renders it from the export outcome, the History row from the take it
+ * carries.
+ */
+export function keyCaption(key: KeyDecision | null | undefined): string | null {
+  if (!key || typeof key !== 'object') return null;
+  const label = typeof key.label === 'string' ? key.label.trim() : '';
+  if (label.length > 0) return `Key: ${label}`;
+  // A verdict without a label is still a real verdict: name it from the same
+  // tonic + mode pair the label is built from (never a different key).
+  const modeIsKnown = key.mode === 'major' || key.mode === 'minor';
+  const tonicIsKnown = typeof key.tonic === 'number' && Number.isFinite(key.tonic);
+  if (!modeIsKnown || !tonicIsKnown) return null;
+  return `Key: ${keyLabel(key.tonic, key.mode)}`;
+}
+
 // ─── Pitch-class vectors ────────────────────────────────────────
 
 /**

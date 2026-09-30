@@ -51,6 +51,10 @@ import {
   MIDI_EXPORT_LABEL,
   captureTakeLabel,
 } from '../services/midiExport';
+// The detected key of the row's own take, as text — "Key: C minor" — or null
+// when the take was too thin to name one (Batch A: the key the export writes
+// into the .mid is the key the row shows, and nothing is shown without one).
+import { keyCaption } from '../services/keyDetection';
 import type { DailyChallengePiece, SavedPiece } from '../types';
 
 /** Zeroed streak (engine-derived) used until the first read resolves. */
@@ -257,14 +261,19 @@ export const HistoryScreen: React.FC = () => {
         </View>
         {/* A row saved from a hum/whistle/sing capture carries the user's OWN
             take — so it can write it out as MIDI (Batch A). Rows without a
-            capture get no button (nothing to export), and the take's key is
-            shown exactly as detected (no key is claimed when there was too
-            little pitch data to name one). */}
+            capture get no button (nothing to export). The take's DETECTED KEY
+            is rendered from that same take, exactly as detected: with no key
+            there is no key line at all (never a placeholder, never a guess). */}
         {item.capture?.notes?.length ? (
           <>
             <Text style={styles.itemTakeLabel} numberOfLines={1}>
               {captureTakeLabel(item.capture)}
             </Text>
+            {keyCaption(item.capture?.key) && (
+              <Text style={styles.itemTakeKey} numberOfLines={1}>
+                {keyCaption(item.capture?.key)}
+              </Text>
+            )}
             <TouchableOpacity
               style={styles.midiBtn}
               onPress={() => handleExportTake(item)}
@@ -549,6 +558,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#4ecdc4',
     marginTop: 6,
+  },
+  /** The take's detected key ("Key: G major") — rendered only when the take
+   *  really had one, so the row never claims a key it cannot support. */
+  itemTakeKey: {
+    fontSize: 12,
+    color: '#a0a0b8',
+    marginTop: 2,
   },
   /** The row's MIDI export action (v29 Batch A) — teal outline, like the app's
    *  other "extra capability" actions. It presses independently of the card. */

@@ -109,11 +109,14 @@ export async function exportCaptureMidiFromTake(
   take: SavedCaptureTake | null | undefined,
   opts: ExportTakeOptions = {},
 ): Promise<MidiExportOutcome> {
-  const key = take?.key ?? null;
   const bytes = encodeMidiFile({
     notes: take?.notes ?? null,
     tempoBpm: take?.tempoBpm,
     title: opts.title,
+    // The take's DETECTED KEY goes INTO the file: with a key the encoder writes
+    // the SMF key-signature meta event (FF 59 02 sf mi), and with none it writes
+    // no key event at all — never a fabricated key.
+    key: take?.key ?? null,
   });
   if (!bytes || !take) {
     return { status: 'no-melody', message: MIDI_NO_MELODY_MESSAGE };
@@ -128,6 +131,9 @@ export async function exportCaptureMidiFromTake(
       status: 'exported',
       fileUri,
       take,
+      // …and the same key comes back OUT to the screen, so the card/row can say
+      // which key the file was written in (and print nothing when there was none).
+      key: take?.key ?? null,
       message: exportedMidiMessage(take),
     };
   } catch (err) {

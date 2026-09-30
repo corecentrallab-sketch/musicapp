@@ -17,11 +17,13 @@
  *   4. the reserved (empty) chord track — Type 1 multi-track from the start;
  *   5. empty input → honest no-export (null, never an empty "success");
  *   6. key detection: Krumhansl–Schmuckler on known tonal examples, thin input
- *      → null, key signatures, and the library-score (ABC) path;
+ *      → null, key signatures, the library-score (ABC) path, and the take's own
+ *      detected key landing in the file's FF 59 02 sf mi bytes;
  *   7. base64 + file naming helpers;
- *   8. LIVE SCAN of the real screens, with mutation probes that must FAIL the
- *      wiring contracts (a guard that only ever sees healthy source proves
- *      nothing).
+ *   8. LIVE SCAN of the real screens AND the device export path, with mutation
+ *      probes that must FAIL the wiring contracts (a guard that only ever sees
+ *      healthy source proves nothing) — including the detected-key threading and
+ *      the key caption on both surfaces.
  *
  * Plain Node, no react-native, no network. Run with: npm run test:tier1
  */
@@ -47,6 +49,7 @@ import {
   detectKeyFromNotes,
   detectKeyFromPitchFrames,
   histogramFromPitchFrames,
+  keyCaption,
   keySignatureFor,
   pitchClassHistogram,
   pitchClassName,
@@ -57,6 +60,8 @@ import {
   humExportConsumesRecordedTake,
   humResultCardOffersMidiExport,
   midiExportSurfacesOutcome,
+  rendersDetectedKey,
+  takeExportThreadsDetectedKey,
 } from '../src/services/midiExportContract';
 import { MIDI_EXPORT_LABEL_IDENTIFIER } from '../src/services/midiExportContract';
 import type { PitchFrame } from '../src/services/pitchDetection';
@@ -243,6 +248,30 @@ function metaEvent(track: RawTrack, type: number): RawEvent | null {
   return track.events.find((e) => e.kind === 'meta' && e.metaType === type) ?? null;
 }
 
+/**
+ * The raw `FF 59 02 sf mi` quartet read straight out of a track's CHUNK BYTES —
+ * not through the parser. The key signature is a claim about the file the user
+ * opens in a DAW, so the bytes are what gets asserted: the sf byte is signed
+ * (a flat key is its two's-complement byte).
+ */
+function rawKeySignatureOfTrack(bytes: Uint8Array, trackIndex: number): number[] | null {
+  let chunkAt = 8 + u32(bytes, 4); // MThd: 4 id + 4 length + 6 data
+  for (let i = 0; i < trackIndex; i++) chunkAt += 8 + u32(bytes, chunkAt + 4);
+  const start = chunkAt + 8;
+  const end = start + u32(bytes, chunkAt + 4);
+  for (let i = start; i + 4 < end; i++) {
+    if (bytes[i] === 0xff && bytes[i + 1] === 0x59 && bytes[i + 2] === 0x02) {
+      return [bytes[i + 3], bytes[i + 4]];
+    }
+  }
+  return null;
+}
+
+/** The conductor track's raw key-signature bytes (track 0). */
+function rawConductorKeySignature(bytes: Uint8Array): number[] | null {
+  return rawKeySignatureOfTrack(bytes, 0);
+}
+
 // ─── fixtures ───────────────────────────────────────────────────
 
 /** A pitch frame at `tSec` with `midi` (null = unvoiced/silence). */
@@ -267,6 +296,19 @@ function twoNoteTake(): PitchFrame[] {
     frame(1.075, null),
     ...heldFrames(1.1, 40, 64.4),
   ];
+}
+
+/**
+ * A C-major fragment whose NOTES carry enough weight (5 notes × 1.0 s ≥ the
+ * key-finder's honesty floor) for the take itself to hold a detected key. The
+ * two-note fixture deliberately yields `key: null` (two notes are not a key),
+ * so it cannot exercise the key path at all.
+ */
+function keyedTakeFrames(): PitchFrame[] {
+  const degrees = [60, 62, 64, 65, 67]; // C D E F G
+  const frames: PitchFrame[] = [];
+  degrees.forEach((midi, index) => frames.push(...heldFrames(index * 1.1, 40, midi)));
+  return frames;
 }
 
 function expectedTicks(seconds: number, tempoBpm: number, division: number): number {
@@ -442,6 +484,14 @@ function realTimingTests(): void {
   assert(keySig !== null, 'a known key writes the SMF key-signature meta event');
   assertEq(keySig!.data?.[0], 0, 'C major writes sf = 0 sharps/flats');
   assertEq(keySig!.data?.[1], 0, 'C major writes mi = 0 (major)');
+  // …and the same verdict is asserted on the RAW BYTES (FF 59 02 sf mi), which
+  // is what a DAW reads: an encoder that wrote the event in the wrong order, or
+  // with a shortened length byte, would still parse through our own reader.
+  assertEq(
+    rawConductorKeySignature(bytes!)?.join(','),
+    '0,0',
+    'the conductor chunk really holds FF 59 02 00 00 for C major',
+  );
 
   const minorBytes = encodeMidiFile({
     notes,
@@ -450,6 +500,11 @@ function realTimingTests(): void {
   const minorKeySig = metaEvent(parseSmf(minorBytes!).tracks[0], 0x59);
   assertEq(minorKeySig!.data?.[0], 3, 'F# minor writes sf = 3 sharps');
   assertEq(minorKeySig!.data?.[1], 1, 'F# minor writes mi = 1 (minor)');
+  assertEq(
+    rawConductorKeySignature(minorBytes!)?.join(','),
+    '3,1',
+    'the raw bytes for F# minor are FF 59 02 03 01 (mi = 1 is the minor flag)',
+  );
 
   const flatBytes = encodeMidiFile({
     notes,
@@ -458,10 +513,20 @@ function realTimingTests(): void {
   const flatKeySig = metaEvent(parseSmf(flatBytes!).tracks[0], 0x59);
   const sf = flatKeySig!.data![0];
   assertEq(sf > 127 ? sf - 256 : sf, -3, 'a flat key writes a negative sf (two’s-complement byte)');
+  assertEq(
+    rawConductorKeySignature(flatBytes!)?.[0],
+    253,
+    'on the wire the flat key is the two’s-complement byte 253 (= −3)',
+  );
 
   // No key known → no key-signature event at all (never a fabricated key).
   const noKey = parseSmf(encodeMidiFile({ notes })!).tracks[0];
   assertEq(metaEvent(noKey, 0x59), null, 'no detected key → no key-signature event');
+  assertEq(
+    rawConductorKeySignature(encodeMidiFile({ notes })!),
+    null,
+    'no detected key → the FF 59 02 quartet is absent from the bytes entirely',
+  );
 
   // Tempo guards: an impossible tempo falls back to the documented default.
   const badTempo = metaEvent(parseSmf(encodeMidiFile({ notes, tempoBpm: 5000 })!).tracks[0], 0x51);
@@ -635,6 +700,51 @@ function keyDetectionTests(): void {
   assertEq(keySignatureFor(11, 'major').sf, 5, 'B major has five sharps');
   assertEq(keySignatureFor(3, 'major').sf, -3, 'E-flat major has three flats');
   assertEq(keySignatureFor(99, 'major').sf, keySignatureFor(3, 'major').sf, 'a tonic outside 0..11 wraps into the octave');
+
+  // ── the caption the Batch-A surfaces render ───────────────────
+  // The key must be shown when there IS one, and NOTHING must be shown when
+  // there is not (never a placeholder, never a guessed key).
+  assertEq(keyCaption(cMajor), 'Key: C major', 'a detected key renders as "Key: C major"');
+  assertEq(keyCaption(aMinor), 'Key: A minor', 'the mode is part of the caption');
+  assertEq(keyCaption(dMinor), 'Key: D minor', 'a minor verdict is never dressed up as major');
+  assertEq(keyCaption(null), null, 'no verdict → no key text at all');
+  assertEq(keyCaption(undefined), null, 'a missing verdict → no key text at all');
+  assertEq(
+    keyCaption({ ...cMajor!, label: '' }),
+    'Key: C major',
+    'a verdict without a label is still named from its own tonic + mode',
+  );
+  assertEq(
+    keyCaption({ tonic: Number.NaN, mode: 'major', correlation: 0, confidence: 0, label: '' }),
+    null,
+    'an unusable verdict (no tonic) renders no caption rather than "Key: ? major"',
+  );
+
+  // ── the take's own key reaches the FILE the user opens ────────
+  // This is the wiring the device path (captureMidiExport.ts) must perform: the
+  // key it holds is handed to the encoder, so the FF 59 bytes are really there.
+  const keyedTake = buildCaptureTake(keyedTakeFrames());
+  assert(keyedTake !== null, 'the C-major fragment produces a take');
+  assert(keyedTake!.notes.length >= 4, `the fixture has enough notes to name a key (${keyedTake!.notes.length})`);
+  assertEq(keyedTake!.key?.label, 'C major', 'the take carries its detected key');
+  const keyedBytes = encodeMidiFile({
+    notes: keyedTake!.notes,
+    tempoBpm: keyedTake!.tempoBpm,
+    title: 'C major fragment',
+    key: keyedTake!.key,
+  });
+  assert(keyedBytes !== null, 'the keyed take encodes');
+  const keyedSig = keySignatureFor(keyedTake!.key!.tonic, keyedTake!.key!.mode);
+  assertEq(
+    rawConductorKeySignature(keyedBytes!)?.join(','),
+    `${keyedSig.sf & 0xff},${keyedSig.mi}`,
+    'the take’s OWN detected key is the FF 59 02 sf mi the file carries',
+  );
+  assertEq(
+    rawConductorKeySignature(encodeMidiFile({ notes: keyedTake!.notes, key: null })!),
+    null,
+    'the same take passed WITHOUT its key writes no key-signature bytes (the drop the guard exists for)',
+  );
 }
 
 // ─── 7. helpers ─────────────────────────────────────────────────
@@ -712,6 +822,11 @@ function listTsFiles(rel: string): string[] {
   );
 }
 
+/** Replace the occurrence of `needle` that starts at `at` (for nth-of-a-kind edits). */
+function replaceOnceAt(source: string, at: number, needle: string, replacement: string): string {
+  return source.slice(0, at) + replacement + source.slice(at + needle.length);
+}
+
 function wiringTests(): void {
   console.log('\nlive scan: the hum result card and the History rows are really wired');
 
@@ -787,6 +902,86 @@ function wiringTests(): void {
     historyRowOffersMidiExport(historyDetached),
     false,
     'MUTATION: a History export that ignores the row’s capture fails the contract',
+  );
+
+  // ── the DETECTED KEY reaches the file AND the screen ──
+  //
+  // The device path (captureMidiExport.ts) imports expo-file-system, so nothing
+  // compiles or runs it under plain Node — its wiring is guarded by a source
+  // contract, exactly like the other device seams (coachCapture). The value the
+  // contract protects is asserted at RUNTIME above (the take's own key → the
+  // FF 59 02 sf mi bytes).
+
+  const capture = readAppFile('src/services/captureMidiExport.ts');
+  assert(capture.length > 2000, `read captureMidiExport.ts (${capture.length} chars)`);
+
+  assertEq(
+    takeExportThreadsDetectedKey(capture),
+    true,
+    'the take export passes the DETECTED key into the encoder AND returns it in the outcome',
+  );
+  assertEq(rendersDetectedKey(hum), true, 'the hum result card renders the detected key');
+  assertEq(rendersDetectedKey(history), true, 'the History capture row renders the detected key');
+
+  // The pre-fix defect itself: the key is computed from the take, handed to
+  // nothing, and the outcome omits it — a file with no key signature and a card
+  // that can never name the key. Both halves must fail the contract.
+  const KEY_FIELD_TEXT = 'key: take?.key ?? null';
+  const firstKeyField = capture.indexOf(KEY_FIELD_TEXT);
+  const secondKeyField = capture.indexOf(KEY_FIELD_TEXT, firstKeyField + 1);
+  assert(
+    firstKeyField >= 0 && secondKeyField > firstKeyField,
+    'the export path carries the key in exactly the two places the guard checks (encoder args + outcome)',
+  );
+  const unusedKey = replaceOnceAt(capture, firstKeyField, KEY_FIELD_TEXT, 'key: null');
+  assertEq(
+    takeExportThreadsDetectedKey(unusedKey),
+    false,
+    'MUTATION: an encoder call that drops the detected key fails the contract (no FF 59 in the file)',
+  );
+  const outcomeWithoutKey = replaceOnceAt(capture, secondKeyField, KEY_FIELD_TEXT, 'key: null');
+  assertEq(
+    takeExportThreadsDetectedKey(outcomeWithoutKey),
+    false,
+    'MUTATION: an outcome that drops the key fails the contract (the screen could never name it)',
+  );
+
+  // MUTATION: removing the key caption from a real surface.
+  const humNoKeyLine = hum.replace(/keyCaption\(/g, 'noKeyCaption(');
+  assert(humNoKeyLine !== hum, 'the hum key-line mutation changed the real source');
+  assertEq(
+    rendersDetectedKey(humNoKeyLine),
+    false,
+    'MUTATION: removing the key line from the hum result card fails the contract',
+  );
+  const historyNoKeyLine = history.replace(/keyCaption\(/g, 'noKeyCaption(');
+  assert(historyNoKeyLine !== history, 'the History key-line mutation changed the real source');
+  assertEq(
+    rendersDetectedKey(historyNoKeyLine),
+    false,
+    'MUTATION: removing the key line from the History row fails the contract',
+  );
+
+  // MUTATION: a HARDCODED key — a guess the take never supported.
+  const guessedKey = history.replace(
+    /keyCaption\(item\.capture\?\.key\)/g,
+    "keyCaption({ tonic: 0, mode: 'major', correlation: 1, confidence: 1, label: 'C major' })",
+  );
+  assert(guessedKey !== history, 'the guessed-key mutation changed the real source');
+  assertEq(
+    rendersDetectedKey(guessedKey),
+    false,
+    'MUTATION: a hardcoded/guessed key caption fails the contract',
+  );
+
+  // MUTATION: an UNCONDITIONAL key line (one that would print for a take with
+  // no detected key — i.e. a placeholder the user would read as a real key).
+  const placeholderKey = hum.replace('{exportKey &&', '{');
+  assert(placeholderKey !== hum, 'the unconditional-key mutation changed the real source');
+  assertEq(
+    rendersDetectedKey(placeholderKey),
+    false,
+    'MUTATION: an unconditional key line fails the contract (a keyless take would print one)',
   );
 
   // ── exactly one SMF writer in the app ──

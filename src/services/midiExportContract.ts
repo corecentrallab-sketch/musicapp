@@ -107,3 +107,68 @@ function blockFrom(masked: string, open: number): string {
   }
   return '';
 }
+
+/** The object literal that starts at/after `open` (or '' when there is none). */
+function objectLiteralAt(masked: string, open: number): string {
+  if (open < 0) return '';
+  return blockFrom(masked, open);
+}
+
+// ─── The detected key reaches the FILE and the SCREEN ───────────
+
+/** The encoder call the device-side take export must make. */
+export const ENCODE_MIDI_CALL = 'encodeMidiFile(';
+/** The exported-outcome status whose object must carry the key back to the UI. */
+export const MIDI_EXPORTED_STATUS_LITERAL = "status: 'exported'";
+/** The key-caption helper the screens render the detected key from. */
+export const KEY_CAPTION_CALL = 'keyCaption(';
+
+/** `key: take?.key ?? null` — the take's own detected key, never anything else. */
+const DETECTED_KEY_FIELD = /\bkey\s*:\s*take\??\.\s*key\b/;
+
+/**
+ * True when the take-export path (services/captureMidiExport.ts) really THREADS
+ * the take's detected key — both halves of it:
+ *
+ *   1. the encodeMidiFile call RECEIVES it, so the SMF key-signature meta event
+ *      (FF 59 02 sf mi) is actually written when a key exists;
+ *   2. the 'exported' outcome CARRIES it, so the surface can name the key.
+ *
+ * This is the guard for the exact defect it exists for: the key is computed
+ * (`take.key`), the encoder supports it (`MidiFileInput.key`), and the value is
+ * nevertheless dropped between them — leaving a file with no key signature and
+ * a card that can never show the key. A green logic test cannot see that: the
+ * device path imports expo-file-system, so nothing compiles or runs it under
+ * plain Node (the coachCapture seam has the same shape).
+ */
+export function takeExportThreadsDetectedKey(source: string): boolean {
+  const masked = maskComments(source);
+  const callAt = masked.indexOf(ENCODE_MIDI_CALL);
+  if (callAt < 0) return false;
+  const encodeArgs = objectLiteralAt(masked, masked.indexOf('{', callAt));
+  if (!DETECTED_KEY_FIELD.test(encodeArgs)) return false;
+
+  const statusAt = masked.indexOf(MIDI_EXPORTED_STATUS_LITERAL);
+  if (statusAt < 0) return false;
+  const outcome = objectLiteralAt(masked, masked.lastIndexOf('{', statusAt));
+  return DETECTED_KEY_FIELD.test(outcome);
+}
+
+/**
+ * True when a surface renders the DETECTED key honestly:
+ *
+ *   • the caption is DERIVED from the detected key the surface holds (its
+ *     `result.key`, its `take.key`, or the capture the History row carries) —
+ *     a hardcoded "Key: C major" would be a guess and fails here;
+ *   • the caption line is CONDITIONAL (`{exportKey && …}` /
+ *     `{keyCaption(…) && …}`), so a take with no detected key shows no key text
+ *     at all rather than a placeholder.
+ */
+export function rendersDetectedKey(source: string): boolean {
+  const masked = maskComments(source);
+  if (masked.indexOf(KEY_CAPTION_CALL) < 0) return false;
+  const derived = /keyCaption\s*\(\s*(?:result\b|take\b|item\??\.capture)/.test(masked);
+  const conditional =
+    /\{\s*(?:exportKey|keyCaption\([^)]*\))\s*&&/.test(masked);
+  return derived && conditional;
+}
