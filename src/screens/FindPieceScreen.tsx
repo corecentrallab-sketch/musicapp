@@ -8,19 +8,39 @@
  * in, and it is also how the sheet-music-ready part of the catalog gets
  * discovered (real curated scores → the piece page → practice).
  *
+ * THE SEARCH BOX NOW RESOLVES TO A MONEY PATH (owner direction 10-01): "the front
+ * page search box should show results for everything in both internal results of
+ * search and external affiliate results for search from notesnap". So while a
+ * non-empty query is active the screen shows TWO result sets:
+ *   • our own public-domain / classical catalog (the free, in-app offer), and
+ *   • an "Official sheet music" section — the licensed retailers, deep-linked
+ *     with the query the user typed (Sheet Music Direct with the affiliate id,
+ *     plus the UX-only Musicnotes CTA), opened in the shared in-app browser shell
+ *     on an explicit tap only.
+ * The section is gated on the QUERY, never on our own results: a song our library
+ * does not hold at all ("Fields of Gold") is exactly the case the money path
+ * exists for, so the zero-match state points straight at it instead of stopping
+ * at "no match" (plan 09-28: "any search in NoteSnap should not be a dead end").
+ *
  * Behaviour:
- *   • empty query → the catalog's own first page (the browse state);
+ *   • empty query → the catalog's own first page (the browse state), no external
+ *     section (nothing to search for);
  *   • ~300 ms debounce per settled query, newest response wins (a slow request
  *     for "fur" can never overwrite the results for "für elise");
- *   • no match  → "No pieces match — try another title or composer";
+ *   • no match  → "No pieces match — try another title or composer" PLUS the
+ *     retailer section with the honest "not in our free library" hint;
  *   • failure   → honest error with a Retry button (never an empty list);
  *   • sheet badge → "🎼 Sheet music" only when the catalog really has a
  *     curated score, otherwise "Coming soon" (no invented links);
  *   • tapping a row opens PieceDetailScreen in place, exactly like History and
- *     the hum flow do, and best-effort fills in the catalog's coach data.
+ *     the hum flow do, and best-effort fills in the catalog's coach data;
+ *   • tapping a retailer card opens that retailer's OWN search page (previews +
+ *     checkout live there) inside our app shell — we host and cache nothing.
  *
- * The logic (parsing, sorting, URL building, row → detail mapping) lives in
- * services/catalogSearch.ts and is unit-tested; this screen is a thin caller.
+ * The logic (parsing, sorting, URL building, row → detail mapping, and the
+ * external-section decision) lives in services/catalogSearch.ts and
+ * services/searchExternal.ts and is unit-tested; this screen is a thin caller.
+ * The wiring itself is guarded by services/searchExternalContract.ts.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -28,6 +48,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  ScrollView,
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
@@ -43,6 +64,12 @@ import {
   sheetBadgeLabel,
   sortPiecesForDisplay,
 } from '../services/catalogSearch';
+import {
+  EXTERNAL_NO_MATCH_HINT,
+  externalSearchSection,
+} from '../services/searchExternal';
+import { SearchExternalSection } from '../components/SearchExternalSection';
+import { PurchaseWebView } from '../components/PurchaseWebView';
 import { mergeCatalogIntoDetail } from '../services/historyPiece';
 import { PieceDetailScreen } from './PieceDetailScreen';
 import { useHardwareBack } from '../hooks/useHardwareBack';
@@ -63,6 +90,9 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
   const [reloadToken, setReloadToken] = useState(0);
   // Full-screen piece page for a tapped row (rendered in place, like History).
   const [showDetail, setShowDetail] = useState<DailyChallengePiece | null>(null);
+  // The licensed retailer the user tapped (opened in the in-app shell). Never
+  // set by anything but a tap — no auto-redirect (owner 08-24).
+  const [retailerUrl, setRetailerUrl] = useState<string | null>(null);
   // Guards against a stale response replacing newer results.
   const searchRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
@@ -121,6 +151,28 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
   const handleClearQuery = useCallback(() => {
     setQuery('');
   }, []);
+
+  /**
+   * Open a retailer card in the in-app browser shell. Tap-driven only: this is
+   * the ONLY writer of `retailerUrl`, so no code path can redirect the user to a
+   * store on its own (the owner's 08-24 no-auto-redirect rule).
+   */
+  const handleOpenRetailer = useCallback((url: string) => {
+    setRetailerUrl(url);
+  }, []);
+
+  const handleCloseRetailer = useCallback(() => {
+    setRetailerUrl(null);
+  }, []);
+
+  /**
+   * The external half of the results — a licensed-retailer search for whatever
+   * the user typed. SIMPLE dependency on the query (and the internal match count,
+   * which only changes the honest subtitle): no request, no debounce, nothing
+   * that can fail, so it is present even when our own catalog timed out or
+   * matched nothing. Empty query → `visible: false` → the section renders nothing.
+   */
+  const external = externalSearchSection(query, pieces.length);
 
   const renderItem = ({ item }: { item: CatalogPiece }) => {
     const meta = [item.composer, item.catalog].filter(
@@ -257,11 +309,17 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
           <Text style={styles.emptyEmoji}>🔍</Text>
           <Text style={styles.emptyTitle}>No match</Text>
           <Text style={styles.emptyText}>{NO_MATCH_MESSAGE}</Text>
+          {/* The no-dead-end line (owner 10-01): a song our free library does not
+              hold still has a money path, and it is right below this text. */}
+          {external.visible ? (
+            <Text style={styles.emptyText}>{EXTERNAL_NO_MATCH_HINT}</Text>
+          ) : null}
         </View>
       ) : null}
 
       {status === 'ready' ? (
         <FlatList
+          style={styles.resultsList}
           data={pieces}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
@@ -274,6 +332,37 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
           }
         />
       ) : null}
+
+      {/* ── EXTERNAL RESULTS — the licensed retailers (owner direction 10-01) ──
+          Rendered whenever the QUERY is non-empty, deliberately OUTSIDE every
+          internal-status branch. That placement is the whole no-dead-end rule:
+          "Fields of Gold" matches nothing in our public-domain library, and that
+          zero-match case is exactly the one this section exists for — so it must
+          survive `empty`, and it stays available while our catalog is still
+          loading or has failed outright. Tap-through only (each card opens the
+          retailer in the shell below); we host and cache nothing. */}
+      {external.visible ? (
+        <ScrollView
+          style={styles.externalWrap}
+          contentContainerStyle={styles.externalContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <SearchExternalSection section={external} onOpen={handleOpenRetailer} />
+        </ScrollView>
+      ) : null}
+
+      {/* The retailer's own search page (previews + checkout), in the shared
+          in-app shell: Modal root, BACK / "← Back to NoteSnap" return HERE, and
+          it only ever opens from a tap. */}
+      <PurchaseWebView
+        url={retailerUrl}
+        title={
+          external.query
+            ? `Official sheet music · ${external.query}`
+            : 'Official sheet music'
+        }
+        onClose={handleCloseRetailer}
+      />
     </View>
   );
 };
@@ -391,6 +480,10 @@ const styles = StyleSheet.create({
   },
 
   // Results
+  resultsList: {
+    flexGrow: 1,
+    flexShrink: 1,
+  },
   listContent: {
     paddingHorizontal: 20,
     paddingTop: 16,
@@ -453,5 +546,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a2e',
     borderWidth: 1,
     borderColor: '#0f3460',
+  },
+
+  // External (licensed-retailer) results — the money path under our own list.
+  // Bounded height + shrink so a long internal list or a short phone screen never
+  // squeezes the cards out of reach; the section scrolls inside its own frame.
+  externalWrap: {
+    flexGrow: 0,
+    flexShrink: 1,
+    maxHeight: 340,
+  },
+  externalContent: {
+    paddingBottom: 20,
   },
 });

@@ -49,6 +49,8 @@
     "src/services/keyDetection.ts",
     "src/services/midiExportContract.ts",
     "src/services/historyDeadEndContract.ts",
+    "src/services/searchExternal.ts",
+    "src/services/searchExternalContract.ts",
     "src/services/abcTranspose.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
@@ -79,6 +81,7 @@
     "scripts/reminderTime.test.ts",
     "scripts/scoreAudioSource.test.ts",
     "scripts/midiExport.test.ts",
-    "scripts/historyDeadEnd.test.ts"
+    "scripts/historyDeadEnd.test.ts",
+    "scripts/searchExternal.test.ts"
   ]
 }
