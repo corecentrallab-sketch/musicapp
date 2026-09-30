@@ -26,7 +26,16 @@ import {
   primaryPurchaseUrl,
   scanSourcesForHardwiredRetailerKey,
 } from "./generate-purchase-urls";
-import { SMD_AFFILIATE_ID, auditSmdAffiliateUrl } from "./affiliate-url-contract";
+import {
+  MUSICNOTES_SEARCH_ORIGIN,
+  MUSICNOTES_SEARCH_PATH,
+  MUSICNOTES_SEARCH_QUERY_PARAM,
+  MUSICNOTES_RETIRED_QUERY_PARAM,
+  MUSICNOTES_RETIRED_SEARCH_PATH,
+  SMD_AFFILIATE_ID,
+  auditMusicnotesSearchUrl,
+  auditSmdAffiliateUrl,
+} from "./affiliate-url-contract";
 import { AFFILIATE_RETAILERS } from "./affiliates";
 
 const TITLE = "Let It Be";
@@ -73,11 +82,25 @@ describe("generatePurchaseUrls — SMD is the primary entry", () => {
 
   test("musicnotes stays as the backup entry (existing behaviour preserved)", () => {
     const urls = generatePurchaseUrls(TITLE, COMPOSER);
+    // The LIVE Musicnotes shape (owner 09-28, RC v28 Test 12 / fc19fe16): path
+    // `/search`, query in `w`. The retired sub-route + `q` shape answered with the
+    // retailer's empty-query "Popular" grid (Für Elise on top) — the wrong sheet.
     expect(urls[BACKUP_PURCHASE_URL_KEY]).toContain(
-      "https://www.musicnotes.com/search/go?q=",
+      `${MUSICNOTES_SEARCH_ORIGIN}${MUSICNOTES_SEARCH_PATH}?${MUSICNOTES_SEARCH_QUERY_PARAM}=`,
     );
     expect(urls[BACKUP_PURCHASE_URL_KEY]).toContain(
       encodeURIComponent(`${TITLE} ${COMPOSER}`),
+    );
+    expect(urls[BACKUP_PURCHASE_URL_KEY]).not.toContain(
+      MUSICNOTES_RETIRED_SEARCH_PATH,
+    );
+    expect(
+      new URL(urls[BACKUP_PURCHASE_URL_KEY]).searchParams.has(
+        MUSICNOTES_RETIRED_QUERY_PARAM,
+      ),
+    ).toBe(false);
+    expect(auditMusicnotesSearchUrl(urls[BACKUP_PURCHASE_URL_KEY]).problems).toEqual(
+      [],
     );
   });
 
