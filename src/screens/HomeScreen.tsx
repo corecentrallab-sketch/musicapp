@@ -89,6 +89,9 @@ import {
 // The Android hardware-BACK handler for Home's own in-place flow (the featured
 // piece view). src/services/backExitContract.ts guards the wiring.
 import { useHardwareBack } from '../hooks/useHardwareBack';
+// The retailer links a modern match arrived with, saved ON the History row
+// (owner 10-01) so the saved row can still open the sheet music it offered.
+import { modernPurchaseUrls } from '../services/purchaseCta';
 import {
   recordPractice,
   getWeeklyGoal,
@@ -570,6 +573,12 @@ export const HomeScreen: React.FC = () => {
             // History genre-less and be filled in by a fallback later. The
             // provider's REAL genre when it sent one (owner request 09-25).
             genre: modernGenreLabel(m),
+            // Save the LICENSED LINKS the match arrived with (owner 10-01): the
+            // saved row used to carry identity only, so tapping it in History
+            // reached nothing and the sheet-music card was a dead end. This is
+            // `null` when the backend supplied no URL — never an invented one,
+            // and never used for a public-domain piece (those saves are above).
+            purchaseUrls: modernPurchaseUrls(m),
           });
           recorder.completeRecording();
           setShowRecognitionResults(false);

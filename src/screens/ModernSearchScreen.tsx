@@ -64,6 +64,9 @@ import {
   type ModernSurfaceState,
 } from '../services/recognitionRetry';
 import type { ModernMatch } from '../types';
+// The retailer links a modern match arrived with, saved ON the History row
+// (owner 10-01) so the saved row can still open the sheet music it offered.
+import { modernPurchaseUrls } from '../services/purchaseCta';
 
 const RECORDING_TIMEOUT_MS = 12000;
 /** Pause between dismissing the interstitial and starting the next capture. */
@@ -242,6 +245,11 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
             // History with no genre would later be filled in by a fallback.
             // The provider's real genre when it sent one (owner 09-25).
             genre: modernGenreLabel(m),
+            // Save the LICENSED LINKS the match arrived with (owner 10-01): the
+            // saved row used to carry identity only, so tapping it in History
+            // reached nothing and the sheet-music card was a dead end. `null`
+            // when the backend supplied no URL — never an invented one.
+            purchaseUrls: modernPurchaseUrls(m),
           });
         }
         setInterstitial({

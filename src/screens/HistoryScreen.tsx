@@ -10,14 +10,21 @@
  * the sheet, the coach and the share card all live there. The row opens from the
  * saved record immediately, then fills in the catalog's curated sheet URL via
  * /api/pieces/:id (see services/historyPiece.ts for the pure mapping).
+ *
+ * SEARCH SCOPE (owner 10-01): the search box in this list header searches the
+ * SAVED RECOGNITIONS ONLY, in memory. It used to open FindPieceScreen — the
+ * general catalog search over every piece we hold, including ones this user never
+ * recognized — which is not what "find the piece I just played" means in History.
+ * Global catalog discovery still lives on Home's own Find-a-piece entry.
  */
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
+  TextInput,
   Alert,
   RefreshControl,
   ActivityIndicator,
@@ -34,6 +41,7 @@ import {
 import { EMPTY_STREAK_SUMMARY, streakLine } from '../services/practiceReinforcementView';
 import { fetchPieceById } from '../services/api';
 import {
+  filterSavedPieces,
   mergeCatalogIntoDetail,
   savedPieceToDetail,
 } from '../services/historyPiece';
@@ -43,7 +51,6 @@ import {
   streakCta,
 } from '../services/homeCards';
 import { PieceDetailScreen } from './PieceDetailScreen';
-import { FindPieceScreen } from './FindPieceScreen';
 import { PracticeWeekScreen } from './PracticeWeekScreen';
 import { exportCaptureMidiFromTake } from '../services/captureMidiExport';
 import {
@@ -79,10 +86,16 @@ export const HistoryScreen: React.FC = () => {
   // Full-screen piece page for a tapped row — the app renders PieceDetailScreen
   // in place (like Home and the hum flow) rather than as a tab route.
   const [showDetail, setShowDetail] = useState<DailyChallengePiece | null>(null);
-  // Catalog search ("Find a piece") opened from the header — the way to reach a
-  // piece you never recognized (you knew its name), which History alone can't
-  // give you.
-  const [showFindPiece, setShowFindPiece] = useState(false);
+  /**
+   * The History search box's query (owner 10-01). It filters the SAVED
+   * recognitions in memory — no network, no catalog — so looking for "the piece I
+   * just played" can only ever surface rows the user actually recognized.
+   */
+  const [query, setQuery] = useState('');
+  // The box lives in the list header; the streak/week exits below focus it so
+  // "practise this week" lands on the same one search surface History always
+  // offers, instead of the old global catalog search.
+  const searchInputRef = useRef<TextInput>(null);
   // Practice-week view (v22): the destination for the streak card once a streak
   // is live — the same screen Home's "📋 This Week" card opens, rendered in place
   // like the app's other full-screen flows.
@@ -154,16 +167,22 @@ export const HistoryScreen: React.FC = () => {
    * too — it used to be a plain View with no onPress at all. The destination
    * comes from the tested mapping in services/homeCards.ts, so the CTA text on
    * the card and the screen it opens can never disagree:
-   *   • 0 days → Find-a-Piece (History's own catalog flow, rendered in place)
+   *   • 0 days → the History search box (start with what you played)
    *   • a live streak → the practice-week view, rendered in place
    */
+  const focusHistorySearch = useCallback(() => {
+    // The box is in the list header, so it exists only once the FlatList is the
+    // rendered body again — focus after this render, never before it.
+    setTimeout(() => searchInputRef.current?.focus(), 0);
+  }, []);
+
   const handleStreakCardTap = useCallback(() => {
     if (historyStreakDestination(streak.currentDays) === 'week') {
       setShowPracticeWeek(true);
       return;
     }
-    setShowFindPiece(true);
-  }, [streak.currentDays]);
+    focusHistorySearch();
+  }, [streak.currentDays, focusHistorySearch]);
 
   const handleRemove = useCallback(
     (piece: SavedPiece) => {
@@ -230,6 +249,17 @@ export const HistoryScreen: React.FC = () => {
     streak.longestDays > 0
       ? `Best: ${streak.longestDays} days`
       : streakLine(streak)?.text ?? 'A coached practice run starts your streak';
+
+  /**
+   * What the list shows: the saved recognitions, narrowed by the search box.
+   * `filterSavedPieces` is pure and in-memory (services/historyPiece.ts) — an
+   * empty query returns the full list, and it can never reach the network or the
+   * catalog, so a History search can only ever surface rows the user saved.
+   */
+  const filteredItems = useMemo(
+    () => filterSavedPieces(items, query),
+    [items, query],
+  );
 
   const renderItem = ({ item }: { item: SavedPiece }) => (
     /* The whole card opens the piece page (fix: the row used to be inert).
@@ -304,15 +334,11 @@ export const HistoryScreen: React.FC = () => {
     </TouchableOpacity>
   );
 
-  // Catalog search opened from the header (rendered in place, like the piece page).
-  if (showFindPiece) {
-    return <FindPieceScreen onClose={() => setShowFindPiece(false)} />;
-  }
-
   // Practice-week view for the streak card (v22). History has no featured piece
-  // to practise, so BOTH of the week view's practice exits go to Find-a-Piece:
-  // that is the one way to start playing from this tab, and it is the same
-  // destination the card itself uses at 0 days.
+  // to practise, so BOTH of the week view's practice exits land on the SAME
+  // surface History always offers — its own search over the saved recognitions
+  // (owner 10-01: one History surface, one rule). They used to open the global
+  // catalog search, which is a different question from "what did I just play".
   if (showPracticeWeek) {
     return (
       <PracticeWeekScreen
@@ -320,9 +346,12 @@ export const HistoryScreen: React.FC = () => {
         featuredTitle={null}
         onPracticeToday={() => {
           setShowPracticeWeek(false);
-          setShowFindPiece(true);
+          focusHistorySearch();
         }}
-        onFindPiece={() => setShowFindPiece(true)}
+        onFindPiece={() => {
+          setShowPracticeWeek(false);
+          focusHistorySearch();
+        }}
       />
     );
   }
@@ -367,26 +396,40 @@ export const HistoryScreen: React.FC = () => {
       </TouchableOpacity>
 
       <FlatList
-        data={items}
+        data={filteredItems}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <View>
-            {/* Catalog search — the way to a piece you knew by name but never
-                recognized, so History isn't a dead end for discovery. */}
-            <TouchableOpacity
-              style={styles.findPieceBtn}
-              onPress={() => setShowFindPiece(true)}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Find a piece by title or composer"
-            >
-              <Text style={styles.findPieceEmoji}>🔎</Text>
-              <Text style={styles.findPieceText}>
-                Find a piece — search the catalog
-              </Text>
-            </TouchableOpacity>
+            {/* Search the SAVED RECOGNITIONS (owner 10-01): in-memory over `items`
+                — no network, no catalog, nothing the user never recognized. */}
+            <View style={styles.searchRow}>
+              <Text style={styles.searchEmoji}>🔎</Text>
+              <TextInput
+                ref={searchInputRef}
+                style={styles.searchInput}
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search saved by title or composer"
+                placeholderTextColor="#707090"
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+                accessibilityLabel="Search your saved recognitions by title or composer"
+              />
+              {query.length > 0 ? (
+                <TouchableOpacity
+                  style={styles.searchClear}
+                  onPress={() => setQuery('')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear the saved-recognition search"
+                  hitSlop={8}
+                >
+                  <Text style={styles.searchClearText}>✕</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
             {items.length > 0 ? (
               <Text style={styles.listHeader}>
                 Saved recognitions ({items.length}) · tap a piece to open it
@@ -395,14 +438,30 @@ export const HistoryScreen: React.FC = () => {
           </View>
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyEmoji}>🔍</Text>
-            <Text style={styles.emptyTitle}>No recognitions yet</Text>
-            <Text style={styles.emptyText}>
-              Tap the mic on the Discover tab to identify a song — every match
-              is saved here.
-            </Text>
-          </View>
+          items.length > 0 ? (
+            /* A query that matches nothing: the honest empty state for THIS
+               search — never a suggestion to go search the wider catalog. */
+            <View style={styles.empty}>
+              <Text style={styles.emptyEmoji}>🔍</Text>
+              <Text style={styles.emptyTitle}>
+                No saved recognitions match
+              </Text>
+              <Text style={styles.emptyText}>
+                Nothing in your saved recognitions matches “{query.trim()}”. Try
+                another title or composer — this box searches only what you have
+                recognized.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Text style={styles.emptyEmoji}>🔍</Text>
+              <Text style={styles.emptyTitle}>No recognitions yet</Text>
+              <Text style={styles.emptyText}>
+                Tap the mic on the Discover tab to identify a song — every match
+                is saved here.
+              </Text>
+            </View>
+          )
         }
         refreshControl={
           <RefreshControl
@@ -487,27 +546,36 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  // Catalog search row in the list header ("Find a piece").
-  findPieceBtn: {
+  // The History search box (saved recognitions only, owner 10-01).
+  searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#0f3460',
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 4,
     paddingHorizontal: 12,
     marginBottom: 14,
     borderWidth: 1,
     borderColor: '#1a1a2e',
   },
-  findPieceEmoji: {
-    fontSize: 18,
-    marginRight: 10,
+  searchEmoji: {
+    fontSize: 16,
+    marginRight: 8,
   },
-  findPieceText: {
+  searchInput: {
     flex: 1,
     color: '#ffffff',
     fontSize: 13,
-    fontWeight: '600',
+    paddingVertical: 10,
+  },
+  searchClear: {
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+  },
+  searchClearText: {
+    color: '#a0a0b8',
+    fontSize: 14,
+    fontWeight: '700',
   },
   itemCard: {
     flexDirection: 'row',

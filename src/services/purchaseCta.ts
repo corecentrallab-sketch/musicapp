@@ -35,7 +35,7 @@
  * Pure by design (no react / react-native / fs) so the tier1 gate compiles it with
  * node_modules absent (see tsconfig.tier1.json).
  */
-import type { ModernMatch } from '../types';
+import type { ModernMatch, PurchaseUrls } from '../types';
 import { maskComments } from './modalBackContract';
 
 /** This module's own repo-relative path (allowed in the scan — it names the
@@ -92,6 +92,28 @@ export function primaryPurchaseUrl(urls: PurchaseUrlMap): string | undefined {
 }
 
 /**
+ * The SECONDARY retailer link for a map — the first approved entry that is not
+ * the primary one — or undefined when there is none, or when the only link
+ * present IS the primary (already the CTA in front of the user).
+ *
+ * This is what lets a surface offer a small "Try Musicnotes" line (owner-approved
+ * UX-only secondary CTA) WITHOUT naming a retailer key: the rule "a secondary
+ * appears only when it differs from what the primary CTA already opens" lives
+ * here, once, instead of in each screen. A map with only the backup link returns
+ * undefined — that link is already the primary CTA, and a duplicate row would be
+ * a second button to the same page.
+ */
+export function secondaryPurchaseUrl(urls: PurchaseUrlMap): string | undefined {
+  if (!urls) return undefined;
+  const primary = primaryPurchaseUrl(urls);
+  for (const key of APPROVED_PURCHASE_URL_KEYS) {
+    const url = usable(urls[key]);
+    if (url && url !== primary) return url;
+  }
+  return undefined;
+}
+
+/**
  * The affiliate CTA for a classical recognition result: the top match's own map
  * first, then the response-level fallback map (the backend may only fill one).
  * Both go through the approved-key order, so the primary wins whenever it exists.
@@ -114,6 +136,35 @@ export function modernPrimaryRetailerUrl(match: ModernMatch | null): string | un
 /** The Musicnotes (secondary CTA) retailer URL the backend returned. */
 export function modernBackupRetailerUrl(match: ModernMatch | null): string | undefined {
   return usable(match?.musicnotesUrl);
+}
+
+/**
+ * The purchase-URL map to SAVE with a modern-song recognition (History dead-end
+ * sprint, owner 10-01).
+ *
+ * A modern match arrives carrying its retailer links (`retailerUrl` primary,
+ * `musicnotesUrl` backup). The History row used to save identity only, so those
+ * links were dropped and the saved row could never reach the sheet music again —
+ * the owner's dead-end report. `SavedPiece.purchaseUrls` is written from HERE, so
+ * the map on the row is built from exactly the URLs the backend supplied:
+ *
+ *   • no URL at all → `null`, never an empty-but-present map (the row then keeps
+ *     today's behaviour: the honest "sheet music coming soon" state);
+ *   • the keys are the approved registry above, so a saved row resolves through
+ *     the same `primaryPurchaseUrl()` order as every other CTA — the primary
+ *     retailer is never skipped for the backup.
+ *
+ * Pure: it only reads the match it is handed. It builds no URL, caches nothing and
+ * knows no hostname.
+ */
+export function modernPurchaseUrls(match: ModernMatch | null): PurchaseUrls | null {
+  const primary = modernPrimaryRetailerUrl(match);
+  const backup = modernBackupRetailerUrl(match);
+  if (!primary && !backup) return null;
+  const urls: PurchaseUrls = {};
+  if (primary) urls[PRIMARY_PURCHASE_URL_KEY] = primary;
+  if (backup) urls[BACKUP_PURCHASE_URL_KEY] = backup;
+  return urls;
 }
 
 // ─── Source-contract scanner ────────────────────────────────────

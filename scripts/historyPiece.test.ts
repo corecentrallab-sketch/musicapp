@@ -15,13 +15,20 @@
  * react-native, same convention as the other scripts/*.test.ts suites.
  */
 import {
+  filterSavedPieces,
   HISTORY_DEFAULT_DIFFICULTY,
   HISTORY_DEFAULT_GENRE,
   HISTORY_DETAIL_DESCRIPTION,
   mergeCatalogIntoDetail,
+  modernSheetCard,
+  normalizeHistoryQuery,
   savedPieceToDetail,
   type CatalogPieceInfo,
 } from '../src/services/historyPiece';
+import {
+  primaryPurchaseUrl,
+  secondaryPurchaseUrl,
+} from '../src/services/purchaseCta';
 import type { DailyChallengePiece, SavedPiece } from '../src/types';
 
 declare const process: { exit(code: number): never };
@@ -259,6 +266,273 @@ function ownerCaseTests(): void {
   );
 }
 
+// ─── the sheet-music card (History dead-end sprint, owner 10-01) ──
+
+/** The two retailer links a modern match arrives with (identifiable values). */
+const PRIMARY_URL = 'https://example.test/sheet/primary-123';
+const BACKUP_URL = 'https://example.test/sheet/backup-456';
+
+/** A modern-song History row, saved WITH the links its match carried. */
+const SAVED_MODERN: SavedPiece = {
+  id: 'GBAYE0601499',
+  title: 'Fields of Gold',
+  composer: 'Sting',
+  savedAt: '2026-10-01T09:00:00.000Z',
+  genre: 'Pop',
+  purchaseUrls: {
+    sheetmusicdirect: PRIMARY_URL,
+    musicnotes: BACKUP_URL,
+  },
+};
+
+function sheetCardTests(): void {
+  console.log('\nthe sheet-music card a saved modern song shows');
+
+  // The owner's dead end: a row with no links keeps the honest coming-soon text
+  // (the screen renders it when this returns null).
+  assertEq(
+    modernSheetCard(savedPieceToDetail({ ...SAVED_FUR_ELISE })),
+    null,
+    'no purchaseUrls → null (the honest "coming soon" state is kept)',
+  );
+  assertEq(
+    modernSheetCard(savedPieceToDetail({ ...SAVED_FUR_ELISE, purchaseUrls: null })),
+    null,
+    'an explicit null map → null',
+  );
+  assertEq(
+    modernSheetCard(
+      savedPieceToDetail({
+        ...SAVED_FUR_ELISE,
+        purchaseUrls: { sheetmusicdirect: '   ', musicnotes: '' },
+      }),
+    ),
+    null,
+    'blank URLs are not links — the card is never rendered empty',
+  );
+
+  // The card itself: the song's OWN header, and the money-path URL.
+  const detail = savedPieceToDetail(SAVED_MODERN);
+  const card = modernSheetCard(detail);
+  assert(card !== null, 'a saved modern row renders a card');
+  assertEq(
+    card?.title,
+    'Fields of Gold — official sheet music',
+    'the card header names the song’s own official sheet music',
+  );
+  assertEq(
+    card?.subtitle,
+    'Sting · Pop',
+    'the subtitle carries the composer/artist and the genre when present',
+  );
+  assertEq(card?.url, PRIMARY_URL, 'the card opens the PRIMARY retailer link');
+  assertEq(
+    primaryPurchaseUrl(detail.purchaseUrls),
+    PRIMARY_URL,
+    'the card’s URL is the app’s one primary-URL rule',
+  );
+  assertEq(
+    secondaryPurchaseUrl(detail.purchaseUrls),
+    BACKUP_URL,
+    'the secondary line resolves to the OTHER retailer (a different page)',
+  );
+
+  // Only the backup exists → it IS the card's link, and there is no duplicate
+  // secondary line pointing at the same page.
+  const backupOnly = savedPieceToDetail({
+    ...SAVED_MODERN,
+    purchaseUrls: { musicnotes: BACKUP_URL },
+  });
+  assertEq(modernSheetCard(backupOnly)?.url, BACKUP_URL, 'backup-only rows still open a real page');
+  assertEq(
+    secondaryPurchaseUrl(backupOnly.purchaseUrls),
+    undefined,
+    'no secondary line when the only link is already the card’s own destination',
+  );
+
+  // The genre on the card is the SAVED row's genre; a legacy row with none is
+  // labelled with the app's honest default rather than an invented real genre.
+  const noGenre = modernSheetCard(
+    savedPieceToDetail({ ...SAVED_MODERN, genre: undefined }),
+  );
+  assertEq(
+    noGenre?.subtitle,
+    `Sting · ${HISTORY_DEFAULT_GENRE}`,
+    'no saved genre → the app’s default label, never an invented real genre',
+  );
+  assert(
+    !/Classical|Pop/.test(noGenre?.subtitle ?? ''),
+    'the card never invents a genre for a modern song',
+  );
+
+  // A row with a catalog piece id whose catalog record has no score: the card
+  // must not appear out of nothing.
+  assertEq(
+    modernSheetCard(
+      mergeCatalogIntoDetail(savedPieceToDetail(SAVED_FUR_ELISE), CATALOG_FUR_ELISE),
+    ),
+    null,
+    'a PD piece with no curated score keeps its honest state (no purchase card)',
+  );
+}
+
+// ─── the saved links survive the round trip ────────────────────
+
+function purchaseRoundTripTests(): void {
+  console.log('\nthe saved purchase links survive the row → page → catalog merge');
+
+  const saved = SAVED_MODERN;
+  const detail = savedPieceToDetail(saved);
+  assertEq(
+    detail.purchaseUrls?.sheetmusicdirect,
+    PRIMARY_URL,
+    'savedPieceToDetail carries the primary link',
+  );
+  assertEq(
+    detail.purchaseUrls?.musicnotes,
+    BACKUP_URL,
+    'savedPieceToDetail carries the backup link',
+  );
+
+  // A catalog response for the SAME id (a modern ISRC is not a catalog piece, so
+  // in practice the lookup returns nothing — this is the defensive half).
+  const merged = mergeCatalogIntoDetail(detail, {
+    sheetMusicUrl: null,
+    difficultyLabel: 'Advanced',
+    isPublicDomain: false,
+    sheetMusicAvailable: false,
+  });
+  assertEq(
+    merged.purchaseUrls?.sheetmusicdirect,
+    PRIMARY_URL,
+    'the catalog merge NEVER clears the saved links',
+  );
+  assertEq(merged.sheetMusicUrl, undefined, 'the merge still adds no invented score');
+  const card = modernSheetCard(merged);
+  assertEq(
+    card?.url,
+    PRIMARY_URL,
+    'the card still opens the saved retailer after the merge',
+  );
+
+  // A hostile response carrying its own map must not overwrite the saved one.
+  const hostile = mergeCatalogIntoDetail(detail, {
+    purchaseUrls: { sheetmusicdirect: 'https://example.test/hostile' },
+  } as unknown as CatalogPieceInfo);
+  assertEq(
+    hostile.purchaseUrls?.sheetmusicdirect,
+    PRIMARY_URL,
+    'a catalog body cannot overwrite the saved links (the catalog has no such field)',
+  );
+
+  // A legacy row (saved before this change) has no map and gains none.
+  const legacy = savedPieceToDetail(SAVED_FUR_ELISE);
+  assertEq(legacy.purchaseUrls, null, 'a legacy row gets no links — today’s behaviour is kept');
+  assertEq(
+    mergeCatalogIntoDetail(legacy, CATALOG_WITH_SHEET).purchaseUrls,
+    null,
+    'the merge cannot supply links either',
+  );
+}
+
+// ─── History search scope (owner 10-01) ────────────────────────
+
+const SEARCH_ITEMS: SavedPiece[] = [
+  {
+    id: 'a',
+    title: 'Bagatelle in A Minor (Für Elise)',
+    composer: 'Ludwig van Beethoven',
+    savedAt: '2026-09-16T09:12:00.000Z',
+  },
+  {
+    id: 'b',
+    title: 'Fields of Gold',
+    composer: 'Sting',
+    savedAt: '2026-10-01T09:00:00.000Z',
+  },
+  {
+    id: 'c',
+    title: 'Italian Concerto in F Major',
+    composer: 'Johann Sebastian Bach',
+    savedAt: '2026-09-18T08:00:00.000Z',
+  },
+];
+
+function historyFilterTests(): void {
+  console.log('\nHistory search filters the SAVED recognitions, in memory');
+
+  assertEq(
+    filterSavedPieces(SEARCH_ITEMS, '').length,
+    3,
+    'an empty query shows the full saved list',
+  );
+  assertEq(
+    filterSavedPieces(SEARCH_ITEMS, '   ').length,
+    3,
+    'a whitespace-only query is treated as empty',
+  );
+  assertEq(filterSavedPieces(null, 'bach').length, 0, 'a missing list filters to nothing (no throw)');
+  assertEq(
+    filterSavedPieces(undefined, '').length,
+    0,
+    'an undefined list is the honest empty result',
+  );
+
+  assertEq(
+    filterSavedPieces(SEARCH_ITEMS, 'gold').map((p) => p.id).join(','),
+    'b',
+    'a title match returns exactly that saved row',
+  );
+  assertEq(
+    filterSavedPieces(SEARCH_ITEMS, 'sting').map((p) => p.id).join(','),
+    'b',
+    'a composer match returns that row',
+  );
+  assertEq(
+    filterSavedPieces(SEARCH_ITEMS, 'BACH').map((p) => p.id).join(','),
+    'c',
+    'matching is case-insensitive',
+  );
+  // The diacritic rule: the user's keyboard has no umlaut, the catalog does.
+  assertEq(
+    filterSavedPieces(SEARCH_ITEMS, 'fur elise').map((p) => p.id).join(','),
+    'a',
+    'an ASCII query finds a diacritic title (Für Elise)',
+  );
+  assertEq(
+    filterSavedPieces(SEARCH_ITEMS, 'für').map((p) => p.id).join(','),
+    'a',
+    'the diacritic query finds the same row',
+  );
+  assertEq(
+    filterSavedPieces(SEARCH_ITEMS, 'beethoven').map((p) => p.id).join(','),
+    'a',
+    'a composer surname matches',
+  );
+  assertEq(
+    filterSavedPieces(SEARCH_ITEMS, 'moonlight').length,
+    0,
+    'a piece the user never recognized matches NOTHING — History is not a catalog search',
+  );
+  assertEq(
+    filterSavedPieces(SEARCH_ITEMS, 'concerto').map((p) => p.id).join(','),
+    'c',
+    'a partial title still matches (substring, not exact)',
+  );
+
+  const first = filterSavedPieces(SEARCH_ITEMS, '');
+  assert(first !== SEARCH_ITEMS, 'the filter returns a new list (never the caller’s array)');
+  assertEq(
+    SEARCH_ITEMS.length,
+    3,
+    'the filter never mutates the loaded saved list',
+  );
+
+  assertEq(normalizeHistoryQuery('  Für   ELISE '), 'fur elise', 'the normalizer folds case, diacritics and spacing');
+  assertEq(normalizeHistoryQuery(null), '', 'a null query normalizes to empty');
+  assertEq(normalizeHistoryQuery(undefined), '', 'an undefined query normalizes to empty');
+}
+
 // ─── run ────────────────────────────────────────────────────────
 
 function main(): void {
@@ -266,6 +540,9 @@ function main(): void {
   savedToDetailTests();
   mergeTests();
   ownerCaseTests();
+  sheetCardTests();
+  purchaseRoundTripTests();
+  historyFilterTests();
   console.log(`\n${passes} passed, ${failures} failed\n`);
   process.exit(failures === 0 ? 0 : 1);
 }

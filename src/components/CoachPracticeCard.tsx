@@ -16,14 +16,23 @@
  *  - A score is shown ONLY when one was measured. When the take could not be
  *    decoded (no on-device/decoder path in this build) or nothing was heard, the
  *    card shows the reason and keeps the accuracy row hidden.
- *  - A piece with no reference melody gets an honest "coming soon" line instead
- *    of a record button that could only ever fail.
+ *  - A piece with no reference melody gets either an honest "coming soon" line
+ *    (nothing to offer) or, when the piece carries a licensed retailer link (a
+ *    modern song), a LIVE card that opens that retailer page — never a record
+ *    button that could only ever fail, and never a melody we host.
  */
 import React, { useEffect, useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useCoachRun } from '../hooks/useCoachRun';
 import { resolvePieceAbc } from '../services/pieceAbc';
-import { coachNoReferenceOutcome, MIN_COACH_RUN_SECONDS } from '../services/coachRun';
+import {
+  COACH_RETAILER_ACTION,
+  COACH_RETAILER_HEADLINE,
+  COACH_RETAILER_LINES,
+  coachMelodyCard,
+  coachNoReferenceOutcome,
+  MIN_COACH_RUN_SECONDS,
+} from '../services/coachRun';
 import { buildReinforcementMoment } from '../services/practiceReinforcementView';
 import { ReinforcementMomentCard } from './ReinforcementMomentCard';
 import type { SamplesProvider } from '../services/coachCapture';
@@ -38,6 +47,21 @@ interface CoachPracticeCardProps {
   abc?: string | null;
   /** Optional tempo override (otherwise the ABC's Q:, then 100 bpm). */
   tempoBpm?: number;
+  /**
+   * The licensed retailer link the piece was saved with (a modern song), when
+   * the recognition carried one. With NO reference melody this is what turns the
+   * old dead "Reference melody coming soon" text into a LIVE card that opens the
+   * page which actually plays the melody (owner 10-01). It is never a melody we
+   * host — we host no copyrighted melody, ever.
+   */
+  purchaseUrl?: string | null;
+  /**
+   * Opens `purchaseUrl` in the piece page's ONE in-app browser shell (the same
+   * Modal the sheet-music card uses), so a piece page has exactly one WebView and
+   * one BACK rule. Required for the retailer state to be reachable; without it the
+   * card keeps its honest text rather than showing a button that cannot open.
+   */
+  onOpenPurchase?: (url: string) => void;
   /** Inject a different capture path (tests / a future in-app decoder). */
   samplesProvider?: SamplesProvider;
   /**
@@ -54,6 +78,8 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
   composer,
   abc,
   tempoBpm,
+  purchaseUrl,
+  onOpenPurchase,
   samplesProvider,
   onSessionActiveChange,
 }) => {
@@ -80,6 +106,19 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
   );
 
   const tempoLabel = `${outcome?.tempoBpm ?? noReference.tempoBpm} bpm`;
+
+  /**
+   * Which reference-melody state this card is in — decided in ONE pure place
+   * (services/coachRun.ts `coachMelodyCard`) so the branch order is pinned by the
+   * tier1 gate instead of remembered here:
+   *   • a written melody → the record/score flow (unchanged);
+   *   • no melody but a licensed link (a modern song) → the LIVE retailer card;
+   *   • neither → the honest "coming soon" text (unchanged).
+   */
+  const melody = coachMelodyCard({
+    hasReference: coach.hasReference,
+    purchaseUrl,
+  });
 
   const isRecording = phase === 'recording';
   const isProcessing = phase === 'processing';
@@ -119,14 +158,43 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
         {title}
       </Text>
       <Text style={styles.subLine}>
-        {resolved.source === 'seed'
+        {melody.kind === 'retailer'
+          ? 'Reference melody: the official sheet music page plays it.'
+          : resolved.source === 'seed'
           ? `Reference melody: ${resolved.seed?.title ?? 'public-domain phrase'} (practice phrase)`
           : resolved.source === 'piece'
           ? 'Reference melody: from the catalog'
           : 'We score your take against the written melody.'}
       </Text>
 
-      {!coach.hasReference ? (
+      {melody.kind === 'retailer' ? (
+        /* A modern song: we hold no melody we may host (copyright), so the card
+           offers the LICENSED page that does play it — a live action where the
+           old card had dead text. It never claims a score can be given, and it
+           opens the SAME in-app shell the sheet-music card on this page uses
+           (one WebView, one BACK rule per piece page). */
+        <View style={styles.comingSoon}>
+          <Text style={styles.comingSoonTitle}>{COACH_RETAILER_HEADLINE}</Text>
+          {COACH_RETAILER_LINES.map((line) => (
+            <Text key={line} style={styles.comingSoonText}>
+              {line}
+            </Text>
+          ))}
+          <TouchableOpacity
+            style={styles.officialBtn}
+            onPress={() => {
+              if (purchaseUrl) onOpenPurchase?.(purchaseUrl);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`${COACH_RETAILER_ACTION} for ${title}`}
+          >
+            <Text style={styles.officialBtnText}>🎼 {COACH_RETAILER_ACTION}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : melody.kind === 'coming-soon' ? (
+        /* No melody AND no licensed link: a piece we have not typeset yet. The
+           one honest remaining dead end — there is no path to offer, so the text
+           stays exactly as it was. */
         <View style={styles.comingSoon}>
           <Text style={styles.comingSoonTitle}>{noReference.headline}</Text>
           {noReference.lines.map((line) => (
@@ -427,6 +495,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     marginBottom: 2,
+  },
+  /** The live retailer action on the reference-melody card (a modern song). */
+  officialBtn: {
+    backgroundColor: '#0f3460',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e94560',
+  },
+  officialBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   footnote: {
     color: '#6f6f88',
