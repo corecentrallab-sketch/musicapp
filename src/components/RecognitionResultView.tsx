@@ -719,12 +719,12 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
                     {midiExport.exporting ? MIDI_EXPORT_BUSY_LABEL : MIDI_EXPORT_LABEL}
                   </Text>
                 </TouchableOpacity>
-                {midiExport.keyLine ? (
+                {midiExport.keyLine && (
                   <Text style={styles.midiKeyText}>{midiExport.keyLine}</Text>
-                ) : null}
-                {midiExport.note ? (
+                )}
+                {midiExport.note && (
                   <Text style={styles.midiNoteText}>{midiExport.note}</Text>
-                ) : null}
+                )}
               </View>
             ) : null}
 

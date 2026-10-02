@@ -59,11 +59,15 @@ import {
   historyRowOffersMidiExport,
   humExportConsumesRecordedTake,
   humResultCardOffersMidiExport,
+  humTakeReachesSurface,
   midiExportSurfacesOutcome,
   rendersDetectedKey,
   takeExportThreadsDetectedKey,
 } from '../src/services/midiExportContract';
-import { MIDI_EXPORT_LABEL_IDENTIFIER } from '../src/services/midiExportContract';
+import {
+  MIDI_EXPORT_LABEL_IDENTIFIER,
+  RESULT_SURFACE_PATH,
+} from '../src/services/midiExportContract';
 import type { PitchFrame } from '../src/services/pitchDetection';
 
 declare const process: { exit(code: number): never; cwd(): string };
@@ -828,11 +832,13 @@ function replaceOnceAt(source: string, at: number, needle: string, replacement: 
 }
 
 function wiringTests(): void {
-  console.log('\nlive scan: the hum result card and the History rows are really wired');
+  console.log('\nlive scan: the hum take reaches the shared result surface, and is really wired');
 
   const hum = readAppFile('src/screens/HumSearchScreen.tsx');
+  const surface = readAppFile(RESULT_SURFACE_PATH);
   const history = readAppFile('src/screens/HistoryScreen.tsx');
   assert(hum.length > 3000, `read HumSearchScreen.tsx (${hum.length} chars)`);
+  assert(surface.length > 3000, `read ${RESULT_SURFACE_PATH} (${surface.length} chars)`);
   assert(history.length > 3000, `read HistoryScreen.tsx (${history.length} chars)`);
 
   // The copy the scan expects the screens to render from the constant.
@@ -844,37 +850,70 @@ function wiringTests(): void {
     'the scan pins the label IDENTIFIER the screens must use',
   );
 
-  assertEq(humResultCardOffersMidiExport(hum), true, 'the hum RESULT card offers the export affordance');
+  // BUNDLE A: the hum result is the ONE shared surface, so the affordance and the
+  // take that feeds it live in two files — the contract is checked as a PAIR.
+  assertEq(
+    humTakeReachesSurface(hum, surface),
+    true,
+    'the hum screen hands the take it just recorded to the shared result surface',
+  );
+  assertEq(humResultCardOffersMidiExport(surface), true, 'the shared result surface renders the export affordance from that contract');
   assertEq(humExportConsumesRecordedTake(hum), true, 'the hum export consumes the recording the user just made');
-  assertEq(midiExportSurfacesOutcome(hum), true, 'the hum card renders the export outcome sentence');
+  assertEq(
+    midiExportSurfacesOutcome(hum, surface),
+    true,
+    'the hum export’s outcome sentence is rendered (the caller owns it, the surface shows it)',
+  );
   assertEq(historyRowOffersMidiExport(history), true, 'a History row with a capture exports THAT capture');
   assertEq(midiExportSurfacesOutcome(history), true, 'the History row renders its export outcome sentence');
   assert(history.indexOf('captureTakeLabel(') >= 0, 'the History row labels the take (notes + detected key)');
 
   // ── mutation probes on the REAL source ──
 
-  const noLabel = hum.replace(/MIDI_EXPORT_LABEL/g, 'EXPORT');
-  assert(noLabel !== hum, 'the label mutation changed the real source');
+  const noLabel = surface.replace(/MIDI_EXPORT_LABEL/g, 'EXPORT');
+  assert(noLabel !== surface, 'the label mutation changed the real source');
   assertEq(
     humResultCardOffersMidiExport(noLabel),
     false,
-    'MUTATION: dropping the tested label from the result card fails the contract',
+    'MUTATION: dropping the tested label from the export button fails the contract',
   );
 
-  const deadButton = hum.replace(
-    /onPress=\{handleExportMidi\}/,
+  const deadButton = surface.replace(
+    /onPress=\{midiExport\.onExport\}/,
     'onPress={() => {}}',
   );
-  assert(deadButton !== hum, 'the dead-button mutation changed the real source');
+  assert(deadButton !== surface, 'the dead-button mutation changed the real source');
   assertEq(
     humResultCardOffersMidiExport(deadButton),
     false,
-    'MUTATION: a result-card button that no longer exports fails the contract',
+    'MUTATION: an export button detached from the caller’s handler fails the contract',
   );
   assertEq(
-    humExportConsumesRecordedTake(deadButton),
+    humTakeReachesSurface(hum, deadButton),
     true,
-    'the take-URI contract still passes (it is about the data, not the handler name)',
+    'the take-handoff contract still passes (it is about the data, not the handler name)',
+  );
+
+  // MUTATION: the button rendered with NO take — a control that can only fail.
+  const alwaysShown = surface.replace(
+    '{midiExport && midiExport.takeUri ? (',
+    '{midiExport ? (',
+  );
+  assert(alwaysShown !== surface, 'the ungated-button mutation changed the real source');
+  assertEq(
+    humResultCardOffersMidiExport(alwaysShown),
+    false,
+    'MUTATION: rendering the export button with no take fails the contract',
+  );
+
+  // MUTATION: the caller stops handing its take to the surface (the take travels
+  // nowhere, so the export could only write some other audio or nothing).
+  const noTakeHandoff = hum.replace(/\n\s*takeUri,\n(\s*)exporting,/, '\n$1exporting,');
+  assert(noTakeHandoff !== hum, 'the dropped-handoff mutation changed the real source');
+  assertEq(
+    humTakeReachesSurface(noTakeHandoff, surface),
+    false,
+    'MUTATION: a caller that no longer hands its take down fails the contract',
   );
 
   const otherAudio = hum.replace('setTakeUri(stopped.uri)', "setTakeUri('asset://preview.wav')");
@@ -884,11 +923,16 @@ function wiringTests(): void {
     false,
     'MUTATION: exporting anything but the recorded take fails the contract',
   );
-
-  const silentFailure = hum.replace(/\{exportNote &&/g, '{false &&');
-  assert(silentFailure !== hum, 'the silent-failure mutation changed the real source');
   assertEq(
-    midiExportSurfacesOutcome(silentFailure),
+    humTakeReachesSurface(otherAudio, surface),
+    false,
+    'MUTATION: a take that is not the recording the user just made fails the contract',
+  );
+
+  const silentFailure = surface.replace('{midiExport.note &&', '{false &&');
+  assert(silentFailure !== surface, 'the silent-failure mutation changed the real source');
+  assertEq(
+    midiExportSurfacesOutcome(hum, silentFailure),
     false,
     'MUTATION: hiding the outcome sentence fails the contract (a silent dead button)',
   );
@@ -920,7 +964,11 @@ function wiringTests(): void {
     true,
     'the take export passes the DETECTED key into the encoder AND returns it in the outcome',
   );
-  assertEq(rendersDetectedKey(hum), true, 'the hum result card renders the detected key');
+  assertEq(
+    rendersDetectedKey(hum, surface),
+    true,
+    'the hum caller derives the detected key and the shared surface renders it',
+  );
   assertEq(rendersDetectedKey(history), true, 'the History capture row renders the detected key');
 
   // The pre-fix defect itself: the key is computed from the take, handed to
@@ -950,9 +998,9 @@ function wiringTests(): void {
   const humNoKeyLine = hum.replace(/keyCaption\(/g, 'noKeyCaption(');
   assert(humNoKeyLine !== hum, 'the hum key-line mutation changed the real source');
   assertEq(
-    rendersDetectedKey(humNoKeyLine),
+    rendersDetectedKey(humNoKeyLine, surface),
     false,
-    'MUTATION: removing the key line from the hum result card fails the contract',
+    'MUTATION: a caller that no longer derives the caption from the take fails the contract',
   );
   const historyNoKeyLine = history.replace(/keyCaption\(/g, 'noKeyCaption(');
   assert(historyNoKeyLine !== history, 'the History key-line mutation changed the real source');
@@ -976,10 +1024,10 @@ function wiringTests(): void {
 
   // MUTATION: an UNCONDITIONAL key line (one that would print for a take with
   // no detected key — i.e. a placeholder the user would read as a real key).
-  const placeholderKey = hum.replace('{exportKey &&', '{');
-  assert(placeholderKey !== hum, 'the unconditional-key mutation changed the real source');
+  const placeholderKey = surface.replace('{midiExport.keyLine &&', '{');
+  assert(placeholderKey !== surface, 'the unconditional-key mutation changed the real source');
   assertEq(
-    rendersDetectedKey(placeholderKey),
+    rendersDetectedKey(hum, placeholderKey),
     false,
     'MUTATION: an unconditional key line fails the contract (a keyless take would print one)',
   );

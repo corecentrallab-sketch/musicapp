@@ -353,6 +353,11 @@ function humResultTests(): void {
   const response = humMatchToResultResponse(raw, outcome.matches);
   assertEq(response.success, true, 'the adapted response is a success payload');
   assertEq(response.matches.length, 1, 'every hum match is carried over');
+  assertEq(
+    response.result_provenance,
+    'hum',
+    'the hum pass stamps its provenance, so the ONE surface says "You hummed it" instead of claiming it heard the music',
+  );
   const m = response.matches[0];
   assertEq(m.title, 'Für Elise', 'the title survives');
   assertEq(m.confidence, 0.89, 'the confidence survives');
@@ -360,6 +365,86 @@ function humResultTests(): void {
   assertEq(m.purchase_url, null, 'a public-domain hum match NEVER gets a retail redirect');
   assertEq(m.sheet_music_url, null, 'no invented sheet URL — the card shows its honest state');
   assertEq(m.album_art_url, null, 'no invented album art');
+
+  // ── BUNDLE A: the RESOLVED catalog score rides along (top match only) ──
+  //
+  // A HumMatch carries identity only, so the caller looks the piece up in the
+  // catalog and hands the record here. Everything below is the caller's own
+  // resolved fact — this function never builds a URL.
+
+  const HOSTED = 'https://cdn.notesnap.app/scores/fur-elise.pdf';
+  const twoMatches: HumResponse['matches'] = [
+    { piece_id: 'fur-elise', title: 'Für Elise', composer: 'Beethoven', confidence: 0.89 },
+    { piece_id: 'moonlight-1', title: 'Moonlight Sonata', composer: 'Beethoven', confidence: 0.31 },
+  ];
+  const withSheet = humMatchToResultResponse(raw, twoMatches, {
+    sheetMusicUrl: HOSTED,
+    sheetMusicAvailable: true,
+    isPublicDomain: true,
+  });
+  assertEq(
+    withSheet.matches[0].sheet_music_url,
+    HOSTED,
+    'the catalog score the caller resolved reaches the TOP match (the one the surface renders inline)',
+  );
+  assertEq(
+    withSheet.matches[0].sheet_music_available,
+    true,
+    'the top match carries the score’s availability flag with it',
+  );
+  assertEq(
+    withSheet.matches[1].sheet_music_url,
+    null,
+    'the OTHER matches get no score — one card, one score, and their piece pages stay the route',
+  );
+  assertEq(
+    withSheet.matches[1].sheet_music_available,
+    false,
+    'a non-top match reports no score available rather than inheriting the top match’s',
+  );
+  assertEq(
+    withSheet.matches[0].purchase_url,
+    null,
+    'a hum match is still public domain with a hosted score — never a purchase action',
+  );
+
+  const gatedOff = humMatchToResultResponse(raw, outcome.matches, {
+    sheetMusicUrl: HOSTED,
+    sheetMusicAvailable: false,
+    isPublicDomain: true,
+  });
+  assertEq(
+    gatedOff.matches[0].sheet_music_url,
+    null,
+    'sheet_music_available:false BEATS a URL — the backend’s quality gate withholds the score',
+  );
+  assertEq(
+    gatedOff.matches[0].sheet_music_available,
+    false,
+    'and the flag is reported honestly as false, not as missing',
+  );
+
+  const notPublicDomain = humMatchToResultResponse(raw, outcome.matches, {
+    sheetMusicUrl: HOSTED,
+    sheetMusicAvailable: true,
+    isPublicDomain: false,
+  });
+  assertEq(
+    notPublicDomain.matches[0].sheet_music_url,
+    null,
+    'an explicit isPublicDomain:false withholds the catalog score (never a hosted score on a gated work)',
+  );
+  assertEq(
+    notPublicDomain.matches[0].is_public_domain,
+    true,
+    'the hum result itself stays public domain — our melody library is PD by definition',
+  );
+
+  const blankUrl = humMatchToResultResponse(raw, outcome.matches, {
+    sheetMusicUrl: '   ',
+    sheetMusicAvailable: true,
+  });
+  assertEq(blankUrl.matches[0].sheet_music_url, null, 'a blank URL is no score at all');
 
   // A no-match hum must never be dressed as a match.
   const miss = humOutcome({ success: true, query_duration_ms: 900, db_available: true, matches: [] });
