@@ -33,9 +33,7 @@ import {
   coachUnavailableOutcome,
   coachNoReferenceOutcome,
   coachMelodyCard,
-  COACH_RETAILER_ACTION,
-  COACH_RETAILER_HEADLINE,
-  COACH_RETAILER_LINES,
+  COACH_NO_MELODY_NOTICE,
   initialCoachRunState,
   isScorableOutcome,
   scoreCoachRun,
@@ -564,7 +562,7 @@ console.log('\n── coachRun: honest outcomes ──');
   );
   assertEq(MIN_COACH_RUN_SECONDS, 1, 'the minimum scorable take is one second');
 }
-console.log('\n── coachRun: the reference-melody card state (owner 10-01) ──');
+console.log('\n── coachRun: the reference-melody card state (owner 10-01; re-cut v31) ──');
 {
   // A written melody always wins: the record/score flow is untouched.
   assertEq(
@@ -581,61 +579,61 @@ console.log('\n── coachRun: the reference-melody card state (owner 10-01) �
     'a reference melody wins even when the piece also carries a retailer link',
   );
 
-  // No melody + a licensed link (a modern song) → LIVE, not dead text.
+  // No melody + a licensed page (a modern song) → ONE honest notice, no action.
   assertEq(
     coachMelodyCard({ hasReference: false, purchaseUrl: 'https://example.test/sheet/123' })
       .kind,
-    'retailer',
-    'no melody BUT a licensed link → the live retailer card (never "coming soon")',
+    'notice',
+    'no melody BUT a licensed page → the honest notice state (never a promise, never a second buy button)',
   );
   assertEq(
     coachMelodyCard({ hasReference: false, purchaseUrl: '  https://example.test/x  ' }).kind,
-    'retailer',
+    'notice',
     'a URL with surrounding whitespace is still a real link',
   );
 
-  // No melody, no link → the one honest remaining dead end, unchanged.
+  // No melody, no link → the card is HIDDEN entirely (v31: hiding, not promising).
   assertEq(
     coachMelodyCard({ hasReference: false, purchaseUrl: null }).kind,
-    'coming-soon',
-    'no melody and no link keeps the honest "Reference melody coming soon" state',
+    'hidden',
+    'no melody and no licensed page → nothing is rendered at all',
   );
   assertEq(
     coachMelodyCard({ hasReference: false, purchaseUrl: undefined }).kind,
-    'coming-soon',
+    'hidden',
     'an absent link is the same as none',
   );
   assertEq(
     coachMelodyCard({ hasReference: false, purchaseUrl: '   ' }).kind,
-    'coming-soon',
-    'a blank link is NOT a link — the card never opens an empty page',
+    'hidden',
+    'a blank link is NOT a link — no notice for a page that does not exist',
   );
 
-  // The copy the live card renders: it tells the truth about the melody.
+  // The one line the modern state renders: truthful, and not a promise.
   assert(
-    COACH_RETAILER_HEADLINE.toLowerCase().includes('official sheet music'),
-    'the live card names where the melody actually is',
+    COACH_NO_MELODY_NOTICE.includes('do not host'),
+    'the notice says we do not host the melody (the copyright boundary)',
   );
   assert(
-    !/coming soon/i.test(COACH_RETAILER_HEADLINE),
-    'the live card is NOT the "coming soon" text (the owner’s dead end)',
+    /nothing here to score/i.test(COACH_NO_MELODY_NOTICE),
+    'the notice never claims coaching for a melody we do not hold',
   );
   assert(
-    COACH_RETAILER_LINES.some((l) => /do not host/i.test(l)),
-    'the copy says we do not host the melody — the licensed page plays it',
+    /sheet-music card/i.test(COACH_NO_MELODY_NOTICE),
+    'the notice sends the user to the page’s ONE purchase action instead of stacking a second',
   );
   assert(
-    COACH_RETAILER_LINES.some((l) => /nothing to score/i.test(l)),
-    'the copy never claims note-level coaching for a melody we do not hold',
+    !/coming soon/i.test(COACH_NO_MELODY_NOTICE),
+    'the notice is NOT a "coming soon" promise (the owner’s dead end)',
   );
   assert(
-    COACH_RETAILER_ACTION.length > 0 && /official sheet music/i.test(COACH_RETAILER_ACTION),
-    'the live card’s action names the destination',
+    !/^🎼|Open the official sheet music/.test(COACH_NO_MELODY_NOTICE),
+    'the notice is not button copy — there is no purchase action in the coach card',
   );
   assertEq(
     coachNoReferenceOutcome({ abc: '' }).headline,
     'Reference melody coming soon.',
-    'the honest PD-no-score copy is byte-for-byte unchanged',
+    'the pure no-reference outcome is unchanged (the CARD no longer renders it; the card is hidden instead)',
   );
 }
 

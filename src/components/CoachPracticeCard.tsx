@@ -16,19 +16,18 @@
  *  - A score is shown ONLY when one was measured. When the take could not be
  *    decoded (no on-device/decoder path in this build) or nothing was heard, the
  *    card shows the reason and keeps the accuracy row hidden.
- *  - A piece with no reference melody gets either an honest "coming soon" line
- *    (nothing to offer) or, when the piece carries a licensed retailer link (a
- *    modern song), a LIVE card that opens that retailer page — never a record
- *    button that could only ever fail, and never a melody we host.
+ *  - A piece with no reference melody NEVER gets a promise of one (owner 10-01,
+ *    v31): a modern song (no melody we may host, but a licensed page) shows ONE
+ *    honest line and NO action, and a piece with neither shows nothing at all.
+ *    The card is not a purchase surface — the page's single retailer CTA is the
+ *    sheet-music card above it.
  */
 import React, { useEffect, useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useCoachRun } from '../hooks/useCoachRun';
 import { resolvePieceAbc } from '../services/pieceAbc';
 import {
-  COACH_RETAILER_ACTION,
-  COACH_RETAILER_HEADLINE,
-  COACH_RETAILER_LINES,
+  COACH_NO_MELODY_NOTICE,
   coachMelodyCard,
   coachNoReferenceOutcome,
   MIN_COACH_RUN_SECONDS,
@@ -49,19 +48,13 @@ interface CoachPracticeCardProps {
   tempoBpm?: number;
   /**
    * The licensed retailer link the piece was saved with (a modern song), when
-   * the recognition carried one. With NO reference melody this is what turns the
-   * old dead "Reference melody coming soon" text into a LIVE card that opens the
-   * page which actually plays the melody (owner 10-01). It is never a melody we
-   * host — we host no copyrighted melody, ever.
+   * the recognition carried one. It is a SIGNAL ONLY — it tells the card that
+   * this piece is a modern song, whose melody we may not host, so the card can
+   * tell the truth instead of promising a melody (owner 10-01). The card never
+   * opens it and holds no purchase action of any kind: the piece page has exactly
+   * ONE retailer CTA, the sheet-music card above (v31, one CTA per page).
    */
   purchaseUrl?: string | null;
-  /**
-   * Opens `purchaseUrl` in the piece page's ONE in-app browser shell (the same
-   * Modal the sheet-music card uses), so a piece page has exactly one WebView and
-   * one BACK rule. Required for the retailer state to be reachable; without it the
-   * card keeps its honest text rather than showing a button that cannot open.
-   */
-  onOpenPurchase?: (url: string) => void;
   /** Inject a different capture path (tests / a future in-app decoder). */
   samplesProvider?: SamplesProvider;
   /**
@@ -79,7 +72,6 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
   abc,
   tempoBpm,
   purchaseUrl,
-  onOpenPurchase,
   samplesProvider,
   onSessionActiveChange,
 }) => {
@@ -99,7 +91,9 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
 
   const { phase, outcome, history, error } = coach;
 
-  // Tempo the reference is read at: shown so the user knows what to play along to.
+  // Tempo the reference is read at: shown with the record control so the user
+  // knows what to play along to. Only the tempo is read from this outcome — its
+  // copy is never rendered (a melody-less piece gets no promise; v31).
   const noReference = useMemo(
     () => coachNoReferenceOutcome({ abc: resolved.abc, tempoBpm }),
     [resolved.abc, tempoBpm],
@@ -112,8 +106,9 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
    * (services/coachRun.ts `coachMelodyCard`) so the branch order is pinned by the
    * tier1 gate instead of remembered here:
    *   • a written melody → the record/score flow (unchanged);
-   *   • no melody but a licensed link (a modern song) → the LIVE retailer card;
-   *   • neither → the honest "coming soon" text (unchanged).
+   *   • no melody we may use, but a licensed page (a modern song) → ONE honest
+   *     notice and NO action (the page's single purchase CTA is one tap away);
+   *   • neither → nothing is rendered at all (v31: hiding, not promising).
    */
   const melody = coachMelodyCard({
     hasReference: coach.hasReference,
@@ -138,6 +133,11 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
     onSessionActiveChange?.(isRecording || isProcessing);
   }, [isRecording, isProcessing, onSessionActiveChange]);
 
+  // v31 (owner 10-01): a piece with no melody we may use and no licensed page
+  // renders NOTHING — never the old "Reference melody coming soon" promise. All
+  // hooks above have already run, so this early return is safe.
+  if (melody.kind === 'hidden') return null;
+
   const recordLabel = (() => {
     if (isProcessing) return 'Scoring your take…';
     if (isRecording) return '⏹ Stop & get feedback';
@@ -147,64 +147,35 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
 
   return (
     <View style={styles.card} testID="coach-practice-card">
-      <View style={styles.headerRow}>
-        <Text style={styles.label}>🎧 Coached practice</Text>
-        <View style={styles.tempoChip}>
-          <Text style={styles.tempoText}>{tempoLabel}</Text>
-        </View>
-      </View>
-
-      <Text style={styles.pieceLine} numberOfLines={1}>
-        {title}
-      </Text>
-      <Text style={styles.subLine}>
-        {melody.kind === 'retailer'
-          ? 'Reference melody: the official sheet music page plays it.'
-          : resolved.source === 'seed'
-          ? `Reference melody: ${resolved.seed?.title ?? 'public-domain phrase'} (practice phrase)`
-          : resolved.source === 'piece'
-          ? 'Reference melody: from the catalog'
-          : 'We score your take against the written melody.'}
-      </Text>
-
-      {melody.kind === 'retailer' ? (
-        /* A modern song: we hold no melody we may host (copyright), so the card
-           offers the LICENSED page that does play it — a live action where the
-           old card had dead text. It never claims a score can be given, and it
-           opens the SAME in-app shell the sheet-music card on this page uses
-           (one WebView, one BACK rule per piece page). */
-        <View style={styles.comingSoon}>
-          <Text style={styles.comingSoonTitle}>{COACH_RETAILER_HEADLINE}</Text>
-          {COACH_RETAILER_LINES.map((line) => (
-            <Text key={line} style={styles.comingSoonText}>
-              {line}
-            </Text>
-          ))}
-          <TouchableOpacity
-            style={styles.officialBtn}
-            onPress={() => {
-              if (purchaseUrl) onOpenPurchase?.(purchaseUrl);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={`${COACH_RETAILER_ACTION} for ${title}`}
-          >
-            <Text style={styles.officialBtnText}>🎼 {COACH_RETAILER_ACTION}</Text>
-          </TouchableOpacity>
-        </View>
-      ) : melody.kind === 'coming-soon' ? (
-        /* No melody AND no licensed link: a piece we have not typeset yet. The
-           one honest remaining dead end — there is no path to offer, so the text
-           stays exactly as it was. */
-        <View style={styles.comingSoon}>
-          <Text style={styles.comingSoonTitle}>{noReference.headline}</Text>
-          {noReference.lines.map((line) => (
-            <Text key={line} style={styles.comingSoonText}>
-              {line}
-            </Text>
-          ))}
-        </View>
+      {melody.kind === 'notice' ? (
+        /* A modern song: we hold no melody we may host (copyright), so there is
+           nothing to coach — and v31 gives the page exactly ONE purchase action,
+           the sheet-music card above (owner 10-01: "duplicate CTA box"). So this
+           card states the truth in ONE line and holds NO action at all: no buy
+           button, no stacked box repeating the same offer. */
+        <Text style={styles.noticeText} testID="coach-no-melody-notice">
+          {COACH_NO_MELODY_NOTICE}
+        </Text>
       ) : (
         <>
+          <View style={styles.headerRow}>
+            <Text style={styles.label}>🎧 Coached practice</Text>
+            <View style={styles.tempoChip}>
+              <Text style={styles.tempoText}>{tempoLabel}</Text>
+            </View>
+          </View>
+
+          <Text style={styles.pieceLine} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={styles.subLine}>
+            {resolved.source === 'seed'
+              ? `Reference melody: ${resolved.seed?.title ?? 'public-domain phrase'} (practice phrase)`
+              : resolved.source === 'piece'
+              ? 'Reference melody: from the catalog'
+              : 'We score your take against the written melody.'}
+          </Text>
+
           {/* Record / stop / processing control */}
           <TouchableOpacity
             style={[
@@ -303,13 +274,13 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
                 : `No coached takes yet. Record at least ${MIN_COACH_RUN_SECONDS} second of playing.`}
             </Text>
           )}
+
+          <Text style={styles.footnote}>
+            Accuracy is a practice metric from the notes we hear — only scored
+            takes are added to your practice history.
+          </Text>
         </>
       )}
-
-      <Text style={styles.footnote}>
-        Accuracy is a practice metric from the notes we hear — only scored takes
-        are added to your practice history.
-      </Text>
     </View>
   );
 };
@@ -476,42 +447,15 @@ const styles = StyleSheet.create({
     marginTop: 12,
     lineHeight: 17,
   },
-  comingSoon: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-    borderStyle: 'dashed',
-  },
-  comingSoonTitle: {
-    color: '#4ecdc4',
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  comingSoonText: {
-    color: '#a0a0b8',
-    fontSize: 12,
-    lineHeight: 17,
-    marginBottom: 2,
-  },
-  /** The live retailer action on the reference-melody card (a modern song). */
-  officialBtn: {
-    backgroundColor: '#0f3460',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginTop: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e94560',
-  },
-  officialBtnText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
-    textAlign: 'center',
+  /**
+   * The modern-song state's ONE honest line (v31, owner 10-01): plain text with
+   * no box chrome and no button — the sheet-music card above this card is the
+   * page's single purchase action.
+   */
+  noticeText: {
+    color: '#c0c0d0',
+    fontSize: 13,
+    lineHeight: 19,
   },
   footnote: {
     color: '#6f6f88',

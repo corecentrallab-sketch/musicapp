@@ -214,7 +214,15 @@ export function coachUnavailableOutcome(input: {
   };
 }
 
-/** The "no reference melody for this piece yet" state (nothing to record for). */
+/**
+ * The "no reference melody for this piece yet" outcome (nothing to record for).
+ *
+ * v31 (owner 10-01): the coach card NO LONGER renders this copy — a piece with no
+ * melody we may use now either shows one honest line (a modern song, whose
+ * licensed page the sheet-music card opens) or nothing at all. It stays as the
+ * coach's own honest outcome for a melody-less piece, and the card still reads
+ * its `tempoBpm` (the tempo the reference would be read at).
+ */
 export function coachNoReferenceOutcome(input: {
   abc: string;
   tempoBpm?: number;
@@ -238,30 +246,32 @@ export function coachNoReferenceOutcome(input: {
 // ─── The reference-melody card's state (History dead-end sprint, owner 10-01) ──
 
 /**
- * Which reference-melody state the coach card on a piece page must render:
+ * Which reference-melody state the coach card on a piece page must render
+ * (re-cut in v31 by the owner's 10-01 bug batch — ONE purchase CTA per page,
+ * nothing promised):
  *
- *   'scored'      — the piece HAS a reference melody (catalog abc or a bundled
- *                   public-domain seed): the record/score flow runs, exactly as
- *                   today.
- *   'retailer'    — the piece has NO melody we may use AND a licensed retailer
- *                   link: a MODERN song. We must never host, cache or fabricate a
- *                   copyrighted melody (standing owner rule) and we must never
- *                   seed-match a copyrighted song to a public-domain phrase, so
- *                   there is nothing to score against — but the page is NOT a
- *                   dead end (owner 10-01: "the 'Reference melody coming soon'
- *                   card must be fixed into a LIVE reference melody"). The card
- *                   tells the truth — we do not host the melody, the licensed
- *                   page plays it — and its action opens that page.
- *   'coming-soon' — no melody AND no retailer link: a piece we have not typeset
- *                   yet (a public-domain score still being prepared). This is the
- *                   ONE remaining honest dead end, and it is genuinely a dead end
- *                   — there is no path to offer — so its copy stays unchanged.
+ *   'scored' — the piece HAS a reference melody (catalog abc or a bundled
+ *              public-domain seed): the record/score flow runs, exactly as today.
+ *              Nothing about this state changed.
+ *   'notice' — the piece has NO melody we may use BUT a licensed retailer link:
+ *              a MODERN song. We must never host, cache or fabricate a
+ *              copyrighted melody (standing owner rule) and we must never
+ *              seed-match a copyrighted song to a public-domain phrase, so there
+ *              is nothing to score against — and there is no second buy button
+ *              either (owner 10-01: one purchase action per page). The card
+ *              renders ONE honest statement (COACH_NO_MELODY_NOTICE) and NO
+ *              action; the sheet-music card on the same page is the single CTA.
+ *   'hidden'  — no melody AND no licensed link: a piece we have not typeset yet.
+ *              The card renders NOTHING at all — hiding, not promising (owner
+ *              10-01: "the 'reference melody coming soon' card must not come
+ *              back"). A public-domain piece with no bundled seed is exactly this.
  *
  * `hasReference` is the coach's own signal (the resolved abc was non-empty), so
  * this can never disagree with what the record button would use. A blank
- * `purchaseUrl` is treated as absent: a card must never open an empty page.
+ * `purchaseUrl` is not a link, so the notice is only ever shown when a licensed
+ * page really exists behind the song.
  */
-export type CoachMelodyCardKind = 'scored' | 'retailer' | 'coming-soon';
+export type CoachMelodyCardKind = 'scored' | 'notice' | 'hidden';
 
 export function coachMelodyCard(input: {
   hasReference: boolean;
@@ -269,16 +279,19 @@ export function coachMelodyCard(input: {
 }): { kind: CoachMelodyCardKind } {
   if (input?.hasReference) return { kind: 'scored' };
   const url = typeof input?.purchaseUrl === 'string' ? input.purchaseUrl.trim() : '';
-  return { kind: url ? 'retailer' : 'coming-soon' };
+  return { kind: url ? 'notice' : 'hidden' };
 }
 
-/** The live-card copy for a modern song whose melody lives at the retailer. */
-export const COACH_RETAILER_HEADLINE = 'Hear the melody at the official sheet music';
-export const COACH_RETAILER_LINES: readonly string[] = [
-  'We do not host this song\u2019s melody \u2014 the official sheet music page plays it.',
-  'Note-level coaching needs a written melody we own, so there is nothing to score here yet.',
-];
-export const COACH_RETAILER_ACTION = 'Open the official sheet music';
+/**
+ * The ONE honest line a modern song's coach card shows (owner 10-01, v31). It
+ * states the copyright boundary and that there is nothing here to score, and it
+ * points at the page's single purchase action instead of stacking a second one.
+ * It is TEXT, never a button: a modern-song piece page carries exactly one
+ * retailer CTA — the sheet-music card — and that card is one tap away.
+ */
+export const COACH_NO_MELODY_NOTICE =
+  'We do not host this song\u2019s melody, so there is nothing here to score against. ' +
+  'Use the sheet-music card on this page to open the official sheet music.';
 
 // ─── History view ──────────────────────────────────────────────
 

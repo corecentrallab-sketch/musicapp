@@ -19,9 +19,10 @@
  *      owner's dead end);
  *   2. a public-domain / hum / find-a-piece save NEVER carries a purchase map —
  *      we do not invent a licensed link for a score we host;
- *   3. the piece page renders the purchase card when the piece carries links,
- *      opens it with the required WebView flags, and the coach card turns its
- *      dead "reference melody coming soon" text into that same live action;
+ *   3. the piece page renders the purchase card when the piece carries links and
+ *      opens it with the required WebView flags, and that card is the page's ONE
+ *      purchase action: the coach card holds no buy action at all (v31, owner
+ *      10-01 "duplicate CTA box") and never promises a melody it cannot produce;
  *   4. History's search box filters the SAVED recognitions in memory — it is
  *      never the global catalog search (no FindPieceScreen, no catalog query).
  *
@@ -44,6 +45,10 @@ export const SHEET_CARD_CALL = 'modernSheetCard(piece)';
 export const PRIMARY_PURCHASE_CALL = 'primaryPurchaseUrl(piece.purchaseUrls)';
 /** The pure reference-melody decision the coach card must mirror. */
 export const COACH_MELODY_CALL = 'coachMelodyCard(';
+/** The ONE shared in-app retailer opener a piece page may hold (v31). */
+export const PURCHASE_SHELL_OPENER = 'openInAppPurchase(';
+/** The shared honest notice constant the modern-song state renders (v31). */
+export const COACH_NOTICE_CONSTANT = 'COACH_NO_MELODY_NOTICE';
 /** The pure History filter. */
 export const HISTORY_FILTER_CALL = 'filterSavedPieces(';
 
@@ -118,15 +123,19 @@ export function publicDomainSaveOmitsPurchaseUrls(source: string): boolean {
 
 /**
  * Thesis 3a: the piece page renders the sheet-music card for a piece whose links
- * it holds, and that card's press opens the page.
+ * it holds, and that card's press opens the page — and it is the page's ONLY
+ * purchase action (v31, owner 10-01: "duplicate CTA box").
  *
- * Three things must all be true in PieceDetailScreen:
+ * Four things must all be true in PieceDetailScreen:
  *   • the card model comes from the pure builder (`modernSheetCard(piece)`), so
  *     the header text and the URL choice are the tested ones;
  *   • the piece's links resolve through `primaryPurchaseUrl(piece.purchaseUrls)`
  *     — the money-path resolver, never a retailer key named inline;
  *   • the card is a pressable surface (its own `onPress`) that hands the card's
- *     URL to the shell opener — an unpressed card is the owner's dead end again.
+ *     URL to the shell opener — an unpressed card is the owner's dead end again;
+ *   • no SECOND purchase action is wired: the page must not hand the coach card
+ *     an opener (`onOpenPurchase`), because a page with two retailer taps is the
+ *     defect the owner reported.
  */
 export function pieceDetailOpensPurchaseCard(source: string): boolean {
   const masked = maskComments(source);
@@ -136,6 +145,8 @@ export function pieceDetailOpensPurchaseCard(source: string): boolean {
   // … : sheetCard ? …`): a curated score we host always wins, and the card can
   // never replace the page body.
   if (!/:\s*sheetCard\s*\?/.test(masked)) return false;
+  // ONE purchase action: the coach card never gets an opener (v31).
+  if (/\bonOpenPurchase\b/.test(masked)) return false;
   // The press must pass the CARD's own url to the opener: `onPress={() =>
   // openInAppPurchase(sheetCardUrl)}` (the url variable is derived from the
   // card, which is why the card's url name is what is matched).
@@ -145,44 +156,48 @@ export function pieceDetailOpensPurchaseCard(source: string): boolean {
 }
 
 /**
- * Thesis 3b: the coach card turns "no reference melody" into the LIVE retailer
- * action when the piece carries a licensed link.
+ * Thesis 3b (v31, owner 10-01 D4): the coach card is NOT a purchase surface.
  *
- * The card must route through the pure decision (`coachMelodyCard(`) and render a
- * branch for the `'retailer'` kind whose action calls the shared opener with the
- * piece's own purchase URL. The 'coming-soon' branch stays for the piece we have
- * neither a melody nor a link for.
+ * A modern-song piece page carries exactly ONE retailer CTA — the sheet-music
+ * card — so the coach card must (a) still route its reference-melody state
+ * through the pure decision (`coachMelodyCard(`) and (b) hold no way to open a
+ * retailer at all: no `onOpenPurchase` prop, no shared shell opener, no WebView,
+ * no `Linking.openURL`. The duplicate box the owner saw (his History row first)
+ * came from exactly this capability living in two components; deleting it here
+ * is what keeps a piece page at one tap to buy.
  */
-export function coachCardRoutesToRetailerWhenNoMelody(source: string): boolean {
+export function coachCardHasNoPurchaseAction(source: string): boolean {
   const masked = maskComments(source);
   if (masked.indexOf(COACH_MELODY_CALL) < 0) return false;
-  const branch = retailerBranch(masked);
-  if (!branch) return false;
-  return (
-    branch.includes('onOpenPurchase') &&
-    branch.includes('purchaseUrl') &&
-    /onPress=\{/.test(branch)
-  );
+  if (/\bonOpenPurchase\b/.test(masked)) return false;
+  if (masked.indexOf(PURCHASE_SHELL_OPENER) >= 0) return false;
+  if (masked.indexOf('PurchaseWebView') >= 0) return false;
+  if (/\bLinking\.openURL\b/.test(masked)) return false;
+  return true;
 }
 
-/** The JSX of the coach card's `melody.kind === 'retailer' ? ( … )` branch. */
-function retailerBranch(masked: string): string {
-  // The JSX branch, not the sub-line ternary that names the same kind higher up
-  // the file: the rendered action is the `? (` form.
-  const marker = "melody.kind === 'retailer' ? (";
-  const markerAt = masked.indexOf(marker);
-  if (markerAt < 0) return '';
-  const open = markerAt + marker.length - 1;
-  let depth = 0;
-  for (let i = open; i < masked.length; i++) {
-    const c = masked[i];
-    if (c === '(') depth++;
-    else if (c === ')') {
-      depth--;
-      if (depth === 0) return masked.slice(open, i + 1);
-    }
-  }
-  return '';
+/**
+ * Thesis 3c (v31, owner 10-01 D4 + DP8): the coach card never OFFERS a melody it
+ * cannot produce.
+ *
+ * Three text facts, all pinned because they are silently breakable:
+ *   • the `'hidden'` kind short-circuits the render (`return null`) BEFORE any
+ *     card body — a public-domain piece with no melody and no licensed link shows
+ *     nothing at all ("hiding, not promising");
+ *   • the old promise copy is gone: no "coming soon" and no `noReference.headline`
+ *     anywhere in the card's source;
+ *   • a modern song (the `'notice'` kind) renders the ONE shared honest line via
+ *     `COACH_NO_MELODY_NOTICE`.
+ */
+export function coachCardNeverPromisesMelody(source: string): boolean {
+  const masked = maskComments(source);
+  if (masked.indexOf(COACH_MELODY_CALL) < 0) return false;
+  if (masked.indexOf(COACH_NOTICE_CONSTANT) < 0) return false;
+  if (!/melody\.kind === 'notice'/.test(masked)) return false;
+  if (!/melody\.kind === 'hidden'[\s\S]{0,40}?return null/.test(masked)) return false;
+  if (/noReference\.headline/.test(masked)) return false;
+  if (/coming soon/i.test(masked)) return false;
+  return true;
 }
 
 /**
