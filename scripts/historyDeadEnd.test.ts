@@ -23,11 +23,14 @@
  */
 import {
   COACH_MELODY_CALL,
+  COACH_NOTICE_CONSTANT,
   HISTORY_FILTER_CALL,
   PRIMARY_PURCHASE_CALL,
+  PURCHASE_SHELL_OPENER,
   PURCHASE_URLS_FIELD,
   SHEET_CARD_CALL,
-  coachCardRoutesToRetailerWhenNoMelody,
+  coachCardHasNoPurchaseAction,
+  coachCardNeverPromisesMelody,
   historySearchIsLocal,
   modernSaveCarriesPurchaseUrls,
   publicDomainSaveOmitsPurchaseUrls,
@@ -214,23 +217,18 @@ const PIECE_PAGE_WIRING = `
       ) : (
         <View>🎼 Sheet music coming soon</View>
       )}
+      <CoachPracticeCard purchaseUrl={purchaseUrl} />
     </View>
   );
 `;
 
 const COACH_WIRING = `
   const melody = coachMelodyCard({ hasReference: coach.hasReference, purchaseUrl });
+  if (melody.kind === 'hidden') return null;
   return (
     <View>
-      {melody.kind === 'retailer' ? (
-        <View>
-          <Text>Hear the melody at the official sheet music</Text>
-          <TouchableOpacity onPress={() => { if (purchaseUrl) onOpenPurchase?.(purchaseUrl); }}>
-            <Text>Open the official sheet music</Text>
-          </TouchableOpacity>
-        </View>
-      ) : melody.kind === 'coming-soon' ? (
-        <View><Text>{noReference.headline}</Text></View>
+      {melody.kind === 'notice' ? (
+        <Text>{COACH_NO_MELODY_NOTICE}</Text>
       ) : (
         <TouchableOpacity onPress={coach.start}>Record a take</TouchableOpacity>
       )}
@@ -280,29 +278,91 @@ function surfaceUnitTests(): void {
     false,
     'a card that is never the sheet decision’s else-arm FAILS',
   );
-
   assertEq(
-    coachCardRoutesToRetailerWhenNoMelody(COACH_WIRING),
-    true,
-    'the post-fix coach card turns "no reference melody" into the live retailer action',
-  );
-  assertEq(
-    coachCardRoutesToRetailerWhenNoMelody(
-      // ALL occurrences: the sub-line ternary names the same kind higher up.
-      COACH_WIRING.split("melody.kind === 'retailer'").join('false'),
-    ),
-    false,
-    'deleting the retailer branch FAILS (the dead "coming soon" text is back)',
-  );
-  assertEq(
-    coachCardRoutesToRetailerWhenNoMelody(
-      COACH_WIRING.replace(
-        'onPress={() => { if (purchaseUrl) onOpenPurchase?.(purchaseUrl); }}',
-        'onPress={() => {}}',
+    pieceDetailOpensPurchaseCard(
+      PIECE_PAGE_WIRING.replace(
+        '<CoachPracticeCard',
+        '<CoachPracticeCard onOpenPurchase={openInAppPurchase}',
       ),
     ),
     false,
-    'a retailer branch whose action opens nothing FAILS',
+    'a page that hands the coach card a SECOND opener FAILS (two purchase actions on one page)',
+  );
+
+  console.log('\nthe coach card: no purchase action, no promise');
+
+  assertEq(
+    coachCardHasNoPurchaseAction(COACH_WIRING),
+    true,
+    'the coach card mirrors the pure melody decision and holds no way to open a retailer',
+  );
+  assertEq(
+    coachCardHasNoPurchaseAction(
+      COACH_WIRING.replace(
+        '<Text>{COACH_NO_MELODY_NOTICE}</Text>',
+        '<TouchableOpacity onPress={() => openInAppPurchase(purchaseUrl)}><Text>Open</Text></TouchableOpacity>',
+      ),
+    ),
+    false,
+    'a coach card that opens the retailer again FAILS — the owner’s duplicate CTA box',
+  );
+  assertEq(
+    coachCardHasNoPurchaseAction(
+      COACH_WIRING.replace(
+        'const melody = coachMelodyCard({',
+        'onOpenPurchase?: (url: string) => void;\nconst melody = coachMelodyCard({',
+      ),
+    ),
+    false,
+    'a coach card that takes a purchase callback FAILS',
+  );
+  assertEq(
+    coachCardHasNoPurchaseAction(COACH_WIRING.split('coachMelodyCard(').join('coachX(')),
+    false,
+    'a coach card that stops mirroring the pure decision FAILS',
+  );
+
+  assertEq(
+    coachCardNeverPromisesMelody(COACH_WIRING),
+    true,
+    'the modern-song state renders the ONE honest notice and no promise',
+  );
+  assertEq(
+    coachCardNeverPromisesMelody(
+      COACH_WIRING.replace(
+        'COACH_NO_MELODY_NOTICE',
+        'noReference.headline',
+      ),
+    ),
+    false,
+    'rendering the old promise copy FAILS (the owner’s "coming soon" dead end)',
+  );
+  assertEq(
+    coachCardNeverPromisesMelody(
+      COACH_WIRING.replace(
+        'COACH_NO_MELODY_NOTICE',
+        "'Reference melody coming soon.'",
+      ),
+    ),
+    false,
+    'any inline "coming soon" promise FAILS',
+  );
+  assertEq(
+    coachCardNeverPromisesMelody(
+      COACH_WIRING.replace(
+        "{melody.kind === 'notice'",
+        "{false",
+      ),
+    ),
+    false,
+    'a card with no modern-song state at all FAILS (a modern song would render nothing)',
+  );
+  assertEq(
+    coachCardNeverPromisesMelody(
+      COACH_WIRING.replace('COACH_NO_MELODY_NOTICE', "'Here is the melody.'"),
+    ),
+    false,
+    'the notice must come from the shared honest constant',
   );
 }
 
@@ -440,28 +500,42 @@ function liveScanTests(): void {
     pieceDetail.indexOf(PRIMARY_PURCHASE_CALL) >= 0,
     `the piece’s links resolve through ${PRIMARY_PURCHASE_CALL}`,
   );
-  // The coach card gets the SAME resolved link, so both surfaces agree.
+  // The coach card gets the SAME resolved link, so it can tell a modern song
+  // apart — but NO opener and no purchase action of its own (v31: one CTA/page).
   assert(
     /purchaseUrl=\{[A-Za-z]+\}/.test(pieceDetail),
     'the piece page passes the resolved purchase URL to the coach card',
   );
   assert(
-    /onOpenPurchase=\{/.test(pieceDetail),
-    'the piece page passes the shared shell opener to the coach card (ONE WebView per page)',
+    !/onOpenPurchase/.test(pieceDetail),
+    'the piece page hands the coach card NO opener — the sheet-music card is the page’s ONE purchase action',
   );
 
   assertEq(
-    coachCardRoutesToRetailerWhenNoMelody(coach),
+    coachCardHasNoPurchaseAction(coach),
     true,
-    'the real coach card renders the live retailer state when there is no melody',
+    'the real coach card holds no purchase action at all (the owner’s duplicate CTA box is gone)',
   );
   assert(
     coach.indexOf(COACH_MELODY_CALL) >= 0,
     'the coach card mirrors the pure melody decision',
   );
   assert(
-    coach.indexOf('noReference.headline') >= 0,
-    'the honest "Reference melody coming soon" copy is still rendered for a piece with no path',
+    !/onOpenPurchase/.test(coach) && coach.indexOf(PURCHASE_SHELL_OPENER) < 0,
+    'nothing in the coach card can open the retailer',
+  );
+  assertEq(
+    coachCardNeverPromisesMelody(coach),
+    true,
+    'the real coach card offers no melody it cannot produce: hidden when there is none, one honest line for a modern song',
+  );
+  assert(
+    !coach.includes('noReference.headline'),
+    'the old "Reference melody coming soon" render is gone from the card',
+  );
+  assert(
+    coach.indexOf(COACH_NOTICE_CONSTANT) >= 0,
+    `the modern-song state renders ${COACH_NOTICE_CONSTANT}`,
   );
 
   console.log('\nlive scan: the piece page’s browser shell (modal + runtime flags)');
@@ -609,25 +683,59 @@ function mutationProbes(): void {
     'MUTATION: resolving the map by naming a retailer key FAILS the contract',
   );
 
-  const coachDead = coach
-    .split("melody.kind === 'retailer'")
-    .join('false');
-  assert(coachDead !== coach, 'the coach mutation changed CoachPracticeCard');
+  const coachDead = pieceDetail.replace(
+    '        purchaseUrl={purchaseUrl}\n',
+    '        purchaseUrl={purchaseUrl}\n        onOpenPurchase={openInAppPurchase}\n',
+  );
+  assert(
+    coachDead !== pieceDetail,
+    'the second-opener mutation changed PieceDetailScreen',
+  );
   assertEq(
-    coachCardRoutesToRetailerWhenNoMelody(coachDead),
+    pieceDetailOpensPurchaseCard(coachDead),
     false,
-    'MUTATION: deleting the coach’s live retailer state FAILS the contract',
+    'MUTATION: handing the coach card a second retailer opener FAILS (one CTA per page)',
   );
 
-  const coachNoOpener = coach.replace(
-    'onPress={() => {\n              if (purchaseUrl) onOpenPurchase?.(purchaseUrl);\n            }}',
-    'onPress={() => {}}',
+  // (d, v31) the duplicate buy button comes BACK inside the coach card.
+  const coachButtonBack = coach.replace(
+    '          {COACH_NO_MELODY_NOTICE}\n',
+    '          <TouchableOpacity onPress={() => openInAppPurchase(purchaseUrl)}>\n' +
+      '            <Text>{COACH_NO_MELODY_NOTICE}</Text>\n' +
+      '          </TouchableOpacity>\n',
   );
-  assert(coachNoOpener !== coach, 'the coach-opener mutation changed CoachPracticeCard');
+  assert(coachButtonBack !== coach, 'the duplicate-button mutation changed CoachPracticeCard');
   assertEq(
-    coachCardRoutesToRetailerWhenNoMelody(coachNoOpener),
+    coachCardHasNoPurchaseAction(coachButtonBack),
     false,
-    'MUTATION: a retailer action that opens nothing FAILS the contract',
+    'MUTATION: a buy button back in the coach card FAILS (the owner’s duplicate CTA box)',
+  );
+  assertEq(
+    coachCardHasNoPurchaseAction(coach),
+    true,
+    'the untouched card still passes (the probe changed the source it targeted)',
+  );
+
+  // (d, v31) the promise comes back — the old "coming soon" render.
+  const promiseBack = coach.replace('{COACH_NO_MELODY_NOTICE}', '{noReference.headline}');
+  assert(promiseBack !== coach, 'the promise mutation changed CoachPracticeCard');
+  assertEq(
+    coachCardNeverPromisesMelody(promiseBack),
+    false,
+    'MUTATION: rendering the old no-melody promise copy FAILS',
+  );
+
+  // (d, v31) the hidden state stops short-circuiting: a PD piece with no melody
+  // is promised something again.
+  const hiddenGone = coach.replace(
+    "  if (melody.kind === 'hidden') return null;",
+    "  if (melody.kind === 'hidden') { /* nothing */ }",
+  );
+  assert(hiddenGone !== coach, 'the hidden-branch mutation changed CoachPracticeCard');
+  assertEq(
+    coachCardNeverPromisesMelody(hiddenGone),
+    false,
+    'MUTATION: a card that no longer hides for a melody-less PD piece FAILS',
   );
 
   // (d, flags) the money-path WebView flags gone again.

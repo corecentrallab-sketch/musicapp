@@ -73,9 +73,9 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
 
   /**
    * The ONE in-app retailer shell on this page (History dead-end sprint, owner
-   * 10-01): the sheet-music card and the coached-practice "hear the melody at the
-   * official sheet music" action both open it, so a piece page has exactly one
-   * WebView and one BACK rule. Null = closed.
+   * 10-01; single-CTA rule v31): only the sheet-music card opens it, so a piece
+   * page has exactly one purchase action, exactly one WebView and one BACK rule.
+   * Null = closed.
    */
   const [purchaseWebUrl, setPurchaseWebUrl] = useState<string | null>(null);
 
@@ -91,7 +91,8 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
    * The piece's licensed purchase links, resolved in THIS order:
    *   • `primaryPurchaseUrl` — the PRIMARY retailer (Sheet Music Direct, the
    *     money path) unless only the backup exists; this is the sheet-music card's
-   *     automatic destination and the coach card's retailer action;
+   *     automatic destination and, for the coach card, the signal that this is a
+   *     modern song (v31: the coach card opens nothing — one CTA per page);
    *   • `secondaryPurchaseUrl` — the other retailer, shown as the small
    *     "Try Musicnotes" line ONLY when it is a different page.
    * Both are the saved list's own URLs: nothing is built or guessed here.
@@ -396,17 +397,21 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           time-stretch player and this coach all belong to the piece in hand.
           The reference melody resolves from the catalog's abc when present,
           otherwise from the bundled public-domain seeds. A piece with NO melody
-          we may use either says so honestly (nothing to offer) or — when it
-          carries a licensed link, i.e. a modern song — becomes a LIVE card that
-          opens the official page (owner 10-01); we never host a copyrighted
-          melody and never fabricate one. */}
+          we may use either says so in ONE honest line (a modern song — its
+          licensed page is the sheet-music card above) or renders nothing at all
+          (v31, owner 10-01). We never host a copyrighted melody, never fabricate
+          one, and never promise one that is not coming.
+
+          ONE PURCHASE ACTION PER PAGE (owner 10-01, "duplicate CTA box"): the
+          coach card gets the licensed link as a SIGNAL ONLY, so it can tell a
+          modern song apart — it is handed no opener and renders no buy button.
+          The sheet-music card above is the page's single retailer CTA. */}
       <CoachPracticeCard
         pieceId={piece.id}
         title={piece.title}
         composer={piece.composer}
         abc={piece.abc}
         purchaseUrl={purchaseUrl}
-        onOpenPurchase={openInAppPurchase}
         onSessionActiveChange={setCoachActive}
       />
 
@@ -468,9 +473,9 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
       )}
 
       {/* The page's ONE in-app retailer shell (owner 10-01): the sheet-music
-          card and the coach's "hear the melody" action both land here, so the
-          browser, its BACK behaviour and the "← Back to NoteSnap" header are one
-          implementation, opened as a full-screen Modal over this page
+          card is its only caller, so the browser, its BACK behaviour and the
+          "← Back to NoteSnap" header are one implementation behind one purchase
+          action, opened as a full-screen Modal over this page
           (src/components/PurchaseWebView.tsx — BACK returns to the piece page,
           never out of the app). */}
       {purchaseWebUrl && (
