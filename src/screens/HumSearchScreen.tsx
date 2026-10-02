@@ -1,45 +1,50 @@
 /**
- * HumSearchScreen — the tap-to-hum/whistle/sing-to-search flow (Tier-1
- * differentiator, distinct from the audio-recognize mode).
+ * HumSearchScreen — the melody-capture FLOW (owner 10-02, rank-2 creator's tool;
+ * "Melody Idea Capture"). Tapping hum/whistle/sing anywhere in the app lands
+ * here, and what it renders is the full-screen capture window
+ * (src/components/MelodyCaptureWindow.tsx): the mic is ALREADY live, the VU
+ * meter is moving with the user's voice, and the take becomes the result IN
+ * PLACE when it ends.
  *
- * The user hums/whistles/sings a melody into the mic; we record on-device
- * (reusing useAudioRecorder) and POST it to /api/hum. On a confident match we
- * hand the result to the ONE shared result surface
- * (`RecognitionResultView`, bundle A, owner 10-02): the screen's OWN result card
- * is retired, so a hum match is shown exactly like every other match — identity,
- * provenance ("You hummed it — here it is") and the piece's hosted score INLINE
- * in the card, with the reader one chip away. On no-match we show the honest
- * "hum a longer/clearer phrase" message and invite retry. We NEVER fabricate a
- * title.
+ * WHAT THIS FILE OWNS (the window owns only the drawing):
  *
- * WHAT THIS SCREEN STILL OWNS (bundle A): the recorder, the upload, the honest
- * no-match/error cards, and the TAKE — the recording the user just made. The
- * take's "Export MIDI" is rendered by the shared surface from the contract this
- * screen passes down (`midiExport`), because the take, the export run and its
- * outcome sentence live here: the surface can never invent a take, and this
- * screen can never lose one (v30 feature, kept by bundle A).
+ *   1. THE TAP → RECORDING. `handleStart` runs on mount, so the window opens
+ *      recording rather than asking for a second tap. A failed start is NEVER
+ *      silent (the PR #115 rule): it lands on the honest error card below, via
+ *      `humStartFailureOutcome()` — the same contract the modern flow uses.
  *
- * The no-match card also carries the HUM → MODERN BRIDGE (owner-approved 09-22,
- * src/services/humBridge.ts): our melody catalog is small, so a hum miss must
- * not be a dead end. "Play the song instead" hands the user to the modern
- * "Find any song" flow (its own recorder, AudD fingerprinting), which identifies
- * the actual recording and links the official sheet music through our affiliate
- * partner. The reverse lever (modern → hum) already exists and is untouched.
+ *   2. THE TAKE, THE SOUND AND THE ROW. On stop, the recording is copied out of
+ *      the recorder's cache into the app's documents directory (melodyStore) and
+ *      READ through the app's one decode seam (captureMidiExport.
+ *      deriveCaptureTakeFromRecording → coachCapture → pitchDetection →
+ *      buildCaptureTake) — the same reading "Export MIDI" has always used. The
+ *      take is written into History immediately as a PERSONAL MELODY (title "My
+ *      melody", composer "Personal melody", id `melody-…`, the sound's URI in
+ *      the row), so the user's tune is never lost and History can re-open it.
+ *      The analysis (sequence, key, suggested chords) is decided by the pure
+ *      module src/services/melodyCapture.ts and rendered by the window.
  *
- * A failed start is NEVER silent: if startRecording() returns false the screen
- * lands on the honest error card below (permission failures keep the hook's
- * "Open Settings" affordance), exactly like the modern flow does — see
- * humStartFailureOutcome().
+ *   3. THE BONUS MATCH. The hum pass against OUR melody catalog still runs, and
+ *      a confident hit is a BONUS on top of the take: the piece is saved to
+ *      History (recognition counts as practice), its identity is shown in the
+ *      window, and the ONE shared result surface opens with the hosted score.
+ *      A MISS IS NOT A DEAD END — the window has already shown and saved the
+ *      user's own melody, and the miss adds the honest "we don't hold that one"
+ *      line plus the HUM → MODERN bridge (owner-approved 09-22) and the retry.
+ *
+ *   4. THE USER'S OWN TAKE, ALWAYS. Every note, key and chord in this flow comes
+ *      from the take the user just made; chords are labelled "Suggested" and the
+ *      cleaned sequence is labelled "Auto-cleaned". A modern-song match never
+ *      renders generated notation for the song (standing rule) — a modern route
+ *      is only ever the bridge OUT of here, into the licensed-retailer flow.
+ *
+ *   5. RE-OPENING A SAVED MELODY. History hands this screen a row (`reopen`), and
+ *      the same window shows that take again — no recorder, no matching. A
+ *      melody whose sound was kept but could not be read gets a real "try reading
+ *      it again" action instead of a dead end.
  */
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  ScrollView,
-} from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useHardwareBack } from '../hooks/useHardwareBack';
 import { fetchPieceById, humToSearch } from '../services/api';
@@ -58,61 +63,116 @@ import {
   humMatchToResultResponse,
   type HumResolvedSheet,
 } from '../services/frontDoor';
-import { saveRecognition, updateRecognitionCapture } from '../services/storage';
-import { exportCaptureMidiFromRecording } from '../services/captureMidiExport';
-// The shared result surface (bundle A): the ONE card every recognition outcome
-// lands on. Mounted here as an overlay — this screen stays mounted underneath, so
-// closing the card returns the user to the hum flow with nothing re-mounted.
-import { RecognitionResultView } from '../components/RecognitionResultView';
-// The detected key of the exported take, as text — "Key: G major" — or null
-// when the take had no detected key (Batch A: the key the .mid was written in
-// is shown, and nothing at all is shown when there was no verdict). The surface
-// renders the line; THIS screen derives it, from the take's own key.
+import { saveRecognition } from '../services/storage';
+import {
+  deriveCaptureTakeFromRecording,
+  exportCaptureMidiFromRecording,
+  exportCaptureMidiFromTake,
+} from '../services/captureMidiExport';
+import {
+  persistMelodyAudio,
+  savePersonalMelodyRow,
+  updatePersonalMelodyTake,
+} from '../services/melodyStore';
+// The detected key of the exported take, as text — "Key: G major" — or null when
+// the take had no detected key. The window renders the line; the export outcome
+// carries it, and the take's own key is what the analysis above shows.
 import { keyCaption } from '../services/keyDetection';
-import type { RecognitionResponse } from '../types';
+import {
+  ANALYSING_LINE,
+  ANALYSING_SUBLINE,
+  buildMelodyAnalysis,
+  melodyRowId,
+  personalMelodyFromRow,
+  type MelodyAnalysis,
+  type MelodyWindowCopy,
+} from '../services/melodyCapture';
+import {
+  MelodyCaptureWindow,
+  type MelodyWindowPhase,
+} from '../components/MelodyCaptureWindow';
+// The shared result surface (bundle A): the ONE card every recognition outcome
+// lands on. Mounted here as an overlay — the capture window stays mounted
+// underneath, so closing the card reveals the user's own melody again.
+import { RecognitionResultView } from '../components/RecognitionResultView';
+import type { RecognitionResponse, SavedPiece } from '../types';
+import type { SavedCaptureTake } from '../services/midiExport';
 
 /** Auto-stop after this long so the melody extractor gets enough signal. */
 const RECORDING_TIMEOUT_MS = 12000;
 
 /**
- * 'result' is GONE (bundle A): a confident match no longer renders this screen's
- * own card — it opens the shared result surface, and the screen returns to idle
- * underneath it.
+ * The capture window's copy (owner 10-02). The three lines below each name ALL
+ * THREE accepted input modes — hum, whistle AND sing — because this one capture
+ * takes any of them (RC v28 Test 4b: a singer is recording a melody, not a hum).
+ * They are declared HERE, in the flow that renders them, because this is the
+ * capture surface the front-door copy contract reads.
  */
-type Stage = 'idle' | 'recording' | 'uploading' | 'no-match' | 'error';
+const CAPTURE_HEADLINE = 'Hum, whistle or sing the melody';
+const CAPTURE_INTRO =
+  'Hum, whistle or sing the tune you hear in your head — NoteSnap writes it down for you.';
+const CAPTURE_HINT = 'Hum, whistle or sing a phrase — around 12 seconds is plenty.';
+const RECORDING_LINE = 'Recording your melody...';
+
+const CAPTURE_COPY: MelodyWindowCopy = {
+  headline: CAPTURE_HEADLINE,
+  intro: CAPTURE_INTRO,
+  hint: CAPTURE_HINT,
+  recordingLine: RECORDING_LINE,
+  analysingLine: ANALYSING_LINE,
+  analysingSubline: ANALYSING_SUBLINE,
+};
+
+/**
+ * 'review' is the window showing the take's own result (its sequence, key and
+ * suggested chords); 'no-match' is that SAME window plus the honest library-miss
+ * card; 'error' is a capture that could not be made at all. There is deliberately
+ * no stage that renders a result card of its own — the ONE result surface
+ * (bundle A) is what shows a match, so a second card can never come back.
+ */
+type Stage = 'recording' | 'analysing' | 'review' | 'no-match' | 'error';
 
 interface HumSearchScreenProps {
   onClose: () => void;
   /** The HUM → MODERN bridge: leave this flow and open the modern "Find any
    *  song" screen (its own recorder), which identifies the actual recording via
    *  the licensed fingerprint service and links the official sheet music.
-   *  Offered on the no-match card so a hum miss is never a dead end. */
-  onSwitchToModern: () => void;
+   *  Offered on the library-miss card so a hum miss is never a dead end. */
+  onSwitchToModern?: () => void;
+  /** A personal melody from History: show that take again instead of recording. */
+  reopen?: SavedPiece | null;
 }
 
 export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
   onClose,
   onSwitchToModern,
+  reopen,
 }) => {
   const recorder = useAudioRecorder();
-  const [stage, setStage] = useState<Stage>('idle');
+  const [stage, setStage] = useState<Stage>('recording');
   const [outcome, setOutcome] = useState<HumOutcome | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [hub, setHub] = useState<string | undefined>(undefined);
-  // The RESULT the shared surface renders (bundle A): the hum match mapped into
-  // the app's own recognition-response shape, with the hosted score the catalog
-  // resolved for it. Non-null = the surface is open, which is what replaced this
-  // screen's own 'result' stage.
+  // The RESULT the shared surface renders (bundle A).
   const [humResult, setHumResult] = useState<RecognitionResponse | null>(null);
-  // The take the user just recorded (MIDI export Batch A). Kept as the
-  // recording's own URI: "Export MIDI" serializes THIS take and nothing else.
+  // The take the user just recorded: its own URI (what "Export MIDI" serializes)
+  // and the kept copy of it in the app's documents directory.
   const [takeUri, setTakeUri] = useState<string | null>(null);
+  const [take, setTake] = useState<SavedCaptureTake | null>(null);
+  const [audioUri, setAudioUri] = useState<string | null>(null);
+  const [capturedAt, setCapturedAt] = useState<string>('');
+  const [analysis, setAnalysis] = useState<MelodyAnalysis | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
-  // The key the exported .mid was written in ("Key: G major"), set from the
-  // export outcome's own key and null when the take had none.
   const [exportKey, setExportKey] = useState<string | null>(null);
+  const [matchLine, setMatchLine] = useState<string | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopInFlightRef = useRef(false);
+  // The saved melody this screen was opened from, when History re-opened one.
+  const reopenedRow = useMemo(() => (reopen ? personalMelodyFromRow(reopen) : null), [reopen]);
 
   useEffect(() => {
     return () => {
@@ -120,53 +180,41 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
     };
   }, []);
 
-  const handleStart = useCallback(async () => {
-    if (recorder.isRecording) {
-      handleStop();
-      return;
-    }
-    setErrorMessage(null);
-    setOutcome(null);
-    const started = await recorder.startRecording();
-    if (!started) {
-      // NEVER a silent dead end (the PR #115 rule, now applied here too). The
-      // pre-fix code did `if (!started) return;`, which set NOTHING: no error
-      // card, no message, no retry — the screen simply sat there and ate taps.
-      // Every failed start now lands on the honest error card below.
-      const failedStart = humStartFailureOutcome(recorder.takeStartFailure());
-      if (!failedStart.keepHookError) recorder.clearError();
-      setErrorMessage(failedStart.message);
-      setStage(failedStart.stage);
-      return;
-    }
-    setStage('recording');
-    timeoutRef.current = setTimeout(() => handleStop(), RECORDING_TIMEOUT_MS);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recorder.isRecording, recorder.startRecording]);
+  // ── RE-OPENING A SAVED MELODY ─────────────────────────────────
+  // No recorder, no library pass: the row already carries the take and the
+  // sound. A row whose sound was kept but never read (the decoder was down when
+  // it was captured) shows the honest "could not read it" state with a real
+  // "try reading it again" action, so the user's own file is never a dead end.
+  useEffect(() => {
+    if (!reopenedRow) return;
+    setTake(reopenedRow.take);
+    setAudioUri(reopenedRow.audioUri);
+    setTakeUri(reopenedRow.audioUri);
+    setCapturedAt(reopenedRow.capturedAt);
+    setAnalysis(buildMelodyAnalysis(reopenedRow.take, { unavailable: !reopenedRow.take }));
+    setSaved(!!reopenedRow.take);
+    setStage('review');
+  }, [reopenedRow]);
 
-  const handleStop = useCallback(async () => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    const stopped = await recorder.stopRecording();
-    if (!stopped) {
-      recorder.clearError();
-      setStage('error');
-      setErrorMessage('Recording failed — please try again.');
-      return;
-    }
-    const { uri } = stopped;
-    // The take we can export later (MIDI export Batch A).
-    setTakeUri(stopped.uri);
-    setExportNote(null);
-    setStage('uploading');
+  /**
+   * The library pass (the BONUS). Skipped when the take held nothing readable —
+   * there is no melody to match, and the window already says so.
+   *
+   * A hit: the piece is saved to History (recognition counts as practice), its
+   * identity is shown in the window, and the ONE result surface opens with the
+   * hosted score when the catalog has one. A miss: the window keeps the user's
+   * melody and the library-miss card appears with the retry and the bridge.
+   * A failed request is neither: the take stands, and the window says the
+   * library could not be checked.
+   */
+  const handleMatch = useCallback(async (uri: string, skip: boolean) => {
+    if (skip) return;
     try {
       const resp = await humToSearch(uri);
       const res = humOutcome(resp);
       setHub(humPhraseHint(resp));
+      setOutcome(res);
       if (res.ok && res.topMatch) {
-        // Save the recognized piece to History (recognition counts as practice).
         await saveRecognition({
           id: res.topMatch.piece_id,
           title: res.topMatch.title,
@@ -174,10 +222,9 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
           savedAt: new Date().toISOString(),
         });
         // THE HOSTED SCORE, best effort (bundle A): a HumMatch carries identity
-        // only, so we look the piece up in OUR catalog to get the score the shared
-        // surface renders INLINE. A miss (offline, unknown id, no curated score)
-        // is not an error — the surface then says honestly that it holds no score
-        // for this one. Nothing is ever invented here.
+        // only, so we look the piece up in OUR catalog to get the score the
+        // shared surface renders INLINE. A miss is not an error — the surface
+        // then says honestly that it holds no score for this one.
         let sheet: HumResolvedSheet | null = null;
         const info = await fetchPieceById(res.topMatch.piece_id);
         if (info) {
@@ -190,61 +237,223 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
             isPublicDomain: info.isPublicDomain ?? undefined,
           };
         }
-        setOutcome(res);
-        setStage('idle');
+        setMatchLine(`That's ${res.topMatch.title} — it's in our free library.`);
         setHumResult(humMatchToResultResponse(resp, res.matches, sheet));
       } else {
-        setOutcome(res);
-        setStage('no-match');
+        // Only a window that has FINISHED its take may move to the miss card:
+        // a late answer must never interrupt a new recording.
+        setStage((previous) => (previous === 'review' ? 'no-match' : previous));
       }
+    } catch {
+      setMatchLine('We could not check the library just now — your melody is saved either way.');
+    }
+  }, []);
+
+  /**
+   * Stop the take and turn it into the user's own melody. The ORDER matters:
+   * the sound is kept first (it is the one thing that cannot be recreated), then
+   * it is read, then the row is written — and only then is the library asked.
+   */
+  const handleStop = useCallback(async () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    if (stopInFlightRef.current) return;
+    stopInFlightRef.current = true;
+    try {
+      const stopped = await recorder.stopRecording();
+      if (!stopped) {
+        recorder.clearError();
+        setStage('error');
+        setErrorMessage('Recording failed — please try again.');
+        return;
+      }
+      // The take we can export later, and the stamp every part of the row uses.
+      setTakeUri(stopped.uri);
+      setStage('analysing');
+      setSaveNote(null);
+      setExportNote(null);
+      setExportKey(null);
+      setMatchLine(null);
+      const stamp = new Date().toISOString();
+      setCapturedAt(stamp);
+      const rowId = melodyRowId(stamp);
+
+      // 1. THE SOUND: copy it out of the recorder's cache so it survives.
+      const keptUri = await persistMelodyAudio(stopped.uri, rowId);
+      setAudioUri(keptUri);
+
+      // 2. THE READING: the same decode seam Export MIDI has always used.
+      const derived = await deriveCaptureTakeFromRecording({
+        uri: stopped.uri,
+        capturedAt: stamp,
+      });
+      const analysed = buildMelodyAnalysis(derived.take, { unavailable: derived.unavailable });
+      setTake(derived.take);
+      setAnalysis(analysed);
+      setStage('review');
+
+      // 3. THE ROW: the melody lands in History the moment it exists.
+      if (analysed.canSave) {
+        const row = await savePersonalMelodyRow({
+          rowId,
+          capturedAt: stamp,
+          take: derived.take,
+          audioUri: keptUri,
+        });
+        setSaved(!!row);
+        if (!row) {
+          setSaveNote('Could not write this melody into your History — tap Save melody to try again.');
+        } else if (!keptUri) {
+          setSaveNote(
+            'Saved to your History. The recording itself could not be kept on this device, so re-opening this melody will read the take instead.',
+          );
+        }
+      } else {
+        setSaveNote(analysed.disabledReason);
+      }
+
+      // 4. THE BONUS: the library pass, on top of the take. Never required.
+      void handleMatch(stopped.uri, analysed.state !== 'ready');
     } catch (err) {
       recorder.completeRecording();
       setStage('error');
       setErrorMessage(
         err instanceof Error ? err.message : 'Something went wrong. Please try again.',
       );
+    } finally {
+      stopInFlightRef.current = false;
     }
-  }, [recorder]);
+  }, [handleMatch, recorder]);
 
+  /**
+   * Open the capture: the flow starts the mic itself (owner 10-02 — the window
+   * opens RECORDING, not waiting for a second tap).
+   */
+  const handleStart = useCallback(async () => {
+    if (recorder.isRecording) {
+      void handleStop();
+      return;
+    }
+    setErrorMessage(null);
+    setOutcome(null);
+    const started = await recorder.startRecording();
+    if (!started) {
+      // NEVER a silent dead end (the PR #115 rule, now applied here too). The
+      // pre-fix code did `if (!started) return;`, which set NOTHING: no error
+      // card, no message, no retry — the screen simply sat there and ate taps.
+      const failedStart = humStartFailureOutcome(recorder.takeStartFailure());
+      if (!failedStart.keepHookError) recorder.clearError();
+      setErrorMessage(failedStart.message);
+      setStage(failedStart.stage);
+      return;
+    }
+    setStage('recording');
+    setElapsedMs(0);
+    timeoutRef.current = setTimeout(() => {
+      void handleStop();
+    }, RECORDING_TIMEOUT_MS);
+  }, [handleStop, recorder]);
+
+  // THE WINDOW OPENS LISTENING. Tapping the hum entry anywhere in the app mounts
+  // this screen, and the recording starts here — no intermediate idle screen.
+  useEffect(() => {
+    if (reopenedRow) return;
+    void handleStart();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The elapsed clock the window shows next to the LIVE badge.
+  useEffect(() => {
+    if (stage !== 'recording' || !recorder.isRecording) return;
+    const startedAt = Date.now() - elapsedMs;
+    const id = setInterval(() => setElapsedMs(Date.now() - startedAt), 250);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, recorder.isRecording]);
+
+  /** Record another take, straight into the same window. */
   const handleRetry = useCallback(() => {
     setOutcome(null);
     setHumResult(null);
-    setStage('idle');
-    setTimeout(() => handleStart(), 300);
-  }, [handleStart]);
+    setAnalysis(null);
+    setTake(null);
+    setAudioUri(null);
+    setTakeUri(null);
+    setSaved(false);
+    setSaveNote(null);
+    setExportNote(null);
+    setExportKey(null);
+    setMatchLine(null);
+    setErrorMessage(null);
+    setElapsedMs(0);
+    recorder.resetForRetry();
+    setStage('recording');
+    setTimeout(() => {
+      void handleStart();
+    }, 300);
+  }, [handleStart, recorder]);
 
   /**
-   * "Export MIDI" (Batch A): the user's own take as a Standard MIDI File. The
-   * recorded clip is decoded through the app's existing capture seam, tracked by
-   * the existing pitch tracker, and written to a .mid that opens in any DAW.
-   * Every outcome is surfaced in the card — no silent dead button, and a take
-   * with no melody says so instead of writing an empty file. On success the take
-   * is stored on the History row so History can export it again later.
+   * "Save melody": an explicit write, so a melody whose automatic save failed
+   * (or a re-opened take that was never stored) can still be kept. Idempotent —
+   * the row id is the take's own, so this can never create a second row.
+   */
+  const handleSave = useCallback(async () => {
+    if (!analysis) return;
+    if (!analysis.canSave) {
+      setSaveNote(analysis.disabledReason);
+      return;
+    }
+    const row = await savePersonalMelodyRow({
+      rowId: analysis.rowId,
+      capturedAt: capturedAt || take?.capturedAt || analysis.rowId,
+      take,
+      audioUri,
+    });
+    if (row) {
+      setSaved(true);
+      setSaveNote('Saved to your History.');
+    } else {
+      setSaveNote('Could not write this melody into your History — please try again.');
+    }
+  }, [analysis, audioUri, capturedAt, take]);
+
+  /**
+   * "Export MIDI": the user's own take as a Standard MIDI File, through the
+   * existing Batch A path. A take recorded HERE is exported from the recording
+   * itself (the raw take, unchanged); a re-opened melody whose sound could not be
+   * kept exports the take the row already carries — exactly what the History row
+   * does. Every outcome is surfaced; a take with no melody says so.
    */
   const handleExportMidi = useCallback(async () => {
     if (exporting) return;
-    if (!takeUri) {
-      setExportNote('Record a take first — then we can write it out as MIDI.');
+    if (analysis && !analysis.canExportMidi) {
+      setExportNote(analysis.disabledReason);
       return;
     }
     setExporting(true);
     setExportNote(null);
     setExportKey(null);
     try {
-      const piece = outcome?.topMatch;
-      const result = await exportCaptureMidiFromRecording({
-        uri: takeUri,
-        title: piece?.title,
-      });
-      setExportNote(result.message);
-      // The key the FILE was written in (the SMF key-signature verdict), or null
-      // when the take was too thin to name one — in which case the card prints
-      // no key line at all.
-      setExportKey(keyCaption(result.key));
-      if (result.status === 'exported' && result.take && piece?.piece_id) {
-        // Keep the take on the saved row so History can export it again
-        // (offline, no re-decode). A missing row is not a failure.
-        await updateRecognitionCapture(piece.piece_id, result.take);
+      if (takeUri) {
+        const result = await exportCaptureMidiFromRecording({ uri: takeUri });
+        setExportNote(result.message);
+        // The key the FILE was written in (the SMF key-signature verdict), or
+        // null when the take was too thin to name one.
+        setExportKey(keyCaption(result.key));
+        if (result.status === 'exported' && result.take && analysis) {
+          // Keep the take on the saved row so History can export it again
+          // (offline, no re-decode). A missing row is not a failure.
+          await updatePersonalMelodyTake(analysis.rowId, result.take);
+        }
+      } else if (take) {
+        const result = await exportCaptureMidiFromTake(take, { title: analysis?.rowTitle });
+        setExportNote(result.message);
+        setExportKey(keyCaption(result.key));
+      } else {
+        setExportNote('Record a take first — then we can write it out as MIDI.');
       }
     } catch (err) {
       setExportNote(
@@ -255,126 +464,127 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
     } finally {
       setExporting(false);
     }
-  }, [exporting, takeUri, outcome]);
+  }, [analysis, exporting, take, takeUri]);
+
+  /**
+   * Read a SAVED melody again (the re-open path for a take whose sound was kept
+   * but never read). On success the take is written onto the same row, so the
+   * user's melody gains its notes without ever leaving History.
+   */
+  const handleReanalyse = useCallback(async () => {
+    if (!analysis || !audioUri) return;
+    setStage('analysing');
+    setSaveNote(null);
+    const stamp = capturedAt || take?.capturedAt || new Date().toISOString();
+    const derived = await deriveCaptureTakeFromRecording({ uri: audioUri, capturedAt: stamp });
+    const analysed = buildMelodyAnalysis(derived.take, { unavailable: derived.unavailable });
+    setTake(derived.take);
+    setAnalysis(analysed);
+    setStage('review');
+    if (analysed.canSave) {
+      const stored = await updatePersonalMelodyTake(analysis.rowId, derived.take);
+      setSaved(stored);
+      if (!stored) setSaveNote('Tap Save melody to keep this reading of your melody.');
+    } else {
+      setSaveNote(analysed.disabledReason);
+    }
+  }, [analysis, audioUri, capturedAt, take]);
 
   // Android hardware BACK (in-place flow — owner bug class 09-23). This screen
   // is not a route and not a modal: its host tab replaces its whole body with it,
   // so an unconsumed BACK press pops React Navigation's last route and finishes
   // the activity (the app "exits"). Consume it here, unwinding ONE level: the
   // shared result surface (a Modal, which handles its own BACK while it is open)
-  // first, then back to the screen that opened the hum flow.
+  // first, then the take (stop it and land on the analysis rather than leaving a
+  // live microphone behind), then back to the screen that opened the capture.
   // Guarded by src/services/backExitContract.ts.
   useHardwareBack(() => {
     if (humResult) {
       setHumResult(null);
       return true;
     }
+    if (stage === 'recording' && recorder.isRecording) {
+      void handleStop();
+      return true;
+    }
     onClose();
     return true;
   });
 
+  const windowPhase: MelodyWindowPhase =
+    stage === 'recording' ? 'recording' : stage === 'analysing' ? 'analysing' : 'review';
+
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={onClose}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Hum, whistle or sing</Text>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.heroEmoji}>🎤</Text>
-        <Text style={styles.title}>Hum, whistle or sing the melody</Text>
-        <Text style={styles.subtitle}>
-          Can't play the audio out loud? No problem — hum, whistle or sing the
-          tune you hear in your head and we'll find the piece. It's like
-          recognition, but from your voice.
-        </Text>
-
-        {recorder.error && !recorder.isRecording && (
-          <View style={styles.errorCard}>
-            <Text style={styles.errorText}>{recorder.error}</Text>
-            <TouchableOpacity
-              style={styles.settingsBtn}
-              onPress={recorder.openSettings}
-            >
-              <Text style={styles.settingsBtnText}>Open Settings</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Uploading spinner */}
-        {stage === 'uploading' && (
-          <View style={styles.loadingCard}>
-            <ActivityIndicator size="large" color="#e94560" />
-            <Text style={styles.loadingText}>Listening to your melody...</Text>
-            <Text style={styles.loadingSubtext}>Matching against the catalog</Text>
-          </View>
-        )}
-
-        {/* Recording / idle trigger */}
-        {stage !== 'uploading' && (
-          <TouchableOpacity
-            style={[styles.micBtn, recorder.isRecording && styles.micBtnActive]}
-            onPress={stage === 'recording' ? handleStop : handleStart}
-            disabled={recorder.checkingPermissions}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.micBtnIcon}>{recorder.isRecording ? '⏹' : '🎤'}</Text>
+    <MelodyCaptureWindow
+      phase={windowPhase}
+      levels={recorder.liveLevels}
+      elapsedMs={elapsedMs}
+      // This build has NO live pitch source (the recorder hands us the finished
+      // clip and a dB level, not a PCM stream), so the window says in words that
+      // the notes are written when the take ends. The strip renders live notes
+      // the moment a frame source can supply them.
+      liveSourceReady={false}
+      analysis={analysis}
+      matchLine={matchLine}
+      onOpenMatch={humResult ? () => setHumResult(humResult) : undefined}
+      onStop={handleStop}
+      onClose={onClose}
+      onRecordAgain={handleRetry}
+      onSave={handleSave}
+      saved={saved}
+      saveNote={saveNote}
+      onExportMidi={handleExportMidi}
+      exporting={exporting}
+      exportNote={exportNote}
+      exportKeyLine={exportKey}
+      copy={CAPTURE_COPY}
+    >
+      {recorder.error && !recorder.isRecording && (
+        <View style={styles.errorCard}>
+          <Text style={styles.errorText}>{recorder.error}</Text>
+          <TouchableOpacity style={styles.settingsBtn} onPress={recorder.openSettings}>
+            <Text style={styles.settingsBtnText}>Open Settings</Text>
           </TouchableOpacity>
-        )}
+        </View>
+      )}
 
-        {recorder.isRecording && (
-          <Text style={styles.recordingHint}>
-            Recording your melody... tap again to stop & search.
-          </Text>
-        )}
-        {!recorder.isRecording && stage === 'idle' && (
-          <>
-            <Text style={styles.recordingHint}>
-              Tap the mic, hum, whistle or sing a phrase (8–12s is ideal), then
-              stop.
-            </Text>
-            <Text style={styles.idleBetaNote}>
-              Library is still growing — try a well-known melody (Für Elise, Ode to Joy).
-            </Text>
-          </>
-        )}
+      {stage === 'error' && (
+        <View style={styles.resultCard}>
+          <Text style={styles.resultEmoji}>⚠️</Text>
+          <Text style={styles.resultTitle}>Something went wrong</Text>
+          <Text style={styles.resultText}>{errorMessage ?? 'Please try again.'}</Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={handleRetry}>
+            <Text style={styles.primaryBtnText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
-        {/* Error */}
-        {stage === 'error' && !recorder.isRecording && (
-          <View style={styles.resultCard}>
-            <Text style={styles.resultEmoji}>⚠️</Text>
-            <Text style={styles.resultTitle}>Something went wrong</Text>
-            <Text style={styles.resultText}>
-              {errorMessage ?? 'Please try again.'}
-            </Text>
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleRetry}>
-              <Text style={styles.primaryBtnText}>Try Again</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+      {/* A melody whose sound was kept but never read: the read can be retried
+          without losing the take, and the window's own honest state explains it. */}
+      {stage === 'review' && analysis?.state === 'unavailable' && !!audioUri && (
+        <TouchableOpacity style={styles.primaryBtn} onPress={handleReanalyse}>
+          <Text style={styles.primaryBtnText}>Try reading it again</Text>
+        </TouchableOpacity>
+      )}
 
-        {/* No match — honest, banded, with retry. The copy comes from
-            humNoMatchMessage(): "we were close" (best candidate near/above the
-            server's floor) vs "we're not sure — library still growing". Never
-            a raw percentage, never a fabricated title. */}
-        {stage === 'no-match' && outcome && (
-          <View style={styles.resultCard}>
-            <Text style={styles.resultEmoji}>🔍</Text>
-            <Text style={styles.resultTitle}>No match for that melody</Text>
-            <Text style={styles.resultText}>{humNoMatchMessage(outcome)}</Text>
-            {hub && <Text style={styles.hintText}>{hub}</Text>}
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleRetry}>
-              <Text style={styles.primaryBtnText}>{HUM_RETRY_CTA}</Text>
-            </TouchableOpacity>
-            {/* THE BRIDGE (owner-approved 09-22): our melody catalog is small,
-                so a hum we don't hold must not be the end of the road. This
-                hands the user to the modern "Find any song" flow, where the
-                actual recording is identified and the official sheet music is
-                linked. Honest wording — we identify the recording, and link the
-                sheet music when there is a match. */}
+      {/* THE LIBRARY MISS — honest, banded, with retry. The copy comes from
+          humNoMatchMessage(): "we were close" vs "we're not sure — library still
+          growing". Never a raw percentage, never a fabricated title. The user's
+          own melody is already on screen above this card and already saved. */}
+      {stage === 'no-match' && outcome && (
+        <View style={styles.resultCard}>
+          <Text style={styles.resultEmoji}>🔍</Text>
+          <Text style={styles.resultTitle}>No match for that melody</Text>
+          <Text style={styles.resultText}>{humNoMatchMessage(outcome)}</Text>
+          {hub && <Text style={styles.hintText}>{hub}</Text>}
+          <TouchableOpacity style={styles.primaryBtn} onPress={handleRetry}>
+            <Text style={styles.primaryBtnText}>{HUM_RETRY_CTA}</Text>
+          </TouchableOpacity>
+          {/* THE BRIDGE (owner-approved 09-22): our melody catalog is small, so a
+              melody we don't hold must not be the end of the road. This hands the
+              user to the modern "Find any song" flow, where the actual recording
+              is identified and the official sheet music is linked. */}
+          {onSwitchToModern && (
             <TouchableOpacity
               style={styles.bridgeBtn}
               onPress={onSwitchToModern}
@@ -383,122 +593,37 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
               <Text style={styles.bridgeBtnText}>{HUM_TO_MODERN_CTA}</Text>
               <Text style={styles.bridgeBtnHint}>{HUM_TO_MODERN_BLURB}</Text>
             </TouchableOpacity>
-          </View>
-        )}
+          )}
+        </View>
+      )}
 
-        {/* \u2500\u2500 THE ONE RESULT SURFACE (bundle A) \u2500\u2500
-            A confident hum match no longer renders a card of its own: it opens the
-            SAME result surface every other match uses, which shows the piece's
-            hosted score INLINE, the hum provenance, the printed-arrangement search
-            the backend supplied, and \u2014 from the contract below \u2014 the export of the
-            take this screen just recorded. The screen stays mounted underneath, so
-            Done/BACK simply reveals the hum flow again. */}
-        {humResult ? (
-          <RecognitionResultView
-            visible
-            phase={{ type: 'success', response: humResult }}
-            onClose={() => setHumResult(null)}
-            onRetry={handleRetry}
-            midiExport={{
-              takeUri,
-              exporting,
-              note: exportNote,
-              keyLine: exportKey,
-              onExport: handleExportMidi,
-            }}
-          />
-        ) : null}
-      </ScrollView>
-    </View>
+      {/* ── THE ONE RESULT SURFACE (bundle A) ──
+          A confident hum match opens the SAME surface every other match uses,
+          which shows the piece's hosted score INLINE, the hum provenance, the
+          printed-arrangement search the backend supplied, and — from the
+          contract below — the export of the take this screen just recorded. The
+          capture window stays mounted underneath, so Done/BACK simply reveals
+          the user's own melody again. */}
+      {humResult ? (
+        <RecognitionResultView
+          visible
+          phase={{ type: 'success', response: humResult }}
+          onClose={() => setHumResult(null)}
+          onRetry={handleRetry}
+          midiExport={{
+            takeUri,
+            exporting,
+            note: exportNote,
+            keyLine: exportKey,
+            onExport: handleExportMidi,
+          }}
+        />
+      ) : null}
+    </MelodyCaptureWindow>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1a1a2e',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 8,
-  },
-  backBtn: {
-    marginRight: 12,
-  },
-  backText: {
-    color: '#e94560',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  headerTitle: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 60,
-    alignItems: 'center',
-  },
-  heroEmoji: {
-    fontSize: 56,
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#ffffff',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#a0a0b8',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
-    paddingHorizontal: 10,
-  },
-  micBtn: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: '#e94560',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-    marginBottom: 18,
-    shadowColor: '#e94560',
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
-  },
-  micBtnActive: {
-    backgroundColor: '#ff6b6b',
-  },
-  micBtnIcon: {
-    fontSize: 44,
-    color: '#ffffff',
-  },
-  recordingHint: {
-    fontSize: 13,
-    color: '#a0a0b8',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  idleBetaNote: {
-    fontSize: 12,
-    color: '#7d7d99',
-    textAlign: 'center',
-    fontStyle: 'italic',
-    marginTop: -12,
-    marginBottom: 20,
-  },
   errorCard: {
     backgroundColor: '#1a1a2e',
     borderRadius: 12,
@@ -527,21 +652,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  loadingCard: {
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  loadingText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 12,
-  },
-  loadingSubtext: {
-    fontSize: 13,
-    color: '#a0a0b8',
-    marginTop: 4,
-  },
   resultCard: {
     backgroundColor: '#16213e',
     borderRadius: 20,
@@ -550,6 +660,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#0f3460',
+    marginTop: 8,
   },
   resultEmoji: {
     fontSize: 44,
@@ -575,39 +686,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: 16,
-  },
-  matchTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#ffffff',
-    textAlign: 'center',
-  },
-  matchComposer: {
-    fontSize: 15,
-    color: '#a0a0b8',
-    marginTop: 2,
-  },
-  matchConfidence: {
-    color: '#4ecdc4',
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 6,
-  },
-  otherMatches: {
-    width: '100%',
-    marginTop: 8,
-    marginBottom: 16,
-  },
-  otherMatchesTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#a0a0b8',
-    marginBottom: 6,
-  },
-  otherMatch: {
-    fontSize: 13,
-    color: '#c0c0d0',
-    marginBottom: 4,
   },
   primaryBtn: {
     backgroundColor: '#e94560',
@@ -646,48 +724,5 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     textAlign: 'center',
     marginTop: 4,
-  },
-  /** The MIDI export action: bordered in the app's teal accent (like the hum →
-   *  modern bridge) so it reads as an added capability, not a second retry. */
-  midiBtn: {
-    backgroundColor: '#0f3460',
-    borderColor: '#4ecdc4',
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    width: '100%',
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  midiBtnText: {
-    color: '#4ecdc4',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  midiBtnHint: {
-    color: '#a0a0b8',
-    fontSize: 12,
-    lineHeight: 17,
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  /** The detected key of the exported take ("Key: G major") — shown only when
-   *  the take really had one, so it reads as a fact about the file. */
-  exportKeyText: {
-    color: '#4ecdc4',
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  secondaryBtn: {
-    marginTop: 10,
-    padding: 8,
-  },
-  secondaryBtnText: {
-    color: '#a0a0b8',
-    fontSize: 14,
-    fontWeight: '600',
   },
 });

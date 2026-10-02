@@ -4,6 +4,28 @@
 
 import type { SavedCaptureTake } from '../services/midiExport';
 
+/**
+ * The personal-melody marker on a History row (melody capture, owner 10-02).
+ *
+ * A row carrying this is the USER'S OWN tune — hummed, whistled or sung into the
+ * capture window and kept on their device — not a recognized piece. That is why
+ * it exists as its own block rather than as a flag on `capture`: the row is
+ * re-openable as a MELODY (the capture window shows the take again) instead of
+ * being sent to the piece page, where a melody id resolves to nothing at all.
+ *
+ * Honesty rules:
+ *   • `audioUri` is the saved recording's own file in the app's documents
+ *     directory (`melodyStore.persistMelodyAudio`) — or null when that copy
+ *     could not be made, in which case the surface says the sound was not kept
+ *     rather than promising a replay it cannot deliver;
+ *   • `capturedAt` is the take's own capture time (the same stamp the row's
+ *     `savedAt` carries), so the id, the row and the take can never disagree.
+ */
+export interface PersonalMelodyRef {
+  audioUri: string | null;
+  capturedAt: string;
+}
+
 /** Represents a recognized piece of music saved to History. */
 export interface SavedPiece {
   id: string;
@@ -43,6 +65,15 @@ export interface SavedPiece {
    *     today's behaviour, and on every row saved before this change.
    */
   purchaseUrls?: PurchaseUrls | null;
+  /**
+   * ADDITIVE (melody capture, owner 10-02): present ONLY on a row that came from
+   * the melody-capture window — one of the user's OWN takes, kept on their device
+   * ("stores the sound in history for the user to come back to it"). See
+   * PersonalMelodyRef. Absent on every recognition row, so a row's tap routes to
+   * the piece page exactly as before, and a melody row can never be mistaken for
+   * a catalog piece (a melody id is not a piece id).
+   */
+  personalMelody?: PersonalMelodyRef | null;
 }
 
 // ─── API types ─────────────────────────────────────────────────
