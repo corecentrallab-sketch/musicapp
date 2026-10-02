@@ -28,6 +28,12 @@ import {
   interstitialSurface,
   type InterstitialViewState,
 } from '../services/modernInterstitialSurface';
+// The deduped SECONDARY retailer link (bundle C, owner 10-02): the backend's
+// backup URL, and only when it is a different page from the primary one. A second
+// button that opens the page the primary already opens is a second purchase action
+// for one page — the rule this re-flow exists to enforce — so the dedupe lives in
+// the money-path module, where the primary/secondary order is already owned.
+import { modernSecondaryRetailerUrl } from '../services/purchaseCta';
 // The category a recognized modern song may claim. It is never a catalog number
 // and never the word the app used to print for a song it had not identified as
 // a library piece — the label comes from the module that owns these strings.
@@ -191,6 +197,9 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
   // ── Recognized song → interstitial (no auto-redirect) ──
   if (surface === 'recognized' && match) {
     const canBuy = !!match.retailerUrl;
+    // The secondary retailer, deduped against the primary (bundle C): undefined
+    // when the backend sent no backup URL, or when the backup IS the primary page.
+    const secondaryRetailer = modernSecondaryRetailerUrl(match);
     // The genre line exists ONLY when the provider told us one (owner 09-25,
     // build #3). The retired neutral "Modern song" fallback is gone: the owner
     // rejected an invented category, and the honest answer to "which genre?" is
@@ -249,24 +258,32 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
                   </Text>
                 </TouchableOpacity>
               ) : (
-                <View style={styles.noLinkCard}>
-                  <Text style={styles.noLinkText}>
-                    Official sheet music isn't linked yet — check back soon.
-                  </Text>
-                </View>
+                /* No retailer link came back for this song. The static
+                   "coming back later" box is gone (bundle C, owner 10-02; §E
+                   zero-promise): a box that promises a link we do not hold is a
+                   dead end. What replaces it is an honest line about what we DO
+                   have, with the card's own real next steps right below it — the
+                   hum/whistle/sing search and the free public-domain library. No
+                   fake button, no placeholder. */
+                <Text style={styles.noLinkText}>
+                  We identified this song, but there's no licensed sheet-music
+                  link for it yet. You can still hum, whistle or sing the melody
+                  to find a free public-domain piece, or browse the free
+                  classical library — both are below.
+                </Text>
               )}
 
-              {/* SECONDARY retailer (owner-approved 09-23): the backend already
-                  returns `modern.musicnotesUrl`, so the user has a second
-                  licensed place to buy from when the primary link is missing or
-                  they simply prefer it. It opens in the SAME in-app shell as the
-                  primary button — one WebView, one BACK rule — and it is rendered
-                  only when the backend actually supplied a URL, so it can never
-                  be a dead button. Still no auto-redirect: an explicit tap only. */}
-              {match.musicnotesUrl ? (
+              {/* SECONDARY retailer (owner-approved 09-23, deduped 10-02): the
+                  backend also returns `modern.musicnotesUrl`, so the user has a
+                  second licensed place to buy from — rendered ONLY when it is a
+                  different page from the primary button's target
+                  (`modernSecondaryRetailerUrl`). It opens in the SAME in-app shell
+                  as the primary button — one WebView, one BACK rule — and only on
+                  an explicit tap: still no auto-redirect. */}
+              {secondaryRetailer ? (
                 <TouchableOpacity
                   style={styles.musicnotesBtn}
-                  onPress={() => setRetailerUrl(match.musicnotesUrl!)}
+                  onPress={() => setRetailerUrl(secondaryRetailer)}
                   accessibilityRole="button"
                   accessibilityLabel={`Try Musicnotes for ${match.song}`}
                 >
@@ -440,19 +457,15 @@ const styles = StyleSheet.create({
     borderColor: '#e94560',
   },
   buyBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
-  noLinkCard: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 12,
-    padding: 12,
-    width: '100%',
-    borderWidth: 1,
-    borderColor: '#0f3460',
-    borderStyle: 'dashed',
-  },
+  // No licensed link came back: an honest LINE, not a dashed "coming soon" box
+  // (bundle C, owner 10-02 — a box that promises a link we do not hold is a dead
+  // end). The card's real next steps sit right below it.
   noLinkText: {
     color: '#a0a0b8',
     fontSize: 13,
+    lineHeight: 19,
     textAlign: 'center',
+    marginVertical: 4,
   },
   // SECONDARY retailer CTA (Musicnotes) — visually quieter than the primary buy
   // button: the owner-approved money path stays Sheet Music Direct.

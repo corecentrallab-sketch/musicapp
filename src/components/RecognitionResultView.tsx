@@ -23,12 +23,18 @@ import {
   ActivityIndicator,
   Image,
   ScrollView,
-  Linking,
 } from 'react-native';
 import type { RecognitionMatch, RecognitionResponse } from '../types';
 import type { CaptureDiagnostics } from '../services/captureTelemetry';
 import { PieceDetailScreen } from '../screens/PieceDetailScreen';
 import { ScoreViewer } from './ScoreViewer';
+// The ONE in-app retailer shell (bundle C, owner 10-02): the purchase CTA opens
+// the licensed retailer INSIDE NoteSnap, as a full-screen Modal this file mounts,
+// so BACK and the shell's own "← Back to NoteSnap" header land the user back on
+// THIS result card with its state intact. The card used to call
+// `Linking.openURL`, which handed the user to the system browser and left the app
+// entirely — the only purchase route in the app that did (audit D5).
+import { PurchaseWebView } from './PurchaseWebView';
 // The money path resolves through ONE helper: the first APPROVED retailer in the
 // backend's purchase-URL map (Sheet Music Direct, affiliate ID 67650, PRIMARY),
 // falling back to Musicnotes only when the primary is absent. Naming a retailer
@@ -111,12 +117,17 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   const [showDetail, setShowDetail] = React.useState(false);
   const [showScoreViewer, setShowScoreViewer] = React.useState(false);
   const [selectedMatch, setSelectedMatch] = React.useState<RecognitionMatch | null>(null);
+  // The ONE retailer shell on this card. Null = closed; the purchase CTA sets it,
+  // and the shell's own onClose (header + hardware BACK) clears it, so the card
+  // underneath is revealed again with nothing re-mounted and no navigation.
+  const [purchaseWebUrl, setPurchaseWebUrl] = React.useState<string | null>(null);
 
   // Reset views when modal opens with new results
   React.useEffect(() => {
     if (visible) {
       setShowDetail(false);
       setShowScoreViewer(false);
+      setPurchaseWebUrl(null);
     }
   }, [visible]);
 
@@ -151,12 +162,6 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
     } else {
       setShowDetail(true);
     }
-  };
-
-  const handleOpenPurchaseUrl = (url: string) => {
-    Linking.openURL(url).catch(() => {
-      // Fallback — browser may not be available
-    });
   };
 
   // ── Loading Phase ──
@@ -359,6 +364,18 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
             onClose={() => setShowScoreViewer(false)}
           />
         )}
+        {/* The retailer page, opened on top of this card — the SAME overlay
+            pattern as the score viewer above, and the same shell the piece page
+            and History mount (bundle C, owner 10-02). BACK and the shell's own
+            "← Back to NoteSnap" header both close it (onClose clears the URL), so
+            the user lands back on this card and never leaves the app. */}
+        {purchaseWebUrl && (
+          <PurchaseWebView
+            url={purchaseWebUrl}
+            title={`${topMatch.title} — official sheet music`}
+            onClose={() => setPurchaseWebUrl(null)}
+          />
+        )}
         <ScrollView
           style={styles.scrollContainer}
           contentContainerStyle={styles.scrollContent}
@@ -434,13 +451,18 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
               </View>
             ) : null}
 
-            {/* Purchase button for copyrighted pieces */}
+            {/* Purchase button for copyrighted pieces. The tap opens the
+                licensed retailer in the in-app shell ABOVE (owner 10-02, audit
+                D5) — it never hands the user to the system browser. */}
             {hasPurchaseUrl && (
               <TouchableOpacity
                 style={styles.purchaseBtn}
                 onPress={() => {
-                  if (purchaseUrl) handleOpenPurchaseUrl(purchaseUrl);
+                  if (purchaseUrl) setPurchaseWebUrl(purchaseUrl);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel="Get the official sheet music"
+                accessibilityHint="Opens the licensed retailer page inside NoteSnap"
               >
                 <Text style={styles.purchaseBtnText}>
                   🛒 Get Official Sheet Music

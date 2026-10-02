@@ -30,6 +30,11 @@
  * runs it under plain Node (tsconfig.tier1.json).
  */
 import { maskComments } from './modalBackContract';
+// The apostrophe-safe masker (`maskComments` is prose-apostrophe-naive: one
+// "page's own" in a comment opens a fake string and un-masks everything after it,
+// which is how a guard ends up failing on its own documentation). The bundle-C row
+// predicate scans for an exact call shape, so it uses the strict one.
+import { maskCommentsForCodeScan } from './purchaseCta';
 
 /** The persistence call every save site goes through. */
 export const SAVE_RECOGNITION_CALL = 'saveRecognition(';
@@ -51,6 +56,18 @@ export const PURCHASE_SHELL_OPENER = 'openInAppPurchase(';
 export const COACH_NOTICE_CONSTANT = 'COACH_NO_MELODY_NOTICE';
 /** The pure History filter. */
 export const HISTORY_FILTER_CALL = 'filterSavedPieces(';
+/**
+ * The money-path resolution a saved History row's action must go through: the
+ * row's OWN saved purchase map, primary retailer first (bundle C, owner 10-02).
+ * Nothing else can produce the row's URL — no hand-built link, no retailer key.
+ */
+export const HISTORY_ROW_PURCHASE_RESOLUTION = 'primaryPurchaseUrl(item.purchaseUrls)';
+/** The row action's copy (the owner's wording: 2 taps to the sheet music). */
+export const HISTORY_ROW_PURCHASE_LABEL = '🛒 Get sheet music';
+/** The ONE shared in-app retailer shell a History row opens. */
+export const HISTORY_PURCHASE_SHELL = 'PurchaseWebView';
+/** The row action's own press, which hands its URL to the shell's state. */
+export const HISTORY_ROW_PURCHASE_PRESS = 'setPurchaseWebUrl(';
 
 /** Source from the `{` at `open` to its matching `}` (or '' if unbalanced). */
 function objectBlock(masked: string, open: number): string {
@@ -217,6 +234,47 @@ export function historySearchIsLocal(source: string): boolean {
   if (!/data=\{\s*[A-Za-z]*[Ff]iltered[A-Za-z]*\s*\}/.test(masked)) return false;
   if (/\bFindPieceScreen\b/.test(masked)) return false;
   if (/\bcatalogSearch\b|\bsearchPieces\b/.test(masked)) return false;
+  return true;
+}
+
+/**
+ * Thesis 5 (bundle C / D7, owner 10-02): a saved MODERN row offers the purchase
+ * itself, in one tap, in the app.
+ *
+ * The dead-end sprint gave the row its links back (thesis 1) and the piece page a
+ * working card (thesis 3a) — but the row still took three taps to buy
+ * (History → piece page → card). The fix is one inline action on the row, and this
+ * predicate pins the four facts that make it real rather than decorative:
+ *   • the row's URL comes from `primaryPurchaseUrl(item.purchaseUrls)` — the
+ *     money-path resolver over the row's OWN saved map (never a hand-built link);
+ *   • the action is GATED on that resolution (`rowPurchaseUrl ? … : null`), which
+ *     is also what keeps a public-domain / hum row (which carries no map at all,
+ *     thesis 2) free of any purchase action — no disabled button, no placeholder;
+ *   • its press hands the URL to the shell's state (`setPurchaseWebUrl(…)`) —
+ *     a row action that opened the system browser is the D5 defect again;
+ *   • the screen mounts the shared shell (`PurchaseWebView`) with an `onClose`, so
+ *     BACK returns to History rather than out of the app.
+ */
+export function historyRowOffersPurchase(source: string): boolean {
+  const masked = maskCommentsForCodeScan(source);
+  // 1. the resolver over the row's own saved map.
+  if (masked.indexOf(HISTORY_ROW_PURCHASE_RESOLUTION) < 0) return false;
+  // 2/3. the row action, gated on that resolution, pressing into the shell state.
+  const urlBinding = new RegExp(
+    `\\b([A-Za-z_$][\\w$]*)\\s*=\\s*primaryPurchaseUrl\\(\\s*item\\.purchaseUrls\\s*\\)`,
+  ).exec(masked);
+  if (!urlBinding) return false;
+  const rowUrl = urlBinding[1];
+  const press = new RegExp(
+    HISTORY_ROW_PURCHASE_PRESS.replace('(', '\\(') + '\\s*' + rowUrl + '\\s*\\)',
+  ).test(masked);
+  if (!press) return false;
+  if (!new RegExp(`\\{\\s*${rowUrl}\\s*\\?`).test(masked)) return false;
+  // 4. the shell itself, mounted by this screen, closable back to History.
+  if (!new RegExp(`<${HISTORY_PURCHASE_SHELL}\\b`).test(masked)) return false;
+  if (!/onClose=\{/.test(masked)) return false;
+  // 5. and nothing on the row leaves the app.
+  if (/\bLinking\s*\.\s*openURL\b/.test(masked)) return false;
   return true;
 }
 
