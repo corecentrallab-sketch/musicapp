@@ -322,37 +322,75 @@ export function frontDoorStartFailure(
 // ─────────────────────── hum match → the existing result card ────────────
 
 /**
+ * The hosted score the CALLER resolved for a hum match (bundle A, owner 10-02).
+ *
+ * `HumMatch` carries identity only — no sheet URL — so the hum pass looks the
+ * piece up in the catalog (`fetchPieceById`, best effort) and hands the result
+ * here. Every field is optional: an offline device, an unknown id or a catalog
+ * that holds no score all mean the SAME thing to this function (no hosted score),
+ * and the surface then renders its honest "we don't hold a score for this one yet"
+ * line instead of a block or a spinner that never ends.
+ */
+export interface HumResolvedSheet {
+  /** The catalog's `sheet_music_url` for the piece, when it has one. */
+  sheetMusicUrl?: string | null;
+  /** The catalog's quality gate for that score. `false` beats a URL (§A.4). */
+  sheetMusicAvailable?: boolean;
+  /** The catalog's public-domain verdict; an explicit `false` withholds the score. */
+  isPublicDomain?: boolean;
+}
+
+/**
  * Adapt a hum search result for the EXISTING recognition result card, so the
  * inline fallback reuses the surface the user already knows instead of growing a
  * second result UI.
  *
  * HONESTY RULES BAKED IN: a hum match comes from OUR public-domain melody
- * library, so `is_public_domain: true` — and therefore `purchase_url: null` and
- * `sheet_music_url: null`. The card can never offer a retail redirect for a
- * public-domain hum match, and it shows the honest "sheet music coming soon"
- * state rather than a broken link.
+ * library, so `is_public_domain: true` — and therefore `purchase_url: null`. The
+ * card can never offer a retail redirect for a public-domain hum match.
+ *
+ * The hosted score (bundle A) arrives as the caller's RESOLVED catalog record, and
+ * only ever for the TOP match — the card renders one score. It is never
+ * synthesised here: when the caller has nothing (no lookup, no URL, or the
+ * catalog's own `sheet_music_available === false` / `is_public_domain === false`),
+ * the score fields stay empty and the card shows its honest no-score line.
+ *
+ * The `result_provenance` marker is what lets the ONE surface say "You hummed it —
+ * here it is" instead of claiming it heard the music; it is set by us, never
+ * received from the server (types/index.ts).
  */
 export function humMatchToResultResponse(
   hum: HumResponse,
   matches: readonly HumMatch[],
+  sheet?: HumResolvedSheet | null,
 ): RecognitionResponse {
+  const sheetUrl =
+    sheet && sheet.isPublicDomain !== false && typeof sheet.sheetMusicUrl === 'string'
+      ? sheet.sheetMusicUrl.trim()
+      : '';
+  const sheetAvailable = sheetUrl.length > 0 && sheet?.sheetMusicAvailable !== false;
   return {
     success: true,
+    result_provenance: 'hum',
     query_duration_ms: hum.query_duration_ms,
     db_available: hum.db_available,
-    matches: matches.map((m) => ({
+    matches: matches.map((m, index) => ({
       piece_id: m.piece_id,
       title: m.title,
       composer: m.composer,
       catalog: null,
       confidence: m.confidence,
       album_art_url: null,
-      sheet_music_url: null,
+      // The resolved catalog score belongs to the TOP match — the one the card
+      // renders. The other matches keep their honest empty state and open their
+      // piece page on a tap.
+      sheet_music_url: index === 0 && sheetAvailable ? sheetUrl : null,
       tab_url: null,
       matched_at_s: 0,
       is_public_domain: true,
-      sheet_music_available: false,
+      sheet_music_available: index === 0 && sheetAvailable,
       purchase_url: null,
+      affiliate_url: null,
     })),
   };
 }

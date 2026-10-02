@@ -4,9 +4,20 @@
  *
  * The user hums/whistles/sings a melody into the mic; we record on-device
  * (reusing useAudioRecorder) and POST it to /api/hum. On a confident match we
- * show the matched piece and let the user open it in the existing
- * PieceDetailScreen; on no-match we show the honest "hum a longer/clearer
- * phrase" message and invite retry. We NEVER fabricate a title.
+ * hand the result to the ONE shared result surface
+ * (`RecognitionResultView`, bundle A, owner 10-02): the screen's OWN result card
+ * is retired, so a hum match is shown exactly like every other match — identity,
+ * provenance ("You hummed it — here it is") and the piece's hosted score INLINE
+ * in the card, with the reader one chip away. On no-match we show the honest
+ * "hum a longer/clearer phrase" message and invite retry. We NEVER fabricate a
+ * title.
+ *
+ * WHAT THIS SCREEN STILL OWNS (bundle A): the recorder, the upload, the honest
+ * no-match/error cards, and the TAKE — the recording the user just made. The
+ * take's "Export MIDI" is rendered by the shared surface from the contract this
+ * screen passes down (`midiExport`), because the take, the export run and its
+ * outcome sentence live here: the surface can never invent a take, and this
+ * screen can never lose one (v30 feature, kept by bundle A).
  *
  * The no-match card also carries the HUM → MODERN BRIDGE (owner-approved 09-22,
  * src/services/humBridge.ts): our melody catalog is small, so a hum miss must
@@ -31,7 +42,7 @@ import {
 } from 'react-native';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useHardwareBack } from '../hooks/useHardwareBack';
-import { humToSearch } from '../services/api';
+import { fetchPieceById, humToSearch } from '../services/api';
 import { humOutcome, humPhraseHint, humNoMatchMessage, type HumOutcome } from '../services/tier1';
 import {
   HUM_RETRY_CTA,
@@ -39,33 +50,36 @@ import {
   HUM_TO_MODERN_CTA,
   humStartFailureOutcome,
 } from '../services/humBridge';
+// The hum result is mapped into the app's OWN recognition-response shape
+// (frontDoor.humMatchToResultResponse) so the ONE result surface renders it — the
+// function owns the honesty rules (public domain, therefore no purchase_url) and
+// takes the hosted score the catalog resolved for this piece, when there is one.
+import {
+  humMatchToResultResponse,
+  type HumResolvedSheet,
+} from '../services/frontDoor';
 import { saveRecognition, updateRecognitionCapture } from '../services/storage';
 import { exportCaptureMidiFromRecording } from '../services/captureMidiExport';
-import {
-  MIDI_EXPORT_BUSY_LABEL,
-  MIDI_EXPORT_HINT,
-  MIDI_EXPORT_LABEL,
-} from '../services/midiExport';
+// The shared result surface (bundle A): the ONE card every recognition outcome
+// lands on. Mounted here as an overlay — this screen stays mounted underneath, so
+// closing the card returns the user to the hum flow with nothing re-mounted.
+import { RecognitionResultView } from '../components/RecognitionResultView';
 // The detected key of the exported take, as text — "Key: G major" — or null
 // when the take had no detected key (Batch A: the key the .mid was written in
-// is shown, and nothing at all is shown when there was no verdict).
+// is shown, and nothing at all is shown when there was no verdict). The surface
+// renders the line; THIS screen derives it, from the take's own key.
 import { keyCaption } from '../services/keyDetection';
-// A hum/whistle/sing match is identified against our own public-domain melody
-// library, so its category is a fact the app knows — not an invented genre.
-import { PUBLIC_DOMAIN_GENRE } from '../services/resultGenre';
-import { PieceDetailScreen } from './PieceDetailScreen';
-import type { DailyChallengePiece, HumMatch } from '../types';
+import type { RecognitionResponse } from '../types';
 
 /** Auto-stop after this long so the melody extractor gets enough signal. */
 const RECORDING_TIMEOUT_MS = 12000;
 
-type Stage =
-  | 'idle'
-  | 'recording'
-  | 'uploading'
-  | 'result'
-  | 'no-match'
-  | 'error';
+/**
+ * 'result' is GONE (bundle A): a confident match no longer renders this screen's
+ * own card — it opens the shared result surface, and the screen returns to idle
+ * underneath it.
+ */
+type Stage = 'idle' | 'recording' | 'uploading' | 'no-match' | 'error';
 
 interface HumSearchScreenProps {
   onClose: () => void;
@@ -74,22 +88,6 @@ interface HumSearchScreenProps {
    *  the licensed fingerprint service and links the official sheet music.
    *  Offered on the no-match card so a hum miss is never a dead end. */
   onSwitchToModern: () => void;
-}
-
-/** Build a DailyChallengePiece from a hum match for PieceDetailScreen. A hum
- *  result carries no sheet URL, so PieceDetail renders its honest "coming
- *  soon" score state — never a broken link. */
-function matchToPiece(match: HumMatch): DailyChallengePiece {
-  return {
-    id: match.piece_id,
-    title: match.title,
-    composer: match.composer,
-    genre: PUBLIC_DOMAIN_GENRE,
-    difficulty: 'Intermediate',
-    description: `Hum/whistle/sing matched with ${Math.round(
-      match.confidence * 100,
-    )}% confidence`,
-  };
 }
 
 export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
@@ -101,7 +99,11 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
   const [outcome, setOutcome] = useState<HumOutcome | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [hub, setHub] = useState<string | undefined>(undefined);
-  const [showDetail, setShowDetail] = useState<DailyChallengePiece | null>(null);
+  // The RESULT the shared surface renders (bundle A): the hum match mapped into
+  // the app's own recognition-response shape, with the hosted score the catalog
+  // resolved for it. Non-null = the surface is open, which is what replaced this
+  // screen's own 'result' stage.
+  const [humResult, setHumResult] = useState<RecognitionResponse | null>(null);
   // The take the user just recorded (MIDI export Batch A). Kept as the
   // recording's own URI: "Export MIDI" serializes THIS take and nothing else.
   const [takeUri, setTakeUri] = useState<string | null>(null);
@@ -171,8 +173,26 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
           composer: res.topMatch.composer,
           savedAt: new Date().toISOString(),
         });
+        // THE HOSTED SCORE, best effort (bundle A): a HumMatch carries identity
+        // only, so we look the piece up in OUR catalog to get the score the shared
+        // surface renders INLINE. A miss (offline, unknown id, no curated score)
+        // is not an error — the surface then says honestly that it holds no score
+        // for this one. Nothing is ever invented here.
+        let sheet: HumResolvedSheet | null = null;
+        const info = await fetchPieceById(res.topMatch.piece_id);
+        if (info) {
+          sheet = {
+            sheetMusicUrl: info.sheetMusicUrl,
+            // The catalog's own gate. `?? undefined` keeps a MISSING flag
+            // missing (the surface only withholds the score on an explicit
+            // false — never because we dropped the value on the way through).
+            sheetMusicAvailable: info.sheetMusicAvailable ?? undefined,
+            isPublicDomain: info.isPublicDomain ?? undefined,
+          };
+        }
         setOutcome(res);
-        setStage('result');
+        setStage('idle');
+        setHumResult(humMatchToResultResponse(resp, res.matches, sheet));
       } else {
         setOutcome(res);
         setStage('no-match');
@@ -188,6 +208,7 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
 
   const handleRetry = useCallback(() => {
     setOutcome(null);
+    setHumResult(null);
     setStage('idle');
     setTimeout(() => handleStart(), 300);
   }, [handleStart]);
@@ -239,23 +260,18 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
   // Android hardware BACK (in-place flow — owner bug class 09-23). This screen
   // is not a route and not a modal: its host tab replaces its whole body with it,
   // so an unconsumed BACK press pops React Navigation's last route and finishes
-  // the activity (the app "exits"). Consume it here, unwinding ONE level: out of
-  // the opened piece first, then back to the screen that opened the hum flow.
+  // the activity (the app "exits"). Consume it here, unwinding ONE level: the
+  // shared result surface (a Modal, which handles its own BACK while it is open)
+  // first, then back to the screen that opened the hum flow.
   // Guarded by src/services/backExitContract.ts.
   useHardwareBack(() => {
-    if (showDetail) {
-      setShowDetail(null);
+    if (humResult) {
+      setHumResult(null);
       return true;
     }
     onClose();
     return true;
   });
-  // ── Piece detail (full-screen, as the rest of the app does) ──
-  if (showDetail) {
-    return (
-      <PieceDetailScreen piece={showDetail} onBack={() => setShowDetail(null)} />
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -370,65 +386,28 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
           </View>
         )}
 
-        {/* Result — matched piece(s) */}
-        {stage === 'result' && outcome && outcome.topMatch && (
-          <View style={styles.resultCard}>
-            <Text style={styles.resultEmoji}>🎵</Text>
-            <Text style={styles.resultTitle}>We found it!</Text>
-            {hub && <Text style={styles.hintText}>{hub}</Text>}
-            <View style={styles.matchCard}>
-              <Text style={styles.matchTitle}>{outcome.topMatch.title}</Text>
-              <Text style={styles.matchComposer}>
-                {outcome.topMatch.composer}
-              </Text>
-              <Text style={styles.matchConfidence}>
-                {Math.round(outcome.topMatch.confidence * 100)}% match
-              </Text>
-            </View>
-            {outcome.matches.length > 1 && (
-              <View style={styles.otherMatches}>
-                <Text style={styles.otherMatchesTitle}>Other matches:</Text>
-                {outcome.matches.slice(1, 4).map((m, i) => (
-                  <Text key={m.piece_id ?? i} style={styles.otherMatch}>
-                    {m.title} — {m.composer} (
-                    {Math.round(m.confidence * 100)}%)
-                  </Text>
-                ))}
-              </View>
-            )}
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={() => setShowDetail(matchToPiece(outcome.topMatch!))}
-            >
-              <Text style={styles.primaryBtnText}>View Piece Details</Text>
-            </TouchableOpacity>
-            {/* EXPORT MIDI (Batch A, owner backlog b1b8f380 / 33e1e7d4): the
-                user's OWN take as a Standard MIDI File. Always offered on a
-                result card — the take exists as soon as the recording stopped —
-                and the outcome sentence below is the honest state (exported /
-                no melody heard / decoder unavailable). */}
-            <TouchableOpacity
-              style={styles.midiBtn}
-              onPress={handleExportMidi}
-              disabled={exporting || !takeUri}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={MIDI_EXPORT_LABEL}
-            >
-              <Text style={styles.midiBtnText}>
-                {exporting ? MIDI_EXPORT_BUSY_LABEL : MIDI_EXPORT_LABEL}
-              </Text>
-              <Text style={styles.midiBtnHint}>{MIDI_EXPORT_HINT}</Text>
-            </TouchableOpacity>
-            {exportNote && <Text style={styles.hintText}>{exportNote}</Text>}
-            {/* The key the exported .mid was written in — rendered ONLY when a
-                key was detected (the outcome carried one), never a placeholder. */}
-            {exportKey && <Text style={styles.exportKeyText}>{exportKey}</Text>}
-            <TouchableOpacity style={styles.secondaryBtn} onPress={onClose}>
-              <Text style={styles.secondaryBtnText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        {/* \u2500\u2500 THE ONE RESULT SURFACE (bundle A) \u2500\u2500
+            A confident hum match no longer renders a card of its own: it opens the
+            SAME result surface every other match uses, which shows the piece's
+            hosted score INLINE, the hum provenance, the printed-arrangement search
+            the backend supplied, and \u2014 from the contract below \u2014 the export of the
+            take this screen just recorded. The screen stays mounted underneath, so
+            Done/BACK simply reveals the hum flow again. */}
+        {humResult ? (
+          <RecognitionResultView
+            visible
+            phase={{ type: 'success', response: humResult }}
+            onClose={() => setHumResult(null)}
+            onRetry={handleRetry}
+            midiExport={{
+              takeUri,
+              exporting,
+              note: exportNote,
+              keyLine: exportKey,
+              onExport: handleExportMidi,
+            }}
+          />
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -596,16 +575,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: 16,
-  },
-  matchCard: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 14,
-    padding: 16,
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#4ecdc4',
   },
   matchTitle: {
     fontSize: 20,

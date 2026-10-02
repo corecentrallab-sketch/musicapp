@@ -180,6 +180,36 @@ export function modernSecondaryRetailerUrl(
 }
 
 /**
+ * The SECONDARY offer of a RECOGNITION RESULT (bundle A, owner 10-02) — the one
+ * retailer link beside the result card's primary CTA, and never a duplicate of it.
+ *
+ * The card's primary CTA resolves through `recognitionPurchaseUrl()` (the match's
+ * own map first, then the response-level fallback). A surface that also rendered a
+ * second link naively could therefore offer TWO taps to the SAME page — the
+ * duplicate-CTA class the owner reported. So this resolver is stated from the
+ * primary's side: the first APPROVED entry, across both maps in the same priority
+ * order, whose URL is NOT the page the primary CTA opens. `undefined` when there is
+ * no such link — the caller then renders no second action at all (an honest single
+ * action, never a dead button).
+ *
+ * It builds no URL and names no retailer: the map is the backend's.
+ */
+export function resultSecondaryOfferUrl(
+  matchPurchaseUrls: PurchaseUrlMap,
+  responsePurchaseUrls: PurchaseUrlMap,
+): string | undefined {
+  const primary = recognitionPurchaseUrl(matchPurchaseUrls, responsePurchaseUrls);
+  for (const map of [matchPurchaseUrls, responsePurchaseUrls]) {
+    if (!map) continue;
+    for (const key of APPROVED_PURCHASE_URL_KEYS) {
+      const url = usable(map[key]);
+      if (url && url !== primary) return url;
+    }
+  }
+  return undefined;
+}
+
+/**
  * The purchase-URL map to SAVE with a modern-song recognition (History dead-end
  * sprint, owner 10-01).
  *
@@ -337,6 +367,11 @@ export const PURCHASE_SHELL_OPENERS: readonly string[] = [
 export const SECONDARY_RETAILER_RESOLVERS: readonly string[] = [
   'secondaryPurchaseUrl(',
   'modernSecondaryRetailerUrl(',
+  // The recognition RESULT surface's resolver (bundle A, owner 10-02): it dedupes
+  // against the page the surface's primary CTA opens, across BOTH purchase-URL maps
+  // (the match's own, then the response-level fallback), so it belongs to this
+  // registry for the same reason the two above do.
+  'resultSecondaryOfferUrl(',
 ];
 
 /** The runtime call that leaves the app: an OS browser open. */
