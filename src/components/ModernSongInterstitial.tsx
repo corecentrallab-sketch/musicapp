@@ -259,12 +259,12 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
                 </TouchableOpacity>
               ) : (
                 /* No retailer link came back for this song. The static
-                   "isn't linked yet — check back soon" box is gone (bundle C,
-                   owner 10-02; §E zero-promise): a box that promises a link we do
-                   not hold is a dead end. What replaces it is an honest line about
-                   what we DO have, with the card's own real next steps right below
-                   it — the hum/whistle/sing search and the free public-domain
-                   library. No fake button, no placeholder. */
+                   "coming back later" box is gone (bundle C, owner 10-02; §E
+                   zero-promise): a box that promises a link we do not hold is a
+                   dead end. What replaces it is an honest line about what we DO
+                   have, with the card's own real next steps right below it — the
+                   hum/whistle/sing search and the free public-domain library. No
+                   fake button, no placeholder. */
                 <Text style={styles.noLinkText}>
                   We identified this song, but there's no licensed sheet-music
                   link for it yet. You can still hum, whistle or sing the melody

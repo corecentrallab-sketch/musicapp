@@ -31,6 +31,7 @@ import {
   SHEET_CARD_CALL,
   coachCardHasNoPurchaseAction,
   coachCardNeverPromisesMelody,
+  historyRowOffersPurchase,
   historySearchIsLocal,
   modernSaveCarriesPurchaseUrls,
   publicDomainSaveOmitsPurchaseUrls,
@@ -802,10 +803,123 @@ function mutationProbes(): void {
     false,
     'MUTATION: re-opening FindPieceScreen from History FAILS (History search = saved recognitions)',
   );
+  // (f, bundle C / D7) the row’s own purchase action goes away again — back to
+  // three taps (History → piece page → card) for a saved modern song.
+  const rowActionGone = history.replace(
+    '                setPurchaseWebUrl(rowPurchaseUrl);\n',
+    '',
+  );
+  assert(rowActionGone !== history, 'the deleted-row-action mutation changed HistoryScreen');
+  assertEq(
+    historyRowOffersPurchase(rowActionGone),
+    false,
+    'MUTATION: deleting the History row’s purchase action FAILS historyRowOffersPurchase (the action is not decoration)',
+  );
+  assertEq(
+    historyRowOffersPurchase(history),
+    true,
+    'the untouched HistoryScreen still passes (the probe changed the source it targeted)',
+  );
+
   assertEq(
     PURCHASE_URLS_FIELD,
     'purchaseUrls',
     'the field the save sites must carry is named purchaseUrls',
+  );
+}
+
+// ─── 5b. the saved row’s OWN purchase action (bundle C / D7, owner 10-02) ──
+//
+// The dead-end sprint (10-01) gave the row its links back and the piece page a
+// working card — but buying from a saved row still took three taps
+// (History → piece page → card). Bundle C puts ONE action on the row itself, in
+// the app’s one retailer shell, so BACK returns to History.
+
+/** The row wiring in the shape the real HistoryScreen uses. */
+const HISTORY_ROW_WIRING = `
+  const rowPurchaseUrl = primaryPurchaseUrl(item.purchaseUrls);
+  return (
+    <TouchableOpacity onPress={() => handleOpenPiece(item)}>
+      {rowPurchaseUrl ? (
+        <TouchableOpacity onPress={() => { setPurchaseWebUrl(rowPurchaseUrl); }}>
+          <Text>🛒 Get sheet music</Text>
+        </TouchableOpacity>
+      ) : null}
+    </TouchableOpacity>
+  );
+  {purchaseWebUrl && (
+    <PurchaseWebView url={purchaseWebUrl} title={t} onClose={() => setPurchaseWebUrl(null)} />
+  )}
+`;
+
+function historyRowPurchaseTests(): void {
+  console.log('\nthe saved modern row: one in-shell purchase action (D7)');
+
+  assertEq(
+    historyRowOffersPurchase(HISTORY_ROW_WIRING),
+    true,
+    'the row resolves its URL through primaryPurchaseUrl(item.purchaseUrls), gates on it, presses into the shell state, and the screen mounts the shell',
+  );
+  // A public-domain / hum row is the same source with no map to resolve: the gate
+  // (not a separate branch) is what keeps the action off — the guard must see that.
+  assertEq(
+    historyRowOffersPurchase(
+      HISTORY_ROW_WIRING.replace('{rowPurchaseUrl ? (', '{false ? ('),
+    ),
+    false,
+    'an action that renders unconditionally FAILS (a PD/hum row would show a dead buy button)',
+  );
+  assertEq(
+    historyRowOffersPurchase(
+      HISTORY_ROW_WIRING.replace('setPurchaseWebUrl(rowPurchaseUrl)', 'openInBrowser(rowPurchaseUrl)'),
+    ),
+    false,
+    'a row action that does not hand its URL to the shell FAILS (the D5 defect on the row)',
+  );
+  assertEq(
+    historyRowOffersPurchase(
+      HISTORY_ROW_WIRING.replace('setPurchaseWebUrl(rowPurchaseUrl)', 'Linking.openURL(rowPurchaseUrl)'),
+    ),
+    false,
+    'a row action that opens the system browser FAILS (no BACK into History)',
+  );
+  assertEq(
+    historyRowOffersPurchase(
+      HISTORY_ROW_WIRING.replace(
+        '    <PurchaseWebView url={purchaseWebUrl} title={t} onClose={() => setPurchaseWebUrl(null)} />\n',
+        '',
+      ),
+    ),
+    false,
+    'a screen that never mounts the shell FAILS (BACK would have nowhere to land)',
+  );
+
+  const history = readAppFile('src/screens/HistoryScreen.tsx');
+  assertEq(
+    historyRowOffersPurchase(history),
+    true,
+    'the REAL HistoryScreen offers the row action, in-shell',
+  );
+  assert(
+    history.indexOf('🛒 Get sheet music') >= 0,
+    'the row action carries the owner’s wording ("🛒 Get sheet music")',
+  );
+  assert(
+    /\{\s*rowPurchaseUrl\s*\?\s*\(/.test(history),
+    'the action is gated on the resolved URL (undefined → NO action, not a disabled button)',
+  );
+  assert(
+    /purchaseWebUrl && \(\s*<PurchaseWebView/.test(history),
+    'History mounts the shared retailer shell at its own root (so BACK returns to History)',
+  );
+  assert(
+    !/\bLinking\b/.test(history),
+    'HistoryScreen never reaches for the system browser',
+  );
+  assertEq(
+    publicDomainSaveOmitsPurchaseUrls(PD_SAVE),
+    true,
+    'the reason a PD/hum row shows no action is unchanged: those saves carry no purchase map',
   );
 }
 
@@ -817,6 +931,7 @@ function main(): void {
   surfaceUnitTests();
   historySearchUnitTests();
   liveScanTests();
+  historyRowPurchaseTests();
   mutationProbes();
   console.log(`\n${passes} passed, ${failures} failed\n`);
   process.exit(failures === 0 ? 0 : 1);

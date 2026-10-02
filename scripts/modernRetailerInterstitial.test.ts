@@ -487,8 +487,16 @@ function componentTests(): void {
     'the "NoteSnap never hosts copyrighted sheet music" note is intact',
   );
   assert(
-    /isn't linked yet/.test(recognizedText),
-    'a match with no retailer URL still shows an honest card (no dead button)',
+    /no licensed sheet-music[\s\S]{0,120}link for it yet/.test(recognizedText),
+    'a match with no retailer URL gets an honest line about what we DO have (bundle C: no "coming soon" box, no dead button)',
+  );
+  assert(
+    !/isn't linked yet|check back soon/.test(recognizedText),
+    'the static "check back soon" box is gone (it promised a link we do not hold)',
+  );
+  assert(
+    /secondaryRetailer\s*\?/.test(recognizedText),
+    'the secondary retailer line is deduped + gated (one tap to one page)',
   );
 
   // Loading / error / no-match: still Modals, still closable by BACK.

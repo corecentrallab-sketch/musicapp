@@ -33,14 +33,27 @@ import {
   PURCHASE_CTA_MODULE_PATH,
   RETAILER_HOSTNAME_PATTERN,
   RETAILER_KEY_DEREF_PATTERN,
+  findExternalUrlOpens,
+  formatExternalUrlOpens,
   formatRetailerCtaOffenders,
   isApprovedPurchaseUrlKey,
   modernBackupRetailerUrl,
   modernPrimaryRetailerUrl,
+  modernSecondaryRetailerUrl,
+  noPurchaseActionLeavesTheApp,
   primaryPurchaseUrl,
+  purchaseActionIsInShell,
+  purchaseActionSites,
+  purchaseShellMounts,
+  purchaseShellUrlState,
   recognitionPurchaseUrl,
   scanSourcesForHardwiredRetailerKey,
+  uniquePurchaseActionPerSurface,
 } from '../src/services/purchaseCta';
+import {
+  findBrowserContractViolations,
+  findWebViewFlagViolations,
+} from '../src/services/inAppBrowserContract';
 import type { ModernMatch } from '../src/types';
 
 declare const require: (id: string) => any;
@@ -186,6 +199,31 @@ function resolutionTests(): void {
     modernBackupRetailerUrl(modern),
     MN,
     'the secondary CTA opens the backend\'s musicnotesUrl',
+  );
+  assertEq(
+    modernSecondaryRetailerUrl(modern),
+    MN,
+    'the secondary CTA opens the backend’s musicnotesUrl when it is a different page',
+  );
+  assertEq(
+    modernSecondaryRetailerUrl({ ...modern, musicnotesUrl: SMD }),
+    undefined,
+    'the DEDUPE (bundle C, owner 10-02): an identical backup URL yields NO second CTA — one tap to one page',
+  );
+  assertEq(
+    modernSecondaryRetailerUrl({ ...modern, musicnotesUrl: ` ${SMD} ` }),
+    undefined,
+    'the dedupe survives padding (a padded duplicate is still a duplicate)',
+  );
+  assertEq(
+    modernSecondaryRetailerUrl({ ...modern, retailerUrl: undefined }),
+    MN,
+    'with no primary at all the backup IS the one link (the honest single-action case)',
+  );
+  assertEq(
+    modernSecondaryRetailerUrl({ ...modern, musicnotesUrl: undefined }),
+    undefined,
+    'no backup URL, no secondary action',
   );
   assertEq(
     modernPrimaryRetailerUrl({ ...modern, retailerUrl: undefined }),
@@ -361,12 +399,25 @@ function wiringTests(): void {
     'the recognized-song interstitial renders a "Try Musicnotes" button',
   );
   assert(
-    /setRetailerUrl\(\s*match\.musicnotesUrl[!)]/.test(recognized),
-    'the secondary button is wired to the backend-returned match.musicnotesUrl',
+    /setRetailerUrl\(\s*secondaryRetailer[)]/.test(recognized),
+    'the secondary button opens the DEDUPED secondary (bundle C), not the raw field',
   );
   assert(
-    /match\.musicnotesUrl\s*\?/.test(recognized),
-    'the secondary button is rendered only when the backend supplied a URL (no dead button)',
+    /modernSecondaryRetailerUrl\(/.test(recognized),
+    'the dedupe lives in the money-path module: a second button may never open the primary’s own page',
+  );
+  assert(
+    /secondaryRetailer\s*\?/.test(recognized),
+    'the secondary button renders only when the resolver returns a URL (no dead button)',
+  );
+  assertEq(
+    (recognized.match(/match\.musicnotesUrl/g) ?? []).length,
+    0,
+    'the interstitial never reaches for the raw backup field itself (one source of truth for the dedupe)',
+  );
+  assert(
+    !/isn't linked yet — check back soon|noLinkCard/.test(recognized),
+    'the static "check back soon" box is gone: no licensed link → an honest line + the card’s real next steps',
   );
   assert(
     /setRetailerUrl\(\s*match\.retailerUrl[!)]/.test(recognized),
@@ -430,6 +481,288 @@ function liveScanTests(): void {
   );
 }
 
+// ─── 5. Bundle C: every purchase tap opens the in-app shell ─────
+//
+// The D5 defect (audit 10-01): the recognition result's purchase tap called
+// `Linking.openURL(url)` — the ONLY purchase route in the app that handed the user
+// to the system browser and left NoteSnap entirely. This section pins the
+// semantics of the three predicates that make that impossible; section 6 runs them
+// on the REAL tree.
+
+/** A purchase surface in the shape the fix produces: one tap → the shell's state. */
+const IN_SHELL_SURFACE = `
+function Card() {
+  const [purchaseWebUrl, setPurchaseWebUrl] = React.useState<string | null>(null);
+  return (
+    <View>
+      <TouchableOpacity onPress={() => { if (url) setPurchaseWebUrl(url); }}>
+        <Text>🛒 Get the Official Sheet Music</Text>
+      </TouchableOpacity>
+      {purchaseWebUrl && (
+        <PurchaseWebView url={purchaseWebUrl} title={t} onClose={() => setPurchaseWebUrl(null)} />
+      )}
+    </View>
+  );
+}
+`;
+
+/** The same surface with the deduped secondary retailer line. */
+const DEDUPED_SECONDARY_SURFACE = `
+function Card() {
+  const [purchaseWebUrl, setPurchaseWebUrl] = React.useState<string | null>(null);
+  const secondary = modernSecondaryRetailerUrl(match);
+  return (
+    <View>
+      <TouchableOpacity onPress={() => setPurchaseWebUrl(primary)}>
+        <Text>🛒 Get the Official Sheet Music</Text>
+      </TouchableOpacity>
+      {secondary ? (
+        <TouchableOpacity onPress={() => setPurchaseWebUrl(secondary)}>
+          <Text>🎼 Try Musicnotes</Text>
+        </TouchableOpacity>
+      ) : null}
+      {purchaseWebUrl && (
+        <PurchaseWebView url={purchaseWebUrl} title={t} onClose={() => setPurchaseWebUrl(null)} />
+      )}
+    </View>
+  );
+}
+`;
+
+function shellContractTests(): void {
+  console.log('\nexternal opens: openSettings is allowed, a real openURL is not');
+
+  assertEq(
+    findExternalUrlOpens([
+      { path: 'src/x.tsx', source: 'Linking.openURL(url).catch(() => {});' },
+    ]).length,
+    1,
+    'the shipped D5 handler is flagged',
+  );
+  assertEq(
+    findExternalUrlOpens([
+      { path: 'src/hooks/useAudioRecorder.ts', source: 'Linking.openSettings().catch(() => {});' },
+    ]).length,
+    0,
+    'the microphone-permission openSettings() call is allowed by name (useAudioRecorder.ts:312)',
+  );
+  assertEq(
+    findExternalUrlOpens([
+      { path: 'src/screens/ScanScoreScreen.tsx', source: 'onPress={() => Linking.openSettings()}' },
+    ]).length,
+    0,
+    'the scan screen’s openSettings() tap is allowed too (ScanScoreScreen.tsx:106)',
+  );
+  assertEq(
+    findExternalUrlOpens([
+      { path: 'src/x.tsx', source: 'Linking.openURL(openSettings()).catch(() => {});' },
+    ]).length,
+    0,
+    'an openURL whose argument is openSettings() opens the settings app, not a retailer',
+  );
+  assertEq(
+    findExternalUrlOpens([
+      {
+        path: 'src/Doc.tsx',
+        source: '// the old handler called `Linking.openURL(url)` — see the header',
+      },
+    ]).length,
+    0,
+    'a comment that documents the old defect is not an offender (comments are masked)',
+  );
+  assert(
+    formatExternalUrlOpens(
+      findExternalUrlOpens([{ path: 'src/x.tsx', source: 'Linking.openURL(url);' }]),
+    )[0].includes('PurchaseWebView'),
+    'the failure report names the shell to mount instead',
+  );
+
+  console.log('\nthe tap must open the shell (purchaseActionIsInShell)');
+
+  assertEq(purchaseShellMounts(IN_SHELL_SURFACE), 1, 'one shell per surface');
+  assertEq(
+    purchaseShellUrlState(IN_SHELL_SURFACE)?.setter,
+    'setPurchaseWebUrl',
+    'the shell is fed the surface’s own state variable',
+  );
+  assertEq(purchaseActionSites(IN_SHELL_SURFACE).length, 1, 'one purchase action');
+  assertEq(
+    purchaseActionIsInShell(IN_SHELL_SURFACE),
+    true,
+    'a purchase tap that sets the shell’s URL state is in-shell',
+  );
+  assertEq(
+    purchaseActionIsInShell(
+      IN_SHELL_SURFACE.replace('setPurchaseWebUrl(url)', 'Linking.openURL(url)'),
+    ),
+    false,
+    'the D5 defect (the tap opens the system browser) FAILS',
+  );
+  assertEq(
+    purchaseActionIsInShell(
+      IN_SHELL_SURFACE.replace(
+        /      \{purchaseWebUrl && \([\s\S]*?\n      \)\}/,
+        '',
+      ),
+    ),
+    false,
+    'a surface that never mounts the shell FAILS (the tap has nowhere to land)',
+  );
+
+  console.log('\none purchase action per surface (uniquePurchaseActionPerSurface)');
+
+  assertEq(
+    uniquePurchaseActionPerSurface(IN_SHELL_SURFACE),
+    true,
+    'a single-action surface is unique',
+  );
+  assertEq(
+    uniquePurchaseActionPerSurface(DEDUPED_SECONDARY_SURFACE),
+    true,
+    'a deduped + gated secondary line is still ONE purchase action per page',
+  );
+  assertEq(
+    uniquePurchaseActionPerSurface(
+      DEDUPED_SECONDARY_SURFACE.replace(
+        'modernSecondaryRetailerUrl(match)',
+        'match.musicnotesUrl',
+      ),
+    ),
+    false,
+    'a secondary wired to the RAW backup field (undeduped) FAILS — it can duplicate the primary',
+  );
+  assertEq(
+    uniquePurchaseActionPerSurface(
+      DEDUPED_SECONDARY_SURFACE.replace('{secondary ? (', '{true ? ('),
+    ),
+    false,
+    'an UNGATED secondary FAILS (a dead button the moment the resolver returns undefined)',
+  );
+  assertEq(
+    uniquePurchaseActionPerSurface(
+      DEDUPED_SECONDARY_SURFACE.replace(
+        '    </View>',
+        '      <TouchableOpacity onPress={() => setPurchaseWebUrl(other)}><Text>Buy</Text></TouchableOpacity>\n    </View>',
+      ),
+    ),
+    false,
+    'a THIRD purchase action FAILS (the owner’s duplicate-CTA class)',
+  );
+}
+
+// ─── 6. The real tree: no purchase path leaves the app ──────────
+
+const PURCHASE_SURFACES: [string, string][] = [
+  ['src/components/RecognitionResultView.tsx', 'the recognition result card (C1 / D5)'],
+  ['src/screens/HistoryScreen.tsx', 'History’s saved modern row (C3 / D7)'],
+  ['src/screens/PieceDetailScreen.tsx', 'the piece page (the v31 reference implementation)'],
+  ['src/components/ModernSongInterstitial.tsx', 'the modern-song interstitial'],
+];
+
+const SHELL_PATH = 'src/components/PurchaseWebView.tsx';
+
+function liveShellScanTests(): void {
+  console.log('\nlive scan: no purchase path in the app leaves NoteSnap');
+
+  const files = appSources();
+  const offenders = findExternalUrlOpens(files);
+  for (const line of formatExternalUrlOpens(offenders)) console.error(`  ✗ ${line}`);
+  assertEq(
+    offenders.length,
+    0,
+    'every Linking.openURL left in the app is the allowed openSettings() form (the D5 handler is gone)',
+  );
+  assertEq(
+    noPurchaseActionLeavesTheApp(files),
+    true,
+    'noPurchaseActionLeavesTheApp() passes over the real tree',
+  );
+
+  console.log('\nlive scan: each purchase surface opens the one shared shell');
+
+  for (const [path, label] of PURCHASE_SURFACES) {
+    const source = readAppFile(path);
+    assertEq(purchaseActionIsInShell(source), true, `${label}: its purchase tap opens the in-app shell`);
+    assertEq(
+      uniquePurchaseActionPerSurface(source),
+      true,
+      `${label}: exactly one purchase action (a secondary only on a different URL)`,
+    );
+  }
+
+  console.log('\nlive scan: the shell mounts are Modal-rooted with the WebView flags');
+
+  const shell = readAppFile(SHELL_PATH);
+  const shellFiles = [
+    { path: SHELL_PATH, source: shell },
+    ...PURCHASE_SURFACES.map(([path]) => ({ path, source: readAppFile(path) })),
+  ];
+  const browserViolations = findBrowserContractViolations(shellFiles);
+  for (const v of browserViolations) console.error(`  ✗ ${v.message}`);
+  assertEq(
+    browserViolations.length,
+    0,
+    'every new shell mount renders the retailer in its OWN full-screen Modal (never a bare View)',
+  );
+  const flagViolations = findWebViewFlagViolations(shellFiles);
+  for (const v of flagViolations) console.error(`  ✗ ${v.message}`);
+  assertEq(
+    flagViolations.length,
+    0,
+    'the shell WebView keeps javaScriptEnabled + domStorageEnabled (Sheet Music Direct is a JS app)',
+  );
+
+  console.log('\nmutation probes: put each bundle-C defect back');
+
+  const resultView = readAppFile(PURCHASE_SURFACES[0][0]);
+  // (C1/D5) the purchase tap goes back to the system browser.
+  const linkingBack = resultView.replace(
+    'setPurchaseWebUrl(purchaseUrl)',
+    'Linking.openURL(purchaseUrl)',
+  );
+  assert(linkingBack !== resultView, 'the D5 mutation changed RecognitionResultView');
+  assertEq(
+    purchaseActionIsInShell(linkingBack),
+    false,
+    'MUTATION: restoring Linking.openURL in the result card FAILS purchaseActionIsInShell',
+  );
+  assertEq(
+    noPurchaseActionLeavesTheApp(
+      files.map((f) =>
+        f.path === PURCHASE_SURFACES[0][0] ? { path: f.path, source: linkingBack } : f,
+      ),
+    ),
+    false,
+    'MUTATION: restoring Linking.openURL in the result card FAILS noPurchaseActionLeavesTheApp over the tree',
+  );
+  assertEq(
+    purchaseActionIsInShell(resultView),
+    true,
+    'the untouched result card still passes (the probe changed the source it targeted)',
+  );
+
+  // (C2/v31) a SECOND purchase action on the piece page.
+  const pieceDetail = readAppFile(PURCHASE_SURFACES[2][0]);
+  const secondCta = pieceDetail.replace(
+    '      <PurchaseWebView',
+    '      <TouchableOpacity onPress={() => openInAppPurchase(sheetCardUrl)}>\n' +
+      '        <Text>🛒 Buy again</Text>\n' +
+      '      </TouchableOpacity>\n' +
+      '      <PurchaseWebView',
+  );
+  assert(secondCta !== pieceDetail, 'the second-CTA mutation changed PieceDetailScreen');
+  assertEq(
+    uniquePurchaseActionPerSurface(secondCta),
+    false,
+    'MUTATION: a second purchase action on the piece page FAILS uniquePurchaseActionPerSurface',
+  );
+  assertEq(
+    uniquePurchaseActionPerSurface(pieceDetail),
+    true,
+    'the untouched piece page still passes (the probe changed the source it targeted)',
+  );
+}
+
 // ─── run ────────────────────────────────────────────────────────
 
 function main(): void {
@@ -438,6 +771,8 @@ function main(): void {
   scanTests();
   wiringTests();
   liveScanTests();
+  shellContractTests();
+  liveShellScanTests();
   console.log(`\n${passes} passed, ${failures} failed\n`);
   process.exit(failures === 0 ? 0 : 1);
 }
