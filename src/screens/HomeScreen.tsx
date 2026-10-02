@@ -81,6 +81,30 @@ import {
 // result surface renders it INLINE, so the door's own hum pass looks the piece up
 // in our catalog exactly as the full hum screen does.
 import type { HumResolvedSheet } from '../services/frontDoor';
+// The front door's BAND MODEL and the "Find any song" chip's one source of copy
+// (re-flow bundle D + B, owner build-go 10-02). The band containers below render
+// from these names, and src/services/frontDoorBands.ts + scripts/frontDoorBands.test.ts
+// assert the order, the one-meaning-per-entry rule and the zero-promise rule
+// against THIS file's real source.
+import {
+  BAND_TEST_IDS,
+  BAND_TITLES,
+  BROWSE_LIBRARY_ACCESSIBILITY_LABEL,
+  BROWSE_LIBRARY_HINT,
+  BROWSE_LIBRARY_LABEL,
+  FIND_ANY_SONG_CHIP_ACCESSIBILITY_LABEL,
+  FIND_ANY_SONG_CHIP_LABEL,
+  FRONT_DOOR_BETA_NOTE,
+  FRONT_DOOR_FACET_FLAGS,
+  TODAY_CARD_TITLE,
+  TODAY_CARD_UNAVAILABLE_BODY,
+  WEEK_CHIP_ACCESSIBILITY_LABEL,
+  WEEK_CHIP_LABEL,
+  bandFacets,
+  retentionChips,
+  todayCardAccessibilityLabel,
+  todayCardCta,
+} from '../services/frontDoorBands';
 // The categories a result is allowed to claim — never a hardcoded genre.
 import { PUBLIC_DOMAIN_GENRE } from '../services/resultGenre';
 // The PD-library cross-check on the modern route (owner 09-25, build #3): a
@@ -112,20 +136,10 @@ import {
 } from '../services/reinforcementStore';
 import {
   EMPTY_STREAK_SUMMARY,
-  streakLine,
 } from '../services/practiceReinforcementView';
 import { StreakNudgeCard } from '../components/StreakNudgeCard';
 import {
-  FOR_YOU_CTA,
-  WEEK_CTA,
-  featuredPieceCta,
-  forYouAccessibilityLabel,
-  forYouByline,
   practiceTodayDestination,
-  streakAccessibilityLabel,
-  streakCta,
-  streakDestination,
-  weekProgressCopy,
 } from '../services/homeCards';
 import { checkAndAwardBadges } from '../services/achievements';
 // ── The MEDALS layer (owner-approved 08-25): earned-once medals over the data
@@ -978,21 +992,14 @@ export const HomeScreen: React.FC = () => {
     }
   }, [dailyChallenge]);
 
-  // ── 🔥 Streak card tap (the last owner-reported dead card, v19 bug) ──
-  // Same honesty rule as the other cards: this is navigation, not a practice
-  // session, so it never calls recordPractice() — a streak day comes from an
-  // actual coached run, recorded when the piece's score is opened.
-  //   0 days → today's featured piece, through the SAME mapping as
-  //            "⏱️ Practice today" (sheet reader → piece page → Find-a-Piece),
-  //            so the card is a way to START the streak it is showing.
-  //   N days → the practice-week view — the same surface "📋 This Week" opens.
-  const handleStreakCardTap = useCallback(() => {
-    if (streakDestination(streak.currentDays) === 'week') {
-      setShowPracticeWeek(true);
-      return;
-    }
-    handlePracticeTodayTap();
-  }, [streak.currentDays, handlePracticeTodayTap]);
+  // ── The streak card's OWN tap is RETIRED (re-flow bundle D, owner 10-02) ──
+  // It meant two different things — 0 days → today's piece, N days → the week
+  // view (homeCards.streakDestination) — which is exactly the "one card, two
+  // meanings" ambiguity the audit flagged. Band B's single card owns the only
+  // practice destination on the door, and the streak NUMBERS live on as state
+  // chips inside it (retention stays visible without competing). Nothing here
+  // replaced the handler: a second destination is what was removed, so there is
+  // no dead handler left behind and no second practice target.
 
   // ── "📋 This Week" tap ──
   // Opens the practice-week surface in place (see PracticeWeekScreen): the days
@@ -1058,9 +1065,19 @@ export const HomeScreen: React.FC = () => {
     }, RETRY_DELAY_MS);
   }, [handleCloseModernInterstitial, startCapture]);
 
-  // ── Daily challenge tap: record practice (streak framing), then open the
-  // piece's sheet music in the in-app viewer when available; otherwise show
-  // the honest "coming soon" state (PieceDetailScreen) instead of a dead end.
+  // ── BAND B's ONE card: "Today's piece — practice it" (re-flow bundle D) ──
+  // Two old cards are merged into this single tap, and BOTH of their bodies are
+  // preserved here:
+  //   • the featured-piece card's practice framing — record the practice day,
+  //     refresh the streak + weekly goal, award anything newly earned (this is
+  //     the streak the chips show, and it is the ONLY way the door starts a
+  //     streak day);
+  //   • "⏱️ Practice today"'s SINGLE destination decision — the sheet reader when
+  //     the catalog holds a curated score, else the piece page (where the coach
+  //     lives), else Find-a-Piece. It runs through `handlePracticeTodayTap`, so
+  //     there is ONE destination function for today's piece on the door.
+  // A removed card left no handler dead: the old pages this replaced are gone,
+  // and the two that survive (this and the week chip) both have a real tap.
   const handleDailyChallengeTap = useCallback(async () => {
     await recordPractice();
     setStreak(await getDisplayStreakLocal());
@@ -1076,12 +1093,19 @@ export const HomeScreen: React.FC = () => {
       setBadgeToast(newBadges[0]);
     }
 
-    if (dailyChallenge?.sheetMusicUrl) {
-      setShowScoreViewer(true);
-    } else {
-      setShowDetail(true);
-    }
-  }, [dailyChallenge]);
+    handlePracticeTodayTap();
+  }, [handlePracticeTodayTap]);
+
+  // ── BAND B/A: "Find any song" chip (re-flow bundle B, owner 10-02) ──
+  // The compact way into the find-a-song SEARCH, sitting beside the hum row so a
+  // musician who can neither play the audio nor hum it is one tap from typing a
+  // title. It reuses the EXISTING `showFindPiece` flag and the existing
+  // `FindPieceScreen` mount — no second search surface, no new box — and it is
+  // deliberately NOT the hero handler (the one big button stays the only primary
+  // CTA; frontDoor.findAnySongChipWired() asserts both halves).
+  const handleFindAnySong = useCallback(() => {
+    setShowFindPiece(true);
+  }, []);
 
   // ── Permission denied state ──
   if (recorder.error && !recorder.isRecording) {
@@ -1089,13 +1113,11 @@ export const HomeScreen: React.FC = () => {
   }
 
   // ── Build personalised recommendation text ──
-  const personalisedCopy = onboarding
-    ? onboarding.instrument === 'both'
-      ? `Piano & Guitar picks for ${onboarding.level}s`
-      : `${onboarding.instrument === 'piano' ? 'Piano' : 'Guitar'} picks for ${
-          onboarding.level
-        }s`
-    : 'Discover sheet music';
+  // RETIRED with the "🎯 For You" card (re-flow bundle D, owner 10-02): the card
+  // promised picks the app cannot compute ("Piano picks for beginners") and its
+  // tap opened a generic search. The personalised line, its byline and its
+  // accessibility label are gone from the door AND from homeCards.ts — a breadcrumb
+  // of that promise left behind is exactly what bundle E's scan hunts for.
 
   // The Home subtitle is the genre-neutral product promise (owner 09-24): it
   // used to render "Curated Classical" for anyone who skipped genre selection in
@@ -1107,24 +1129,33 @@ export const HomeScreen: React.FC = () => {
   // The one button, mirrored from the front door's state machine.
   const heroEmoji = recorder.isRecording ? '🎙️' : '🎤';
 
-  const streakText =
-    streak.currentDays > 0
-      ? `🔥 ${streak.currentDays}-day streak`
-      : 'Start your streak today!';
+  /** The week is complete when the user hit the goal they set. */
+  const weekComplete = weeklyGoal.current >= weeklyGoal.target;
+
+  // The door's retention STATE, resolved ONCE: the streak/week chips inside band
+  // B's card and the chips in band C both come from this single call, so the two
+  // bands can never show different numbers. Each is a state chip (no
+  // destination) except the two that really open a surface.
+  const retention = retentionChips({
+    currentDays: streak.currentDays,
+    weekCurrent: weeklyGoal.current,
+    weekTarget: weeklyGoal.target,
+    weekComplete,
+  });
+  const todayCardChips = retention.filter((chip) => chip.where === 'today-card');
+  const browseChips = retention.filter((chip) => chip.where === 'browse');
+
+  // Band C's facet chips — ONLY the ones whose content exists today. Guitar &
+  // keyboard is absent (frontDoorBands.guitarContentAvailable is false until a
+  // screen surfaces the audited PD guitar batch), and an absent facet is the
+  // honest answer: no "coming soon" chip, ever.
+  const facets = bandFacets(FRONT_DOOR_FACET_FLAGS);
 
   // Positive framing only (owner rule, 2026-09-17): the streak line celebrates
-  // what the streak is, it never threatens the user with losing it. Copy comes
-  // from the reinforcement view layer so every surface phrases it the same way.
-  const streakNudge =
-    streakLine(streak)?.text ??
-    'A few minutes of practice today starts your streak.';
-
-  const weekProgress = weekProgressCopy(weeklyGoal.current, weeklyGoal.target);
-  const weekPercent = Math.min(
-    (weeklyGoal.current / weeklyGoal.target) * 100,
-    100,
-  );
-  const weekComplete = weeklyGoal.current >= weeklyGoal.target;
+  // what the streak is, it never threatens the user with losing it. The card
+  // used to render `streakLine(streak)` here; with the standing streak card
+  // merged into band B that nudge lives on in StreakNudgeCard below, which calls
+  // the same reinforcement view layer.
 
   // Full-screen Tier-1 flows (owned recorders; rendered in place like the rest
   // of the app's full-screen readers).
@@ -1306,12 +1337,19 @@ export const HomeScreen: React.FC = () => {
           {homePromiseCopy(onboarding?.instrument)}
         </Text>
 
-        {/* ── ONE-BUTTON FRONT DOOR (owner-approved 09-24) ──
-            The ONLY primary action on this screen. One tap runs the whole hybrid
-            pipeline (our library landmark match, then the AudD modern pass) with
-            no mode choice; when the ambient pass hears nothing we recognise, this
-            SAME button becomes the hum/whistle/sing fallback — inline, never a
-            rival button. Every state's words come from src/services/frontDoor.ts. */}
+        {/* ══ BAND A — IDENTIFY ══ (re-flow bundle D, owner build-go 10-02)
+            The hero card exactly as it was: emoji, title, support, the ONE button,
+            the hum row with the new "Find any song" chip beside it, and the honest
+            beta note. Nothing in this band is re-ordered — the audit's band A is
+            "identify (hero, unchanged)".
+
+            ONE-BUTTON FRONT DOOR (owner-approved 09-24): the ONLY primary action on
+            this screen. One tap runs the whole hybrid pipeline (our library landmark
+            match, then the AudD modern pass) with no mode choice; when the ambient
+            pass hears nothing we recognise, this SAME button becomes the
+            hum/whistle/sing fallback — inline, never a rival button. Every state's
+            words come from src/services/frontDoor.ts. */}
+        <View style={styles.band} testID={BAND_TEST_IDS.identify}>
         <View style={styles.recognitionCard}>
           <Text style={styles.recognitionEmoji}>{heroEmoji}</Text>
           <Text style={styles.recognitionTitle}>{heroTitle(hero)}</Text>
@@ -1371,11 +1409,22 @@ export const HomeScreen: React.FC = () => {
             </TouchableOpacity>
           )}
 
-          {/* The secondary way in for a musician who CAN'T play the audio at
-              all: hum, whistle or sing the melody (owner 09-25, RC v26 Test 6:
-              the affordance must be visible on HOME, not only after a failed
-              listen). A labelled secondary path under the one button — never a
-              rival mode CTA — that opens the existing hum flow. */}
+          {/* The two secondary ways in, SIDE BY SIDE (re-flow bundle B, owner
+              10-02): the hum row (owner 09-25) and the new "Find any song" chip.
+              The hum entry stays FIRST, so the door's priority order is unchanged
+              (frontDoor.humEntryWired), and the chip renders AFTER it in source
+              order (frontDoor.findAnySongChipWired) — it must never disturb the
+              hero's own order.
+
+              The chip is deliberately LIGHTER than the recognition core: no fill,
+              a hairline border, smaller type, its own style — never
+              styles.recognitionBtn, never the hero handler. It opens the EXISTING
+              find-a-song search (the same showFindPiece flag + FindPieceScreen
+              mount the band-C row uses), so there is no second search surface and
+              no new box. §B.1's honest limit: this chip opens the title/artist
+              SEARCH, not the recording door (that sentence belongs to
+              HUM_TO_MODERN_BLURB / the modern route). */}
+          <View style={styles.frontDoorRow}>
           <TouchableOpacity
             style={styles.humEntryBtn}
             onPress={handleHumEntry}
@@ -1387,63 +1436,30 @@ export const HomeScreen: React.FC = () => {
             <Text style={styles.humEntryText}>{HUM_SECONDARY_CTA}</Text>
           </TouchableOpacity>
 
-          {/* The secondary way in: KNOW the piece's name. This used to be a third
-              hero button ("Find a piece"); the owner's decision (09-24) is that it
-              is a search field, not a competing CTA. */}
           <TouchableOpacity
-            style={styles.findPieceBtn}
-            onPress={handleOpenFindPiece}
+            style={styles.findAnySongChip}
+            onPress={handleFindAnySong}
             activeOpacity={0.6}
-            accessibilityRole="search"
-            accessibilityLabel={FIND_PIECE_ENTRY_LABEL}
+            accessibilityRole="button"
+            accessibilityLabel={FIND_ANY_SONG_CHIP_ACCESSIBILITY_LABEL}
           >
-            <Text style={styles.findPieceEmoji}>🔎</Text>
-            <Text style={styles.findPieceText}>{FIND_PIECE_ENTRY_HINT}</Text>
+            <Text style={styles.findAnySongChipText}>{FIND_ANY_SONG_CHIP_LABEL}</Text>
           </TouchableOpacity>
+          </View>
 
           {/* Honest beta note — the recognition library is small and growing.
               In hum mode it says what the hum fallback can actually do. */}
           <Text style={styles.tier1BetaNote}>
-            {humFallback
-              ? HUM_FALLBACK_LIBRARY_NOTE
-              : 'Beta: our recognition library is still growing — well-known classical melodies match best; not every song will match yet.'}
+            {humFallback ? HUM_FALLBACK_LIBRARY_NOTE : FRONT_DOOR_BETA_NOTE}
           </Text>
+        </View>
         </View>
 
 
-        {/* ── Streak Card ── */}
-        {/* Tappable (v19 bug: "Start your streak today!" and the button did
-            nothing). 0 days → today's featured piece, the SAME destination as
-            "⏱️ Practice today"; an active streak → the practice-week view. The
-            copy above the CTA keeps its positive framing — this only adds where
-            the tap goes. */}
-        <TouchableOpacity
-          style={styles.streakCard}
-          onPress={handleStreakCardTap}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={streakAccessibilityLabel(
-            streak.currentDays,
-            dailyChallenge,
-          )}
-        >
-          <View style={styles.streakRow}>
-            <Text style={styles.streakEmoji}>🔥</Text>
-            <View style={styles.streakInfo}>
-              <Text style={styles.streakCount}>{streakText}</Text>
-              <Text style={styles.streakBest}>
-                Best: {streak.longestDays} days
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.streakNudge}>{streakNudge}</Text>
-          <Text style={styles.cardCta}>
-            {streakCta(streak.currentDays, dailyChallenge)}
-          </Text>
-        </TouchableOpacity>
-
         {/* Outside-play streak nudge (slice 2): quiet, dismissible, and never
-            rendered while the mic is live or a result is on screen. */}
+            rendered while the mic is live or a result is on screen. It is a
+            BANNER, not a door entry, so it belongs to no band — the bands below
+            carry the door's tappable meanings. */}
         <StreakNudgeCard
           surface="home"
           hidden={
@@ -1456,174 +1472,186 @@ export const HomeScreen: React.FC = () => {
           }
         />
 
-        {/* 🏅 Achievements — the QUIET medals entry (owner-approved 08-25). It
-            sits BELOW the one-button front door and below the streak card so it
-            is never a competing CTA: a small row, a line of progress, and the
-            medals screen behind it. The line comes from the medal rules
-            (achievementsSummaryLine), never from a number typed here. */}
-        <TouchableOpacity
-          style={styles.achievementsCard}
-          onPress={handleOpenAchievements}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={ACHIEVEMENTS_ENTRY_LABEL}
-        >
-          <Text style={styles.achievementsEmoji}>🏅</Text>
-          <View style={styles.achievementsInfo}>
-            <Text style={styles.achievementsTitle}>{ACHIEVEMENTS_ENTRY_LABEL}</Text>
-            <Text style={styles.achievementsHint}>
-              {medalSummary || ACHIEVEMENTS_ENTRY_HINT}
-            </Text>
-          </View>
-          <Text style={styles.achievementsChevron}>›</Text>
-        </TouchableOpacity>
+        {/* ══ BAND B — TODAY ══ (re-flow bundle D, owner 10-02)
+            ONE card, ONE destination every day. It replaces four overlapping
+            practice targets — the standing streak card, "⏱️ Practice today",
+            "📋 This Week" and "🌟 Today's Featured Piece" — with a single meaning:
 
-        {/* ⏱️ Practice today — tappable (v19 bug: this card looked tappable and
-            did nothing). Opens today's featured piece: the sheet reader when the
-            catalog has a curated score, else the piece page with the coach; when
-            no featured piece loaded it opens Find-a-Piece. */}
-        <TouchableOpacity
-          style={styles.practiceCard}
-          onPress={handlePracticeTodayTap}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={
-            dailyChallenge
-              ? `Practice today — open ${dailyChallenge.title}`
-              : 'Practice today — find a piece to practice'
-          }
-        >
-          <Text style={styles.practiceTitle}>⏱️ Practice today</Text>
-          <Text style={styles.practiceValue}>You practiced {Math.round(practiceMinutes)} minutes today</Text>
-          <Text style={styles.cardCta}>{featuredPieceCta(dailyChallenge)}</Text>
-        </TouchableOpacity>
+              • the streak and week STATE stays visible as small chips INSIDE the
+                card (retention is a business priority; it just stops competing);
+              • handleDailyChallengeTap keeps the practice framing (record the day,
+                refresh the streak + weekly goal, award badges) and lands on
+                handlePracticeTodayTap's ONE destination — the sheet reader when the
+                catalog holds a curated score, else the piece page (where the coach
+                lives), else Find-a-Piece;
+              • the streak card's old two-way tap (0 days → practice, ≥1 day → week) is
+                GONE with homeCards.streakDestination's door use, so no card here
+                means two things.
 
-        {/* ── Weekly Goals ── */}
-        {/* Tappable (v19 bug): opens the practice-week surface — the days
-            practised this week, minutes per day, this week's coached takes. */}
-        <TouchableOpacity
-          style={styles.goalCard}
-          onPress={handleOpenPracticeWeek}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={`This week — ${weekProgress}. Open your practice week`}
-        >
-          <View style={styles.goalHeader}>
-            <Text style={styles.goalTitle}>📋 This Week</Text>
-            {weekComplete && <Text style={styles.goalComplete}>🎉 Done!</Text>}
-          </View>
-          <Text style={styles.goalProgress}>{weekProgress}</Text>
-          <View style={styles.progressBar}>
-            <View
-              style={[
-                styles.progressFill,
-                { width: `${weekPercent}%` },
-                weekComplete && styles.progressFillComplete,
-              ]}
-            />
-          </View>
-          {weekComplete && (
-            <Text style={styles.goalCelebrate}>
-              You crushed your goal this week!
-            </Text>
-          )}
-          <Text style={styles.cardCta}>{WEEK_CTA}</Text>
-        </TouchableOpacity>
-
-        {/* ── Daily Challenge ── */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>🌟 Today's Featured Piece</Text>
-        </View>
-
-        {dailyChallenge ? (
+            With no catalog the card shows the honest line and still lands on the
+            search: band B is never empty and never a dead end. */}
+        <View style={styles.band} testID={BAND_TEST_IDS.today}>
+          <Text style={styles.bandTitle}>{BAND_TITLES.today}</Text>
           <TouchableOpacity
-            style={styles.challengeCard}
+            style={styles.todayCard}
             onPress={handleDailyChallengeTap}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={todayCardAccessibilityLabel(dailyChallenge)}
           >
-            <Text style={styles.challengeEmoji}>🎼</Text>
-            <Text style={styles.challengeTitle}>{dailyChallenge.title}</Text>
-            <Text style={styles.challengeComposer}>
-              {dailyChallenge.composer}
-            </Text>
-            <View style={styles.challengeMeta}>
-              {dailyChallenge.genre ? (
-                <View style={styles.challengeTag}>
-                  <Text style={styles.challengeTagText}>
-                    {dailyChallenge.genre}
-                  </Text>
-                </View>
-              ) : null}
-              {dailyChallenge.catalog ? (
-                <View style={styles.challengeTag}>
-                  <Text style={styles.challengeTagText}>
-                    {dailyChallenge.catalog}
-                  </Text>
-                </View>
-              ) : null}
-              <View style={styles.challengeTag}>
-                <Text style={styles.challengeTagText}>
-                  {dailyChallenge.difficulty === 'Beginner'
-                    ? '🌱'
-                    : dailyChallenge.difficulty === 'Intermediate'
-                      ? '🌿'
-                      : '🌳'}{' '}
-                  {dailyChallenge.difficulty}
+            <Text style={styles.todayCardTitle}>{TODAY_CARD_TITLE}</Text>
+            {dailyChallenge ? (
+              <>
+                <Text style={styles.todayCardPiece}>{dailyChallenge.title}</Text>
+                <Text style={styles.todayCardComposer}>
+                  {dailyChallenge.composer}
                 </Text>
-              </View>
-            </View>
-            {dailyChallenge.description ? (
-              <Text style={styles.challengeDesc} numberOfLines={2}>
-                {dailyChallenge.description}
+                <View style={styles.challengeMeta}>
+                  {dailyChallenge.genre ? (
+                    <View style={styles.challengeTag}>
+                      <Text style={styles.challengeTagText}>
+                        {dailyChallenge.genre}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {dailyChallenge.catalog ? (
+                    <View style={styles.challengeTag}>
+                      <Text style={styles.challengeTagText}>
+                        {dailyChallenge.catalog}
+                      </Text>
+                    </View>
+                  ) : null}
+                  <View style={styles.challengeTag}>
+                    <Text style={styles.challengeTagText}>
+                      {dailyChallenge.difficulty === 'Beginner'
+                        ? '🌱'
+                        : dailyChallenge.difficulty === 'Intermediate'
+                          ? '🌿'
+                          : '🌳'}{' '}
+                      {dailyChallenge.difficulty}
+                    </Text>
+                  </View>
+                </View>
+                {dailyChallenge.description ? (
+                  <Text style={styles.challengeDesc} numberOfLines={2}>
+                    {dailyChallenge.description}
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <Text style={styles.todayCardBody}>
+                {TODAY_CARD_UNAVAILABLE_BODY}
               </Text>
-            ) : null}
-            <View style={styles.challengeCta}>
-              <Text style={styles.challengeCtaText}>
-                {dailyChallenge.sheetMusicAvailable === false
-                  ? 'View piece ▶ — sheet music coming soon'
-                  : 'View & Practice →'}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={styles.challengeCard}
-            onPress={loadData}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.challengeEmoji}>🎼</Text>
-            <Text style={styles.challengeTitle}>
-              Featured piece unavailable
-            </Text>
-            <Text style={styles.challengeComposer}>
-              Couldn't reach the piece catalog. Check your connection.
-            </Text>
-            <View style={styles.challengeCta}>
-              <Text style={styles.challengeCtaText}>Retry →</Text>
-            </View>
-          </TouchableOpacity>
-        )}
+            )}
 
-        {/* ── Personalised Recommendations ── */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>🎯 For You</Text>
+            {/* Retention as STATE, not as rival cards. */}
+            <View style={styles.bandChipRow}>
+              {todayCardChips.map((chip) => (
+                <View key={chip.id} style={styles.bandChip}>
+                  <Text style={styles.bandChipText}>{chip.label}</Text>
+                </View>
+              ))}
+            </View>
+
+            <Text style={styles.cardCta}>{todayCardCta(dailyChallenge)}</Text>
+          </TouchableOpacity>
         </View>
-        {/* A real card now (v19 bug: this looked like a card and had no tap at
-            all). The personalised line is the title, the tap opens catalog
-            browse/search — the honest destination today — and the byline says so
-            instead of claiming a feed the app cannot show yet. */}
-        <TouchableOpacity
-          style={styles.forYouCard}
-          onPress={handleOpenFindPiece}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={forYouAccessibilityLabel(personalisedCopy)}
-        >
-          <Text style={styles.recoLabel}>{personalisedCopy}</Text>
-          <Text style={styles.recoByline}>{forYouByline(onboarding !== null)}</Text>
-          <Text style={styles.cardCta}>{FOR_YOU_CTA}</Text>
-        </TouchableOpacity>
 
+        {/* ══ BAND C — BROWSE + KEEP GOING ══ (re-flow bundle D, owner 10-02)
+            One meaning per entry: the honest search row (the real field is one tap
+            away — audit D9), the facet chips that are each backed by content that
+            exists TODAY, the free library row, then the small chips.
+
+            GUITAR & KEYBOARD IS DELIBERATELY ABSENT. Its content
+            (PD_GUITAR_CATALOG + gateGuitarSheet) is audited and gate-cleared, but
+            no screen surfaces it yet, so the facet does not render at all — no
+            "coming soon" chip, ever (frontDoorBands.guitarContentAvailable, and
+            bandFacetsAreBackedByRealContent fails if the flag is flipped alone). */}
+        <View style={styles.band} testID={BAND_TEST_IDS.browse}>
+          <Text style={styles.bandTitle}>{BAND_TITLES.browse}</Text>
+
+          {/* The search entry: it used to be a hint line under the hero. It is a
+              row in this band now, and one tap opens the real field. */}
+          <TouchableOpacity
+            style={styles.findPieceBtn}
+            onPress={handleOpenFindPiece}
+            activeOpacity={0.6}
+            accessibilityRole="search"
+            accessibilityLabel={FIND_PIECE_ENTRY_LABEL}
+          >
+            <Text style={styles.findPieceEmoji}>🔎</Text>
+            <Text style={styles.findPieceText}>{FIND_PIECE_ENTRY_HINT}</Text>
+          </TouchableOpacity>
+
+          {/* Breadth, honestly — only the facets whose content exists today. */}
+          {facets.length > 0 && (
+            <View style={styles.bandChipRow}>
+              {facets.map((facet) => (
+                <TouchableOpacity
+                  key={facet.id}
+                  style={styles.bandChip}
+                  onPress={handleOpenFindPiece}
+                  activeOpacity={0.6}
+                  accessibilityRole="button"
+                  accessibilityLabel={facet.label}
+                >
+                  <Text style={styles.bandChipText}>{facet.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* The free library — the hook (free content earns the trust the paid
+              paths live on). Same destination the modern interstitial's own
+              "browse the free library" lever uses. */}
+          <TouchableOpacity
+            style={styles.browseLibraryRow}
+            onPress={handleBrowseLibraryFromModern}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={BROWSE_LIBRARY_ACCESSIBILITY_LABEL}
+          >
+            <Text style={styles.browseLibraryEmoji}>📚</Text>
+            <View style={styles.browseLibraryInfo}>
+              <Text style={styles.browseLibraryTitle}>{BROWSE_LIBRARY_LABEL}</Text>
+              <Text style={styles.browseLibraryHint}>{BROWSE_LIBRARY_HINT}</Text>
+            </View>
+            <Text style={styles.browseLibraryChevron}>›</Text>
+          </TouchableOpacity>
+
+          {/* The small chips: the streak STATE (no tap — it is a number, not a
+              promise), the medals entry (kept, as a chip) and This Week. */}
+          <View style={styles.bandChipRow}>
+            {browseChips
+              .filter((chip) => chip.destination === null)
+              .map((chip) => (
+                <View key={chip.id} style={styles.bandChip}>
+                  <Text style={styles.bandChipText}>{chip.label}</Text>
+                </View>
+              ))}
+            <TouchableOpacity
+              style={styles.achievementsCard}
+              onPress={handleOpenAchievements}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={ACHIEVEMENTS_ENTRY_LABEL}
+            >
+              <Text style={styles.achievementsEmoji}>🏅</Text>
+              <Text style={styles.achievementsTitle}>
+                {medalSummary || ACHIEVEMENTS_ENTRY_HINT}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.bandChipButton}
+              onPress={handleOpenPracticeWeek}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={WEEK_CHIP_ACCESSIBILITY_LABEL}
+            >
+              <Text style={styles.bandChipText}>{WEEK_CHIP_LABEL}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
@@ -1665,92 +1693,28 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
 
-  // Streak
-  streakCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-  },
   // 🏅 The quiet medals entry — a small row, deliberately lighter than the
   // streak card so it never competes with the one-button front door.
   achievementsCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#16213e',
-    borderRadius: 14,
+    backgroundColor: '#1a1a2e',
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: '#0f3460',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 14,
-    minHeight: 56,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
   },
   achievementsEmoji: {
-    fontSize: 22,
-    marginRight: 12,
-  },
-  achievementsInfo: {
-    flex: 1,
+    fontSize: 14,
+    marginRight: 6,
   },
   achievementsTitle: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  achievementsHint: {
     color: '#a0a0b8',
     fontSize: 12,
-    marginTop: 2,
-  },
-  achievementsChevron: {
-    color: '#4ecdc4',
-    fontSize: 22,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  streakRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  streakEmoji: {
-    fontSize: 36,
-    marginRight: 14,
-  },
-  streakInfo: {
-    flex: 1,
-  },
-  streakCount: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  streakBest: {
-    fontSize: 14,
-    color: '#ffb347',
-    marginTop: 2,
-  },
-  streakNudge: {
-    fontSize: 14,
-    color: '#ffb347',
     fontWeight: '600',
-    marginTop: 4,
   },
 
-  // Practice
-  practiceCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-  },
-  practiceTitle: { fontSize: 16, fontWeight: '700', color: '#ffffff', marginBottom: 6 },
-  practiceValue: { fontSize: 15, color: '#c0c0d0' },
 
   // Shared affordance line on the tappable summary cards (Practice today /
   // This Week / For You) — the card says where the tap goes instead of only
@@ -1762,95 +1726,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
 
-  // Weekly goal
-  goalCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 22,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-  },
-  goalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  goalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  goalComplete: {
-    fontSize: 14,
-    color: '#4ecdc4',
-    fontWeight: '700',
-  },
-  goalProgress: {
-    fontSize: 15,
-    color: '#c0c0d0',
-    fontWeight: '600',
-    marginBottom: 10,
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: '#1a1a2e',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#e94560',
-    borderRadius: 4,
-  },
-  progressFillComplete: {
-    backgroundColor: '#4ecdc4',
-  },
-  goalCelebrate: {
-    fontSize: 13,
-    color: '#4ecdc4',
-    fontWeight: '600',
-    marginTop: 10,
-  },
 
-  // Daily challenge
-  sectionHeader: {
-    marginBottom: 12,
-    marginTop: 6,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#e94560',
-  },
-  challengeCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 20,
-    padding: 22,
-    marginBottom: 22,
-    borderWidth: 1,
-    borderColor: '#e94560',
-    borderStyle: 'dashed',
-  },
-  challengeEmoji: {
-    fontSize: 40,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  challengeTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#ffffff',
-    textAlign: 'center',
-    marginBottom: 2,
-  },
-  challengeComposer: {
-    fontSize: 15,
-    color: '#a0a0b8',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
   challengeMeta: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -1875,36 +1751,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginBottom: 14,
   },
-  challengeCta: {
-    alignItems: 'center',
-  },
-  challengeCtaText: {
-    color: '#e94560',
-    fontSize: 15,
-    fontWeight: '700',
-  },
 
-  // Recommendations
-  forYouCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 22,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-  },
-  recoLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  recoByline: {
-    fontSize: 13,
-    color: '#a0a0b8',
-    marginBottom: 0,
-    lineHeight: 19,
-  },
 
   // Recognition CTA
   recognitionCard: {
@@ -1997,10 +1844,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    width: '100%',
+    flexShrink: 1,
     paddingVertical: 10,
-    paddingHorizontal: 14,
-    marginTop: 12,
+    paddingHorizontal: 8,
   },
   humEntryEmoji: {
     fontSize: 16,
@@ -2075,6 +1921,149 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '600',
+  },
+
+  // ── The front-door BANDS (re-flow bundle D, owner 10-02) ──
+  // One container per band, A → B → C. The containers carry BAND_TEST_IDS, so the
+  // source-scan guard in scripts/frontDoorBands.test.ts finds them and their order.
+  band: {
+    width: '100%',
+    marginBottom: 18,
+  },
+  bandTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: '#8a8aa3',
+    marginBottom: 8,
+  },
+  // A wrapping row of small chips / entries. flexWrap matters: the hum label is
+  // long on purpose (it names all three capture modes) and must reflow rather
+  // than clip on a 360dp screen.
+  bandChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  bandChip: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  // A chip that is also a tap (the band-C "This Week" chip).
+  bandChipButton: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  bandChipText: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  // Band A's two secondary entries side by side: the hum row and the "Find any
+  // song" chip (bundle B). The row wraps, so neither label is clipped.
+  frontDoorRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    width: '100%',
+  },
+  // The "Find any song" chip — the LIGHTEST tappable thing on the door: no fill,
+  // a hairline border, smaller type than the hero CTA, and never
+  // styles.recognitionBtn. This is the owner's weight rule (§B.4) in pixels.
+  findAnySongChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    backgroundColor: 'transparent',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  findAnySongChipText: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  // Band B — ONE card, one destination (owner 10-02).
+  todayCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
+  todayCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  todayCardPiece: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginTop: 10,
+  },
+  todayCardComposer: {
+    fontSize: 14,
+    color: '#a0a0b8',
+    marginTop: 2,
+  },
+  todayCardBody: {
+    fontSize: 14,
+    color: '#a0a0b8',
+    lineHeight: 20,
+    marginTop: 10,
+  },
+  // Band C's free-library row — a row, not a chip: it is the hook the paid paths
+  // live on, so it keeps the quiet card treatment the medals entry no longer uses.
+  browseLibraryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#16213e',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 10,
+    minHeight: 56,
+  },
+  browseLibraryEmoji: {
+    fontSize: 20,
+    marginRight: 12,
+  },
+  browseLibraryInfo: {
+    flex: 1,
+  },
+  browseLibraryTitle: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  browseLibraryHint: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  browseLibraryChevron: {
+    color: '#4ecdc4',
+    fontSize: 22,
+    fontWeight: '700',
+    marginLeft: 8,
   },
 
   bottomSpacer: {

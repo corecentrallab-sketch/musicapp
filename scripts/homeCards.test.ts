@@ -9,7 +9,6 @@
  *   • Practice today → sheet reader / piece page / Find-a-Piece fallback
  *   • the Monday→Sunday week view behind "This Week" (days, minutes, totals)
  *   • this week's coached-take summary + the copy shown for it
- *   • the For You copy reformulation (no promise of a feed that does not exist)
  *   • the streak card's destination (0 days → today's featured piece, through
  *     the same mapping as Practice today; a live streak → the week view)
  *
@@ -18,9 +17,6 @@
  */
 import {
   FIND_PIECE_CTA,
-  FOR_YOU_BYLINE_DEFAULT,
-  FOR_YOU_BYLINE_PERSONALISED,
-  FOR_YOU_CTA,
   NO_PRACTICE_TODAY,
   OPEN_FEATURED_CTA,
   WEEK_CTA,
@@ -29,8 +25,6 @@ import {
   coachedTakeCopy,
   coachedTakeSummary,
   featuredPieceCta,
-  forYouAccessibilityLabel,
-  forYouByline,
   historyStreakDestination,
   localDateKey,
   mondayOf,
@@ -352,44 +346,6 @@ function coachedTakeTests(): void {
   assertEq(noScore.includes('·'), false, 'no dangling separator when there is no score');
 }
 
-// ─── For You card copy ─────────────────────────────────────────
-
-function forYouTests(): void {
-  assertEq(FOR_YOU_CTA, 'Browse catalog →', 'the For You affordance names its destination');
-  assertEq(
-    forYouByline(true),
-    FOR_YOU_BYLINE_PERSONALISED,
-    'with onboarding answered, the byline is the personalised variant',
-  );
-  assertEq(
-    forYouByline(false),
-    FOR_YOU_BYLINE_DEFAULT,
-    'without onboarding, the byline asks for the answers',
-  );
-  assert(
-    /personali[sz]ed feed is still coming/i.test(FOR_YOU_BYLINE_PERSONALISED),
-    'the byline admits the personalised feed does not exist yet',
-  );
-  assert(
-    !/^Based on your instrument/i.test(FOR_YOU_BYLINE_PERSONALISED),
-    'the old "Based on your instrument, level, and genre" claim is gone (it never filtered)',
-  );
-  assert(
-    FOR_YOU_BYLINE_PERSONALISED.includes('Search by title or composer'),
-    'the byline describes what the tap actually does',
-  );
-  assertEq(
-    forYouAccessibilityLabel('Piano picks for beginners'),
-    'Piano picks for beginners — browse the catalog',
-    'screen readers hear the real destination too',
-  );
-  assertEq(
-    forYouAccessibilityLabel('Discover sheet music'),
-    'Discover sheet music — browse the catalog',
-    'the accessibility label works for the un-onboarded title as well',
-  );
-}
-
 // ─── practice-week screen copy ─────────────────────────────────
 
 function practiceWeekTests(): void {
@@ -603,12 +559,11 @@ function historyStreakTests(): void {
 // ─── run ────────────────────────────────────────────────────────
 
 function main(): void {
-  console.log('\n=== home cards (Practice today / This Week / For You / Streak) ===');
+  console.log('\n=== home cards (Practice today / This Week / Streak) ===');
   practiceTodayTests();
   weekViewTests();
   progressTests();
   coachedTakeTests();
-  forYouTests();
   practiceWeekTests();
   weekRowCopyTests();
   streakTests();
