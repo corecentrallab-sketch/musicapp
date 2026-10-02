@@ -1934,7 +1934,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 0.6,
-    textTransform: 'uppercase',
     color: '#8a8aa3',
     marginBottom: 8,
   },
