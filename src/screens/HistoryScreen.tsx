@@ -457,6 +457,11 @@ export const HistoryScreen: React.FC = () => {
       <HumSearchScreen
         reopen={openMelody}
         onClose={() => setOpenMelody(null)}
+        // A re-opened melody runs no library pass, so the miss card that carries
+        // this bridge never renders here. The window's prop is required (a host
+        // that opens the RECORDING flow must decide where a miss goes), so this
+        // hands it the only real move History has: close the window.
+        onSwitchToModern={() => setOpenMelody(null)}
       />
     );
   }

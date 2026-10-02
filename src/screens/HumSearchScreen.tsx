@@ -137,8 +137,13 @@ interface HumSearchScreenProps {
   /** The HUM → MODERN bridge: leave this flow and open the modern "Find any
    *  song" screen (its own recorder), which identifies the actual recording via
    *  the licensed fingerprint service and links the official sheet music.
-   *  Offered on the library-miss card so a hum miss is never a dead end. */
-  onSwitchToModern?: () => void;
+   *  Offered on the library-miss card so a hum miss is never a dead end.
+   *
+   *  REQUIRED, like the modern flow's own levers: a host that opens the capture
+   *  window must decide where a library miss goes. History's re-open passes a
+   *  close-the-window handler (a re-opened melody has no library pass to miss,
+   *  so that card never renders there) rather than leaving the route undefined. */
+  onSwitchToModern: () => void;
   /** A personal melody from History: show that take again instead of recording. */
   reopen?: SavedPiece | null;
 }
