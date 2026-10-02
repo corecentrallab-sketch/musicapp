@@ -11,7 +11,9 @@
  *                        load — never a dead tap.
  *   • 📋 This Week      → the practice-week surface: which days were practised,
  *                        minutes per day, and this week's coached takes.
- *   • 🎯 For You        → Find-a-Piece (catalog browse / search by title).
+ *     (The 🎯 For You card was REMOVED by the re-flow's band model — bundle D,
+ *     owner build-go 10-02 — because it promised picks the app cannot compute and
+ *     opened a generic search. Its copy was retired with it, not left behind.)
  *   • 🔥 Streak card    → 0 days: today's featured piece (the SAME destination
  *                        as Practice today, so the card is a way to START the
  *                        streak it shows); an active streak: the week view.
@@ -362,32 +364,6 @@ export function coachedTakeCopy(summary: CoachedTakeSummary): string {
       ? ''
       : ` · best ${summary.bestAccuracyPct}% accuracy`;
   return `${takes} this week${best}`;
-}
-
-// ─── For You copy (no promise of a feed that does not exist) ───
-
-/** The card's affordance: it opens catalog browse/search. */
-export const FOR_YOU_CTA = 'Browse catalog →';
-
-/**
- * The byline under the personalised line. The destination is a plain catalog
- * search — it does not filter by instrument/level yet — so the copy says what
- * it does and admits the personalised feed is still to come, instead of
- * claiming a feed the app cannot show.
- */
-export const FOR_YOU_BYLINE_PERSONALISED =
-  'Search by title or composer — a personalised feed is still coming.';
-/** Same card, for a user who has not answered onboarding. */
-export const FOR_YOU_BYLINE_DEFAULT =
-  'Tell us what you play to shape your picks — meanwhile, search by title or composer.';
-
-export function forYouByline(hasOnboarding: boolean): string {
-  return hasOnboarding ? FOR_YOU_BYLINE_PERSONALISED : FOR_YOU_BYLINE_DEFAULT;
-}
-
-/** Accessibility label for the For You card (screen readers get the truth too). */
-export function forYouAccessibilityLabel(personalisedCopy: string): string {
-  return `${personalisedCopy} — browse the catalog`;
 }
 
 // ─── Practice-week screen copy ─────────────────────────────────

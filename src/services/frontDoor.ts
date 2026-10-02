@@ -31,6 +31,10 @@ import type {
 } from '../types';
 import { maskComments } from './modalBackContract';
 import { startResultIdentifiers } from './modernRetryContract';
+// The band model's own source helpers (the band-C row contract lives here, the
+// band shape lives there — see scripts/frontDoorBands.test.ts).
+import { bandRegion } from './frontDoorBands';
+import { HUM_TO_MODERN_BLURB } from './humBridge';
 import {
   START_FAILURE_COPY,
   isPermissionFailure,
@@ -730,4 +734,143 @@ export function noMatchOffersNextStep(source: string): boolean {
     block.indexOf('HUM_SECONDARY_CTA') >= 0 &&
     block.indexOf('HUM_TO_MODERN_CTA') >= 0
   );
+}
+
+// ────────── BUNDLE B: the front-door "Find any song" chip ────────────────────
+
+/**
+ * The chip beside the hum row (owner sign-off (b), 10-02). It is the compact way
+ * into the find-a-song SEARCH — the same `FindPieceScreen` the band-C row opens,
+ * reached in one tap from the door — so a user who can hum nothing and cannot
+ * play the audio still has a visible way into the app's own money path.
+ *
+ * Deliberately NOT `handleHeroTap`: the chip must never become a second hero
+ * (`hasSingleHeroCta()` stays true), and it is deliberately NOT one of
+ * `RIVAL_MODE_HANDLERS` either — it does not open a recorder, so it is not the
+ * mode-menu coming back.
+ */
+export const FIND_ANY_SONG_CHIP_HANDLER = 'handleFindAnySong';
+/** The chip's own style marker — a chip, never the recognition core's button. */
+export const FIND_ANY_SONG_CHIP_STYLE = 'styles.findAnySongChip';
+
+/**
+ * The recording-identification claim the chip may NOT carry. The chip opens the
+ * title/artist SEARCH (§B.1's honest limit); the sentence that promises "we'll
+ * identify the recording" belongs to the modern door, so its own blurb is the
+ * negative fixture here.
+ */
+export const RECORDING_IDENTIFICATION_CLAIMS: readonly string[] = [
+  HUM_TO_MODERN_BLURB,
+  'identify the recording',
+  'identifies the recording',
+  'play the song out loud',
+];
+
+/** The element (opening tag + children) that carries `marker`. */
+function elementFromTag(masked: string, marker: string): string {
+  const at = masked.indexOf(marker);
+  if (at < 0) return '';
+  const open = masked.lastIndexOf('<TouchableOpacity', at);
+  if (open < 0) return '';
+  const close = masked.indexOf('</TouchableOpacity>', at);
+  return close < 0
+    ? masked.slice(open)
+    : masked.slice(open, close + '</TouchableOpacity>'.length);
+}
+
+/** The chip copy in a source file: the module's own chip constants AND the
+ *  rendered chip element, so a retyped label is caught as well as the shared one.
+ *  Empty when the file has neither (existence is `findAnySongChipWired`'s job). */
+export function chipCopyRegion(source: string): string {
+  const masked = maskComments(source);
+  const parts: string[] = [];
+  const first = masked.indexOf('FIND_ANY_SONG_CHIP_LABEL');
+  const lastMarker = 'FIND_ANY_SONG_CHIP_ACCESSIBILITY_LABEL';
+  const last = masked.lastIndexOf(lastMarker);
+  if (first >= 0 && last > first) {
+    parts.push(masked.slice(first, last + lastMarker.length));
+  }
+  const element = elementFromTag(masked, FIND_ANY_SONG_CHIP_STYLE);
+  if (element) parts.push(element);
+  return parts.join('\n');
+}
+
+/**
+ * True when the chip's label/hint/accessibility copy names the find-a-song
+ * SEARCH and never claims to identify a recording.
+ *
+ * The pre-fix fixture for the assertion this guards is the blurb itself: paste
+ * `HUM_TO_MODERN_BLURB` into the chip's copy and this returns false.
+ */
+export function chipDoesNotClaimRecordingRecognition(source: string): boolean {
+  const region = chipCopyRegion(source);
+  if (region.length === 0) return true;
+  return RECORDING_IDENTIFICATION_CLAIMS.every(
+    (claim) => region.indexOf(claim) < 0,
+  );
+}
+
+/**
+ * True when the front door really wires that chip:
+ *
+ *   1. it renders AFTER the hum entry (which itself renders after the hero
+ *      button — the order `humEntryWired()` already requires), so the priority
+ *      order of the door is unchanged;
+ *   2. it is labelled and described from `frontDoorBands` (ONE source of copy);
+ *   3. it is styled as a CHIP — never `styles.recognitionBtn`, never wired to the
+ *      hero handler, so it cannot out-shout the recognition core;
+ *   4. its handler body opens the destination `FIND_ANY_SONG_DESTINATION` names
+ *      (`FindPieceScreen`, behind `setShowFindPiece(true)`) — a chip that renders
+ *      and opens nothing is the dead-CTA class this app keeps getting bitten by.
+ */
+export function findAnySongChipWired(source: string): boolean {
+  const masked = maskComments(source);
+  const heroAt = masked.indexOf(`onPress={${HERO_TAP_HANDLER}}`);
+  const humAt = masked.indexOf(`onPress={${HUM_ENTRY_HANDLER}}`);
+  const chipAt = masked.indexOf(`onPress={${FIND_ANY_SONG_CHIP_HANDLER}}`);
+  if (heroAt < 0 || humAt < 0 || chipAt < 0) return false;
+  if (!(heroAt < humAt && humAt < chipAt)) return false;
+
+  const element = elementFromTag(masked, FIND_ANY_SONG_CHIP_STYLE);
+  if (!element) return false;
+  if (element.indexOf(`onPress={${FIND_ANY_SONG_CHIP_HANDLER}}`) < 0) return false;
+  // …rendering the module's copy BY REFERENCE (a retyped label would drift from
+  // the band model's chip entry, which is the whole point of one source of copy).
+  if (element.indexOf('FIND_ANY_SONG_CHIP_LABEL') < 0) return false;
+  if (element.indexOf('FIND_ANY_SONG_CHIP_ACCESSIBILITY_LABEL') < 0) return false;
+  // A chip, not the recognition core's button, and never the hero's handler.
+  if (element.indexOf('styles.recognitionBtn') >= 0) return false;
+  if (element.indexOf(`onPress={${HERO_TAP_HANDLER}}`) >= 0) return false;
+
+  // The handler's OWN declaration (not `handleFindAnySongFromCard`, the result
+  // card's modern bridge, which lives above it).
+  const declaration = masked.indexOf(`const ${FIND_ANY_SONG_CHIP_HANDLER} =`);
+  if (declaration < 0) return false;
+  const body = braceBlockFrom(masked, declaration);
+  return /setShowFindPiece\s*\(\s*true\s*\)/.test(body);
+}
+
+/**
+ * True when the band-C search row READS as a search entry (the audit's D9: the
+ * real field is one tap away) — it sits inside band C, carries the front door's
+ * own search wording, and its handler opens the screen behind a real text field.
+ *
+ * This is the row that used to be a hint line under the hero; it now lives in
+ * band C, and the whole point of the re-flow is that a musician who knows the
+ * piece's name is ONE tap from typing it.
+ */
+export function findPieceEntryIsSearchRow(source: string): boolean {
+  const masked = maskComments(source);
+  const band = bandRegion(source, 'browse');
+  if (!band) return false;
+  if (band.indexOf('styles.findPieceBtn') < 0) return false;
+  if (band.indexOf('onPress={handleOpenFindPiece}') < 0) return false;
+  // It renders the front door's search wording — a search entry, not a promise.
+  if (band.indexOf('FIND_PIECE_ENTRY_HINT') < 0) return false;
+  const declaration = masked.indexOf('const handleOpenFindPiece');
+  if (declaration < 0) return false;
+  const body = braceBlockFrom(masked, declaration);
+  if (!/setShowFindPiece\s*\(\s*true\s*\)/.test(body)) return false;
+  // …and the screen behind it is really mounted (its field is one tap away).
+  return /<FindPieceScreen\s/.test(masked);
 }

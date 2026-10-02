@@ -69,6 +69,11 @@ import {
   copyNamesAllCaptureModes,
   captureCopyIsHonest,
   humOnlyCopyRetired,
+  FIND_ANY_SONG_CHIP_HANDLER,
+  FIND_ANY_SONG_CHIP_STYLE,
+  chipDoesNotClaimRecordingRecognition,
+  findAnySongChipWired,
+  findPieceEntryIsSearchRow,
 } from '../src/services/frontDoor';
 import {
   HUM_CLOSE_MESSAGE,
@@ -1340,6 +1345,165 @@ function rivalHeroMutationTests(): void {
   );
 }
 
+// ─── the "Find any song" chip + the band-C search row (bundles B + D) ───
+
+/**
+ * Bundle B's chip and bundle D's search row, on the REAL front door. Both are one
+ * tap into the SAME find-a-song search (which carries the licensed-retailer
+ * results in every query state), and both are exactly the kind of thing that rots
+ * silently — a chip that renders and opens nothing, a row that stops reading as a
+ * search entry — so each has a mutation on the real source below.
+ *
+ * The honest limit is guarded too: this chip opens the SEARCH, not the recorder
+ * door, so its copy may not claim to identify a recording. The modern door's own
+ * blurb is the negative fixture.
+ */
+function findAnySongTests(): void {
+  console.log('\nthe front door\'s "Find any song" chip (bundle B)');
+
+  const home = readAppFile('src/screens/HomeScreen.tsx');
+  const copyModule = readAppFile('src/services/frontDoorBands.ts');
+  assert(home.length > 5000, `read HomeScreen.tsx (${home.length} chars)`);
+  assert(copyModule.length > 5000, `read frontDoorBands.ts (${copyModule.length} chars)`);
+
+  // The chip's copy lives in ONE module, and Home renders it from there.
+  assert(
+    copyModule.indexOf('FIND_ANY_SONG_CHIP_LABEL =') > 0,
+    'the chip\'s label/hint/accessibility copy lives in frontDoorBands.ts',
+  );
+  assert(
+    home.indexOf("from '../services/frontDoorBands'") > 0,
+    'Home renders the chip from that module (one source of copy, not a retyped label)',
+  );
+
+  assertEq(
+    findAnySongChipWired(home),
+    true,
+    'the chip renders AFTER the hum entry, is styled as a chip, and opens FindPieceScreen',
+  );
+  assertEq(
+    hasSingleHeroCta(home),
+    true,
+    'the chip did NOT become a second hero (hasSingleHeroCta stays true)',
+  );
+  assertEq(
+    humEntryWired(home),
+    true,
+    'the chip did not disturb the hum entry (humEntryWired stays true)',
+  );
+  assert(
+    home.indexOf(FIND_ANY_SONG_CHIP_STYLE) > 0 && home.indexOf(FIND_ANY_SONG_CHIP_HANDLER) > 0,
+    'the real chip carries the contract\'s style marker and handler name',
+  );
+
+  console.log('\nthe chip copy may not claim to identify a recording');
+
+  assertEq(
+    chipDoesNotClaimRecordingRecognition(home),
+    true,
+    'the real chip\'s copy does not make the recording-identification claim',
+  );
+  assertEq(
+    chipDoesNotClaimRecordingRecognition(copyModule),
+    true,
+    'the copy module does not either',
+  );
+  assert(
+    HUM_TO_MODERN_BLURB.indexOf('identify the recording') > 0,
+    'the negative fixture really IS the recording sentence (the modern door\'s blurb)',
+  );
+  const claimsToHear = home.replace(
+    '{FIND_ANY_SONG_CHIP_LABEL}',
+    "{'Play the song out loud and we\'ll identify the recording'}",
+  );
+  assert(claimsToHear !== home, 'the claim fixture changed the real chip element');
+  assertEq(
+    chipDoesNotClaimRecordingRecognition(claimsToHear),
+    false,
+    'MUTATION: a chip whose copy claims recording identification FAILS',
+  );
+
+  console.log('\nthe chip cannot render without opening anything (the dead-CTA class)');
+
+  const deadChip = home.replace(
+    'onPress={handleFindAnySong}',
+    'onPress={undefined}',
+  );
+  assert(deadChip !== home, 'the chip mutation changed the real source');
+  assertEq(
+    findAnySongChipWired(deadChip),
+    false,
+    'MUTATION: deleting the chip\'s onPress FAILS findAnySongChipWired',
+  );
+  assertEq(
+    hasSingleHeroCta(deadChip),
+    true,
+    'MUTATION: the one-CTA contract alone would MISS it — the chip guard is what bites',
+  );
+
+  const heroChip = home.replace(
+    'onPress={handleFindAnySong}',
+    'onPress={handleHeroTap}',
+  );
+  assert(heroChip !== home, 'the hero-chip mutation changed the real source');
+  assertEq(
+    findAnySongChipWired(heroChip),
+    false,
+    'MUTATION: a chip wired to the hero handler FAILS (the chip is not a hero)',
+  );
+
+  const focusedChip = home.replace(
+    'onPress={handleFindAnySong}',
+    'onPress={handleFindAnySong} style={styles.recognitionBtn}',
+  );
+  assert(focusedChip !== home, 'the weight mutation changed the real source');
+  assertEq(
+    findAnySongChipWired(focusedChip),
+    false,
+    'MUTATION: a chip wearing the recognition core\'s style FAILS (it must not out-shout the hero)',
+  );
+
+  console.log('\nband C\'s search row still lands on the real field');
+
+  assertEq(
+    findPieceEntryIsSearchRow(home),
+    true,
+    'the band-C row reads as a search entry and opens the screen behind a real field',
+  );
+  assertEq(
+    findPieceIsSearchEntry(home),
+    true,
+    'the row is still styled as the search field (never a competing CTA)',
+  );
+  assertEq(
+    findPieceOpensScreen(home),
+    true,
+    'and the screen behind it is mounted with its BACK path',
+  );
+
+  const rowOutsideBandC = home.replace(
+    'testID={BAND_TEST_IDS.browse}',
+    'testID={undefined}',
+  );
+  assert(rowOutsideBandC !== home, 'the band-C mutation changed the real source');
+  assertEq(
+    findPieceEntryIsSearchRow(rowOutsideBandC),
+    false,
+    'MUTATION: the search row outside band C FAILS (the band is where the audit puts it)',
+  );
+
+  const rowDead = home.replace(
+    /const handleOpenFindPiece = useCallback\(\(\) => \{\n\s*setShowFindPiece\(true\);\n\s*\}, \[\]\);/,
+    'const handleOpenFindPiece = useCallback(() => {}, []);',
+  );
+  assert(rowDead !== home, 'the row-handler mutation changed the real handler');
+  assertEq(
+    findPieceEntryIsSearchRow(rowDead),
+    false,
+    'MUTATION: a search row whose handler never opens the screen FAILS (a dead row)',
+  );
+}
+
 // ─── run ────────────────────────────────────────────────────────
 
 function main(): void {
@@ -1354,6 +1518,7 @@ function main(): void {
   liveScanTests();
   rivalHeroMutationTests();
   devAffordanceTests();
+  findAnySongTests();
   console.log(`\n${passes} passed, ${failures} failed\n`);
   process.exit(failures === 0 ? 0 : 1);
 }
