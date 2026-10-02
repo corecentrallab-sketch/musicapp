@@ -23,6 +23,14 @@
  *
  * It hosts nothing: the URL is one the backend supplied for the user's own
  * recognition and it is opened only on an explicit tap.
+ *
+ * A failed load is not a blank page (bundle C.4, owner 10-02). Retailers do
+ * bot-check and networks do drop: the shell keeps its header (so the user is never
+ * stranded) and, on a WebView error, says so and offers a real RETRY — the page is
+ * re-mounted with a new key, which is what actually reloads it. There is
+ * deliberately NO "open in the browser" escape: the whole point of this shell is
+ * that a purchase route never leaves NoteSnap, and that promise is guarded by
+ * src/services/purchaseCta.ts (`noPurchaseActionLeavesTheApp`).
  */
 import React from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -41,6 +49,10 @@ export const PurchaseWebView: React.FC<PurchaseWebViewProps> = ({
   title,
   onClose,
 }) => {
+  // The retry counter is the WebView's `key`: bumping it re-mounts the page, which
+  // is the only way to make a WebView that failed to load try again.
+  const [attempt, setAttempt] = React.useState(0);
+  const [failed, setFailed] = React.useState(false);
   if (!url) return null;
   return (
     <Modal
@@ -59,11 +71,32 @@ export const PurchaseWebView: React.FC<PurchaseWebViewProps> = ({
             {title}
           </Text>
         </View>
+        {failed && (
+          <View style={styles.errorBar}>
+            <Text style={styles.errorText}>
+              This page didn't load. Your connection may be down, or the retailer
+              is blocking this request.
+            </Text>
+            <TouchableOpacity
+              style={styles.retryBtn}
+              onPress={() => {
+                setFailed(false);
+                setAttempt((n) => n + 1);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Try loading the retailer page again"
+            >
+              <Text style={styles.retryText}>Try again</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <WebView
+          key={attempt}
           source={{ uri: url }}
           style={styles.webview}
           javaScriptEnabled
           domStorageEnabled
+          onError={() => setFailed(true)}
         />
       </View>
     </Modal>
@@ -83,6 +116,27 @@ const styles = StyleSheet.create({
   back: { marginRight: 12 },
   backText: { color: '#e94560', fontSize: 15, fontWeight: '700' },
   title: { color: '#ffffff', fontSize: 15, fontWeight: '700', flex: 1 },
+  // A failed load: an honest line + a real retry, under the header (C.4).
+  errorBar: {
+    backgroundColor: '#1a1a2e',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#0f3460',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  errorText: { color: '#a0a0b8', fontSize: 13, lineHeight: 19 },
+  retryBtn: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    backgroundColor: '#0f3460',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e94560',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  retryText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
   webview: { flex: 1 },
 });
 

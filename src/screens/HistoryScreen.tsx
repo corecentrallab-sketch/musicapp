@@ -52,6 +52,13 @@ import {
 } from '../services/homeCards';
 import { PieceDetailScreen } from './PieceDetailScreen';
 import { PracticeWeekScreen } from './PracticeWeekScreen';
+// The row's own purchase action (bundle C / D7, owner 10-02): a saved MODERN row
+// carries the licensed retailer links it was saved with, so the sheet music is two
+// taps away (History → 🛒) instead of three (History → piece page → card). The URL
+// resolves through the money-path helper and opens in the app's ONE retailer shell,
+// mounted here, so BACK returns to History.
+import { PurchaseWebView } from '../components/PurchaseWebView';
+import { primaryPurchaseUrl } from '../services/purchaseCta';
 import { exportCaptureMidiFromTake } from '../services/captureMidiExport';
 import {
   MIDI_EXPORT_BUSY_LABEL,
@@ -106,6 +113,16 @@ export const HistoryScreen: React.FC = () => {
   // finished attempt left behind — shown on that row only.
   const [exportingId, setExportingId] = useState<string | null>(null);
   const [exportNote, setExportNote] = useState<{ id: string; text: string } | null>(null);
+  /**
+   * The row's purchase action opens the licensed retailer in the app's ONE
+   * in-app shell, mounted at THIS screen's root (bundle C, owner 10-02), so the
+   * shell's "← Back to NoteSnap" and hardware BACK both land back on History —
+   * the row's own surface. Null = closed. (The full-screen Modal also makes the
+   * double-open impossible: while it is up, the list behind it cannot be tapped.)
+   */
+  const [purchaseWebUrl, setPurchaseWebUrl] = useState<string | null>(null);
+  /** The header line the shell shows — the row the user tapped. */
+  const [purchaseShellTitle, setPurchaseShellTitle] = useState('');
 
   const reload = useCallback(async () => {
     // Streak from the reinforcement engine (practice history) — same number as
@@ -223,6 +240,10 @@ export const HistoryScreen: React.FC = () => {
    */
   const handleOpenPiece = useCallback((piece: SavedPiece) => {
     const token = ++detailRequestRef.current;
+    // The row body and the row's purchase action lead to different surfaces, so a
+    // pending shell is closed before the piece page takes over (one surface, one
+    // purchase action at a time).
+    setPurchaseWebUrl(null);
     setShowDetail(savedPieceToDetail(piece));
     void fetchPieceById(piece.id).then((info) => {
       if (!info || token !== detailRequestRef.current) return;
@@ -261,78 +282,107 @@ export const HistoryScreen: React.FC = () => {
     [items, query],
   );
 
-  const renderItem = ({ item }: { item: SavedPiece }) => (
-    /* The whole card opens the piece page (fix: the row used to be inert).
-       The ✕ keeps its own press — a nested Touchable wins the responder, so
-       removing a piece never opens it. */
-    <TouchableOpacity
-      style={styles.itemCard}
-      onPress={() => handleOpenPiece(item)}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel={`Open ${item.title} by ${item.composer}`}
-    >
-      <View style={styles.itemInfo}>
-        <Text style={styles.itemTitle} numberOfLines={1}>
-          {item.title}
-        </Text>
-        <Text style={styles.itemComposer} numberOfLines={1}>
-          {item.composer}
-        </Text>
-        <View style={styles.itemMeta}>
-          {item.genre ? (
-            <Text style={styles.itemGenre} numberOfLines={1}>
-              {item.genre}
-            </Text>
-          ) : null}
-          <Text style={styles.itemDate}>
-            {formatSavedDate(item.savedAt)}
-          </Text>
-        </View>
-        {/* A row saved from a hum/whistle/sing capture carries the user's OWN
-            take — so it can write it out as MIDI (Batch A). Rows without a
-            capture get no button (nothing to export). The take's DETECTED KEY
-            is rendered from that same take, exactly as detected: with no key
-            there is no key line at all (never a placeholder, never a guess). */}
-        {item.capture?.notes?.length ? (
-          <>
-            <Text style={styles.itemTakeLabel} numberOfLines={1}>
-              {captureTakeLabel(item.capture)}
-            </Text>
-            {keyCaption(item.capture?.key) && (
-              <Text style={styles.itemTakeKey} numberOfLines={1}>
-                {keyCaption(item.capture?.key)}
-              </Text>
-            )}
-            <TouchableOpacity
-              style={styles.midiBtn}
-              onPress={() => handleExportTake(item)}
-              disabled={exportingId === item.id}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={`${MIDI_EXPORT_LABEL} for ${item.title}`}
-            >
-              <Text style={styles.midiBtnText}>
-                {exportingId === item.id ? MIDI_EXPORT_BUSY_LABEL : MIDI_EXPORT_LABEL}
-              </Text>
-            </TouchableOpacity>
-            {exportNote?.id === item.id && (
-              <Text style={styles.midiNote}>{exportNote.text}</Text>
-            )}
-          </>
-        ) : null}
-      </View>
+  const renderItem = ({ item }: { item: SavedPiece }) => {
+    /**
+     * The row's ONE purchase action (bundle C / D7, owner 10-02): the licensed
+     * retailer link the modern recognition was SAVED with, resolved through the
+     * money path's `primaryPurchaseUrl()` (primary retailer first). Undefined for
+     * a public-domain / hum / find-a-piece save — those never carry a purchase map
+     * (`publicDomainSaveOmitsPurchaseUrls()` keeps it that way) — and an undefined
+     * resolution renders NO action at all: never a disabled button, never a
+     * placeholder card.
+     */
+    const rowPurchaseUrl = primaryPurchaseUrl(item.purchaseUrls);
+    return (
+      /* The whole card opens the piece page (fix: the row used to be inert).
+         The ✕ keeps its own press — a nested Touchable wins the responder, so
+         removing a piece never opens it. */
       <TouchableOpacity
-        style={styles.removeBtn}
-        onPress={() => handleRemove(item)}
+        style={styles.itemCard}
+        onPress={() => handleOpenPiece(item)}
+        activeOpacity={0.7}
         accessibilityRole="button"
-        accessibilityLabel={`Remove ${item.title} from history`}
-        hitSlop={8}
+        accessibilityLabel={`Open ${item.title} by ${item.composer}`}
       >
-        <Text style={styles.removeBtnText}>✕</Text>
+        <View style={styles.itemInfo}>
+          <Text style={styles.itemTitle} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <Text style={styles.itemComposer} numberOfLines={1}>
+            {item.composer}
+          </Text>
+          <View style={styles.itemMeta}>
+            {item.genre ? (
+              <Text style={styles.itemGenre} numberOfLines={1}>
+                {item.genre}
+              </Text>
+            ) : null}
+            <Text style={styles.itemDate}>
+              {formatSavedDate(item.savedAt)}
+            </Text>
+          </View>
+          {/* The row's purchase action. Its own press (a nested Touchable wins
+              the responder) opens the retailer INSIDE the app, over History. */}
+          {rowPurchaseUrl ? (
+            <TouchableOpacity
+              style={styles.sheetBtn}
+              onPress={() => {
+                setPurchaseShellTitle(`${item.title} — official sheet music`);
+                setPurchaseWebUrl(rowPurchaseUrl);
+              }}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={`Get sheet music for ${item.title}`}
+              accessibilityHint="Opens the licensed retailer page inside NoteSnap"
+            >
+              <Text style={styles.sheetBtnText}>🛒 Get sheet music</Text>
+            </TouchableOpacity>
+          ) : null}
+          {/* A row saved from a hum/whistle/sing capture carries the user's OWN
+              take — so it can write it out as MIDI (Batch A). Rows without a
+              capture get no button (nothing to export). The take's DETECTED KEY
+              is rendered from that same take, exactly as detected: with no key
+              there is no key line at all (never a placeholder, never a guess). */}
+          {item.capture?.notes?.length ? (
+            <>
+              <Text style={styles.itemTakeLabel} numberOfLines={1}>
+                {captureTakeLabel(item.capture)}
+              </Text>
+              {keyCaption(item.capture?.key) && (
+                <Text style={styles.itemTakeKey} numberOfLines={1}>
+                  {keyCaption(item.capture?.key)}
+                </Text>
+              )}
+              <TouchableOpacity
+                style={styles.midiBtn}
+                onPress={() => handleExportTake(item)}
+                disabled={exportingId === item.id}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${MIDI_EXPORT_LABEL} for ${item.title}`}
+              >
+                <Text style={styles.midiBtnText}>
+                  {exportingId === item.id ? MIDI_EXPORT_BUSY_LABEL : MIDI_EXPORT_LABEL}
+                </Text>
+              </TouchableOpacity>
+              {exportNote?.id === item.id && (
+                <Text style={styles.midiNote}>{exportNote.text}</Text>
+              )}
+            </>
+          ) : null}
+        </View>
+        <TouchableOpacity
+          style={styles.removeBtn}
+          onPress={() => handleRemove(item)}
+          accessibilityRole="button"
+          accessibilityLabel={`Remove ${item.title} from history`}
+          hitSlop={8}
+        >
+          <Text style={styles.removeBtnText}>✕</Text>
+        </TouchableOpacity>
       </TouchableOpacity>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   // Practice-week view for the streak card (v22). History has no featured piece
   // to practise, so BOTH of the week view's practice exits land on the SAME
@@ -471,6 +521,19 @@ export const HistoryScreen: React.FC = () => {
           />
         }
       />
+
+      {/* History's ONE in-app retailer shell (bundle C, owner 10-02). Mounted at
+          the screen's root and opened by a saved MODERN row's action: the shell's
+          "← Back to NoteSnap" header and hardware BACK both return the user to
+          History — the surface they tapped from — and nothing here ever leaves
+          the app (purchaseCta.noPurchaseActionLeavesTheApp). */}
+      {purchaseWebUrl && (
+        <PurchaseWebView
+          url={purchaseWebUrl}
+          title={purchaseShellTitle}
+          onClose={() => setPurchaseWebUrl(null)}
+        />
+      )}
     </View>
   );
 };
@@ -633,6 +696,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#a0a0b8',
     marginTop: 2,
+  },
+  /** The row's purchase action (bundle C, owner 10-02) — the same "buy" weight the
+   *  piece page's card carries, quieter than the row title. Rendered only when the
+   *  row's saved purchase map resolves to a licensed retailer URL. */
+  sheetBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#0f3460',
+    borderColor: '#e94560',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    marginTop: 8,
+  },
+  sheetBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   /** The row's MIDI export action (v29 Batch A) — teal outline, like the app's
    *  other "extra capability" actions. It presses independently of the card. */
