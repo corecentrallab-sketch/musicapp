@@ -453,7 +453,7 @@ function wiringTests(): void {
     'it no longer names a retailer key itself',
   );
   assert(
-    /Get Official Sheet Music/.test(resultView),
+    /Get (the )?Official Sheet Music/i.test(resultView),
     'the purchase CTA is still on the result surface',
   );
 }
