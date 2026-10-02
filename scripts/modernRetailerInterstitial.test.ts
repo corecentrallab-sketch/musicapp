@@ -49,6 +49,7 @@ import {
   type BrowserContractViolation,
 } from '../src/services/inAppBrowserContract';
 import type { SourceFile } from '../src/services/modalBackContract';
+import { MODERN_NO_LINK_LINE } from '../src/services/resultSurface';
 import type { ModernMatch } from '../src/types';
 
 declare const require: (id: string) => any;
@@ -486,9 +487,18 @@ function componentTests(): void {
     /never hosts[\s\S]{0,140}copyrighted sheet music/.test(recognizedText),
     'the "NoteSnap never hosts copyrighted sheet music" note is intact',
   );
+  // The no-retailer copy moved to ONE source in bundle E (owner 10-02, §E.2 row
+  // 2): `MODERN_NO_LINK_LINE` in src/services/resultSurface.ts, which the card
+  // renders and the zero-promise gate reads. So the words are pinned where they
+  // now live, AND the card must render that constant — a second, drifting copy in
+  // the component is exactly what this pair of assertions forbids.
   assert(
-    /no licensed sheet-music[\s\S]{0,120}link for it yet/.test(recognizedText),
-    'a match with no retailer URL gets an honest line about what we DO have (bundle C: no "coming soon" box, no dead button)',
+    /no licensed sheet-music[\s\S]{0,120}link for it yet/.test(MODERN_NO_LINK_LINE),
+    'the shared no-link line says what we DO have (bundle C wording, one source)',
+  );
+  assert(
+    recognizedText.includes('{MODERN_NO_LINK_LINE}'),
+    'a match with no retailer URL renders the shared honest line (bundle C: no "coming soon" box)',
   );
   assert(
     !/isn't linked yet|check back soon/.test(recognizedText),

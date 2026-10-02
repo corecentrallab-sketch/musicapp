@@ -29,6 +29,7 @@ import {
   viewerRendersNoAudioChrome,
   type ScoreAudioPieceLike,
 } from '../src/services/scoreAudioSource';
+import { maskComments } from '../src/services/modalBackContract';
 
 declare const process: { exit(code: number): never; cwd(): string };
 declare const require: (moduleName: string) => any;
@@ -295,8 +296,16 @@ function viewerTests(): void {
     true,
     'the real viewer gates the player on an existing audioSource and renders nothing without one',
   );
+  // The RENDERED label, not the prose about it. The viewer's own doc comment on
+  // the `audioSource` prop names the retired string (that is how the next reader
+  // learns why the audio slot is empty), so this scans the comment-masked source
+  // — the same mask `viewerRendersNoAudioChrome` above and
+  // `promiseAudit.findPromiseOffenders` use. JSX text and string literals survive
+  // the mask, so a label that really renders still fails here (proved by the
+  // mutation below).
+  const viewerMarkup = maskComments(viewer);
   assert(
-    viewer.indexOf(RETIRED_NO_SCORE_AUDIO_HINT) < 0,
+    viewerMarkup.indexOf(RETIRED_NO_SCORE_AUDIO_HINT) < 0,
     'the retired "practice audio coming soon" label is gone from the viewer (Q5: absent, not muted)',
   );
 
@@ -313,6 +322,12 @@ function viewerTests(): void {
     `{!immersive && (audioSource ? (\n<ScorePlayer source={audioSource} label={audioLabel} />\n) : (\n<View><Text>${RETIRED_NO_SCORE_AUDIO_HINT}</Text></View>\n))}` +
     viewer.slice(audioEnd + audioClose.length);
   assert(withHint !== viewer, 'the mutation fixture changed the real viewer');
+  // The mask must not blunt the check above: the SAME label, really rendered in
+  // the audio slot, is still found (comments are masked, JSX text is not).
+  assert(
+    maskComments(withHint).indexOf(RETIRED_NO_SCORE_AUDIO_HINT) >= 0,
+    'MUTATION: the label really rendered is still caught by the masked viewer scan',
+  );
   assertEq(
     viewerRendersNoAudioChrome(withHint),
     false,

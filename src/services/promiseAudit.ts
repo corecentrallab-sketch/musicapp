@@ -323,15 +323,39 @@ function elementRange(
 }
 
 /**
- * True when the element around `index` carries a real action — the E.4
- * distinction, in code. A promise with an action beside it is a sentence inside a
- * card that does something; the same words in a box that opens nothing are the
- * dead end (§E.1.3).
+ * True when an element ENCLOSING `index` carries a real action — the E.4
+ * distinction, in code. A promise with an action around it is a sentence inside a
+ * card that does something; the same words in a box that encloses nothing that
+ * acts are the dead end (§E.1.3).
+ *
+ * The walk goes OUTWARD through the ancestors — a state line sits inside the row
+ * it describes, and that row is often a `<View onPress={…}>` one level up — and it
+ * never looks into siblings, so a button elsewhere on the screen cannot excuse
+ * the line. (Both halves matter: the row case is the E.4 allowance, the sibling
+ * case is how an over-broad guard would silently excuse everything.)
  */
+export function enclosingElementActs(masked: string, index: number): boolean {
+  let at = index;
+  for (let hop = 0; hop < 16; hop++) {
+    const range = enclosingElementRange(masked, at);
+    if (range === null) return false;
+    if (
+      SURFACE_ACTION_MARKERS.some(
+        (marker) => masked.slice(range.start, range.end).indexOf(marker) >= 0,
+      )
+    ) {
+      return true;
+    }
+    if (range.start <= 0 || range.start > at) return false;
+    // Walk outwards: continue the chain from just before this element's `<`.
+    at = range.start - 1;
+  }
+  return false;
+}
+
+/** The E.4 allowance, named for the promise scan that uses it. */
 export function promiseIsCarriedByAnAction(masked: string, index: number): boolean {
-  const span = enclosingElementSpan(masked, index);
-  if (span === null) return false;
-  return SURFACE_ACTION_MARKERS.some((marker) => span.indexOf(marker) >= 0);
+  return enclosingElementActs(masked, index);
 }
 
 /**
@@ -415,9 +439,18 @@ export const BADGE_SIGNAL_CALLS: readonly string[] = [
   'item.capture',
 ];
 
-/** How a badge appears in source: the shared label call, or the Library's own. */
+/**
+ * How a badge LABEL appears in source: the shared label call rendered as text, or
+ * the Library's own `Soon` text/styles.
+ *
+ * A bare `isOpenableKind(…) ?` is deliberately NOT a site: that is the CONDITION
+ * the row branches on (it stays in `BADGE_SIGNAL_CALLS` as a derivation signal),
+ * not a label the user can read. Counting it made the guard satisfiable by
+ * deleting the badge and keeping the branch — the exact hole the badge-deletion
+ * mutation probe exists to catch.
+ */
 const BADGE_SITE_PATTERN =
-  /sheetBadgeLabel\(|isOpenableKind\([^)]*\)\s*\?|styles\.badgeSoon|>\s*Soon\s*</g;
+  /sheetBadgeLabel\(|styles\.badgeSoon|>\s*Soon\s*</g;
 
 /** Every "Soon"-style badge in a surface (masked source only). */
 export function badgeSites(source: string): BadgeSite[] {
@@ -437,22 +470,7 @@ export function badgeSites(source: string): BadgeSite[] {
 
 /** True when any element enclosing `index` — the row the badge sits on — acts. */
 function badgeSitsOnAnActionableRow(masked: string, index: number): boolean {
-  let at = index;
-  for (let hop = 0; hop < 16; hop++) {
-    const range = enclosingElementRange(masked, at);
-    if (range === null) return false;
-    if (
-      SURFACE_ACTION_MARKERS.some(
-        (marker) => masked.slice(range.start, range.end).indexOf(marker) >= 0,
-      )
-    ) {
-      return true;
-    }
-    if (range.start <= 0 || range.start > at) return false;
-    // Walk outwards: continue the chain from just before this element's `<`.
-    at = range.start - 1;
-  }
-  return false;
+  return enclosingElementActs(masked, index);
 }
 
 /**

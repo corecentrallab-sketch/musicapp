@@ -39,6 +39,7 @@ import {
   SEARCH_FOR_IT_CTA,
 } from '../src/services/resultSurface';
 import { BANNED_BAND_PROMISES } from '../src/services/frontDoorBands';
+import { maskComments } from '../src/services/modalBackContract';
 
 declare const process: { exit(code: number): never; cwd(): string };
 declare const require: (moduleName: string) => any;
@@ -238,10 +239,14 @@ function realTreeTests(): void {
   );
   if (offenders.length > 0) console.error(ZERO_PROMISE_HINT);
 
-  // The retired copy is gone from the two surfaces this bundle rewrote.
+  // The retired copy is gone from the two surfaces this bundle rewrote. The scan
+  // runs on the COMMENT-MASKED source (the same rule findPromiseOffenders uses):
+  // the viewer's own doc comment names the retired string to explain why the audio
+  // slot is empty, and prose about the label is not the label. Rendered copy —
+  // JSX text or a string literal — survives the mask.
   const viewer = readAppFile('src/components/ScoreViewer.tsx');
   assert(
-    !/practice audio coming soon/i.test(viewer),
+    !/practice audio coming soon/i.test(maskComments(viewer)),
     'the score viewer no longer carries the retired practice-audio label (Q5: absent)',
   );
   const piecePage = readAppFile('src/screens/PieceDetailScreen.tsx');
@@ -258,6 +263,67 @@ function realTreeTests(): void {
     'hidden',
     'a piece with no melody and no licensed link renders NO coach card at all',
   );
+
+  // §E.2 row 2 (the modern no-retailer state) on the REAL source: honest words
+  // plus a real next step, and the destination WIRED — a card that renders the
+  // CTA but was never handed the handler is the dead end this row exists to kill.
+  const interstitial = readAppFile('src/components/ModernSongInterstitial.tsx');
+  assert(
+    modernNoLinkStateIsActionable(interstitial),
+    'the modern no-link state is the honest line + a real next step (Search for it)',
+  );
+  // MUTATION: the same state with the action stripped away is a box again.
+  assertEq(
+    modernNoLinkStateIsActionable(
+      interstitial.replace('onPress={onSearchForIt}', 'onPress={() => {}}'),
+    ),
+    false,
+    'MUTATION: the modern no-link state without its action fails the guard',
+  );
+  assertEq(
+    modernNoLinkStateIsActionable(interstitial.replace('{SEARCH_FOR_IT_CTA}', '')),
+    false,
+    'MUTATION: dropping the search CTA from the state fails the guard',
+  );
+
+  // The hosts really wire it: Home owns the handler and the single FindPieceScreen
+  // mount, and the "Find any song" screen forwards the tap (it grows no second
+  // search surface of its own).
+  const home = maskComments(readAppFile('src/screens/HomeScreen.tsx'));
+  const handler = /const handleSearchForItFromModern = useCallback\(\(\) => \{([\s\S]{0,500}?)\}, \[\]\)/.exec(home);
+  assert(handler !== null, 'Home declares the search handler for the modern surfaces');
+  assert(
+    handler !== null && /setShowFindPiece\(true\)/.test(handler[1]),
+    'the handler opens the find-a-song search (the showFindPiece flag)',
+  );
+  assert(
+    handler !== null && /setShowModernSearch\(false\)/.test(handler[1]) &&
+      /setShowModernInterstitial\(false\)/.test(handler[1]),
+    'the handler takes the modern surfaces down first (they are returned before the search)',
+  );
+  assert(
+    /onSearchForIt=\{handleSearchForItFromModern\}/.test(home),
+    'Home hands the handler to the modern interstitial it renders',
+  );
+  const modernScreen = maskComments(readAppFile('src/screens/ModernSearchScreen.tsx'));
+  assert(
+    /<ModernSongInterstitial[\s\S]{0,900}?onSearchForIt=\{/.test(modernScreen),
+    'the "Find any song" screen forwards the search next step to its interstitial',
+  );
+}
+
+/**
+ * §E.2 row 2 — the modern no-retailer state is the honest line plus a REAL next
+ * step (`Search for it` → the find-a-song search), never a box. Both come from
+ * the surface-copy module, so the card and this gate read the same words, and the
+ * CTA must sit inside a pressable that calls the handler: a lever with no
+ * destination is decoration (§E.1.1).
+ */
+function modernNoLinkStateIsActionable(source: string): boolean {
+  const masked = maskComments(source);
+  if (!/\{MODERN_NO_LINK_LINE\}/.test(masked)) return false;
+  if (!/\{SEARCH_FOR_IT_CTA\}/.test(masked)) return false;
+  return /<TouchableOpacity[\s\S]{0,400}?onPress=\{onSearchForIt\}/.test(masked);
 }
 
 /** The piece page's honest state: the shared line + the search section, no promise. */
