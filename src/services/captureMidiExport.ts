@@ -154,18 +154,36 @@ export interface ExportRecordingInput {
   capturedAt?: string;
 }
 
+/** What reading a recording into a take produced (see deriveCaptureTakeFromRecording). */
+export interface DerivedTake {
+  /** The take the pipeline read from the recording, or null when it heard nothing. */
+  take: SavedCaptureTake | null;
+  /** True when this build/route cannot decode at all (no decoder, offline). */
+  unavailable: boolean;
+  /** One honest sentence when there is no usable take (`take` is null). */
+  message: string | null;
+}
+
 /**
- * Decode the capture, derive its take and export it. The decoder is the
- * coach's existing seam; when it is unavailable (offline, route missing) the
- * user gets MIDI_UNAVAILABLE_MESSAGE instead of a spinner that never ends.
+ * THE ONE DECODE PATH: recording URI → the take the pipeline read from it.
+ *
+ * `exportCaptureMidiFromRecording` (the export) and
+ * `deriveCaptureTakeFromRecording` (the melody-capture window's analysis, owner
+ * 10-02) both come through here, so there is exactly ONE decode seam
+ * (`coachCapture.createDefaultSamplesProvider` → `detectPitchFrames` →
+ * `buildCaptureTake`) and the two callers can never drift into two different
+ * readings of the same take.
+ *
+ * Never throws: a decoder that is not there comes back `unavailable`, an empty
+ * take comes back with the honest "we could not hear enough melody" sentence.
  */
-export async function exportCaptureMidiFromRecording(
+async function decodeTakeFromRecording(
   input: ExportRecordingInput,
-  deps: MidiExportDeps = {},
-): Promise<MidiExportOutcome> {
+  deps: MidiExportDeps,
+): Promise<DerivedTake> {
   const uri = input?.uri;
   if (typeof uri !== 'string' || uri.length === 0) {
-    return { status: 'failed', message: MIDI_FAILED_MESSAGE };
+    return { take: null, unavailable: false, message: MIDI_FAILED_MESSAGE };
   }
 
   const provider = deps.samplesProvider ?? createDefaultSamplesProvider();
@@ -174,9 +192,9 @@ export async function exportCaptureMidiFromRecording(
     captured = await provider(uri);
   } catch (err) {
     if (isCaptureUnavailable(err)) {
-      return { status: 'unavailable', message: MIDI_UNAVAILABLE_MESSAGE };
+      return { take: null, unavailable: true, message: MIDI_UNAVAILABLE_MESSAGE };
     }
-    return { status: 'failed', message: captureErrorMessage(err) };
+    return { take: null, unavailable: false, message: captureErrorMessage(err) };
   }
 
   const frames = detectPitchFrames(captured.samples, captured.sampleRate);
@@ -188,8 +206,42 @@ export async function exportCaptureMidiFromRecording(
         : new Date().toISOString(),
   });
   if (!take) {
-    return { status: 'no-melody', message: MIDI_NO_MELODY_MESSAGE };
+    return { take: null, unavailable: false, message: MIDI_NO_MELODY_MESSAGE };
   }
+  return { take, unavailable: false, message: null };
+}
 
-  return exportCaptureMidiFromTake(take, { title: input.title, deps });
+/**
+ * READ a finished recording into a take — no export, no share sheet.
+ *
+ * The melody-capture window needs the take to show its note sequence, its
+ * detected key and its suggested chords, and it must NOT open a share sheet to
+ * get one. Same seam, same honesty: `unavailable` means the decoder itself is
+ * not reachable (the window then says so and offers to try again), and a null
+ * take with `unavailable: false` means the take was read and held no melody.
+ */
+export async function deriveCaptureTakeFromRecording(
+  input: ExportRecordingInput,
+  deps: MidiExportDeps = {},
+): Promise<DerivedTake> {
+  return decodeTakeFromRecording(input, deps);
+}
+
+/**
+ * Decode the capture, derive its take and export it. The decoder is the
+ * coach's existing seam; when it is unavailable (offline, route missing) the
+ * user gets MIDI_UNAVAILABLE_MESSAGE instead of a spinner that never ends.
+ */
+export async function exportCaptureMidiFromRecording(
+  input: ExportRecordingInput,
+  deps: MidiExportDeps = {},
+): Promise<MidiExportOutcome> {
+  const derived = await decodeTakeFromRecording(input, deps);
+  if (!derived.take) {
+    return {
+      status: derived.unavailable ? 'unavailable' : derived.message === MIDI_NO_MELODY_MESSAGE ? 'no-melody' : 'failed',
+      message: derived.message ?? MIDI_FAILED_MESSAGE,
+    };
+  }
+  return exportCaptureMidiFromTake(derived.take, { title: input?.title, deps });
 }

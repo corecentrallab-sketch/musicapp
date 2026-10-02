@@ -45,6 +45,16 @@ export type RecordingPhase = 'idle' | 'recording' | 'processing' | 'done';
 const METERING_INTERVAL_MS = 200;
 
 /**
+ * How many live metering samples the metering state keeps. The melody-capture
+ * window draws its VU meter from these (owner 10-02: a real-time dB meter on the
+ * live screen), so the last N samples are held in React state — 48 samples at
+ * 200 ms is ~9.6 s of history, comfortably more than the meter's bar row.
+ * The FULL sample list still goes to meteringRef for the capture diagnostics;
+ * this window exists only so the screen can render the level in real time.
+ */
+export const LIVE_LEVEL_WINDOW = 48;
+
+/**
  * Upper bounds (ms) on every step that the caller has to wait for. The
  * recognition screens only render their loading/result/error surface once
  * `stopRecording()` resolves, so none of these may wait forever.
@@ -142,7 +152,6 @@ export interface AudioRecorderState {
   /** Whether we're waiting for permissions to be checked. */
   checkingPermissions: boolean;
 }
-
 export interface StoppedRecording {
   uri: string;
   /** Capture-path diagnostics collected at stop time (see captureTelemetry). */
@@ -160,6 +169,11 @@ export function useAudioRecorder() {
   const [phase, setPhase] = useState<RecordingPhase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
+  // The last LIVE_LEVEL_WINDOW metering samples, in React state, so a live
+  // surface (the melody-capture window's VU meter, owner 10-02) can render the
+  // level AS IT HEARS THE USER. The authoritative sample list for diagnostics
+  // stays in meteringRef below — this is the same data, surfaced.
+  const [liveLevels, setLiveLevels] = useState<number[]>([]);
   // Live dB metering samples collected while recording (for peak/RMS dBFS).
   const meteringRef = useRef<number[]>([]);
   const meteringTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -305,6 +319,8 @@ export function useAudioRecorder() {
     lastStopFailureRef.current = null;
     setError(null);
     setPhase('idle');
+    // A fresh pass starts with a flat meter, never the previous take's levels.
+    setLiveLevels([]);
   }, []);
 
   /** Open the device Settings app so the user can manually grant permission. */
@@ -376,6 +392,7 @@ export function useAudioRecorder() {
       // metering simply yields no samples.
       meteringRef.current = [];
       durationMsRef.current = null;
+      setLiveLevels([]);
       if (meteringTimerRef.current) clearInterval(meteringTimerRef.current);
       meteringTimerRef.current = setInterval(() => {
         recording
@@ -383,7 +400,16 @@ export function useAudioRecorder() {
           .then((status) => {
             if (status && typeof (status as { metering?: number }).metering === 'number') {
               const m = (status as { metering: number }).metering;
-              if (Number.isFinite(m)) meteringRef.current.push(m);
+              if (Number.isFinite(m)) {
+                meteringRef.current.push(m);
+                // Surface the same sample live (see LIVE_LEVEL_WINDOW): the
+                // window's meter must move with the mic, not with a timer.
+                setLiveLevels((previous) =>
+                  previous.length >= LIVE_LEVEL_WINDOW
+                    ? [...previous.slice(previous.length - LIVE_LEVEL_WINDOW + 1), m]
+                    : [...previous, m],
+                );
+              }
             }
             if (
               status &&
@@ -517,6 +543,8 @@ export function useAudioRecorder() {
     isRecording,
     error,
     checkingPermissions,
+    /** The last metering samples, for a live level meter (see LIVE_LEVEL_WINDOW). */
+    liveLevels,
     startRecording,
     stopRecording,
     completeRecording,

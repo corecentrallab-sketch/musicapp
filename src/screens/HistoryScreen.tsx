@@ -69,6 +69,14 @@ import {
 // when the take was too thin to name one (Batch A: the key the export writes
 // into the .mid is the key the row shows, and nothing is shown without one).
 import { keyCaption } from '../services/keyDetection';
+// A PERSONAL MELODY row (owner 10-02): the user's own hummed/whistled/sung take,
+// saved by the capture window. `personalMelodyFromRow()` is the pure decision that
+// a row is a melody rather than a recognized piece — a melody id resolves to no
+// catalog piece, so tapping one must NOT go to the piece page (it would be an
+// honest "coming soon" with the user's own tune behind it, i.e. a dead end).
+import { personalMelodyFromRow } from '../services/melodyCapture';
+// The capture window itself, mounted in place to re-open a saved melody.
+import { HumSearchScreen } from './HumSearchScreen';
 import type { DailyChallengePiece, SavedPiece } from '../types';
 
 /** Zeroed streak (engine-derived) used until the first read resolves. */
@@ -93,6 +101,17 @@ export const HistoryScreen: React.FC = () => {
   // Full-screen piece page for a tapped row — the app renders PieceDetailScreen
   // in place (like Home and the hum flow) rather than as a tab route.
   const [showDetail, setShowDetail] = useState<DailyChallengePiece | null>(null);
+  /**
+   * A PERSONAL MELODY from the melody-capture window (owner 10-02), re-opened in
+   * place: the capture window shows that same take again — its notes, its key,
+   * its suggested chords — with no recorder and no library pass.
+   *
+   * It is its own state, not a shape of `showDetail`, because a melody row is NOT
+   * a piece: it has no catalog id, so the piece page would land on an honest
+   * "coming soon" with nothing behind it. The user's own tune gets its own
+   * destination, and the ✕/BACK always comes back to this list.
+   */
+  const [openMelody, setOpenMelody] = useState<SavedPiece | null>(null);
   /**
    * The History search box's query (owner 10-01). It filters the SAVED
    * recognitions in memory — no network, no catalog — so looking for "the piece I
@@ -255,6 +274,22 @@ export const HistoryScreen: React.FC = () => {
     });
   }, []);
 
+  /**
+   * A row's tap. A PERSONAL MELODY re-opens in the capture window (it is the
+   * user's own take, and there is no catalog piece behind it); every other row
+   * keeps today's behaviour and opens the piece page.
+   */
+  const handleRowTap = useCallback(
+    (piece: SavedPiece) => {
+      if (personalMelodyFromRow(piece)) {
+        setOpenMelody(piece);
+        return;
+      }
+      handleOpenPiece(piece);
+    },
+    [handleOpenPiece],
+  );
+
   const handleCloseDetail = useCallback(() => {
     // Invalidate any in-flight lookup so a late response can't reopen the page.
     detailRequestRef.current++;
@@ -299,7 +334,7 @@ export const HistoryScreen: React.FC = () => {
          removing a piece never opens it. */
       <TouchableOpacity
         style={styles.itemCard}
-        onPress={() => handleOpenPiece(item)}
+        onPress={() => handleRowTap(item)}
         activeOpacity={0.7}
         accessibilityRole="button"
         accessibilityLabel={`Open ${item.title} by ${item.composer}`}
@@ -410,6 +445,25 @@ export const HistoryScreen: React.FC = () => {
   // route, so it is rendered in place exactly like Home / the hum flow do.
   if (showDetail) {
     return <PieceDetailScreen piece={showDetail} onBack={handleCloseDetail} />;
+  }
+
+  // A tapped PERSONAL MELODY re-opens the capture window on that take, in place,
+  // exactly like the piece page above. `reopen` is what makes it a replay instead
+  // of a recording: no mic, no library pass, and its own back path (onClose) out
+  // of here. The window is not a route and not a modal, so this return IS the
+  // History tab's body while it is open — BACK lands back in this list.
+  if (openMelody) {
+    return (
+      <HumSearchScreen
+        reopen={openMelody}
+        onClose={() => setOpenMelody(null)}
+        // A re-opened melody runs no library pass, so the miss card that carries
+        // this bridge never renders here. The window's prop is required (a host
+        // that opens the RECORDING flow must decide where a miss goes), so this
+        // hands it the only real move History has: close the window.
+        onSwitchToModern={() => setOpenMelody(null)}
+      />
+    );
   }
 
   if (loading) {
