@@ -86,6 +86,16 @@ export interface RecognitionMatch {
   sheet_music_available: boolean;
   /** Null for public-domain pieces (we already serve the score). */
   purchase_url: PurchaseUrls | null;
+  /**
+   * The SECONDARY action for a LIBRARY/public-domain result (owner Q2/Q7,
+   * ratified 10-02): the affiliate SEARCH link for this work's printed
+   * arrangement, when the backend supplied one (the PD cross-check's
+   * `affiliate_url`). It is never a primary purchase claim — for a public-domain
+   * work `purchase_url` stays null and the FREE hosted score stays the offer; this
+   * link is a quieter "get a printed arrangement" line beside it. Absent on every
+   * other match, and never built by the app.
+   */
+  affiliate_url?: string | null;
 }
 
 /** Successful response from POST /api/recognize. */
@@ -114,6 +124,17 @@ export interface RecognitionResponse {
     sample_rate: number;
     format: string | null;
   };
+  /**
+   * ADDITIVE (bundle A, owner 10-02): which pass produced this success payload,
+   * when it was NOT the microphone's ambient pass. The hum/whistle/sing fallback
+   * maps its match into this same response shape
+   * (`frontDoor.humMatchToResultResponse()`), and the ONE result surface reads the
+   * marker to show the honest provenance kicker ("You hummed it — here it is")
+   * instead of claiming it heard the music. A client-side marker in the same
+   * spirit as `pd_routed_from`: it is set by US, never received from the server,
+   * and absent means the ambient library pass.
+   */
+  result_provenance?: 'hum';
 }
 
 /** Error response from POST /api/recognize. */

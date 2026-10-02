@@ -23,7 +23,21 @@ import {
   ActivityIndicator,
   Image,
   ScrollView,
+  Platform,
 } from 'react-native';
+// THE INLINE HOSTED SCORE (bundle A, owner 10-02). The result card renders the
+// piece's own score in the card instead of hiding it behind a tap: the WebView is
+// fed the SAME document the full-screen reader uses (`buildSheetViewerHtml`), and
+// because this file's returned tree is already rooted in `<Modal … onRequestClose>`
+// the in-app-browser contract holds by construction — the score is embedded in the
+// card, never a navigable browser surface of its own.
+//   • it must NOT be extracted into its own component file: a plain `<View>` root
+//     would become a NEW `not-in-modal` violation (spec §A.3);
+//   • it carries `javaScriptEnabled` + `domStorageEnabled` (pdf.js + the
+//     document's own storage) — the RC v26 retailer-JS lesson applies to every
+//     WebView we render, and src/services/resultSurfaceContract.ts pins it here.
+import { WebView } from 'react-native-webview';
+import { buildSheetViewerHtml } from '../services/sheetViewerHtml';
 import type { RecognitionMatch, RecognitionResponse } from '../types';
 import type { CaptureDiagnostics } from '../services/captureTelemetry';
 import { PieceDetailScreen } from '../screens/PieceDetailScreen';
@@ -39,14 +53,55 @@ import { PurchaseWebView } from './PurchaseWebView';
 // backend's purchase-URL map (Sheet Music Direct, affiliate ID 67650, PRIMARY),
 // falling back to Musicnotes only when the primary is absent. Naming a retailer
 // key here is what the app used to do (`.musicnotes`) — the defect
-// src/services/purchaseCta.ts guards with a source scan.
-import { recognitionPurchaseUrl } from '../services/purchaseCta';
+// src/services/purchaseCta.ts guards with a source scan. The SECONDARY offer is
+// resolved by that module too (`resultSecondaryOfferUrl`), which dedupes against
+// the page the primary CTA already opens, so this card can never render two taps
+// to one page.
+import { recognitionPurchaseUrl, resultSecondaryOfferUrl } from '../services/purchaseCta';
 // The category a result card is allowed to claim. A match without a catalog
 // number (every modern song) used to fall through to the literal "Classical" —
 // and the catalog NUMBER was printed in the genre slot on a library piece.
 // resultGenreLabel() owns that decision: modern → "Modern song", library →
 // the catalog's genre, else the honest "Public domain".
 import { resultGenreLabel } from '../services/resultGenre';
+// THE ONE RESULT SURFACE's own decisions (bundle A, owner 10-02): which kind of
+// result this is (library / hum / modern), what the sheet slot does (inline score,
+// the full-screen reader, the purchase action, or nothing but honest words),
+// where the score came from, and every string the card shows. The card and the
+// tier1 gate read the SAME module, so the copy cannot drift.
+import {
+  BROWSE_LIBRARY_LEVER_HINT,
+  BROWSE_LIBRARY_LEVER_LABEL,
+  HUM_IT_LEVER_HINT,
+  HUM_IT_LEVER_LABEL,
+  INLINE_SHEET_HEIGHT,
+  MODERN_COPYRIGHT_NOTE,
+  MODERN_NO_LINK_LINE,
+  NO_HOSTED_SCORE_LINE,
+  SHEET_BLOCK_ERROR_LINE,
+  SHEET_BLOCK_LABEL,
+  SHEET_FULL_SCREEN_CHIP,
+  TRY_MUSICNOTES_LABEL,
+  fullScreenChipAccessibilityLabel,
+  hostedSheetUrl,
+  isLibraryKind,
+  resultKicker,
+  resultKindFor,
+  resultSecondaryOfferLabel,
+  resultSheetAccessibilityLabel,
+  sheetSurfaceDecision,
+  showsFullScreenChip,
+  type ResultMidiExport,
+} from '../services/resultSurface';
+// "Export MIDI" (MIDI export Batch A) stays where the take is — the CALLER owns
+// the recorded take and its export; this surface only renders the affordance from
+// the caller's contract (`midiExport`), so a hum match can still write the user's
+// own melody out as a .mid from the SAME take (v30 feature, bundle A).
+import {
+  MIDI_EXPORT_BUSY_LABEL,
+  MIDI_EXPORT_HINT,
+  MIDI_EXPORT_LABEL,
+} from '../services/midiExport';
 // The no-match card's two ways forward (owner-approved 09-24 front door + the
 // 09-22 hum → modern bridge). The strings come from the modules that own them so
 // the card, the screen and the tier1 gate read the SAME words.
@@ -90,6 +145,25 @@ interface RecognitionResultViewProps {
    * no-match card of the hum pass.
    */
   onFindAnySong?: () => void;
+  /**
+   * The hum take's "Export MIDI" (bundle A, owner 10-02). The CALLER owns the
+   * take — the hum screen recorded it and holds its URI, the export state and the
+   * outcome sentence — so this surface only RENDERS the affordance from the
+   * caller's contract. Omitted (or with no take) on every other result, and the
+   * block is then not rendered at all: an "Export MIDI" button that can only fail
+   * is the dead control this card exists to remove.
+   */
+  midiExport?: ResultMidiExport;
+  /**
+   * The retention levers of a MODERN result (owner 09-28: incentives →
+   * familiarity → trust → sales; §E.2 "a retention lever, always"). A modern card
+   * must not be a dead end when the retailer link is missing or the user declines
+   * it: "hum it" hands the melody back to the hum pass, and "browse the free
+   * library" opens the public-domain catalog this app actually serves. Each lever
+   * renders only when its handler is supplied, so a lever is never decorative.
+   */
+  onHumIt?: () => void;
+  onBrowseLibrary?: () => void;
 }
 
 /** Convert a RecognitionMatch to a shape the PieceDetailScreen can render. */
@@ -113,10 +187,18 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   onUpgrade,
   onHumFallback,
   onFindAnySong,
+  midiExport,
+  onHumIt,
+  onBrowseLibrary,
 }) => {
   const [showDetail, setShowDetail] = React.useState(false);
   const [showScoreViewer, setShowScoreViewer] = React.useState(false);
   const [selectedMatch, setSelectedMatch] = React.useState<RecognitionMatch | null>(null);
+  // The inline score's OWN failure flag (bundle A). The viewer document renders
+  // its own error overlay for a bad PDF; this is the card's line for the WebView
+  // itself failing (no network, a bad byte-range), so a broken score is never a
+  // silently blank box and the "⛶ Full screen" chip stays live beside it.
+  const [inlineSheetFailed, setInlineSheetFailed] = React.useState(false);
   // The ONE retailer shell on this card. Null = closed; the purchase CTA sets it,
   // and the shell's own onClose (header + hardware BACK) clears it, so the card
   // underneath is revealed again with nothing re-mounted and no navigation.
@@ -127,6 +209,7 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
     if (visible) {
       setShowDetail(false);
       setShowScoreViewer(false);
+      setInlineSheetFailed(false);
       setPurchaseWebUrl(null);
     }
   }, [visible]);
@@ -324,23 +407,53 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   }
 
   // ── Success Phase ──
-  const topMatch = phase.response.matches[0];
-  const sheetAvailable = !!topMatch.sheet_music_url;
-  const isPublicDomain = !!topMatch.is_public_domain;
-  // PD pieces never get a purchase redirect — the backend guarantees
-  // purchase_url is null for them, and we double-guard here so a stale
-  // response can never show a buy button on a public-domain piece.
   //
-  // The link itself comes from the backend's purchase-URL map through
-  // primaryPurchaseUrl() (Sheet Music Direct PRIMARY, Musicnotes backup only) —
-  // never from a retailer key named in this component. The match's own map wins
-  // over the response-level fallback, and the primary key wins over the backup in
-  // both, so the commission can no longer land on the backup retailer by default.
+  // THE ONE RESULT SURFACE (bundle A, owner 10-02): the ambient library pass, the
+  // hum/whistle/sing fallback and the modern flow all land HERE. src/services/
+  // resultSurface.ts owns the decisions (which kind this is, what the sheet slot
+  // does, where the score came from, every word below); this card renders them.
+  const topMatch = phase.response.matches[0];
+  const isPublicDomain = !!topMatch.is_public_domain;
+  const kind = resultKindFor(phase.response);
+  // The money path resolves through ONE helper: the first APPROVED retailer in the
+  // backend's purchase-URL map (Sheet Music Direct, affiliate ID 67650, PRIMARY),
+  // falling back to the backup only when the primary is absent. The match's own map
+  // wins over the response-level fallback, so the commission can no longer land on
+  // the backup retailer by default.
   const purchaseUrl = recognitionPurchaseUrl(
     topMatch.purchase_url,
     phase.response.purchase_url,
   );
+  // PD pieces never get a purchase redirect — the backend guarantees purchase_url
+  // is null for them, and we double-guard here so a stale response can never show a
+  // buy button on a public-domain piece.
   const hasPurchaseUrl = !isPublicDomain && !!purchaseUrl;
+  // THE SHEET SLOT. The hosted URL is the BACKEND'S/CATALOG'S (`sheet_music_url`)
+  // and is never built here: `sheetUrlForPieceId()` is the key builder for gated
+  // ingest, not a promise that a score exists, and resultSurfaceContract.ts fails
+  // the gate if a result surface calls it. `sheet_music_available: false` beats a
+  // URL that is present — the backend's quality gate is the truth, so the card
+  // shows its honest line instead of opening a score the backend declined to serve.
+  const sheetInput = {
+    kind,
+    hostedSheetUrl: topMatch.sheet_music_url,
+    sheetMusicAvailable: topMatch.sheet_music_available,
+    purchaseUrl,
+  };
+  const sheetDecision = sheetSurfaceDecision(sheetInput);
+  const inlineSheetUrl = hostedSheetUrl(sheetInput);
+  // The deduped SECONDARY offer, resolved by the money module: for a library/PD
+  // (or hum) result the affiliate SEARCH for a printed arrangement (owner Q2/Q7 —
+  // never a purchase claim while we host the score ourselves); for a modern match
+  // the backend's backup retailer, and ONLY when it is a different page from the
+  // one the primary CTA opens. Undefined = no second action at all.
+  const secondaryOffer = resultSecondaryOfferUrl(
+    topMatch.purchase_url,
+    phase.response.purchase_url,
+  );
+  // The reader's URL: the tapped match's own score, else the hosted score this
+  // card is already showing inline.
+  const viewerSheetUrl = selectedMatch?.sheet_music_url ?? inlineSheetUrl;
 
   return (
     <Modal
@@ -356,11 +469,11 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
             dialog is swapped while another one is being dismissed (the frame
             where a host could come back blank). Owner-reported blank page,
             v22 → v24; guarded by src/services/backExitContract.ts. */}
-        {showScoreViewer && selectedMatch?.sheet_music_url && (
+        {showScoreViewer && viewerSheetUrl && (
           <ScoreViewer
-            url={selectedMatch.sheet_music_url}
-            title={selectedMatch.title}
-            composer={selectedMatch.composer}
+            url={viewerSheetUrl}
+            title={selectedMatch?.title ?? topMatch.title}
+            composer={selectedMatch?.composer ?? topMatch.composer}
             onClose={() => setShowScoreViewer(false)}
           />
         )}
@@ -385,6 +498,14 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
             <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
               <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
+
+            {/* THE PROVENANCE KICKER — how we know this piece (owner sign-off
+                item (b)). A hum match says so ("You hummed it — here it is")
+                instead of pretending we heard the music; an ambient or modern
+                match says "🎼 Recognized". The marker rides the response, set by
+                the hum mapping (frontDoor.humMatchToResultResponse), never
+                guessed from the match shape. */}
+            <Text style={styles.kickerText}>{resultKicker(kind)}</Text>
 
             {/* Album art */}
             {topMatch?.album_art_url ? (
@@ -431,44 +552,181 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
               </View>
             )}
 
-            {/* Action buttons */}
-            {sheetAvailable ? (
+            {/* ── A MODERN (copyrighted) MATCH ──
+                Identity, the copyright position, ONE licensed-retailer action and
+                the retention levers — and NO notation of any kind: no score, no
+                ABC, no chords. We host no copyrighted music, so the only thing
+                this card can honestly offer is the way to the official sheet
+                music (affiliate) plus something to do next.
+                resultSurfaceContract.ts freezes this boundary as a predicate. */}
+            {kind === 'modern' ? (
+              <View style={styles.modernBlock}>
+                <Text style={styles.copyrightNote}>{MODERN_COPYRIGHT_NOTE}</Text>
+
+                {/* THE single purchase action, opened in the in-app shell above
+                    (owner 10-02, audit D5) — never the system browser. */}
+                {hasPurchaseUrl ? (
+                  <TouchableOpacity
+                    style={styles.purchaseBtn}
+                    onPress={() => {
+                      if (purchaseUrl) setPurchaseWebUrl(purchaseUrl);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Get the official sheet music"
+                    accessibilityHint="Opens the licensed retailer page inside NoteSnap"
+                  >
+                    <Text style={styles.purchaseBtnText}>
+                      🛒 Get the Official Sheet Music
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  /* No licensed link for this match: an HONEST line, never a
+                     static "isn't linked yet" box — and the levers below are the
+                     real next step (§E.2, the zero-promise rule). */
+                  <Text style={styles.honestGapText}>{MODERN_NO_LINK_LINE}</Text>
+                )}
+
+                {/* The retention levers (owner 09-28). Each renders only with its
+                    handler, so neither can become a decorative button. */}
+                {onHumIt || onBrowseLibrary ? (
+                  <View style={styles.leversBlock}>
+                    <Text style={styles.leversTitle}>Keep playing</Text>
+                    {onHumIt ? (
+                      <TouchableOpacity
+                        style={styles.leverBtn}
+                        onPress={onHumIt}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                      >
+                        <Text style={styles.leverBtnText}>{HUM_IT_LEVER_LABEL}</Text>
+                        <Text style={styles.leverBtnHint}>{HUM_IT_LEVER_HINT}</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    {onBrowseLibrary ? (
+                      <TouchableOpacity
+                        style={styles.leverBtn}
+                        onPress={onBrowseLibrary}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                      >
+                        <Text style={styles.leverBtnText}>
+                          {BROWSE_LIBRARY_LEVER_LABEL}
+                        </Text>
+                        <Text style={styles.leverBtnHint}>
+                          {BROWSE_LIBRARY_LEVER_HINT}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            {/* ── THE INLINE SCORE (owner sign-off item (a)) ──
+                A library/PD or hum match renders the piece's own score IN the
+                card: the SAME viewer document the full-screen reader uses, at a
+                bounded height, inside this file's Modal-rooted tree (the
+                in-app-browser contract holds by construction — the score is
+                embedded in the card, never a browser surface of its own; the tag
+                carries javaScriptEnabled + domStorageEnabled for pdf.js).
+                The "⛶ Full screen" chip opens the existing reader as an overlay,
+                so the card is never replaced and always stays scrollable. */}
+            {sheetDecision === 'inline' && inlineSheetUrl ? (
+              <View style={styles.sheetBlock}>
+                <Text style={styles.sheetBlockLabel}>{SHEET_BLOCK_LABEL}</Text>
+                <WebView
+                  key={inlineSheetUrl}
+                  source={{ html: buildSheetViewerHtml(inlineSheetUrl) }}
+                  style={styles.inlineSheet}
+                  originWhitelist={['*']}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  allowFileAccess
+                  mixedContentMode="always"
+                  androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
+                  onError={() => setInlineSheetFailed(true)}
+                  accessibilityLabel={resultSheetAccessibilityLabel(topMatch.title)}
+                />
+                {inlineSheetFailed ? (
+                  <Text style={styles.sheetErrorText}>{SHEET_BLOCK_ERROR_LINE}</Text>
+                ) : null}
+                <TouchableOpacity
+                  style={styles.fullScreenChip}
+                  onPress={() => handleViewSheetMusic(topMatch)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={fullScreenChipAccessibilityLabel(topMatch.title)}
+                >
+                  <Text style={styles.fullScreenChipText}>{SHEET_FULL_SCREEN_CHIP}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : sheetDecision === 'open-full' && inlineSheetUrl ? (
+              /* A surface that must NOT embed the document keeps the score one tap
+                 away (the decision's 'open-full' value) instead of dropping it. */
               <TouchableOpacity
                 style={styles.viewSheetBtn}
                 onPress={() => handleViewSheetMusic(topMatch)}
               >
                 <Text style={styles.viewSheetText}>🎵 View Sheet Music</Text>
               </TouchableOpacity>
-            ) : isPublicDomain ? (
-              /* Honest "coming soon" state: public-domain piece, score not yet
-                 curated. No broken button, no purchase redirect. */
-              <View style={styles.comingSoonCard}>
-                <Text style={styles.comingSoonTitle}>🎼 Sheet music coming soon</Text>
-                <Text style={styles.comingSoonText}>
-                  We're still curating a high-quality score for this
-                  public-domain piece — check back soon.
-                </Text>
-              </View>
+            ) : isLibraryKind(kind) && sheetDecision === 'none' ? (
+              /* A library/PD or hum match we hold NO hosted score for. The dashed
+                 "🎼 Sheet music coming soon" box is GONE (audit D13): a promise we
+                 cannot keep is a dead end, so the card states exactly what it has
+                 — and the printed-arrangement search below is the real next step
+                 when the backend gave us one. */
+              <Text style={styles.honestGapText}>{NO_HOSTED_SCORE_LINE}</Text>
             ) : null}
 
-            {/* Purchase button for copyrighted pieces. The tap opens the
-                licensed retailer in the in-app shell ABOVE (owner 10-02, audit
-                D5) — it never hands the user to the system browser. */}
-            {hasPurchaseUrl && (
+            {/* ── THE SECONDARY OFFER ──
+                At most ONE, and only when the money module resolved a target that
+                is not the page the primary action opens: the affiliate SEARCH for
+                a printed arrangement on a library/PD (or hum) result — free score
+                first, never a purchase claim — or the deduped backup retailer on a
+                modern match. Opened in the in-app shell above, like the primary. */}
+            {secondaryOffer ? (
               <TouchableOpacity
-                style={styles.purchaseBtn}
-                onPress={() => {
-                  if (purchaseUrl) setPurchaseWebUrl(purchaseUrl);
-                }}
+                style={styles.secondaryOfferBtn}
+                onPress={() => setPurchaseWebUrl(secondaryOffer)}
+                activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel="Get the official sheet music"
-                accessibilityHint="Opens the licensed retailer page inside NoteSnap"
+                accessibilityHint="Opens the retailer inside NoteSnap"
               >
-                <Text style={styles.purchaseBtnText}>
-                  🛒 Get Official Sheet Music
+                <Text style={styles.secondaryOfferText}>
+                  {resultSecondaryOfferLabel(kind)}
                 </Text>
               </TouchableOpacity>
-            )}
+            ) : null}
+
+            {/* ── EXPORT MIDI (the hum take) ──
+                Rendered from the CALLER's contract: the hum screen owns the take
+                it just recorded, the export run and the outcome sentence. With no
+                take there is no button (never a control that can only fail), and a
+                failed export is ALWAYS shown — a silent one reads as a dead button
+                (the v30 feature, guarded by midiExportContract.ts). */}
+            {midiExport && midiExport.takeUri ? (
+              <View style={styles.midiBlock}>
+                <TouchableOpacity
+                  style={styles.midiBtn}
+                  onPress={midiExport.onExport}
+                  disabled={midiExport.exporting}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={MIDI_EXPORT_LABEL}
+                  accessibilityHint={MIDI_EXPORT_HINT}
+                >
+                  <Text style={styles.midiBtnText}>
+                    {midiExport.exporting ? MIDI_EXPORT_BUSY_LABEL : MIDI_EXPORT_LABEL}
+                  </Text>
+                </TouchableOpacity>
+                {midiExport.keyLine && (
+                  <Text style={styles.midiKeyText}>{midiExport.keyLine}</Text>
+                )}
+                {midiExport.note && (
+                  <Text style={styles.midiNoteText}>{midiExport.note}</Text>
+                )}
+              </View>
+            ) : null}
 
             <TouchableOpacity style={styles.doneBtn} onPress={onClose}>
               <Text style={styles.doneBtnText}>Done</Text>
@@ -761,28 +1019,185 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  comingSoonCard: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 14,
-    padding: 16,
+
+  // THE INLINE SCORE (bundle A). A bounded block inside the card: the sheet with
+  // a label above it, the "⛶ Full screen" chip below it, and the card's own error
+  // line when the WebView itself fails. `inlineSheet` is the height the card gives
+  // the document — the reader (one chip away) is where a user goes to study the
+  // score; here it only has to be legible and must never push the money path off
+  // a small phone's screen (the card stays scrollable).
+  sheetBlock: {
     width: '100%',
-    alignItems: 'center',
     marginTop: 4,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-    borderStyle: 'dashed',
   },
-  comingSoonTitle: {
-    color: '#4ecdc4',
-    fontSize: 15,
+  sheetBlockLabel: {
+    color: '#a0a0b8',
+    fontSize: 12,
     fontWeight: '700',
+    letterSpacing: 0.5,
     marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  inlineSheet: {
+    width: '100%',
+    height: INLINE_SHEET_HEIGHT,
+    borderRadius: 12,
+    backgroundColor: '#1a1a2e',
+  },
+  sheetErrorText: {
+    color: '#e94560',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
     textAlign: 'center',
   },
-  comingSoonText: {
+  fullScreenChip: {
+    alignSelf: 'center',
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
+  fullScreenChipText: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  // The provenance kicker (bundle A): how this piece was found. Quiet, above the
+  // art, so a hum match reads as an honest result rather than a claim we heard it.
+  kickerText: {
+    color: '#4ecdc4',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+
+  // A MODERN (copyrighted) match: the copyright position, the one licensed
+  // retailer action, the deduped backup, and the retention levers. No notation.
+  modernBlock: {
+    width: '100%',
+    marginTop: 4,
+  },
+  copyrightNote: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  // The honest gap line (a library piece we hold no score for, or a modern match
+  // with no licensed link). A statement of what we have — never a promise.
+  honestGapText: {
     color: '#a0a0b8',
     fontSize: 13,
     lineHeight: 19,
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  leversBlock: {
+    width: '100%',
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#0f3460',
+  },
+  leversTitle: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  leverBtn: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    width: '100%',
+    marginBottom: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
+  leverBtnText: {
+    color: '#4ecdc4',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  leverBtnHint: {
+    color: '#a0a0b8',
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+
+  // The SINGLE secondary offer (the printed-arrangement search on a library
+  // result, the deduped backup retailer on a modern one). Quieter than the
+  // purchase button on purpose: the free score is the offer.
+  secondaryOfferBtn: {
+    backgroundColor: 'transparent',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    width: '100%',
+    marginTop: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
+  secondaryOfferText: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+
+  // "Export MIDI" from the caller's hum take (v30 feature, kept by bundle A).
+  midiBlock: {
+    width: '100%',
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#0f3460',
+    alignItems: 'center',
+  },
+  midiBtn: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
+  midiBtnText: {
+    color: '#4ecdc4',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  midiKeyText: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  midiNoteText: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
     textAlign: 'center',
   },
   purchaseBtn: {

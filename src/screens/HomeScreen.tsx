@@ -43,6 +43,7 @@ import {
   recognizeAudio,
   recognizeModernSong,
   humToSearch,
+  fetchPieceById,
   isRecognitionLimitError,
 } from '../services/api';
 import {
@@ -76,6 +77,10 @@ import {
   homePromiseCopy,
   humMatchToResultResponse,
 } from '../services/frontDoor';
+// The hosted score the hum pass resolves for its top match (bundle A): the shared
+// result surface renders it INLINE, so the door's own hum pass looks the piece up
+// in our catalog exactly as the full hum screen does.
+import type { HumResolvedSheet } from '../services/frontDoor';
 // The categories a result is allowed to claim — never a hardcoded genre.
 import { PUBLIC_DOMAIN_GENRE } from '../services/resultGenre';
 // The PD-library cross-check on the modern route (owner 09-25, build #3): a
@@ -655,9 +660,27 @@ export const HomeScreen: React.FC = () => {
           recorder.completeRecording();
           setHumFallback(false);
           setNoMatchOffer(null);
+          // THE HOSTED SCORE, best effort (bundle A): a HumMatch carries identity
+          // only, so the door looks the piece up in OUR catalog to get the score
+          // the shared result surface renders INLINE — exactly as the hum screen
+          // does. A miss (offline, unknown id, no curated score) is not an error:
+          // the surface then says honestly that it holds no score for this one.
+          // Nothing is ever invented here.
+          let sheet: HumResolvedSheet | null = null;
+          const info = await fetchPieceById(outcome.topMatch.piece_id);
+          if (info) {
+            sheet = {
+              sheetMusicUrl: info.sheetMusicUrl,
+              // The catalog's own gate. `?? undefined` keeps a MISSING flag
+              // missing (the surface withholds the score only on an explicit
+              // false — never because we dropped the value on the way through).
+              sheetMusicAvailable: info.sheetMusicAvailable ?? undefined,
+              isPublicDomain: info.isPublicDomain ?? undefined,
+            };
+          }
           setRecognitionPhase({
             type: 'success',
-            response: humMatchToResultResponse(resp, outcome.matches),
+            response: humMatchToResultResponse(resp, outcome.matches, sheet),
           });
           return;
         }
@@ -1204,7 +1227,9 @@ export const HomeScreen: React.FC = () => {
 
       {/* Recognition results modal. The no-match card carries the next step for
           whichever pass missed: the inline hum fallback (ambient miss) or the
-          hum → modern bridge (hum miss). */}
+          hum → modern bridge (hum miss). A MODERN match rendered here carries the
+          same two retention levers as the interstitial (§E.2: a declined or
+          missing retailer link is never a dead end) — the SAME handlers. */}
       <RecognitionResultView
         visible={showRecognitionResults}
         phase={recognitionPhase}
@@ -1213,6 +1238,8 @@ export const HomeScreen: React.FC = () => {
         onUpgrade={handleUpgradePro}
         onHumFallback={noMatchOffer === 'hum' ? handleHumFallbackFromCard : undefined}
         onFindAnySong={noMatchOffer === 'modern' ? handleFindAnySongFromCard : undefined}
+        onHumIt={handleHumItFromModern}
+        onBrowseLibrary={handleBrowseLibraryFromModern}
       />
 
       {/* Full-screen sheet-music viewer — the same path the recognition result

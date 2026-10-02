@@ -40,6 +40,7 @@
  * it with node_modules absent — this is the module the gate can test end to end
  * with a stubbed backend payload.
  */
+import type { RecognitionResponse } from '../types';
 
 /** The PD piece the backend matched, as it arrives on the wire. */
 export interface PdMatchPayload {
@@ -61,17 +62,30 @@ export interface PdMatchPayload {
 
 /** A PD library card in the app's own (library-match) result shape. */
 export interface PdLibraryMatch {
+  /** The catalog piece id — the key every library path uses (`/api/pieces/:id`). */
+  piece_id: string;
+  /**
+   * The same id under the name the app's older PD-card callers use to save the
+   * recognition to History. Kept as an alias (bundle A, owner 10-02) so the card
+   * is BOTH a real `RecognitionMatch` — which the ONE result surface requires in
+   * order to read `sheet_music_url` and the provenance off it — and the shape the
+   * existing save sites already consume.
+   */
   id: string;
   title: string;
   composer: string;
-  catalog?: string;
+  catalog: string | null;
   genre?: string;
   difficulty_label?: string;
   /** A fact for a public-domain piece — the card may offer the free score. */
   is_public_domain: true;
   sheet_music_available: boolean;
-  sheet_music_url?: string;
-  album_art_url?: string;
+  sheet_music_url: string | null;
+  album_art_url: string | null;
+  /** Always null: our library is public-domain scores only — never a TAB link. */
+  tab_url: string | null;
+  /** The cross-check is not an audio query, so there is no offset into a clip. */
+  matched_at_s: 0;
   /**
    * SECONDARY retailer CTA (Sheet Music Direct search for this work). The free
    * in-app score is the primary path, so this is never a purchase_url.
@@ -86,10 +100,17 @@ export interface PdLibraryMatch {
   confidence: number;
 }
 
-/** The PD-library result response the existing result card renders. */
-export interface PdLibraryResultResponse {
-  success: true;
-  matches: PdLibraryMatch[];
+/**
+ * The PD-library result response the existing result card renders.
+ *
+ * It IS the app's `RecognitionResponse` (bundle A, owner 10-02). It used to be a
+ * lookalike that type-checked nowhere: the card that renders it —
+ * `RecognitionResultView` — reads `matches[0]` as a library match (its
+ * `sheet_music_url` for the INLINE score, its `id`/`piece_id`, its
+ * `affiliate_url` for the secondary printed-arrangement action), so the shape has
+ * to be the real one. `pd_routed_from` stays as the telemetry marker.
+ */
+export interface PdLibraryResultResponse extends RecognitionResponse {
   /**
    * Where the mapping came from, for telemetry/debugging — never shown to a user.
    */
@@ -131,11 +152,13 @@ export function pdMatchFromModernResponse(
   const available = pd.sheet_music_available === true;
   const sheetUrl = nonEmptyString(pd.sheet_music_url);
   const confidenceRaw = pd.match_confidence ?? pd.confidence;
+  const id = nonEmptyString(pd.id) ?? title;
   return {
-    id: nonEmptyString(pd.id) ?? title,
+    piece_id: id,
+    id,
     title,
     composer: nonEmptyString(pd.composer) ?? 'Unknown',
-    catalog: nonEmptyString(pd.catalog),
+    catalog: nonEmptyString(pd.catalog) ?? null,
     // The catalog's own genre when it has one; the result card's genre helper
     // resolves "Public domain" for a library piece with no genre — never an
     // invented one, and never "Modern song" for a public-domain work.
@@ -143,8 +166,10 @@ export function pdMatchFromModernResponse(
     difficulty_label: nonEmptyString(pd.difficulty_label),
     is_public_domain: true,
     sheet_music_available: available && !!sheetUrl,
-    sheet_music_url: sheetUrl,
-    album_art_url: nonEmptyString(pd.album_art_url),
+    sheet_music_url: sheetUrl ?? null,
+    album_art_url: nonEmptyString(pd.album_art_url) ?? null,
+    tab_url: null,
+    matched_at_s: 0,
     affiliate_url: nonEmptyString(pd.affiliate_url),
     purchase_url: null,
     confidence: typeof confidenceRaw === 'number' ? confidenceRaw : 1,
@@ -169,6 +194,13 @@ export function pdLibraryResultResponse(pd: PdLibraryMatch): PdLibraryResultResp
   return {
     success: true,
     matches: [pd],
+    // The wire shape a successful recognition response carries. The PD card is
+    // built from the cross-check block, not from an audio query, so there is no
+    // duration to report (the card never renders it) — and `db_available` is true
+    // by construction: the card exists because the backend found this work in our
+    // catalog.
+    query_duration_ms: 0,
+    db_available: true,
     pd_routed_from: 'modern-pd-crosscheck',
   };
 }
