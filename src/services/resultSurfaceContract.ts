@@ -276,8 +276,8 @@ export function findResultSurfaceViolations(
         predicate: 'sheetRendersInline',
         message:
           `${file.path} does not render the hosted score inline with a way to open the reader: ` +
-          `the success branch needs the <WebView> fed by ${SHEET_VIEWER_HTML_CALL} AND the ` +
-          `${FULL_SCREEN_CHIP_MARKER} chip that opens <${SHEET_READER_COMPONENT}>.`,
+          `the success branch needs the inline score WebView fed by ${SHEET_VIEWER_HTML_CALL} ` +
+          `AND the ${FULL_SCREEN_CHIP_MARKER} chip that opens the ${SHEET_READER_COMPONENT} reader.`,
       });
     }
     if (!inlineScoreCarriesFlags(file.source)) {

@@ -55,6 +55,7 @@ import {
   findWebViewFlagViolations,
   formatBrowserViolations,
   formatWebViewFlagViolations,
+  webViewTags,
 } from '../src/services/inAppBrowserContract';
 
 declare const process: { exit(code: number): never; cwd(): string };
@@ -86,6 +87,7 @@ function assertEq(actual: unknown, expected: unknown, msg: string): void {
 // ─── the real files, read off disk ──────────────────────────────
 
 const SURFACE_PATH = 'src/components/RecognitionResultView.tsx';
+const SURFACE_CONTRACT_PATH = 'src/services/resultSurfaceContract.ts';
 const HUM_PATH = 'src/screens/HumSearchScreen.tsx';
 const MODERN_PATH = 'src/screens/ModernSearchScreen.tsx';
 const HOME_PATH = 'src/screens/HomeScreen.tsx';
@@ -417,6 +419,24 @@ function realSourceTests(): SourceFile[] {
     inlineScoreFlagViolations(surface, SURFACE_PATH).length,
     0,
     'and the surface’s own inline-score flag report is empty',
+  );
+
+  // 2. the CONTRACT MODULE must not report itself. Its messages name the tags it
+  //    scans for, and the tree-wide in-app-browser scan cannot tell a message
+  //    STRING that reads `<WebView>` from a rendered tag — a raw tag literal in a
+  //    violation message failed the whole gate on this branch's first full run
+  //    (the same self-report trap modalBackContract.ts documents for `<Modal`).
+  const contractSource = readAppFile(SURFACE_CONTRACT_PATH);
+  assert(contractSource.length > 1000, `read ${SURFACE_CONTRACT_PATH} (${contractSource.length} chars)`);
+  assertEq(
+    webViewTags(contractSource).length,
+    0,
+    `${SURFACE_CONTRACT_PATH} carries no tag literal the tree-wide scan would read as a rendered WebView`,
+  );
+  assertEq(
+    findWebViewFlagViolations([{ path: SURFACE_CONTRACT_PATH, source: contractSource }]).length,
+    0,
+    'and the tree-wide flag scan is clean on the contract module itself',
   );
 
   return files;
