@@ -52,6 +52,7 @@
     "src/services/resultSurface.ts",
     "src/services/resultSurfaceContract.ts",
     "src/services/historyDeadEndContract.ts",
+    "src/services/promiseAudit.ts",
     "src/services/searchExternal.ts",
     "src/services/searchExternalContract.ts",
     "src/services/sheetLicenseGate.ts",
@@ -90,6 +91,7 @@
     "scripts/midiExport.test.ts",
     "scripts/resultSurface.test.ts",
     "scripts/historyDeadEnd.test.ts",
-    "scripts/searchExternal.test.ts"
+    "scripts/searchExternal.test.ts",
+    "scripts/zeroPromise.test.ts"
   ]
 }

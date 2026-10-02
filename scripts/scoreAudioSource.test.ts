@@ -19,14 +19,14 @@
  * Plain Node, no react-native, no network. Run with: npm run test:tier1
  */
 import {
-  NO_SCORE_AUDIO_HINT,
+  RETIRED_NO_SCORE_AUDIO_HINT,
   RETIRED_BUNDLED_PREVIEW,
   SCORE_AUDIO_LABEL,
   curatedScoreAudioUrl,
   hasCuratedScoreAudio,
   pieceDetailPlaysOnlyCuratedAudio,
   scoreAudioDecision,
-  viewerShowsHonestNoAudioHint,
+  viewerRendersNoAudioChrome,
   type ScoreAudioPieceLike,
 } from '../src/services/scoreAudioSource';
 
@@ -283,28 +283,50 @@ function pieceDetailTests(): void {
   );
 }
 
-// ─── 4. the honest state the removed fallback leaves behind ─────
+// ─── 4. the no-audio chrome is ABSENT (bundle E / owner Q5) ─────
 
 function viewerTests(): void {
-  console.log('\nthe viewer shows the honest "coming soon" state, never a fake player');
+  console.log('\nthe viewer renders no audio chrome at all when there is no curated audio');
 
   const viewer = readAppFile('src/components/ScoreViewer.tsx');
   assert(viewer.length > 3000, `read ScoreViewer.tsx (${viewer.length} chars)`);
   assertEq(
-    viewerShowsHonestNoAudioHint(viewer),
+    viewerRendersNoAudioChrome(viewer),
     true,
-    'the real viewer renders the player only behind an existing audioSource',
+    'the real viewer gates the player on an existing audioSource and renders nothing without one',
   );
   assert(
-    viewer.indexOf(NO_SCORE_AUDIO_HINT) >= 0,
-    'the viewer still carries the honest practice-audio hint',
+    viewer.indexOf(RETIRED_NO_SCORE_AUDIO_HINT) < 0,
+    'the retired "practice audio coming soon" label is gone from the viewer (Q5: absent, not muted)',
   );
-  const mutated = viewer.split(NO_SCORE_AUDIO_HINT).join('');
-  assert(mutated !== viewer, 'the mutation fixture changed the real viewer');
+
+  // MUTATION (a): the retired hint comes back as the else-branch — the D13 box.
+  // Sliced by index so the mutation lands on the audio block itself, not on the
+  // first `) : null}` in the file.
+  const audioMarker = '{!immersive && audioSource ? (';
+  const audioClose = ') : null}';
+  const audioStart = viewer.indexOf(audioMarker);
+  const audioEnd = viewer.indexOf(audioClose, audioStart);
+  assert(audioStart >= 0 && audioEnd > audioStart, 'located the viewer audio block');
+  const withHint =
+    viewer.slice(0, audioStart) +
+    `{!immersive && (audioSource ? (\n<ScorePlayer source={audioSource} label={audioLabel} />\n) : (\n<View><Text>${RETIRED_NO_SCORE_AUDIO_HINT}</Text></View>\n))}` +
+    viewer.slice(audioEnd + audioClose.length);
+  assert(withHint !== viewer, 'the mutation fixture changed the real viewer');
   assertEq(
-    viewerShowsHonestNoAudioHint(mutated),
+    viewerRendersNoAudioChrome(withHint),
     false,
-    'MUTATION: dropping the honest hint fails the contract (no silent dead control)',
+    'MUTATION: restoring the "practice audio coming soon" box fails the contract',
+  );
+
+  // MUTATION (b): the player is no longer gated on the audio source (a fake
+  // control: it would render for a piece with no audio at all).
+  const ungated = viewer.replace('!immersive && audioSource ? (', '!immersive ? (');
+  assert(ungated !== viewer, 'the ungated mutation changed the real viewer');
+  assertEq(
+    viewerRendersNoAudioChrome(ungated),
+    false,
+    'MUTATION: an ungated practice player fails the contract',
   );
 }
 
