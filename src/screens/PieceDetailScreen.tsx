@@ -36,6 +36,21 @@ import {
   sharePreviewAccessibilityLabel,
 } from '../services/shareCardShare';
 import { scoreAudioDecision } from '../services/scoreAudioSource';
+// THE zero-promise fallback copy (§E, bundle E): the honest no-score line and the
+// next-step labels come from resultSurface.ts, so the card and promiseAudit's
+// guard read the SAME words.
+import {
+  FIND_A_PIECE_LEVER_HINT,
+  FIND_A_PIECE_LEVER_LABEL,
+  HUM_IT_LEVER_HINT,
+  HUM_IT_LEVER_LABEL,
+  NO_HOSTED_SCORE_LINE,
+} from '../services/resultSurface';
+// The licensed-retailer SEARCH for a work's printed edition (owner Q2, ratified
+// 10-02): the URL builder is searchExternal.ts — the one module allowed to build a
+// retailer search link — and the block below opens it in THIS page's in-app shell.
+import { externalSearchSection } from '../services/searchExternal';
+import { SearchExternalSection } from '../components/SearchExternalSection';
 // The sheet-music card for a piece with no score we may host but a licensed
 // retailer link (a modern song opened from History — owner 10-01: "pressing the
 // sheet-music card must take the user AUTOMATICALLY TO PURCHASE").
@@ -47,11 +62,20 @@ import { primaryPurchaseUrl, secondaryPurchaseUrl } from '../services/purchaseCt
 interface PieceDetailScreenProps {
   piece: DailyChallengePiece;
   onBack: () => void;
+  /**
+   * The honest no-score state's next steps (bundle E, §E.2). Both are OPTIONAL:
+   * a host that cannot reach the flow simply does not pass it, and the lever is
+   * then not rendered at all — never a dead button (§E.1.1).
+   */
+  onHumIt?: () => void;
+  onFindPiece?: () => void;
 }
 
 export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
   piece,
   onBack,
+  onHumIt,
+  onFindPiece,
 }) => {
   const [sharing, setSharing] = useState(false);
   const [showScoreViewer, setShowScoreViewer] = useState(false);
@@ -107,6 +131,21 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
    */
   const sheetCard = modernSheetCard(piece);
   const sheetCardUrl = sheetCard?.url ?? null;
+
+  /**
+   * The honest no-score state's own condition — the SAME one the sheet block's
+   * final arm renders from, derived once so the words and the actions below can
+   * never describe different states.
+   */
+  const showsHonestNoScoreState = !piece.sheetMusicUrl && !sheetCard;
+  /**
+   * The licensed-retailer SEARCH for this work's printed edition (owner Q2; §E.5
+   * — the money path this bundle UNBLOCKS). Built by searchExternal.ts; the `1`
+   * internal match is the piece in hand, so the section uses its honest
+   * "also available from licensed retailers" subtitle rather than the
+   * "not in our free library" one.
+   */
+  const printedArrangementSearch = externalSearchSection(piece.title, 1);
 
   useEffect(() => {
     if (!showScoreViewer) return;
@@ -368,16 +407,18 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
             ) : null}
           </TouchableOpacity>
         ) : (
-          /* Honest "coming soon" state: piece with no curated sheet yet — no
-             broken button, no dead end. */
-          <View style={styles.comingSoonCard}>
-            <Text style={styles.comingSoonTitle}>
-              🎼 Sheet music coming soon
+          /* THE HONEST FALLBACK (§E zero-promise, bundle E). We hold no score we
+             may host for this piece, so the page says exactly that — and the real
+             next paths follow it (the block below this card). The retired dashed
+             box said a high-quality score was coming and to check back soon: it
+             promised content we do not hold, in place of an action. A
+             public-domain work never gets an invented purchase link either —
+             `purchase_url: null` stays a hard rule. */
+          <View style={styles.noScoreCard}>
+            <Text style={styles.noScoreTitle}>
+              🎼 No hosted score for this one
             </Text>
-            <Text style={styles.comingSoonText}>
-              We're still curating a high-quality score for this piece — check
-              back soon.
-            </Text>
+            <Text style={styles.noScoreText}>{NO_HOSTED_SCORE_LINE}</Text>
           </View>
         )}
 
@@ -391,6 +432,56 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* ── THE NEXT REAL PATHS (rendered only in the honest state above) ──
+          The same condition the card's final arm uses, so the words and the
+          actions can never point at different states.
+
+          • the licensed-retailer SEARCH for this work's printed edition, opened
+            in this page's own in-app shell (owner Q2, ratified 10-02: a secondary
+            retailer SEARCH is allowed, in-shell, and is never a primary purchase
+            claim — where we host a free score, that stays the offer);
+          • the hum route and the find-a-piece search, each rendered ONLY when its
+            host wired the handler — a lever with no destination is not a lever.
+
+          This block adds no purchase claim to a page that has one: it renders
+          only when the page holds no purchase card at all. */}
+      {showsHonestNoScoreState ? (
+        <View>
+          <SearchExternalSection
+            section={printedArrangementSearch}
+            onOpen={openInAppPurchase}
+          />
+          {onHumIt || onFindPiece ? (
+            <View style={styles.leversBlock}>
+              {onHumIt ? (
+                <TouchableOpacity
+                  style={styles.leverBtn}
+                  onPress={onHumIt}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.leverBtnText}>{HUM_IT_LEVER_LABEL}</Text>
+                  <Text style={styles.leverBtnHint}>{HUM_IT_LEVER_HINT}</Text>
+                </TouchableOpacity>
+              ) : null}
+              {onFindPiece ? (
+                <TouchableOpacity
+                  style={styles.leverBtn}
+                  onPress={onFindPiece}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.leverBtnText}>
+                    {FIND_A_PIECE_LEVER_LABEL}
+                  </Text>
+                  <Text style={styles.leverBtnHint}>
+                    {FIND_A_PIECE_LEVER_HINT}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       {/* Coached practice — the practice-coach MVP surface (slice 3).
           Lives on the piece screen (not Home): the sheet music, the loop/
@@ -570,31 +661,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  comingSoonCard: {
-    flex: 1,
-    backgroundColor: '#1a1a2e',
+  noScoreCard: {
     borderRadius: 14,
-    padding: 14,
-    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#16213e',
     borderWidth: 1,
     borderColor: '#0f3460',
-    borderStyle: 'dashed',
   },
-  comingSoonTitle: {
-    color: '#4ecdc4',
-    fontSize: 14,
+  noScoreTitle: {
+    color: '#ffffff',
+    fontSize: 15,
     fontWeight: '700',
-    marginBottom: 4,
-    textAlign: 'center',
+    marginBottom: 6,
   },
-  comingSoonText: {
-    color: '#a0a0b8',
-    fontSize: 12,
-    lineHeight: 17,
-    textAlign: 'center',
+  noScoreText: { color: '#a0a0b8', fontSize: 13, lineHeight: 19 },
+  leversBlock: { marginHorizontal: 4, marginTop: 4 },
+  leverBtn: {
+    backgroundColor: '#16213e',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#4ecdc4',
   },
-  /** The purchase card a modern song shows instead of "coming soon" — the whole
-   *  card is the CTA to the official sheet music for THIS song. */
+  leverBtnText: { color: '#4ecdc4', fontSize: 14, fontWeight: '700' },
+  leverBtnHint: { color: '#a0a0b8', fontSize: 12, marginTop: 3, lineHeight: 17 },
   sheetCardBtn: {
     flex: 1,
     backgroundColor: '#0f3460',

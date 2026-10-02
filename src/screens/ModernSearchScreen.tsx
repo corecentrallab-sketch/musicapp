@@ -78,12 +78,20 @@ interface ModernSearchScreenProps {
   onHumIt: () => void;
   /** Navigate to the free public-domain Library. */
   onBrowseLibrary: () => void;
+  /**
+   * The find-a-song SEARCH for a modern match with no licensed link (§E.2 row 2,
+   * bundle E). The HOST owns it — Home's `showFindPiece` flag + its single
+   * `FindPieceScreen` mount — so this screen only relays the tap and grows no
+   * second search surface of its own.
+   */
+  onSearchForIt: () => void;
 }
 
 export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
   onClose,
   onHumIt,
   onBrowseLibrary,
+  onSearchForIt,
 }) => {
   const recorder = useAudioRecorder();
   const [recording, setRecording] = useState(false);
@@ -335,6 +343,13 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
         onRetry={handleRetry}
         onHumIt={onHumIt}
         onBrowseLibrary={onBrowseLibrary}
+        onSearchForIt={() => {
+          // Our own interstitial is a Modal: close it before the host swaps its
+          // body to the search screen, or it would sit on top of the results.
+          setShowInterstitial(false);
+          setInterstitial(IDLE_SURFACE);
+          onSearchForIt();
+        }}
       />
 
       {/* THE PD RESULT CARD (owner 09-25, build #3): the recording was of a

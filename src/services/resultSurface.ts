@@ -348,3 +348,22 @@ export const HUM_IT_LEVER_HINT =
 export const BROWSE_LIBRARY_LEVER_LABEL = '🎼 Browse the free library';
 export const BROWSE_LIBRARY_LEVER_HINT =
   'Public-domain scores you can open and play right now.';
+
+/**
+ * The result surface's fallback ACTION for a MODERN match with no licensed link
+ * (bundle E, §E.2): the find-a-song search, opened as the app's own search surface
+ * — a real path to the sheet music of a song we could not link, never a fake
+ * button and never a promise. (The piece page's version of the same move is the
+ * retailer SEARCH for a printed edition, `FIND_A_PIECE_LEVER_*` below.)
+ */
+export const SEARCH_FOR_IT_CTA = '🔎 Search for it';
+
+/**
+ * The PIECE PAGE's "find a piece" lever (bundle E, §E.2): the catalog search by
+ * title/composer, for a learner who knows the piece's name and nothing else. It
+ * renders only when the host wired the handler — a lever with no destination is
+ * not a lever (§E.1.1).
+ */
+export const FIND_A_PIECE_LEVER_LABEL = '\ud83d\udd0e Find a piece';
+export const FIND_A_PIECE_LEVER_HINT =
+  'Search our free public-domain library by title or composer.';

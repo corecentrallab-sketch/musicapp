@@ -58,9 +58,10 @@ interface ScoreViewerProps {
   onClose: () => void;
   /**
    * Optional score audio (public-domain ONLY) for the practice player.
-   * Accepts a remote/local uri or a bundled asset id. When omitted, the
-   * viewer shows a subtle "practice audio coming soon" hint instead of a
-   * (fake) player — never a broken or misleading control.
+   * Accepts a remote/local uri or a bundled asset id. When omitted there is NO
+   * practice audio for this piece, so the audio chrome is not rendered at all —
+   * nothing to read mid-piece (§E zero-promise, owner 10-02 Q5: the retired
+   * "🎧 Practice audio coming soon" hint is gone; a promise is not a control).
    */
   audioSource?: ScoreAudioSource | null;
   /** Short honest descriptor for the audio (e.g. "Score audio" / "Preview"). */
@@ -347,19 +348,16 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
           )}
         </View>
 
-        {/* Practice player: score audio + loop + time-stretch. Rendered only
-          when an audio source exists; otherwise a subtle hint (no fake UI).
-          Hidden in immersive mode (nothing plays under the sheet). */}
-        {!immersive &&
-          (audioSource ? (
-            <ScorePlayer source={audioSource} label={audioLabel} />
-          ) : (
-            <View style={styles.audioHint}>
-              <Text style={styles.audioHintText}>
-                🎧 Practice audio coming soon
-              </Text>
-            </View>
-          ))}
+        {/* Practice player: score audio + loop + time-stretch. Rendered ONLY when
+          this piece has its own curated audio; with none, the block is absent
+          entirely (§E zero-promise — the retired practice-audio hint (its exact
+          wording is pinned in scoreAudioSource.ts as the rejected marker) was a
+          promise, not a control, and the owner's Q5 decision is that the label is
+          gone rather than muted). Hidden in immersive mode (nothing plays
+          under the sheet). */}
+        {!immersive && audioSource ? (
+          <ScorePlayer source={audioSource} label={audioLabel} />
+        ) : null}
 
         {/* Auto page-turn (BPM-linked). Collapsible so it costs the sheet no
             space until the user wants it; always visible while running. */}
@@ -616,18 +614,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#0f3460',
     paddingBottom: Platform.OS === 'ios' ? 28 : 10,
-  },
-  audioHint: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    backgroundColor: '#16213e',
-    borderTopWidth: 1,
-    borderTopColor: '#0f3460',
-    alignItems: 'center',
-  },
-  audioHintText: {
-    color: '#6a6a85',
-    fontSize: 13,
   },
   autoTurnEndedBar: {
     flexDirection: 'row',

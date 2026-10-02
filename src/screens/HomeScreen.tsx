@@ -1049,6 +1049,20 @@ export const HomeScreen: React.FC = () => {
     navigation.navigate('Library');
   }, [navigation]);
 
+  // From the modern interstitial: the find-a-song SEARCH for a match the backend
+  // could NOT link to a licensed retailer (§E.2 row 2, bundle E). It reuses the
+  // EXISTING `showFindPiece` flag and the EXISTING `FindPieceScreen` mount — one
+  // search surface, never a second one. Two of the three lines are load-bearing:
+  // the plain `showModernSearch`/`showModernInterstitial` flags are what decide
+  // which screen Home returns (the modern screen is checked BEFORE the search
+  // one, so leaving either true would swallow the search), and the interstitial
+  // is a Modal, so it must come down before the search is swapped in.
+  const handleSearchForItFromModern = useCallback(() => {
+    setShowModernSearch(false);
+    setShowModernInterstitial(false);
+    setModernSurface(IDLE_SURFACE);
+    setShowFindPiece(true);
+  }, []);
   // Close the modern interstitial (its "Done"/✕/BACK all land here).
   const handleCloseModernInterstitial = useCallback(() => {
     setShowModernInterstitial(false);
@@ -1173,6 +1187,7 @@ export const HomeScreen: React.FC = () => {
         onClose={() => setShowModernSearch(false)}
         onHumIt={handleHumItFromModern}
         onBrowseLibrary={handleBrowseLibraryFromModern}
+        onSearchForIt={handleSearchForItFromModern}
       />
     );
   }
@@ -1254,6 +1269,7 @@ export const HomeScreen: React.FC = () => {
         onRetry={handleRetryModernInterstitial}
         onHumIt={handleHumItFromModern}
         onBrowseLibrary={handleBrowseLibraryFromModern}
+        onSearchForIt={handleSearchForItFromModern}
       />
 
       {/* Recognition results modal. The no-match card carries the next step for

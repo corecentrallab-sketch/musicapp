@@ -41,6 +41,11 @@ import { modernSecondaryRetailerUrl } from '../services/purchaseCta';
 // sent one (owner request 09-25 — "Hard Rock", "Modern Jazz", "Ambient"), else the
 // honest generic "Modern song". Never a hardcoded label.
 import { modernGenreLabel, modernGenreLine } from '../services/resultGenre';
+// The honest no-link LINE and the find-a-song SEARCH CTA (§E.2 row 2, bundle E)
+// come from the surface-copy module, so the words the user reads and the words
+// the zero-promise gate scans are ONE source (src/services/promiseAudit.ts scans
+// this file).
+import { MODERN_NO_LINK_LINE, SEARCH_FOR_IT_CTA } from '../services/resultSurface';
 
 export interface ModernInterstitialState {
   /** true while the /api/recognize-modern request is in flight. */
@@ -62,6 +67,15 @@ interface ModernSongInterstitialProps extends ModernInterstitialState {
   onHumIt: () => void;
   /** Navigates to the free public-domain Library. */
   onBrowseLibrary: () => void;
+  /**
+   * Opens the app's find-a-song SEARCH (§E.2 row 2, bundle E) — the same
+   * `FindPieceScreen` the front door's chip and the no-match card open: the
+   * learner types the title/artist and the search resolves to the retailers'
+   * own pages inside our app shell (affiliate-carrying, never a page we host).
+   * It is the real next step for a modern match the backend could NOT link to a
+   * licensed retailer — the retired box promised a link we did not hold.
+   */
+  onSearchForIt: () => void;
 }
 
 export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
@@ -74,6 +88,7 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
   onRetry,
   onHumIt,
   onBrowseLibrary,
+  onSearchForIt,
 }) => {
   // In-app retailer WebView (our own app shell) — preserves the user's position
   // so they land back in NoteSnap. Opened only on explicit button tap.
@@ -258,19 +273,28 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
                   </Text>
                 </TouchableOpacity>
               ) : (
-                /* No retailer link came back for this song. The static
-                   "coming back later" box is gone (bundle C, owner 10-02; §E
-                   zero-promise): a box that promises a link we do not hold is a
-                   dead end. What replaces it is an honest line about what we DO
-                   have, with the card's own real next steps right below it — the
-                   hum/whistle/sing search and the free public-domain library. No
-                   fake button, no placeholder. */
-                <Text style={styles.noLinkText}>
-                  We identified this song, but there's no licensed sheet-music
-                  link for it yet. You can still hum, whistle or sing the melody
-                  to find a free public-domain piece, or browse the free
-                  classical library — both are below.
-                </Text>
+                /* No licensed link came back for this song. The static
+                   "coming back later" box is gone (bundle C, owner 10-02): a box
+                   that promises a link we do not hold is a dead end. §E.2 row 2
+                   (bundle E, owner 10-02) is what replaces it — the honest line
+                   about what we DO have, the shared `MODERN_NO_LINK_LINE`, plus a
+                   REAL next step beside it: `Search for it` opens the app's own
+                   find-a-song search, which resolves the title/artist to the
+                   retailers' pages inside our shell (affiliate-carrying). No fake
+                   button, no placeholder, and still no auto-redirect: the search
+                   opens because the user tapped, never because a match landed.
+                   The hum/library levers below stay as the free next steps. */
+                <View style={styles.noLinkBlock}>
+                  <Text style={styles.noLinkText}>{MODERN_NO_LINK_LINE}</Text>
+                  <TouchableOpacity
+                    style={styles.searchBtn}
+                    onPress={onSearchForIt}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Search for the sheet music for ${match.song}`}
+                  >
+                    <Text style={styles.searchBtnText}>{SEARCH_FOR_IT_CTA}</Text>
+                  </TouchableOpacity>
+                </View>
               )}
 
               {/* SECONDARY retailer (owner-approved 09-23, deduped 10-02): the
@@ -466,6 +490,26 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     textAlign: 'center',
     marginVertical: 4,
+  },
+  // The no-link state's block: the honest line + its real next step, together —
+  // the words and the action live in one block so neither can ship alone (§E.2).
+  noLinkBlock: { width: '100%', alignItems: 'center' },
+  // "Search for it" — the find-a-song search, styled like the other secondary
+  // actions (it is a real destination, not a purchase claim).
+  searchBtn: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    padding: 12,
+    width: '100%',
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
+  searchBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   // SECONDARY retailer CTA (Musicnotes) — visually quieter than the primary buy
   // button: the owner-approved money path stays Sheet Music Direct.

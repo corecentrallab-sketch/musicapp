@@ -15,9 +15,11 @@
  * The owner opened Air on the G String (RC v28, Tests 7a + 7b), tapped the
  * ScoreViewer's Preview button — and heard FÜR ELISE. A piece page must NEVER
  * play a different piece's recording, so the fallback is GONE: a piece with no
- * curated audio gets no player at all and the viewer shows its honest
- * "practice audio coming soon" hint instead (ScoreViewer's own
- * `audioSource ? <ScorePlayer/> : <hint>` branch).
+ * curated audio gets no player at all. The viewer used to fill that slot with an
+ * honest "🎧 Practice audio coming soon" hint; bundle E (owner 10-02, Q5) removed
+ * the hint too — with no audio the chrome is not rendered, so nothing mid-piece
+ * promises audio the app does not have (ScoreViewer's own
+ * `!immersive && audioSource ? <ScorePlayer/> : null` branch).
  *
  * The decision is pure, so the tier1 gate can assert it with no emulator
  * (scripts/scoreAudioSource.test.ts), and the source contracts below fail if the
@@ -34,8 +36,15 @@ import { maskComments } from './modalBackContract';
 /** The honest descriptor for a piece's OWN curated score audio. */
 export const SCORE_AUDIO_LABEL = 'Score audio';
 
-/** What the viewer shows when a piece has no curated audio (never a player). */
-export const NO_SCORE_AUDIO_HINT = '🎧 Practice audio coming soon';
+/**
+ * The RETIRED no-audio hint. It used to fill the viewer's audio slot with
+ * "🎧 Practice audio coming soon" whenever a piece had no curated audio — a
+ * promise in the middle of the sheet, and a D13 site (audit 10-01). Owner Q5
+ * (10-02, bundle E): the label is ABSENT, not muted — with no curated audio the
+ * audio chrome is simply not rendered. The string survives here only as the
+ * marker the source contract rejects.
+ */
+export const RETIRED_NO_SCORE_AUDIO_HINT = '🎧 Practice audio coming soon';
 
 /**
  * The RETIRED universal fallback asset — a different piece's recording (Für
@@ -125,15 +134,24 @@ export function pieceDetailPlaysOnlyCuratedAudio(source: string): boolean {
 }
 
 /**
- * True when the sheet viewer still renders the HONEST no-audio state: the
- * practice player only behind an existing `audioSource`, and the
- * "practice audio coming soon" hint when there is none. Removing the hint would
- * turn every audio-less piece into a silently dead control.
+ * True when the sheet viewer renders the practice player ONLY behind an existing
+ * `audioSource`, and renders NOTHING in its place when there is none.
+ *
+ * This is the bundle-E / Q5 form of the contract (owner 10-02): the retired
+ * "🎧 Practice audio coming soon" hint must not come back, and the viewer must not
+ * grow any other placeholder in its place. Two facts are required together, so
+ * neither half can satisfy it alone:
+ *   • the player is gated on the audio source (`!immersive && audioSource ? … : null`);
+ *   • the retired hint string is gone.
+ * A viewer that dropped the hint but left the player ungated is a fake control; a
+ * viewer that dropped the player entirely is a dead block. Both fail here.
  */
-export function viewerShowsHonestNoAudioHint(source: string): boolean {
+export function viewerRendersNoAudioChrome(source: string): boolean {
   const masked = maskComments(source);
-  return (
-    /audioSource\s*\?\s*\(/.test(masked) &&
-    masked.indexOf(NO_SCORE_AUDIO_HINT) >= 0
-  );
+  if (masked.indexOf(RETIRED_NO_SCORE_AUDIO_HINT) >= 0) return false;
+  if (/\bPractice audio coming soon\b/i.test(masked)) return false;
+  // The gated form: `{!immersive && audioSource ? (<ScorePlayer …/>) : null}`.
+  const gated = /audioSource\s*\?\s*\(\s*[\s\S]{0,200}?<ScorePlayer\b/.test(masked);
+  if (!gated) return false;
+  return /:\s*null\s*\}/.test(masked);
 }
