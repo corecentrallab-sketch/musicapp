@@ -89,6 +89,7 @@ import {
 } from '../services/takeEditor';
 import { staffKeyFromKey, staffKeySignature, takeToAbc } from '../services/takeStaff';
 import { AbcScoreView } from './AbcScoreView';
+import { TakePreviewSection } from './TakePreviewSection';
 import {
   SAVE_COPY_CTA,
   SAVE_COPY_HINT,
@@ -733,10 +734,11 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
             {NOTE_TAG_DETECTED} · {NOTE_TAG_CORRECTED} · {NOTE_TAG_ADDED}
           </Text>
 
-          {/* 7. THE DOCKED PREVIEW (v33 slice G) renders HERE, above the sticky
-              bar — owner-ratified option 4: one control row inside the editor,
-              never a separate screen. */}
-          {/* PREVIEW_SLOT */}
+          {/* 7. THE DOCKED PREVIEW (v33 slice G) — owner-ratified option 4: ONE
+              control row INSIDE this editor, above the sticky save bar. It plays
+              the corrected take (this screen's own notes), never a separate
+              screen and never a second player. */}
+          <TakePreviewSection preview={preview} />
         </ScrollView>
 
         {/* THE STICKY SAVE BAR — the only two writes in the flow. */}

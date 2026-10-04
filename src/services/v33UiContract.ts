@@ -327,6 +327,88 @@ export function correctedTakeIsWhatExports(flowSource: string): boolean {
   return true;
 }
 
+// ────────── G: the docked Hum-Along preview (v33 §G) ──────────
+
+/**
+ * The Hum-Along preview is DOCKED INSIDE the take-correction editor, above the
+ * sticky save bar (owner-ratified option 4, 10-04) — one control row with play/
+ * pause, loop, prev/next, the preview-only tempo rail, the instrument overlays
+ * and the honesty captions. A second Modal (a separate preview screen) fails.
+ *
+ * `editorSource` is src/components/TakeCorrectionEditor.tsx; `sectionSource` is
+ * src/components/TakePreviewSection.tsx.
+ */
+export function previewIsDockedInTheEditor(
+  editorSource: string,
+  sectionSource: string,
+): boolean {
+  const editor = maskComments(editorSource);
+  const section = maskComments(sectionSource);
+  if (section.length < 1500) return false;
+  // The control row, all four controls, each labelled and wired.
+  if (section.indexOf('PREVIEW_PLAY_LABEL') < 0) return false;
+  if (section.indexOf('PREVIEW_PAUSE_LABEL') < 0) return false;
+  if (section.indexOf('PREVIEW_LOOP_ON_LABEL') < 0) return false;
+  if (section.indexOf('PREVIEW_LOOP_OFF_LABEL') < 0) return false;
+  if (section.indexOf('PREVIEW_PREV_LABEL') < 0) return false;
+  if (section.indexOf('PREVIEW_NEXT_LABEL') < 0) return false;
+  if (section.indexOf('preview.toggle') < 0) return false;
+  if (section.indexOf('preview.toggleLoop') < 0) return false;
+  if (section.indexOf('preview.step(-1)') < 0) return false;
+  if (section.indexOf('preview.step(1)') < 0) return false;
+  // The PREVIEW-ONLY tempo rail, the instrument overlays and the captions.
+  if (section.indexOf('preview.setTempoPct(') < 0) return false;
+  if (section.indexOf('previewTempoLabel(preview.tempoPct)') < 0) return false;
+  if (section.indexOf('PREVIEW_TEMPO_CAPTION') < 0) return false;
+  if (section.indexOf('PREVIEW_INSTRUMENTS.map(') < 0) return false;
+  if (section.indexOf('preview.setInstrument(') < 0) return false;
+  if (section.indexOf('PREVIEW_ONLY_CAPTION') < 0) return false;
+  // …inside ≥44dp targets.
+  if (countOf(section, 'minHeight: 44') < 2) return false;
+
+  // DOCKED: rendered in the editor's own scroll body, ABOVE the sticky save bar.
+  if (editor.indexOf('<TakePreviewSection preview={preview} />') < 0) return false;
+  if (!appearsInOrder(editor, ['styles.body', '<TakePreviewSection', 'styles.saveBar'])) return false;
+  // ONE screen: the editor owns exactly one Modal (a separate preview screen
+  // would be a second one — the treatment the owner rejected on 10-04).
+  if (countOf(editor, '<Modal') !== 1) return false;
+  return true;
+}
+
+/** Operations that WRITE a take — none of them may appear in the preview engine. */
+const TAKE_WRITERS: readonly string[] = [
+  'setNoteBoundary(',
+  'setNotePitch(',
+  'addNoteAfter(',
+  'removeNote(',
+  'insertRestAfter(',
+  'transposeTake(',
+  'requantizeTake(',
+];
+
+/**
+ * The preview engine READS the take and nothing else: it builds the timeline from
+ * takePreview.buildPreviewTimeline, runs on a plain JS clock, plays the generated
+ * tone bank, and never contains a take-writing operation — which is the
+ * "tempo slider must never rewrite note times" rule, enforced at the source.
+ *
+ * `hookSource` is src/hooks/useNotePreview.ts.
+ */
+export function previewEngineNeverRewritesTheTake(hookSource: string): boolean {
+  const hook = maskComments(hookSource);
+  if (hook.length < 1200) return false;
+  if (hook.indexOf('buildPreviewTimeline(') < 0) return false;
+  if (hook.indexOf('setInterval(') < 0) return false;
+  if (hook.indexOf('PREVIEW_TICK_MS') < 0) return false;
+  if (hook.indexOf('cursorIndexAt(') < 0) return false;
+  if (hook.indexOf('clampPreviewTempo(') < 0) return false;
+  if (hook.indexOf('toneSourceFor(') < 0) return false;
+  for (const writer of TAKE_WRITERS) {
+    if (hook.indexOf(writer) >= 0) return false;
+  }
+  return true;
+}
+
 /**
  * The action bar: Export MIDI · "Find this melody ›" · Record another melody ·
  * Done, each WIRED (a rendered control with no handler is the dead-CTA class this

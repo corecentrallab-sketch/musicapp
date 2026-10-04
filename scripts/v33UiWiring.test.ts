@@ -20,6 +20,8 @@ import {
   editorSurfaceCorrectsEveryFact,
   editorWritesThroughOneSeam,
   matchResultsAreOffThePage,
+  previewEngineNeverRewritesTheTake,
+  previewIsDockedInTheEditor,
   staffCardDrawsBothRows,
   staffIsTheUsersOwnTake,
   takeActionBarWired,
@@ -428,6 +430,80 @@ assertEq(
   correctedTakeIsWhatExports(driftExport),
   false,
   'MUTATION: an export that ignores the corrected take FAILS correctedTakeIsWhatExports',
+);
+
+// ────────── slice G — the docked Hum-Along preview ──────────
+const PREVIEW_SECTION = 'src/components/TakePreviewSection.tsx';
+const PREVIEW_HOOK = 'src/hooks/useNotePreview.ts';
+
+const previewSectionSource = readAppFile(PREVIEW_SECTION);
+const previewHookSource = readAppFile(PREVIEW_HOOK);
+
+console.log('\nslice G — the preview is DOCKED in the editor (owner 10-04 option 4)');
+assert(
+  previewSectionSource.length > 1500,
+  `read ${PREVIEW_SECTION} (${previewSectionSource.length} chars)`,
+);
+assertEq(
+  previewIsDockedInTheEditor(editorSource, previewSectionSource),
+  true,
+  'the control row (play/pause, loop, prev/next, preview-only tempo, instruments, captions) is docked above the save bar',
+);
+assertEq(
+  previewEngineNeverRewritesTheTake(previewHookSource),
+  true,
+  'the engine reads the take only: timeline + JS clock + tone bank, no writing operation anywhere',
+);
+
+// MUTATION 24: a SEPARATE preview screen (a second Modal) — the treatment the
+// owner rejected on 10-04.
+const secondScreen = editorSource.replace(
+  '<TakePreviewSection preview={preview} />',
+  '<Modal visible={false}><TakePreviewSection preview={preview} /></Modal>',
+);
+assert(secondScreen !== editorSource, 'the second-screen mutation changed the real editor');
+assertEq(
+  previewIsDockedInTheEditor(secondScreen, previewSectionSource),
+  false,
+  'MUTATION: a separate preview screen FAILS previewIsDockedInTheEditor',
+);
+// MUTATION 25: the preview section disappears from the editor.
+const undocked = editorSource.replace('<TakePreviewSection preview={preview} />', '');
+assert(undocked !== editorSource, 'the undocked mutation changed the real editor');
+assertEq(
+  previewIsDockedInTheEditor(undocked, previewSectionSource),
+  false,
+  'MUTATION: an editor with no docked preview FAILS previewIsDockedInTheEditor',
+);
+// MUTATION 26: the "preview only" honesty caption is dropped from the surface.
+const noCaption = previewSectionSource
+  .split('PREVIEW_ONLY_CAPTION')
+  .join('PREVIEW_HONESTY_LINE_MISSING');
+assert(noCaption !== previewSectionSource, 'the no-caption mutation changed the real section');
+assertEq(
+  previewIsDockedInTheEditor(editorSource, noCaption),
+  false,
+  'MUTATION: a preview with no "preview only" caption FAILS previewIsDockedInTheEditor',
+);
+// MUTATION 27: the tempo rail stops being preview-only (the hook gains a take
+// writer — exactly the drift the brief forbids).
+const rewritingTempo = previewHookSource.replace(
+  'const [tempoPct, setTempoState]',
+  'setNoteBoundary(null as never, "", "end", 0);\n  const [tempoPct, setTempoState]',
+);
+assert(rewritingTempo !== previewHookSource, 'the rewriting-tempo mutation changed the real hook');
+assertEq(
+  previewEngineNeverRewritesTheTake(rewritingTempo),
+  false,
+  'MUTATION: a preview engine that can write note times FAILS previewEngineNeverRewritesTheTake',
+);
+// MUTATION 28: the JS clock goes (the preview would rely on something else).
+const noClock = previewHookSource.replace('setInterval(', 'fakeClock(');
+assert(noClock !== previewHookSource, 'the no-clock mutation changed the real hook');
+assertEq(
+  previewEngineNeverRewritesTheTake(noClock),
+  false,
+  'MUTATION: a preview with no clock FAILS previewEngineNeverRewritesTheTake',
 );
 
 console.log(`\n${passes} passed, ${failures} failed`);
