@@ -79,6 +79,17 @@ export interface StaffKey {
   mode: KeyMode;
 }
 
+/**
+ * The staff's key, from the app's own key decision. Null stays null: a take too
+ * thin to name a key is drawn with no signature rather than a guessed one.
+ */
+export function staffKeyFromKey(
+  key: { tonic?: number; mode?: string } | null | undefined,
+): StaffKey | null {
+  if (!key || !Number.isFinite(key.tonic)) return null;
+  return { tonic: mod12(Number(key.tonic)), mode: key.mode === 'minor' ? 'minor' : 'major' };
+}
+
 /** How a key signature alters each letter: 0 natural, 1 sharp, −1 flat. */
 export type KeyAccidentals = Record<StaffLetter, number>;
 

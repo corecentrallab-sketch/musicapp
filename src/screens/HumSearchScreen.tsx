@@ -95,6 +95,10 @@ import {
 // lands on. Mounted here as an overlay — the capture window stays mounted
 // underneath, so closing the card reveals the user's own melody again.
 import { RecognitionResultView } from '../components/RecognitionResultView';
+// THE TAKE AS NOTATION (v33 §C): the staff card the capture window renders in
+// its `staff` slot — the dimmed raw trace, the "auto-clean ✦" divider and the
+// crisp auto-cleaned line, with the take's SUGGESTED chords above the staff.
+import { TakeStaffCard } from '../components/TakeStaffCard';
 import type { RecognitionResponse, SavedPiece } from '../types';
 import type { SavedCaptureTake } from '../services/midiExport';
 
@@ -547,6 +551,24 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
   const windowPhase: MelodyWindowPhase =
     stage === 'recording' ? 'recording' : stage === 'analysing' ? 'analysing' : 'review';
 
+  /**
+   * THE TAKE AS NOTATION (v33 §C). The window owns no renderer, so the flow
+   * builds the card and hands it in. It is only built for a take that has notes
+   * (a silent or unreadable take keeps the window's own honest state card), and
+   * every note on it comes from THIS take — never from a matched song.
+   */
+  const staffCard = useMemo(() => {
+    if (!take || analysis?.state !== 'ready') return null;
+    return (
+      <TakeStaffCard
+        take={take}
+        chordNames={analysis.chords.chords.map((chord) => chord.name)}
+        chordHonestLine={analysis.chords.honestLine}
+        title={analysis.rowTitle}
+      />
+    );
+  }, [take, analysis]);
+
   return (
     <MelodyCaptureWindow
       phase={windowPhase}
@@ -570,6 +592,7 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
       exporting={exporting}
       exportNote={exportNote}
       exportKeyLine={exportKey}
+      staff={staffCard}
       copy={CAPTURE_COPY}
     >
       {recorder.error && !recorder.isRecording && (

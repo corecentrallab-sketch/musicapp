@@ -13,8 +13,11 @@
  * Plain Node, no react-native, no network. Run with: npm run test:tier1
  */
 import {
+  abcViewHasInkSeam,
   capturePageIsCaptureOnly,
   matchResultsAreOffThePage,
+  staffCardDrawsBothRows,
+  staffIsTheUsersOwnTake,
   takeActionBarWired,
 } from '../src/services/v33UiContract';
 import {
@@ -205,6 +208,96 @@ assertEq(
   matchResultsAreOffThePage(windowSource, escapedCard),
   false,
   'MUTATION: a miss card not reachable through the explicit step FAILS the contract',
+);
+
+// ─────────────────── slice C — the take drawn as a staff ───────────────────
+const STAFF_CARD = 'src/components/TakeStaffCard.tsx';
+const ABC_VIEW = 'src/components/AbcScoreView.tsx';
+
+const staffConflict = (() => {
+  try {
+    return readAppFile(STAFF_CARD);
+  } catch {
+    return '';
+  }
+})();
+const abcViewSource = readAppFile(ABC_VIEW);
+
+console.log('\nslice C — the take as notation (dimmed raw + crisp auto-cleaned)');
+assert(staffConflict.length > 1500, `read ${STAFF_CARD} (${staffConflict.length} chars)`);
+assertEq(
+  staffCardDrawsBothRows(staffConflict),
+  true,
+  'the staff card draws BOTH rows: dimmed raw ink, the auto-clean ✦ divider, the teal cleaned line',
+);
+assertEq(
+  staffIsTheUsersOwnTake(flowSource, windowSource),
+  true,
+  'the staff is built from the decoded take and handed in through the window slot',
+);
+assertEq(
+  abcViewHasInkSeam(abcViewSource),
+  true,
+  'the one renderer grew the ink seam (foregroundColor + CSS + reload key)',
+);
+
+// MUTATION 8: the two rows collapse into one ink (no before/after reading).
+const sameInk = staffConflict.replace(
+  'ink={TAKE_STAFF_CLEANED_INK}',
+  'ink={TAKE_STAFF_RAW_INK}',
+);
+assert(sameInk !== staffConflict, 'the same-ink mutation changed the real card');
+assertEq(
+  staffCardDrawsBothRows(sameInk),
+  false,
+  'MUTATION: one ink for both rows FAILS staffCardDrawsBothRows',
+);
+// MUTATION 9: the second render disappears (only the raw trace is drawn).
+const singleRow = staffConflict.replace(/<AbcScoreView[\s\S]*?\/>/, '');
+assert(singleRow !== staffConflict, 'the single-row mutation changed the real card');
+assertEq(
+  staffCardDrawsBothRows(singleRow),
+  false,
+  'MUTATION: a card that draws only one row FAILS staffCardDrawsBothRows',
+);
+// MUTATION 10: the divider is hard-coded in the view instead of coming from the
+// model (the label could then drift from AUTO_CLEAN_DIVIDER_LABEL).
+const hardcodedDivider = staffConflict.replace('{rows.dividerLabel}', "{'auto-clean' + ' ✦'}");
+assert(hardcodedDivider !== staffConflict, 'the divider mutation changed the real card');
+assertEq(
+  staffCardDrawsBothRows(hardcodedDivider),
+  false,
+  'MUTATION: a hard-coded divider label FAILS staffCardDrawsBothRows',
+);
+// MUTATION 11: the card stops using the app's cleaning pass (its own notes).
+const ownNotes = staffConflict.replace('autoCleanTake(', 'myOwnClean(');
+assert(ownNotes !== staffConflict, 'the own-cleaning mutation changed the real card');
+assertEq(
+  staffCardDrawsBothRows(ownNotes),
+  false,
+  'MUTATION: a card that cleans the take itself FAILS staffCardDrawsBothRows',
+);
+// MUTATION 12: the ink seam is dropped from the renderer (the raw/cleaned
+// distinction would silently become one colour).
+const noOption = abcViewSource.replace('foregroundColor: ink', 'foregroundColor: "#000000"');
+assert(noOption !== abcViewSource, 'the ink-option mutation changed the real renderer');
+assertEq(
+  abcViewHasInkSeam(noOption),
+  false,
+  'MUTATION: a renderer that ignores the ink FAILS abcViewHasInkSeam',
+);
+assertEq(
+  abcViewHasInkSeam('<div>export function generateAbcHtml(abc: string) { return abc; }</div>'),
+  false,
+  'MUTATION: the pre-v33 renderer signature FAILS abcViewHasInkSeam',
+);
+// MUTATION 13: the flow stops passing the card through the window slot.
+const notPassed = flowSource.replace('staff={staffCard}', 'staffVisible');
+assert(notPassed !== flowSource, 'the unpassed-staff mutation changed the real flow');
+assertEq(
+  staffIsTheUsersOwnTake(notPassed, windowSource),
+  false,
+  'MUTATION: a card built but never handed to the window FAILS staffIsTheUsersOwnTake',
 );
 
 console.log(`\n${passes} passed, ${failures} failed`);

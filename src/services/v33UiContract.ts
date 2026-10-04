@@ -78,6 +78,114 @@ export function capturePageIsCaptureOnly(windowSource: string): boolean {
   return true;
 }
 
+// ─────────────────── C: the take drawn as a staff (v33 §C) ───────────────────
+
+/** How many times a marker appears in a source (the "two rows" test). */
+export function countOf(source: string, marker: string): number {
+  if (!marker) return 0;
+  let at = source.indexOf(marker);
+  let count = 0;
+  while (at >= 0) {
+    count += 1;
+    at = source.indexOf(marker, at + marker.length);
+  }
+  return count;
+}
+
+/**
+ * The staff card draws the take TWICE — the dimmed raw trace, then the crisp
+ * auto-cleaned line — with the "auto-clean ✦" divider between them and the
+ * suggested chords above the staff.
+ *
+ * `cardSource` is src/components/TakeStaffCard.tsx.
+ */
+export function staffCardDrawsBothRows(cardSource: string): boolean {
+  const masked = maskComments(cardSource);
+  if (masked.length < 1500) return false;
+  // The rows come from the take ALONE: the app's own cleaning pass, then the
+  // pure ABC builder. A card that builds its own notes could drift from the
+  // sequence, the MIDI export and the editor.
+  if (masked.indexOf('autoCleanTake(') < 0) return false;
+  if (masked.indexOf('takeStaffRows(') < 0) return false;
+  if (masked.indexOf('staffKeyFromKey(') < 0) return false;
+  // TWO renders of the SAME renderer: raw + cleaned.
+  if (countOf(masked, '<AbcScoreView') < 2) return false;
+  if (masked.indexOf('rows.rawAbc') < 0) return false;
+  if (masked.indexOf('rows.cleanedAbc') < 0) return false;
+  // The raw trace is DIMMED (the theme's raw ink) and the cleaned line is CRISP
+  // (the app's teal) — the whole point of the two rows.
+  if (masked.indexOf('ink={TAKE_STAFF_RAW_INK}') < 0) return false;
+  if (masked.indexOf('ink={TAKE_STAFF_CLEANED_INK}') < 0) return false;
+  if (!/TAKE_STAFF_CLEANED_INK\s*=\s*'#4ecdc4'/.test(masked)) return false;
+  // …in that order, with the divider label BETWEEN them (and from the model,
+  // never a second copy of the string in the view).
+  if (
+    !appearsInOrder(masked, [
+      'ink={TAKE_STAFF_RAW_INK}',
+      'rows.dividerLabel',
+      'ink={TAKE_STAFF_CLEANED_INK}',
+    ])
+  ) {
+    return false;
+  }
+  // The chord chips sit ABOVE the staff.
+  if (!appearsInOrder(masked, ['styles.chordChip', 'ink={TAKE_STAFF_RAW_INK}'])) return false;
+  // The two honest lines and the empty state are rendered (never silence).
+  if (masked.indexOf('STAFF_RAW_HONESTY') < 0) return false;
+  if (masked.indexOf('STAFF_CLEANED_HONESTY') < 0) return false;
+  if (masked.indexOf('STAFF_EMPTY_LINE') < 0) return false;
+  if (masked.indexOf('STAFF_CAPTION') < 0) return false;
+  return true;
+}
+
+/**
+ * The staff is fed the take and only the take (v33 §C's standing rule): the flow
+ * builds the card from the decoded take + its own analysis, and passes it through
+ * the window's `staff` slot. A matched song's notation never reaches this card.
+ *
+ * `flowSource` is src/screens/HumSearchScreen.tsx; `windowSource` is
+ * src/components/MelodyCaptureWindow.tsx.
+ */
+export function staffIsTheUsersOwnTake(flowSource: string, windowSource: string): boolean {
+  const flow = maskComments(flowSource);
+  const window = maskComments(windowSource);
+  if (flow.indexOf('<TakeStaffCard') < 0) return false;
+  if (flow.indexOf('take={take}') < 0) return false;
+  if (flow.indexOf('analysis.chords.chords') < 0) return false;
+  // Only a take with notes is drawn (a silent take keeps the honest state card).
+  if (flow.indexOf("analysis?.state !== 'ready'") < 0) return false;
+  // The flow hands it in through the window's own slot.
+  if (flow.indexOf('staff={staffCard}') < 0) return false;
+  if (window.indexOf('staff?: React.ReactNode') < 0) return false;
+  if (window.indexOf('{analysis.state === \'ready\' ? staff : null}') < 0) return false;
+  // A matched song never renders notation on this card: the card is built from
+  // the take, and no match object is passed to it.
+  if (/<TakeStaffCard[\s\S]{0,400}(humResult|topMatch|matchLine)/.test(flow)) return false;
+  return true;
+}
+
+/**
+ * The one renderer grows an INK seam instead of a second renderer (v33 §C):
+ * `generateAbcHtml(abc, ink, background)` puts the ink into the ABCjs options
+ * (`foregroundColor`) and into the document's own CSS, and the WebView reloads
+ * when it changes.
+ *
+ * `viewSource` is src/components/AbcScoreView.tsx.
+ */
+export function abcViewHasInkSeam(viewSource: string): boolean {
+  const masked = maskComments(viewSource);
+  if (masked.length < 1200) return false;
+  if (!/export function generateAbcHtml\(\s*abc: string,\s*ink: string/.test(masked)) return false;
+  if (masked.indexOf('foregroundColor: ink') < 0) return false;
+  // The document's own CSS takes the same ink, so lines and text follow too.
+  if (!/fill: \$\{ink\}/.test(masked)) return false;
+  if (masked.indexOf('background: ${background}') < 0) return false;
+  // The prop exists and is threaded through the render + the WebView key.
+  if (masked.indexOf('ink?: string') < 0) return false;
+  if (masked.indexOf('generateAbcHtml(abc, ink, background)') < 0) return false;
+  return true;
+}
+
 /**
  * The action bar: Export MIDI · "Find this melody ›" · Record another melody ·
  * Done, each WIRED (a rendered control with no handler is the dead-CTA class this
