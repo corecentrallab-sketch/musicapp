@@ -15,6 +15,10 @@
 import {
   abcViewHasInkSeam,
   capturePageIsCaptureOnly,
+  correctedTakeIsWhatExports,
+  editorReachedFromBothDoors,
+  editorSurfaceCorrectsEveryFact,
+  editorWritesThroughOneSeam,
   matchResultsAreOffThePage,
   staffCardDrawsBothRows,
   staffIsTheUsersOwnTake,
@@ -298,6 +302,132 @@ assertEq(
   staffIsTheUsersOwnTake(notPassed, windowSource),
   false,
   'MUTATION: a card built but never handed to the window FAILS staffIsTheUsersOwnTake',
+);
+
+// ────────────── slice D — the take-correction editor ──────────────
+const EDITOR = 'src/components/TakeCorrectionEditor.tsx';
+const CORRECTED_STORE = 'src/services/correctedTakeStore.ts';
+const HISTORY = 'src/screens/HistoryScreen.tsx';
+
+const editorSource = readAppFile(EDITOR);
+const correctedStoreSource = readAppFile(CORRECTED_STORE);
+const historySource = readAppFile(HISTORY);
+
+console.log('\nslice D — the take-correction editor (no drift paths)');
+assert(editorSource.length > 8000, `read ${EDITOR} (${editorSource.length} chars)`);
+assertEq(
+  editorSurfaceCorrectsEveryFact(editorSource),
+  true,
+  'the editor routes every correction (pitch + audible verify, drag boundaries, add/remove/rest, chords, undo/redo/reset) in ≥44dp targets',
+);
+assertEq(
+  editorWritesThroughOneSeam(correctedStoreSource, editorSource),
+  true,
+  'both save actions write through ONE seam and the corrected take stays a plain note list',
+);
+assertEq(
+  editorReachedFromBothDoors(flowSource, historySource),
+  true,
+  'the editor is reachable from the capture window AND from a History melody row',
+);
+assertEq(
+  correctedTakeIsWhatExports(flowSource),
+  true,
+  'the take the page shows is the take that gets exported (no re-decode over the corrections)',
+);
+
+// MUTATION 14: the rail stops playing the pitch it sets (no audible verify).
+const silentRail = editorSource.replace(
+  '(stateRef.current, selected.id, midi), midi)',
+  '(stateRef.current, selected.id, midi))',
+);
+assert(silentRail !== editorSource, 'the silent-rail mutation changed the real editor');
+assertEq(
+  editorSurfaceCorrectsEveryFact(silentRail),
+  false,
+  'MUTATION: a semitone rail that does NOT play the pitch FAILS editorSurfaceCorrectsEveryFact',
+);
+// MUTATION 15: the drag layer disappears (tap-only editing).
+const noDrag = editorSource.split('PanResponder.create').join('PanResponderGone.create');
+assert(noDrag !== editorSource, 'the no-drag mutation changed the real editor');
+assertEq(
+  editorSurfaceCorrectsEveryFact(noDrag),
+  false,
+  'MUTATION: an editor with no drag gestures FAILS editorSurfaceCorrectsEveryFact',
+);
+// MUTATION 16: the boundary handles go (timing can no longer be dragged).
+const noHandles = editorSource.replace("boundaryPan('end')", "boundaryPan('start')");
+assert(noHandles !== editorSource, 'the no-handles mutation changed the real editor');
+assertEq(
+  editorSurfaceCorrectsEveryFact(noHandles),
+  false,
+  'MUTATION: an editor with only one boundary handle FAILS editorSurfaceCorrectsEveryFact',
+);
+// MUTATION 17: "Save a copy" quietly becomes a second "Save & update".
+const noCopy = editorSource.replace("void doSave('copy')", "void doSave('update')");
+assert(noCopy !== editorSource, 'the no-copy mutation changed the real editor');
+assertEq(
+  editorSurfaceCorrectsEveryFact(noCopy),
+  false,
+  'MUTATION: one save action instead of two FAILS editorSurfaceCorrectsEveryFact',
+);
+// MUTATION 18: the 44dp targets shrink to thumb-hostile ones.
+const tinyTargets = editorSource.split('minHeight: 44').join('minHeight: 32');
+assert(tinyTargets !== editorSource, 'the tiny-target mutation changed the real editor');
+assertEq(
+  editorSurfaceCorrectsEveryFact(tinyTargets),
+  false,
+  'MUTATION: sub-44dp targets FAIL editorSurfaceCorrectsEveryFact',
+);
+// MUTATION 19: the copy path stops writing the take through the row seam.
+const copyBypass = correctedStoreSource.replace(
+  'ok = await updatePersonalMelodyTake(row.id, take);',
+  'ok = true;',
+);
+assert(copyBypass !== correctedStoreSource, 'the copy-bypass mutation changed the real store');
+assertEq(
+  editorWritesThroughOneSeam(copyBypass, editorSource),
+  false,
+  'MUTATION: a copy written outside the seam FAILS editorWritesThroughOneSeam',
+);
+// MUTATION 20: the corrected take stops being written onto the row it came from.
+const orphanSave = correctedStoreSource.replace(
+  'ok = await updatePersonalMelodyTake(input.rowId, take);',
+  'ok = false;',
+);
+assert(orphanSave !== correctedStoreSource, 'the orphan-save mutation changed the real store');
+assertEq(
+  editorWritesThroughOneSeam(orphanSave, editorSource),
+  false,
+  'MUTATION: an update path that writes nothing FAILS editorWritesThroughOneSeam',
+);
+// MUTATION 21: the History row's editor door is dropped (one door only).
+const oneDoor = historySource.replace('rowId={editTake.id}', 'rowId={null}');
+assert(oneDoor !== historySource, 'the one-door mutation changed the real History screen');
+assertEq(
+  editorReachedFromBothDoors(flowSource, oneDoor),
+  false,
+  'MUTATION: a History row that cannot open the editor FAILS editorReachedFromBothDoors',
+);
+// MUTATION 22: the flow stops passing the take it saves (the editor would open empty).
+const noTakeProp = historySource.replace('take={editTake.capture ?? null}', 'take={null}');
+assert(noTakeProp !== historySource, 'the no-take mutation changed the real History screen');
+assertEq(
+  editorReachedFromBothDoors(flowSource, noTakeProp),
+  false,
+  'MUTATION: an editor opened without the row take FAILS editorReachedFromBothDoors',
+);
+// MUTATION 23: the export goes back to re-decoding the recording first (the
+// pre-fix drift path: corrections exported as the raw take).
+const driftExport = flowSource.replace(
+  'exportCaptureMidiFromTake(take, { title: analysis?.rowTitle });',
+  'exportCaptureMidiFromTake(preEditTake, { title: analysis?.rowTitle });',
+);
+assert(driftExport !== flowSource, 'the drift-export mutation changed the real flow');
+assertEq(
+  correctedTakeIsWhatExports(driftExport),
+  false,
+  'MUTATION: an export that ignores the corrected take FAILS correctedTakeIsWhatExports',
 );
 
 console.log(`\n${passes} passed, ${failures} failed`);

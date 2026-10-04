@@ -99,6 +99,11 @@ import { RecognitionResultView } from '../components/RecognitionResultView';
 // its `staff` slot — the dimmed raw trace, the "auto-clean ✦" divider and the
 // crisp auto-cleaned line, with the take's SUGGESTED chords above the staff.
 import { TakeStaffCard } from '../components/TakeStaffCard';
+// THE TAKE-CORRECTION EDITOR (v33 §D): the full-screen surface that corrects the
+// notes, pitch, timing and chords of THIS take. It saves through the one seam
+// (services/correctedTakeStore), and the flow re-reads the corrected take so the
+// sequence, the key, the chords, the MIDI export and History all show it.
+import { TakeCorrectionEditor } from '../components/TakeCorrectionEditor';
 import type { RecognitionResponse, SavedPiece } from '../types';
 import type { SavedCaptureTake } from '../services/midiExport';
 
@@ -184,6 +189,13 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [capturedAt, setCapturedAt] = useState<string>('');
   const [analysis, setAnalysis] = useState<MelodyAnalysis | null>(null);
+  /**
+   * THE TAKE-CORRECTION EDITOR'S state (v33 §D). While it is open the flow holds
+   * the take it was handed; when the user SAVES, the corrected take replaces it
+   * here, so the sequence, the staff, the key, the chords, the MIDI export and
+   * the History row all move together — one take, one source of truth.
+   */
+  const [editorOpen, setEditorOpen] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -438,6 +450,7 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
     setHumResult(null);
     setAnalysis(null);
     setTake(null);
+    setEditorOpen(false);
     setAudioUri(null);
     setTakeUri(null);
     setSaved(false);
@@ -474,7 +487,15 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
     setExportNote(null);
     setExportKey(null);
     try {
-      if (takeUri) {
+      if (take) {
+        // THE TAKE THIS PAGE SHOWS IS WHAT GETS EXPORTED (v33 §D). Re-decoding the
+        // recording here would silently export the PRE-correction take, so the
+        // displayed take (which the editor's corrections are written into) is the
+        // source of truth for the export, exactly as it is for History.
+        const result = await exportCaptureMidiFromTake(take, { title: analysis?.rowTitle });
+        setExportNote(result.message);
+        setExportKey(keyCaption(result.key));
+      } else if (takeUri) {
         const result = await exportCaptureMidiFromRecording({ uri: takeUri });
         setExportNote(result.message);
         // The key the FILE was written in (the SMF key-signature verdict), or
@@ -569,32 +590,61 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
     );
   }, [take, analysis]);
 
+  /**
+   * A SAVED CORRECTION (v33 §D). The editor has already written the corrected
+   * take through the one seam; the flow adopts it, so the sequence, the staff,
+   * the key, the chords and the MIDI export all describe the CORRECTED take from
+   * here on. The editor stays open (the user may keep correcting) and its own
+   * save line says what happened.
+   */
+  const handleTakeCorrected = useCallback((corrected: SavedCaptureTake) => {
+    setTake(corrected);
+    setAnalysis(buildMelodyAnalysis(corrected));
+    setSaved(true);
+    setSaveNote(null);
+  }, []);
+
   return (
-    <MelodyCaptureWindow
-      phase={windowPhase}
-      levels={recorder.liveLevels}
-      elapsedMs={elapsedMs}
-      // This build has NO live pitch source (the recorder hands us the finished
-      // clip and a dB level, not a PCM stream), so the window says in words that
-      // the notes are written when the take ends. The strip renders live notes
-      // the moment a frame source can supply them.
-      liveSourceReady={false}
-      analysis={analysis}
-      onFindMelody={handleFindMelody}
-      findingMelody={matchState === 'checking'}
-      findNote={findNote}
-      onStop={handleStop}
-      onClose={onClose}
-      onRecordAgain={handleRetry}
-      saved={saved}
-      saveNote={saveNote}
-      onExportMidi={handleExportMidi}
-      exporting={exporting}
-      exportNote={exportNote}
-      exportKeyLine={exportKey}
-      staff={staffCard}
-      copy={CAPTURE_COPY}
-    >
+    <>
+      {/* THE TAKE-CORRECTION EDITOR (v33 §D) — mounted here, driven by the take
+          this flow holds, reached through the window's own "Correct notes, pitch
+          or chords ›" door. */}
+      <TakeCorrectionEditor
+        visible={editorOpen}
+        take={take}
+        rowId={analysis?.rowId ?? null}
+        audioUri={audioUri}
+        frames={null}
+        onSaved={handleTakeCorrected}
+        onClose={() => setEditorOpen(false)}
+      />
+
+      <MelodyCaptureWindow
+        phase={windowPhase}
+        levels={recorder.liveLevels}
+        elapsedMs={elapsedMs}
+        // This build has NO live pitch source (the recorder hands us the finished
+        // clip and a dB level, not a PCM stream), so the window says in words that
+        // the notes are written when the take ends. The strip renders live notes
+        // the moment a frame source can supply them.
+        liveSourceReady={false}
+        analysis={analysis}
+        onFindMelody={handleFindMelody}
+        findingMelody={matchState === 'checking'}
+        findNote={findNote}
+        onStop={handleStop}
+        onClose={onClose}
+        onRecordAgain={handleRetry}
+        saved={saved}
+        saveNote={saveNote}
+        onExportMidi={handleExportMidi}
+        exporting={exporting}
+        exportNote={exportNote}
+        exportKeyLine={exportKey}
+        staff={staffCard}
+        onCorrectTake={() => setEditorOpen(true)}
+        copy={CAPTURE_COPY}
+      >
       {recorder.error && !recorder.isRecording && (
         <View style={styles.errorCard}>
           <Text style={styles.errorText}>{recorder.error}</Text>
@@ -694,7 +744,8 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
           }}
         />
       ) : null}
-    </MelodyCaptureWindow>
+      </MelodyCaptureWindow>
+    </>
   );
 };
 

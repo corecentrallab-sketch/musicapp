@@ -74,9 +74,12 @@ import { keyCaption } from '../services/keyDetection';
 // a row is a melody rather than a recognized piece — a melody id resolves to no
 // catalog piece, so tapping one must NOT go to the piece page (it would be an
 // honest "coming soon" with the user's own tune behind it, i.e. a dead end).
-import { personalMelodyFromRow } from '../services/melodyCapture';
+import { personalMelodyFromRow, CORRECT_TAKE_CTA } from '../services/melodyCapture';
 // The capture window itself, mounted in place to re-open a saved melody.
 import { HumSearchScreen } from './HumSearchScreen';
+// THE TAKE-CORRECTION EDITOR (v33 §D) — the same component the capture window
+// opens, mounted here for a History melody row.
+import { TakeCorrectionEditor } from '../components/TakeCorrectionEditor';
 import type { DailyChallengePiece, SavedPiece } from '../types';
 
 /** Zeroed streak (engine-derived) used until the first read resolves. */
@@ -112,6 +115,15 @@ export const HistoryScreen: React.FC = () => {
    * destination, and the ✕/BACK always comes back to this list.
    */
   const [openMelody, setOpenMelody] = useState<SavedPiece | null>(null);
+  /**
+   * THE TAKE-CORRECTION EDITOR (v33 §D), opened from a melody row's own action.
+   * The row carries the take, the row id and the kept clip, so the SAME editor
+   * component the capture window opens is driven entirely by this row: no second
+   * editor, no second save path.
+   */
+  const [editTake, setEditTake] = useState<SavedPiece | null>(null);
+  /** The honest line a saved correction leaves on that row. */
+  const [editTakeNote, setEditTakeNote] = useState<{ id: string; text: string } | null>(null);
   /**
    * The History search box's query (owner 10-01). It filters the SAVED
    * recognitions in memory — no network, no catalog — so looking for "the piece I
@@ -403,6 +415,23 @@ export const HistoryScreen: React.FC = () => {
               {exportNote?.id === item.id && (
                 <Text style={styles.midiNote}>{exportNote.text}</Text>
               )}
+              {/* THE TAKE-CORRECTION EDITOR'S SECOND DOOR (v33 §D). The brief's §2
+                  says the editor is reached from the capture window AND from a
+                  History melody row — the SAME component, no third copy — and the
+                  correction re-saves onto this row, so the row's take, its MIDI
+                  export and the playback all read what the user corrected. */}
+              <TouchableOpacity
+                style={styles.editTakeBtn}
+                onPress={() => setEditTake(item)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${CORRECT_TAKE_CTA} for ${item.title}`}
+              >
+                <Text style={styles.editTakeBtnText}>{CORRECT_TAKE_CTA}</Text>
+              </TouchableOpacity>
+              {editTakeNote?.id === item.id && (
+                <Text style={styles.midiNote}>{editTakeNote.text}</Text>
+              )}
             </>
           ) : null}
         </View>
@@ -588,6 +617,31 @@ export const HistoryScreen: React.FC = () => {
           onClose={() => setPurchaseWebUrl(null)}
         />
       )}
+
+      {/* THE TAKE-CORRECTION EDITOR, mounted at the screen's root like the shell
+          above. It writes the corrected take onto THIS row through the one seam
+          (services/correctedTakeStore), so the row's take line, its key, its MIDI
+          export and the launch+1 playback all read the correction. */}
+      {editTake ? (
+        <TakeCorrectionEditor
+          visible
+          take={editTake.capture ?? null}
+          rowId={editTake.id}
+          audioUri={editTake.personalMelody?.audioUri ?? null}
+          frames={null}
+          onSaved={(_corrected, _mode, savedRowId) => {
+            setEditTakeNote({
+              id: editTake.id,
+              text:
+                _mode === 'update'
+                  ? 'Your corrections are saved — this row, the MIDI export and the preview all use them now.'
+                  : 'Saved as a corrected copy in your History — this row keeps the take you started from.',
+            });
+            if (savedRowId) void reload();
+          }}
+          onClose={() => setEditTake(null)}
+        />
+      ) : null}
     </View>
   );
 };
@@ -769,8 +823,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  /** The row's MIDI export action (v29 Batch A) — teal outline, like the app's
-   *  other "extra capability" actions. It presses independently of the card. */
+  /**
+   * The row's MIDI export action (v29 Batch A) — teal outline, like the app's
+   * other "extra capability" actions. It presses independently of the card.
+   */
   midiBtn: {
     alignSelf: 'flex-start',
     backgroundColor: '#0f3460',
@@ -791,6 +847,26 @@ const styles = StyleSheet.create({
     color: '#a0a0b8',
     lineHeight: 17,
     marginTop: 6,
+  },
+  /**
+   * The melody row's "correct the take" action (v33 §D) — the editor's second
+   * door. 44dp tall like every other real control on the row.
+   */
+  editTakeBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#16213e',
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    marginTop: 8,
+  },
+  editTakeBtnText: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    fontWeight: '700',
   },
   removeBtn: {
     width: 32,

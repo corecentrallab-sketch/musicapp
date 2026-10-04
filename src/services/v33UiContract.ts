@@ -186,6 +186,147 @@ export function abcViewHasInkSeam(viewSource: string): boolean {
   return true;
 }
 
+// ────────── D: the take-correction editor (v33 §D) ──────────
+
+/** Every model entry point the surface must actually route to. */
+const EDITOR_MODEL_OPS: readonly string[] = [
+  'createEditorState(',
+  'deriveTake(',
+  'setNotePitch(',
+  'setNoteBoundary(',
+  'addNoteAfter(',
+  'canRemoveNote(',
+  'removeNote(',
+  'insertRestAfter(',
+  'overrideChord(',
+  'chordPalette(',
+  'undo(',
+  'redo(',
+  'resetToDetected(',
+  'noteTag(',
+];
+
+/**
+ * The editor surface really corrects every fact the brief lists — pitch (with an
+ * AUDIBLE verify), timing boundaries by drag, add/remove/rest with the last-note
+ * guard, chord overrides with a free input, undo/redo/reset — inside ≥44dp
+ * targets, with the tags visible and no transcription claim anywhere.
+ *
+ * `editorSource` is src/components/TakeCorrectionEditor.tsx.
+ */
+export function editorSurfaceCorrectsEveryFact(editorSource: string): boolean {
+  const masked = maskComments(editorSource);
+  if (masked.length < 8000) return false;
+  for (const op of EDITOR_MODEL_OPS) {
+    if (masked.indexOf(op) < 0) return false;
+  }
+  // The TOUCH layer: a vertical pitch drag AND two boundary handles (drag is the
+  // primary gesture of the brief's §3b, not a hidden extra).
+  if (countOf(masked, 'PanResponder.create') < 2) return false;
+  if (masked.indexOf("boundaryPan('start')") < 0) return false;
+  if (masked.indexOf("boundaryPan('end')") < 0) return false;
+  if (masked.indexOf('LANE_PX_PER_SEMITONE') < 0) return false;
+  // AUDIBLE VERIFY: a rail tap sets the pitch AND plays it (one argument pair).
+  if (!/setNotePitch\(stateRef\.current, selected\.id, midi\), midi\)/.test(masked)) return false;
+  // Every target the user presses is at least 44dp.
+  if (countOf(masked, 'minHeight: 44') < 6) return false;
+  // The tags and the chord honesty are on the surface.
+  if (masked.indexOf('NOTE_TAG_DETECTED') < 0) return false;
+  if (masked.indexOf('NOTE_TAG_CORRECTED') < 0) return false;
+  if (masked.indexOf('NOTE_TAG_ADDED') < 0) return false;
+  if (masked.indexOf('CHORD_TAG_YOURS') < 0) return false;
+  // The two guards say WHY instead of failing silently.
+  if (masked.indexOf('EDITOR_LAST_NOTE_REASON') < 0) return false;
+  if (masked.indexOf('EDITOR_NO_REDETECT_REASON') < 0) return false;
+  // BOTH save actions exist and are wired (the sticky bar).
+  if (masked.indexOf("void doSave('update')") < 0) return false;
+  if (masked.indexOf("void doSave('copy')") < 0) return false;
+  if (masked.indexOf('SAVE_UPDATE_CTA') < 0 || masked.indexOf('SAVE_COPY_CTA') < 0) return false;
+  // Android BACK leaves the editor, never the app.
+  if (masked.indexOf('useHardwareBack(') < 0) return false;
+  // No line anywhere claims more than a corrected user take.
+  if (/studio transcription/i.test(masked)) return false;
+  return true;
+}
+
+/**
+ * A corrected take is written through the ONE seam, as a PLAIN note list (the
+ * open contract of take-correction-editor-brief.md §1): both save actions end at
+ * melodyStore.updatePersonalMelodyTake, and the editor never builds its own take
+ * shape.
+ *
+ * `storeSource` is src/services/correctedTakeStore.ts.
+ */
+export function editorWritesThroughOneSeam(
+  storeSource: string,
+  editorSource: string,
+): boolean {
+  const store = maskComments(storeSource);
+  const editor = maskComments(editorSource);
+  if (store.length < 1200) return false;
+  // BOTH paths reach the row's take through the same seam.
+  if (countOf(store, 'updatePersonalMelodyTake(') < 2) return false;
+  if (store.indexOf("mode === 'copy'") < 0) return false;
+  // The copy is a NEW row (nothing already in History is overwritten).
+  if (store.indexOf('savePersonalMelodyRow(') < 0) return false;
+  // A failed write is never silent.
+  if (store.indexOf('SAVE_UPDATE_FAILED_LINE') < 0) return false;
+  if (store.indexOf('SAVE_COPY_FAILED_LINE') < 0) return false;
+  // The corrected take stays a generic note list.
+  if (store.indexOf('Array.isArray(take.notes)') < 0) return false;
+  if (store.indexOf('SavedCaptureTake') < 0) return false;
+  // The editor writes the DERIVED take (the single source of truth) with the row
+  // and the clip it was opened on.
+  if (editor.indexOf('saveCorrectedTake(') < 0) return false;
+  if (editor.indexOf('take: derived.take') < 0) return false;
+  if (editor.indexOf('rowId,') < 0) return false;
+  if (editor.indexOf('audioUri: audioUri ?? null') < 0) return false;
+  return true;
+}
+
+/**
+ * The editor is reachable from BOTH doors the brief names — the capture window
+ * and a History melody row — and it is the same component in both places.
+ *
+ * `flowSource` is src/screens/HumSearchScreen.tsx; `historySource` is
+ * src/screens/HistoryScreen.tsx.
+ */
+export function editorReachedFromBothDoors(
+  flowSource: string,
+  historySource: string,
+): boolean {
+  const flow = maskComments(flowSource);
+  const history = maskComments(historySource);
+  // Door 1: the capture window's own "Correct notes, pitch or chords ›" CTA.
+  if (flow.indexOf('<TakeCorrectionEditor') < 0) return false;
+  if (flow.indexOf('onCorrectTake={() => setEditorOpen(true)}') < 0) return false;
+  if (flow.indexOf('visible={editorOpen}') < 0) return false;
+  if (flow.indexOf('rowId={analysis?.rowId ?? null}') < 0) return false;
+  if (flow.indexOf('audioUri={audioUri}') < 0) return false;
+  // Door 2: a History melody row, driven by the row's own take/clip.
+  if (history.indexOf('<TakeCorrectionEditor') < 0) return false;
+  if (history.indexOf('take={editTake.capture ?? null}') < 0) return false;
+  if (history.indexOf('rowId={editTake.id}') < 0) return false;
+  if (history.indexOf('audioUri={editTake.personalMelody?.audioUri ?? null}') < 0) return false;
+  return true;
+}
+
+/**
+ * NO DRIFT: what the page SHOWS is what gets exported. Once the take is in hand
+ * the export encodes THAT take (which the editor's corrections were written
+ * into) instead of re-decoding the raw recording over the top of them.
+ *
+ * `flowSource` is src/screens/HumSearchScreen.tsx.
+ */
+export function correctedTakeIsWhatExports(flowSource: string): boolean {
+  const flow = maskComments(flowSource);
+  if (flow.indexOf('if (take) {') < 0) return false;
+  if (!appearsInOrder(flow, ['exportCaptureMidiFromTake(take', "exportCaptureMidiFromRecording({ uri: takeUri })"])) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * The action bar: Export MIDI · "Find this melody ›" · Record another melody ·
  * Done, each WIRED (a rendered control with no handler is the dead-CTA class this
