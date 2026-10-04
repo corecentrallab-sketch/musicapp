@@ -101,6 +101,13 @@ export const SAVED_MELODY_CTA = 'Saved to your History';
  * The "When you stop" card says what the take becomes, in facts this build backs.
  */
 export const CAPTURE_ONLY_CHIP_LABEL = 'CAPTURE ONLY';
+/** The one plain line under the chip: the capture-only rule, seen by the USER. */
+export const CAPTURE_ONLY_LINE =
+  'This window records your take. Nothing is matched here.';
+/** The take's own heading over the note rows and the staff (design §B/§C). */
+export const TAKE_HEADING = 'Your take';
+/** The chip that replaces the retired Save button (owner ratification 10-04). */
+export const SAVED_CHIP_LABEL = 'Saved to your History';
 export const WHEN_YOU_STOP_TITLE = 'When you stop';
 export const WHEN_YOU_STOP_ITEMS: readonly string[] = [
   'Your take is written down note by note — the staff appears the moment you stop.',

@@ -155,8 +155,14 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** The stage marker that opens the hum screen's no-match card. */
-export const HUM_NO_MATCH_MARKER = "stage === 'no-match'";
+/** The gate that opens the hum screen's no-match card.
+ *
+ *  v33 §B (2026-10-04): the card MOVED OFF the capture page into the explicit
+ *  "Find this melody ›" overlay, so the gate is now the card's own JSX block
+ *  (`{stage === 'no-match' && outcome && (` — the same stage, rendered inside the
+ *  overlay's Modal). The full block text is the marker because `stage ===
+ *  'no-match'` also appears in the step's own guard higher up the file. */
+export const HUM_NO_MATCH_MARKER = "{stage === 'no-match' && outcome && (";
 
 /**
  * True when the hum screen's NO-MATCH card renders the bridge action: it calls

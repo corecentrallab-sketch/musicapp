@@ -55,6 +55,7 @@
     "src/services/takePreview.ts",
     "src/services/takeEditor.ts",
     "src/services/takeStaff.ts",
+    "src/services/v33UiContract.ts",
     "src/services/midiExportContract.ts",
     "src/services/resultSurface.ts",
     "src/services/resultSurfaceContract.ts",
@@ -101,6 +102,7 @@
     "scripts/historyDeadEnd.test.ts",
     "scripts/searchExternal.test.ts",
     "scripts/zeroPromise.test.ts",
-    "scripts/v33TakeEditor.test.ts"
+    "scripts/v33TakeEditor.test.ts",
+    "scripts/v33UiWiring.test.ts"
   ]
 }
