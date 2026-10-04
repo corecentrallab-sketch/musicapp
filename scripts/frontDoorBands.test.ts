@@ -44,7 +44,7 @@ import {
   bandFacets,
   bandFacetsAreBackedByRealContent,
   bandOrderFromSource,
-  bandOrderIsIdentifyTodayBrowse,
+  bandOrderIsIdentifyDiscoverTodayBrowse,
   bandRegion,
   guitarCatalogIsSurfaced,
   guitarContentAvailable,
@@ -61,6 +61,7 @@ import {
   type FrontDoorBand,
 } from '../src/services/frontDoorBands';
 import {
+  HUM_SIBLING_TITLE,
   chipDoesNotClaimRecordingRecognition,
   findAnySongChipWired,
   findPieceEntryIsSearchRow,
@@ -188,13 +189,14 @@ function bandModelTests(): void {
     challenge: WITH_SCORE,
     retention: { currentDays: 3, weekCurrent: 2, weekTarget: 5 },
   });
-  assertEq(bands.length, 3, 'the door has exactly three bands');
+  assertEq(bands.length, 4, 'the door has exactly four bands (v33 §E added Discover)');
   assertEq(
     bands.map((b) => b.id).join('|'),
-    'identify|today|browse',
-    'the bands are ordered A → B → C',
+    'identify|discover|today|browse',
+    'the bands are ordered A → Discover → B → C',
   );
   assertEq(BAND_TITLES.identify, null, 'band A carries no heading (the hero is self-evident)');
+  assertEq(BAND_TITLES.discover, 'Discover', 'the search band is "Discover"');
   assertEq(BAND_TITLES.today, 'Today', 'band B is "Today"');
   assertEq(BAND_TITLES.browse, 'Browse & keep going', 'band C is "browse + keep going"');
   assertEq(BAND_CONTAINER_STYLE, 'styles.band', 'the containers share one style marker');
@@ -204,25 +206,40 @@ function bandModelTests(): void {
   const aIds = a.map((i) => i.id).join('|');
   assertEq(
     aIds,
-    'hero-identify|hum-entry|find-any-song|beta-note',
-    'band A is the hero, the hum row, the chip, the beta note — in that order',
+    'hero-identify|hum-entry|beta-note',
+    'band A is the hero, the hum sibling card, the beta note — in that order',
   );
   const primaries = a.filter((i) => i.primary === true);
   assertEq(primaries.length, 1, 'band A has exactly ONE primary action');
   assertEq(primaries[0]?.id, 'hero-identify', 'the hero is that primary action');
   assertEq(
     a.filter((i) => i.kind === 'card').length,
-    0,
-    'band A carries no card at all (nothing competes with the hero)',
+    1,
+    'band A carries EXACTLY one card: the hum sibling (owner 10-03)',
   );
-  const chip = a.find((i) => i.id === 'find-any-song');
-  assertEq(chip?.destination, 'find-piece', 'the chip lands on the search');
-  assertEq(chip?.label, FIND_ANY_SONG_CHIP_LABEL, 'the chip renders the module label');
   assertEq(
-    a[2]?.id,
-    'find-any-song',
-    'the chip renders AFTER the hum row (the door\'s priority order is unchanged)',
+    a.find((i) => i.id === 'hum-entry')?.kind,
+    'card',
+    'the hum entry is a sibling CARD under the hero, not a text row or a chip',
   );
+  assertEq(
+    a.find((i) => i.id === 'hum-entry')?.label,
+    HUM_SIBLING_TITLE,
+    'the hum card is titled from the module (one source of copy)',
+  );
+  // v33 §E / owner 10-04: the search entry is NOT inside the Listen/Hum block.
+  assertEq(
+    a.some((i) => i.id === 'find-any-song'),
+    false,
+    'the search entry is NOT in band A (it does not fit the hum flow)',
+  );
+
+  // ── the Discover band ──
+  const d = itemsOf(bands, 'discover');
+  assertEq(d.length, 1, 'the Discover band is exactly one entry');
+  assertEq(d[0]?.id, 'find-any-song', 'and that entry is the find-any-song search');
+  assertEq(d[0]?.destination, 'find-piece', 'the search entry lands on the search');
+  assertEq(d[0]?.label, FIND_ANY_SONG_CHIP_LABEL, 'the search entry renders the module label');
   const beta = a.find((i) => i.id === 'beta-note');
   assertEq(beta?.destination, null, 'the beta note is a note: it promises nothing');
   assert(beta?.label === FRONT_DOOR_BETA_NOTE, 'the beta note is the honest library line');
@@ -627,13 +644,13 @@ function liveScanTests(): void {
 
   assertEq(
     bandOrderFromSource(home).join('|'),
-    'identify|today|browse',
-    'the real Home renders the three band containers in A → B → C order',
+    'identify|discover|today|browse',
+    'the real Home renders the four band containers in A → Discover → B → C order',
   );
   assertEq(
-    bandOrderIsIdentifyTodayBrowse(home),
+    bandOrderIsIdentifyDiscoverTodayBrowse(home),
     true,
-    'band A holds the hero (and the hum row + chip), band B its one card, band C its rows',
+    'band A holds the hero + the hum sibling card, Discover owns the search, band B its one card, band C its rows',
   );
   assertEq(
     oneMeaningPerCard(home),
@@ -765,7 +782,7 @@ function liveScanTests(): void {
   const lostBand = home.replace('testID={BAND_TEST_IDS.browse}', 'testID={undefined}');
   assert(lostBand !== home, 'the band-order mutation changed the real source');
   assertEq(
-    bandOrderIsIdentifyTodayBrowse(lostBand),
+    bandOrderIsIdentifyDiscoverTodayBrowse(lostBand),
     false,
     'MUTATION: a missing band container FAILS the order contract',
   );

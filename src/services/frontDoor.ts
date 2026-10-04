@@ -100,6 +100,30 @@ export const HUM_SECONDARY_CTA = "Can't play it? Hum, whistle or sing the melody
 export const HUM_FALLBACK_LIBRARY_NOTE =
   'Library still growing — try a well-known melody (Für Elise, Ode to Joy).';
 
+// ─────────────── the hum SIBLING CARD (v33 §E, owner 10-03) ───────────────
+
+/**
+ * The owner's 10-03 ask, and the designer's accepted treatment
+ * (`design-capture-page-v33/home-hum-button.png`): Listen stays the DOMINANT
+ * hero, and Hum becomes a real SIBLING CARD directly beneath it — same width,
+ * same one-CTA structure, same weight class — NOT a chip, NOT a menu item, NOT
+ * a text row tucked inside the hero card as it was in v32.
+ *
+ * It opens the existing hum flow (`handleHumEntry` → HumSearchScreen), whose
+ * capture window starts recording on mount (v32 behaviour), so "opens the
+ * capture window and records immediately" is the real behaviour, not a promise.
+ *
+ * Copy is deliberately split: the TITLE says what the user does ("Hum / sing a
+ * melody"), the BODY carries the v32 CTA line (it names all three capture modes,
+ * so the mode-honesty rule survives the move), and the SPLIT line under the pair
+ * teaches which door is which. No mode is promoted: the hero button still runs
+ * the identify pipeline first.
+ */
+export const HUM_SIBLING_TITLE = '🎤 Hum / sing a melody';
+export const HUM_SIBLING_BODY = HUM_SECONDARY_CTA;
+/** The one line under the pair that teaches the two doors (designer concept 5). */
+export const HUM_SPLIT_TEACH_LINE = 'Hear it → Listen · Think it → Hum';
+
 // ─────────────────────── the home promise (genre-neutral) ───────────────
 
 /**

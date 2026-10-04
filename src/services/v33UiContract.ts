@@ -14,6 +14,7 @@
  * pre-fix fixtures that MUST fail. A scanner that cannot fail proves nothing.
  */
 import { maskComments } from './modalBackContract';
+import { bandRegion } from './frontDoorBands';
 
 /** The element (opening tag + children) that carries `marker`. */
 export function elementFromTag(
@@ -461,5 +462,72 @@ export function matchResultsAreOffThePage(windowSource: string, flowSource: stri
   // The honest miss copy and the way back to the user's own take both stay.
   if (flow.indexOf('humNoMatchMessage') < 0) return false;
   if (flow.indexOf('Back to my take') < 0) return false;
+  return true;
+}
+
+// ────────── E: the front door's hum SIBLING CARD (v33 §E) ──────────
+
+/** The declaration body of a `key: { … }` entry in a stylesheet. */
+export function styleBlockOf(source: string, key: string): string {
+  const at = source.indexOf(`${key}: {`);
+  if (at < 0) return '';
+  const close = source.indexOf('},', at);
+  return close < 0 ? source.slice(at, at + 400) : source.slice(at, close);
+}
+
+/**
+ * The Listen hero stays DOMINANT and Hum is a real SIBLING CARD directly beneath
+ * it (owner 10-03, designer concept 5): its own full-width card element, its own
+ * title + body copy from frontDoor.ts, one tap that opens the hum flow (whose
+ * capture window records on mount), and the teaching line under the pair. A
+ * chip, a menu item and the v32 quiet underlined text row all fail.
+ *
+ * `homeSource` is src/screens/HomeScreen.tsx.
+ */
+export function humIsTheHerosSiblingCard(homeSource: string): boolean {
+  const masked = maskComments(homeSource);
+  if (masked.length < 5000) return false;
+  const heroAt = masked.indexOf('onPress={handleHeroTap}');
+  const humAt = masked.indexOf('onPress={handleHumEntry}');
+  if (heroAt < 0 || humAt < 0) return false;
+  // SIBLING, not nested-in-the-hero and not a rival above it: it renders after.
+  if (humAt < heroAt) return false;
+  // Its OWN element, carrying the module's copy by reference.
+  const card = elementFromTag(masked, 'styles.humEntryBtn');
+  if (!card) return false;
+  if (card.indexOf('onPress={handleHumEntry}') < 0) return false;
+  if (card.indexOf('HUM_SIBLING_TITLE') < 0) return false;
+  if (card.indexOf('HUM_SIBLING_BODY') < 0) return false;
+  // The style really IS a card: full width + the v33 teal, and NOT the v32
+  // quiet text row (underlined, unfilled).
+  const style = styleBlockOf(masked, 'humEntryBtn');
+  if (!style) return false;
+  if (style.indexOf("width: '100%'") < 0) return false;
+  if (style.indexOf('#4ecdc4') < 0) return false;
+  if (/textDecorationLine/.test(style)) return false;
+  // …and the one line that teaches which door is which.
+  if (masked.indexOf('HUM_SPLIT_TEACH_LINE') < 0) return false;
+  return true;
+}
+
+/**
+ * The search field is OUT of the Listen/Hum block and has its OWN Discover band
+ * (owner 10-04: the search bar under hum/whistle "does not fit the flow there").
+ * Band A may not carry the chip; the Discover band must carry it, labelled from
+ * the band model and wired to the real search.
+ *
+ * `homeSource` is src/screens/HomeScreen.tsx.
+ */
+export function searchHasItsOwnDiscoverBand(homeSource: string): boolean {
+  const bandA = bandRegion(homeSource, 'identify');
+  const discover = bandRegion(homeSource, 'discover');
+  if (!bandA || !discover) return false;
+  if (bandA.indexOf('styles.findAnySongChip') >= 0) return false;
+  if (discover.indexOf('style={styles.findAnySongChip}') < 0) return false;
+  if (discover.indexOf('onPress={handleFindAnySong}') < 0) return false;
+  if (discover.indexOf('FIND_ANY_SONG_CHIP_LABEL') < 0) return false;
+  if (discover.indexOf('BAND_TITLES.discover') < 0) return false;
+  // The band's own honest line: search is a destination, not a promise.
+  if (discover.indexOf('DISCOVER_BAND_NOTE') < 0) return false;
   return true;
 }

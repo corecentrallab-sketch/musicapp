@@ -49,6 +49,7 @@ import {
   FIND_PIECE_ENTRY_LABEL,
   HERO_TITLE,
   HUM_SECONDARY_CTA,
+  HUM_SIBLING_TITLE,
 } from './frontDoor';
 
 // ─────────────────── the "Find any song" chip (bundle B) ───────────────────
@@ -89,12 +90,13 @@ export const FIND_ANY_SONG_DESTINATION_SCREEN = 'FindPieceScreen';
 
 // ───────────────────────────── the band model ─────────────────────────────
 
-/** The three bands, in the order they render (A → B → C). */
-export type BandId = 'identify' | 'today' | 'browse';
+/** The four bands, in the order they render (A → Discover → B → C). */
+export type BandId = 'identify' | 'discover' | 'today' | 'browse';
 
 /** A stable id per band — the source-scan guard finds the containers by it. */
 export const BAND_TEST_IDS: Record<BandId, string> = {
   identify: 'band-identify',
+  discover: 'band-discover',
   today: 'band-today',
   browse: 'band-browse',
 };
@@ -106,9 +108,21 @@ export const BAND_TEST_IDS: Record<BandId, string> = {
  */
 export const BAND_TITLES: Record<BandId, string | null> = {
   identify: null,
+  discover: 'Discover',
   today: 'Today',
   browse: 'Browse & keep going',
 };
+
+/**
+ * The DISCOVER band (v33 §E/§F3b, owner 10-04). The "Find any song" search entry
+ * used to sit INSIDE band A, beside the hum row — the owner's device note was
+ * that the search field "does not fit the flow there". It now has its own band
+ * directly under the Listen/Hum pair, so search is reachable without entering
+ * the hum flow and the hum block contains only the two listening doors.
+ */
+export const DISCOVER_BAND_NOTE =
+  'Know the name? Search the library and the official sheet music.';
+
 
 /** The container style every band's `<View>` uses (the source guard's marker). */
 export const BAND_CONTAINER_STYLE = 'styles.band';
@@ -492,19 +506,13 @@ function identifyItems(): BandItem[] {
     },
     {
       id: 'hum-entry',
-      kind: 'row',
-      label: HUM_SECONDARY_CTA,
+      // v33 §E (owner 10-03): the hum entry is a SIBLING CARD directly under the
+      // hero — same width and weight class — not the quiet text row it was.
+      kind: 'card',
+      label: HUM_SIBLING_TITLE,
       accessibilityLabel: HUM_SECONDARY_CTA,
       destination: 'hum-search',
       entryGroup: 'hum',
-    },
-    {
-      id: 'find-any-song',
-      kind: 'chip',
-      label: FIND_ANY_SONG_CHIP_LABEL,
-      accessibilityLabel: FIND_ANY_SONG_CHIP_ACCESSIBILITY_LABEL,
-      destination: FIND_ANY_SONG_DESTINATION,
-      entryGroup: 'search',
     },
     {
       id: 'beta-note',
@@ -513,6 +521,24 @@ function identifyItems(): BandItem[] {
       accessibilityLabel: FRONT_DOOR_BETA_NOTE,
       destination: null,
       entryGroup: 'identify',
+    },
+  ];
+}
+
+/**
+ * The DISCOVER band — the search entry, out of the Listen/Hum block (v33 §E § —
+ * owner 10-04: the search bar under hum/whistle "does not fit the flow there").
+ * One entry, one job: open the real search field.
+ */
+function discoverItems(): BandItem[] {
+  return [
+    {
+      id: 'find-any-song',
+      kind: 'row',
+      label: FIND_ANY_SONG_CHIP_LABEL,
+      accessibilityLabel: FIND_ANY_SONG_CHIP_ACCESSIBILITY_LABEL,
+      destination: FIND_ANY_SONG_DESTINATION,
+      entryGroup: 'search',
     },
   ];
 }
@@ -580,10 +606,11 @@ function browseItems(input: FrontDoorBandInput): BandItem[] {
   return items;
 }
 
-/** The three bands, A → B → C, with their items resolved for this state. */
+/** The four bands, A → Discover → B → C, with their items resolved for this state. */
 export function bandBandsFor(input: FrontDoorBandInput = {}): FrontDoorBand[] {
   return [
     { id: 'identify', title: BAND_TITLES.identify, items: identifyItems() },
+    { id: 'discover', title: BAND_TITLES.discover, items: discoverItems() },
     { id: 'today', title: BAND_TITLES.today, items: todayItems(input) },
     { id: 'browse', title: BAND_TITLES.browse, items: browseItems(input) },
   ];
@@ -702,24 +729,27 @@ export function bandMarker(id: BandId): string {
 export function bandOrderFromSource(source: string): BandId[] {
   const masked = maskComments(source);
   const found: { id: BandId; at: number }[] = [];
-  for (const id of ['identify', 'today', 'browse'] as const) {
+  for (const id of BAND_ORDER as readonly BandId[]) {
     const at = masked.indexOf(bandMarker(id));
     if (at >= 0) found.push({ id, at });
   }
   return found.sort((a, b) => a.at - b.at).map((entry) => entry.id);
 }
 
+/**
+ * The band order the door must render, in ONE place: band A (the two listening
+ * doors), the Discover band (search), Today (practice), Browse (library + keep
+ * going). The source guard and the model test read this list, so the order can
+ * never drift between them.
+ */
+export const BAND_ORDER: readonly BandId[] = ['identify', 'discover', 'today', 'browse'];
+
 /** The source slice of one band's container ('' when the band is absent). */
 export function bandRegion(source: string, id: BandId): string {
   const masked = maskComments(source);
   const start = masked.indexOf(bandMarker(id));
   if (start < 0) return '';
-  const nextIds: BandId[] =
-    id === 'identify'
-      ? ['today', 'browse']
-      : id === 'today'
-        ? ['browse']
-        : [];
+  const nextIds: BandId[] = BAND_ORDER.slice(BAND_ORDER.indexOf(id) + 1);
   let end = masked.length;
   for (const next of nextIds) {
     const at = masked.indexOf(bandMarker(next), start + 1);
@@ -729,30 +759,38 @@ export function bandRegion(source: string, id: BandId): string {
 }
 
 /**
- * BAND ORDER, on the REAL screen source: the three band containers render in the
- * order A → B → C, band A holds the one hero button and nothing else primary (no
- * card of the five the re-flow retires), band B really carries its one card, and
- * band C really carries a search row and the free-library row. A band shell that
- * renders nothing is not a band.
+ * BAND ORDER, on the REAL screen source: the four band containers render in the
+ * order A → Discover → Today → Browse, band A holds the one hero button and the
+ * hum SIBLING CARD (and nothing else that competes with the hero), the Discover
+ * band really owns the search entry — the search field is NOT inside the
+ * Listen/Hum block — band B really carries its one card, and band C really
+ * carries a search row and the free-library row. A band shell that renders
+ * nothing is not a band.
  */
-export function bandOrderIsIdentifyTodayBrowse(source: string): boolean {
+export function bandOrderIsIdentifyDiscoverTodayBrowse(source: string): boolean {
   const order = bandOrderFromSource(source);
-  if (order.length !== 3) return false;
-  if (order.join('|') !== 'identify|today|browse') return false;
+  if (order.length !== BAND_ORDER.length) return false;
+  if (order.join('|') !== BAND_ORDER.join('|')) return false;
 
   const a = bandRegion(source, 'identify');
   if (!a) return false;
   // The hero button lives in band A …
   if (a.indexOf('styles.recognitionBtn') < 0) return false;
   if (a.indexOf('onPress={handleHeroTap}') < 0) return false;
-  // … and band A is nothing but the hero card + its two secondary entries.
+  // … and band A is nothing but the hero card + the hum sibling card + the note.
   const retiredStyles = RETIRED_DOOR_CARD_STYLES;
   for (const style of retiredStyles) {
     if (a.indexOf(style) >= 0) return false;
   }
-  // Band A's secondary entries really are there (hum row + the new chip).
+  // The hum SIBLING CARD is in band A, after the hero …
   if (a.indexOf('styles.humEntryBtn') < 0) return false;
-  if (a.indexOf('styles.findAnySongChip') < 0) return false;
+  if (a.indexOf('onPress={handleHumEntry}') < a.indexOf('onPress={handleHeroTap}')) return false;
+  // … and the SEARCH entry is NOT: it lives in the Discover band (owner 10-04).
+  if (a.indexOf('styles.findAnySongChip') >= 0) return false;
+  const d = bandRegion(source, 'discover');
+  if (d.length < 40) return false;
+  if (d.indexOf('styles.findAnySongChip') < 0) return false;
+  if (d.indexOf('onPress={handleFindAnySong}') < 0) return false;
 
   // Band B: one card, one tap.
   const b = bandRegion(source, 'today');

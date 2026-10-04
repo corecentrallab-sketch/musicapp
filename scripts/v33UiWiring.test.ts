@@ -19,9 +19,11 @@ import {
   editorReachedFromBothDoors,
   editorSurfaceCorrectsEveryFact,
   editorWritesThroughOneSeam,
+  humIsTheHerosSiblingCard,
   matchResultsAreOffThePage,
   previewEngineNeverRewritesTheTake,
   previewIsDockedInTheEditor,
+  searchHasItsOwnDiscoverBand,
   staffCardDrawsBothRows,
   staffIsTheUsersOwnTake,
   takeActionBarWired,
@@ -504,6 +506,77 @@ assertEq(
   previewEngineNeverRewritesTheTake(noClock),
   false,
   'MUTATION: a preview with no clock FAILS previewEngineNeverRewritesTheTake',
+);
+
+
+// ────────── slice E — the hum SIBLING CARD + the Discover band ──────────
+const HOME = 'src/screens/HomeScreen.tsx';
+const homeSource = readAppFile(HOME);
+
+console.log('\nslice E — Listen hero + the hum sibling card, search in its own band');
+assert(homeSource.length > 20000, `read ${HOME} (${homeSource.length} chars)`);
+assertEq(
+  humIsTheHerosSiblingCard(homeSource),
+  true,
+  'the hum entry is a full-width teal sibling CARD under the hero, with its own title + body + the split line',
+);
+assertEq(
+  searchHasItsOwnDiscoverBand(homeSource),
+  true,
+  'the "Find any song" field left the Listen/Hum block for its own Discover band, wired to the search',
+);
+
+// MUTATION 29: the hum card is demoted back to the v32 quiet text row.
+const textRow = homeSource.replace(
+  "humEntryBtn: {\n    alignSelf: 'stretch',\n    width: '100%',\n    alignItems: 'center',\n    justifyContent: 'center',\n    backgroundColor: '#16213e',\n    borderRadius: 16,\n    borderWidth: 2,\n    borderColor: '#4ecdc4',\n    paddingVertical: 16,\n    paddingHorizontal: 18,\n    marginBottom: 8,\n  },",
+  "humEntryBtn: {\n    flexDirection: 'row',\n    alignItems: 'center',\n    justifyContent: 'center',\n    paddingVertical: 10,\n    paddingHorizontal: 8,\n    textDecorationLine: 'underline',\n  },",
+);
+assert(textRow !== homeSource, 'the text-row mutation changed the real Home screen');
+assertEq(
+  humIsTheHerosSiblingCard(textRow),
+  false,
+  'MUTATION: the v32 underlined hum text row FAILS humIsTheHerosSiblingCard',
+);
+// MUTATION 30: the hum card renders as the search CHIP instead of its own card.
+const chipHum = homeSource.replace(
+  '<TouchableOpacity\n          style={styles.humEntryBtn}',
+  '<TouchableOpacity\n          style={styles.findAnySongChip}',
+);
+assert(chipHum !== homeSource, 'the chip-hum mutation changed the real Home screen');
+assertEq(
+  humIsTheHerosSiblingCard(chipHum),
+  false,
+  'MUTATION: a hum CHIP fails humIsTheHerosSiblingCard (it must be a card)',
+);
+// MUTATION 31: the hum entry loses its wiring (the dead-CTA class).
+const deadHum = homeSource.replace('onPress={handleHumEntry}', 'onPress={undefined}');
+assert(deadHum !== homeSource, 'the dead-hum mutation changed the real Home screen');
+assertEq(
+  humIsTheHerosSiblingCard(deadHum),
+  false,
+  'MUTATION: a hum card that opens nothing FAILS humIsTheHerosSiblingCard',
+);
+// MUTATION 32: the search field slips back into the Listen/Hum block.
+const chipBackInBandA = homeSource.replace(
+  '<Text style={styles.tier1BetaNote}>',
+  '<TouchableOpacity style={styles.findAnySongChip}></TouchableOpacity>\n          <Text style={styles.tier1BetaNote}>',
+);
+assert(chipBackInBandA !== homeSource, 'the chip-back mutation changed the real Home screen');
+assertEq(
+  searchHasItsOwnDiscoverBand(chipBackInBandA),
+  false,
+  'MUTATION: the search chip back inside band A FAILS searchHasItsOwnDiscoverBand',
+);
+// MUTATION 33: the Discover band keeps its shell but loses the search entry.
+const emptyDiscover = homeSource.replace(
+  'style={styles.findAnySongChip}\n            onPress={handleFindAnySong}',
+  'style={styles.bandChip}\n            onPress={handleFindAnySong}',
+);
+assert(emptyDiscover !== homeSource, 'the empty-discover mutation changed the real Home screen');
+assertEq(
+  searchHasItsOwnDiscoverBand(emptyDiscover),
+  false,
+  'MUTATION: a Discover band with no search entry FAILS searchHasItsOwnDiscoverBand',
 );
 
 console.log(`\n${passes} passed, ${failures} failed`);
