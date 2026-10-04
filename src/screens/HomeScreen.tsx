@@ -591,7 +591,7 @@ export const HomeScreen: React.FC = () => {
             // Save the category WITH the record: a modern song must never reach
             // History genre-less and be filled in by a fallback later. The
             // provider's REAL genre when it sent one (owner request 09-25).
-            genre: modernGenreLabel(m),
+            genre: modernGenreLabel(m) ?? undefined,
             // Save the LICENSED LINKS the match arrived with (owner 10-01): the
             // saved row used to carry identity only, so tapping it in History
             // reached nothing and the sheet-music card was a dead end. This is
