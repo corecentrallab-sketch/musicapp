@@ -972,13 +972,13 @@ assertEq(
 
 // ────────── slice F5 — a transposed copy is what re-opens ──────────
 const NOTATION_EDITOR = 'src/screens/NotationEditorScreen.tsx';
-const ABC_VIEW = 'src/components/AbcScoreView.tsx';
+const ABC_VIEW_F5 = 'src/components/AbcScoreView.tsx';
 const notationEditorSource = readAppFile(NOTATION_EDITOR);
-const f5ViewSource = readAppFile(ABC_VIEW);
+const f5ViewSource = readAppFile(ABC_VIEW_F5);
 
 console.log('\nslice F5 — a saved transposed copy is what re-opens');
 assert(notationEditorSource.length > 8000, `read ${NOTATION_EDITOR} (${notationEditorSource.length} chars)`);
-assert(f5ViewSource.length > 3000, `read ${ABC_VIEW} (${f5ViewSource.length} chars)`);
+assert(f5ViewSource.length > 3000, `read ${ABC_VIEW_F5} (${f5ViewSource.length} chars)`);
 assertEq(
   transposedCopyIsWhatReopens(notationEditorSource, f5ViewSource),
   true,
