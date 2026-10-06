@@ -140,7 +140,7 @@ export function useNotePreview(
         return true;
       } catch (err) {
         // Never silent again: the failure is on the screen (v34).
-        reportAudioFailure({ source: 'tone-preview', reason: 'playback', detail: err });
+        reportAudioFailure({ source: 'tone-preview', reason: 'unknown', detail: err });
         return false;
       }
     },
