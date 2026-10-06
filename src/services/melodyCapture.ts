@@ -60,7 +60,7 @@ export const LIVE_BADGE_LABEL = 'LIVE';
 export const CAPTURE_HINT =
   'Hum, whistle or sing your melody — around 12 seconds is plenty.';
 /** The stop action: what it does, not just "stop". */
-export const STOP_CTA_LABEL = 'Stop & write it down';
+export const STOP_CTA_LABEL = 'Stop & review take';
 /** Shown while the finished take is decoded and tracked. */
 export const ANALYSING_LINE = 'Writing your melody down…';
 export const ANALYSING_SUBLINE = 'Reading the take note by note';
@@ -85,8 +85,49 @@ export const CHORDS_HONESTY_LINE =
 export const NO_KEY_NO_CHORDS_LINE =
   'No key detected in this take, so there are no suggested chords — a melody on its own carries no harmony, and we will not guess a key.';
 
+/**
+ * v33 (owner ratification 10-04): there is NO Save button on the take page — the
+ * take is saved the moment it ends, and the page says so with a chip instead.
+ * The old CTA stays exported for the History re-open path, which DOES save an
+ * edit explicitly.
+ */
 export const SAVE_MELODY_CTA = 'Save melody';
 export const SAVED_MELODY_CTA = 'Saved to your History';
+/**
+ * ── THE v33 CAPTURE PAGE (brief §B, owner-ratified 10-04) ───────────────────
+ * The window is CAPTURE-ONLY: the result page carries the take, its staff, its
+ * actions and an honest note of what happened — never a match card and never a
+ * no-match box (matching is a separate step the user chooses: FIND_THIS_MELODY_CTA).
+ * The "When you stop" card says what the take becomes, in facts this build backs.
+ */
+export const CAPTURE_ONLY_CHIP_LABEL = 'CAPTURE ONLY';
+/** The one plain line under the chip: the capture-only rule, seen by the USER. */
+export const CAPTURE_ONLY_LINE =
+  'This window records your take. Nothing is matched here.';
+/** The take's own heading over the note rows and the staff (design §B/§C). */
+export const TAKE_HEADING = 'Your take';
+/** The chip that replaces the retired Save button (owner ratification 10-04). */
+export const SAVED_CHIP_LABEL = 'Saved to your History';
+export const WHEN_YOU_STOP_TITLE = 'When you stop';
+export const WHEN_YOU_STOP_ITEMS: readonly string[] = [
+  'Your take is written down note by note — the staff appears the moment you stop.',
+  'It is auto-cleaned to the key we heard: never a studio transcription.',
+  'Chords are suggested from that key, and you can correct any note, pitch or chord.',
+  'The take is saved to your History on this device, automatically.',
+  'Matching a piece is a separate step you choose — nothing is matched on this page.',
+];
+/** The take page's action bar (owner-ratified order, NO Save button). */
+export const FIND_THIS_MELODY_CTA = 'Find this melody ›';
+export const FIND_THIS_MELODY_HINT =
+  'Check this melody against our library of public-domain pieces. It is a separate step — your take is already saved.';
+export const FINDING_MELODY_LABEL = 'Checking our library…';
+export const RECORD_ANOTHER_CTA = 'Record another melody';
+export const DONE_CTA = 'Done';
+export const CORRECT_TAKE_CTA = 'Correct notes, pitch or chords ›';
+export const CORRECT_TAKE_HINT =
+  'Tap a note to change its pitch, drag its edges to move the timing, add or remove notes, or override a suggested chord.';
+export const SAVED_CHIP_HINT = 'It is in your History now — open it any time.';
+
 export const SAVE_MELODY_HINT =
   'Your take is saved automatically — it lives in your History on this device, so you can come back to it.';
 
@@ -880,11 +921,19 @@ export interface MelodyLiveTrace {
   statusLine: string;
   /** How long the take has been running, in seconds (1 decimal). */
   elapsedSec: number;
+  /** Metering samples the mic has produced so far (0 before the first one). */
+  sampleCount: number;
+  /** Samples above the hearing threshold — the take we really have sound in. */
+  voicedSamples: number;
+  /** `voicedSamples / sampleCount`, 0 when there are no samples yet. */
+  voicedRatio: number;
+  /** The honest one-line reading of how much of this take has sound in it. */
+  heardLine: string;
 }
 
 /** The honest line when the strip cannot show notes as they are sung. */
 export const NO_LIVE_NOTES_LINE =
-  'Notes are written when you stop — the finished take is read note by note.';
+  'Notes are written the moment you stop — this build traces your level live, not the notes themselves.';
 /** The line when a live source exists but has not resolved a note yet. */
 export const LISTENING_LINE = 'Listening for your notes…';
 /** The line when the mic is hearing nothing usable yet. */
@@ -943,6 +992,23 @@ export function buildLiveTrace(input: {
       ? input.elapsedMs
       : 0;
 
+  // ── THE HONEST LIVE READING (v33 slice A) ────────────────────────────────
+  // This build has no live pitch source, so the strip may NOT imply notes are
+  // appearing. What it CAN report truthfully is how much of the take the mic has
+  // actually heard: the share of real metering samples above the hearing
+  // threshold. That is a level reading, not a note — and it is labelled as one.
+  const voicedSamples = levels.filter(
+    (value) => typeof value === 'number' && Number.isFinite(value) && value >= HEARING_THRESHOLD_DB,
+  ).length;
+  const sampleCount = levels.length;
+  const voicedRatio = sampleCount > 0 ? voicedSamples / sampleCount : 0;
+  const heardLine =
+    sampleCount === 0
+      ? QUIET_TAKE_LINE
+      : voicedRatio <= 0
+        ? QUIET_TAKE_LINE
+        : `Sound in ${Math.round(voicedRatio * 100)}% of this take — your level, not your notes.`;
+
   return {
     bars,
     level,
@@ -951,6 +1017,10 @@ export function buildLiveTrace(input: {
     liveNotesUnavailable,
     statusLine,
     elapsedSec: Math.round((elapsedMs / 1000) * 10) / 10,
+    sampleCount,
+    voicedSamples,
+    voicedRatio,
+    heardLine,
   };
 }
 

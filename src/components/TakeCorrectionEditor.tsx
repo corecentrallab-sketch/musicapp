@@ -1,0 +1,943 @@
+/**
+ * TakeCorrectionEditor — THE TAKE-CORRECTION EDITOR's surface (v33 slice D,
+ * owner green-light 10-03; brief /home/team/shared/take-correction-editor-brief.md).
+ *
+ * WHAT IT IS. "NoteSnap got my take wrong" has to be fixable, or the take is
+ * thrown away. This is the full-screen surface where the user corrects the
+ * notes, the pitch, the timing and the chords of their OWN take — with the
+ * corrected take becoming the single source of truth for History, the MIDI
+ * export and the Hum-Along preview (all three read the same plain
+ * `MidiNoteEvent[]`, the open contract of the brief's §1).
+ *
+ * THE SURFACE, top to bottom:
+ *   1. the take drawn as a staff (the app's own ABC renderer, teal ink) — the
+ *      ACTUAL staff this editor operates on;
+ *   2. the touch layer UNDER it: one block per note, sized by its real duration,
+ *      which the user TAPS to select, DRAGS UP/DOWN to change pitch, and whose
+ *      EDGES they drag to move the timing (grid-snapped, never overlapping a
+ *      neighbour — takeEditor.setNoteBoundary owns both rules);
+ *   3. the selected note's panel: the semitone rail (each candidate pitch PLAYS
+ *      as you pick it — musicians correct by ear), the duration touch-up, add a
+ *      note, remove a note (with the last-note guard), insert a rest, re-detect;
+ *   4. the chord row: the take's SUGGESTED chords, and the override palette +
+ *      free input that turn one into the user's own ("yours", never "suggested");
+ *   5. the batch fixes: transpose the take, snap it to the key, undo / redo /
+ *      reset to detected;
+ *   6. THE DOCKED PREVIEW (slice G) — the Hum-Along row, above the sticky bar;
+ *   7. THE STICKY SAVE BAR: "Save & update" and "Save a copy", both writing the
+ *      corrected take through the ONE seam (services/correctedTakeStore), which
+ *      is what makes History, MIDI and playback read the corrected take.
+ *
+ * HONESTY: every note carries its own tag (Auto-detected / Corrected by you /
+ * Added by you), a chord the user typed is marked "yours", the preview is
+ * labelled preview-only, and no line anywhere claims a studio transcription.
+ *
+ * The MODEL is src/services/takeEditor.ts (pure, fully asserted by
+ * scripts/v33TakeEditor.test.ts); this file only draws it and routes the taps.
+ */
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  Modal,
+  PanResponder,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useHardwareBack } from '../hooks/useHardwareBack';
+import { useNotePreview } from '../hooks/useNotePreview';
+import {
+  CHORD_TAG_SUGGESTED,
+  CHORD_TAG_YOURS,
+  EDITOR_INTRO,
+  EDITOR_LAST_NOTE_REASON,
+  EDITOR_NO_KEY_LINE,
+  EDITOR_NO_REDETECT_REASON,
+  EDITOR_TITLE,
+  MAX_TRANSPOSE_SEMITONES,
+  NOTE_TAG_ADDED,
+  NOTE_TAG_CORRECTED,
+  NOTE_TAG_DETECTED,
+  addNoteAfter,
+  canRedo,
+  canRemoveNote,
+  canUndo,
+  chordPalette,
+  clearChordOverrides,
+  createEditorState,
+  deriveTake,
+  findNote,
+  gridStepSec,
+  insertRestAfter,
+  noteLabel,
+  noteTag,
+  overrideChord,
+  redetectNote,
+  redo,
+  removeNote,
+  resetChord,
+  resetToDetected,
+  setNoteBoundary,
+  setNotePitch,
+  snapTakeToScale,
+  transposeTake,
+  undo,
+  type AnalysisFrame,
+  type TakeEditorState,
+} from '../services/takeEditor';
+import { staffKeyFromKey, staffKeySignature, takeToAbc } from '../services/takeStaff';
+import { AbcScoreView } from './AbcScoreView';
+import { TakePreviewSection } from './TakePreviewSection';
+import {
+  SAVE_COPY_CTA,
+  SAVE_COPY_HINT,
+  SAVE_UPDATE_CTA,
+  SAVE_UPDATE_HINT,
+  saveCorrectedTake,
+  type TakeSaveMode,
+} from '../services/correctedTakeStore';
+import { TAKE_STAFF_CLEANED_INK, TAKE_STAFF_PAPER } from './TakeStaffCard';
+import type { SavedCaptureTake } from '../services/midiExport';
+
+/** The one-line coach tip on the surface (brief §5 — no false claims). */
+export const EDITOR_COACH_TIP =
+  'Notes are suggestions — tap any note to fix it. Your corrections are what exports and playback use.';
+/** The label over the touch layer. */
+export const EDITOR_LANE_LABEL = 'Tap a note · drag it up or down for pitch · drag its edges for timing';
+/** The label over the chord row. */
+export const EDITOR_CHORD_LABEL = 'Chords';
+export const EDITOR_CHORD_FREE_HINT = 'Type any chord (e.g. C#m7)';
+export const EDITOR_CHORD_USE_CTA = 'Use this chord';
+export const EDITOR_CHORD_RESET_CTA = 'Back to suggested';
+export const EDITOR_CHORD_RESET_ALL_CTA = 'Reset all chords';
+export const EDITOR_TRANSPOSE_LABEL = 'Whole take';
+export const EDITOR_SNAP_TO_KEY_CTA = 'Snap to key';
+export const EDITOR_UNDO_CTA = '↶ Undo';
+export const EDITOR_REDO_CTA = '↷ Redo';
+export const EDITOR_RESET_CTA = 'Reset to detected';
+export const EDITOR_ADD_NOTE_CTA = '+ Add note after';
+export const EDITOR_REMOVE_NOTE_CTA = 'Remove note';
+export const EDITOR_REST_CTA = 'Insert rest after';
+export const EDITOR_REDETECT_CTA = 'Re-detect this note';
+export const EDITOR_SHORTER_CTA = 'Shorter';
+export const EDITOR_LONGER_CTA = 'Longer';
+export const EDITOR_DONE_CTA = '← Back to my take';
+export const EDITOR_NO_CHORDS_LINE = 'No chords to change on this take yet.';
+export const EDITOR_SAVING_LABEL = 'Saving…';
+
+/** How wide one second of the take is drawn (the drag → seconds mapping). */
+export const LANE_PX_PER_SEC = 84;
+/** How far a vertical drag must travel to mean one semitone. */
+export const LANE_PX_PER_SEMITONE = 26;
+
+export interface TakeCorrectionEditorProps {
+  /** Whether the editor is open (the host owns this). */
+  visible: boolean;
+  /** The take to correct (the user's own; plain notes + tempo + key). */
+  take: SavedCaptureTake | null | undefined;
+  /** The History row this take belongs to ('' / null when it is not saved yet). */
+  rowId: string | null;
+  /** The saved clip's URI — carried onto a corrected copy, never re-recorded. */
+  audioUri?: string | null;
+  /** The take's own analysis frames, for a per-note re-detect (null = none). */
+  frames?: ReadonlyArray<AnalysisFrame> | null;
+  /** Called after a WRITE succeeded, with the corrected take. */
+  onSaved?: (take: SavedCaptureTake, mode: TakeSaveMode, rowId: string | null) => void;
+  /** Called for every edit, so the host can hold the corrected take (optional). */
+  onChanged?: (take: SavedCaptureTake) => void;
+  onClose: () => void;
+}
+
+export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
+  visible,
+  take,
+  rowId,
+  audioUri,
+  frames,
+  onSaved,
+  onChanged,
+  onClose,
+}) => {
+  const [state, setState] = useState<TakeEditorState>(() => createEditorState(take));
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [chordIndex, setChordIndex] = useState<number | null>(null);
+  const [freeChord, setFreeChord] = useState('');
+  const [saving, setSaving] = useState<TakeSaveMode | null>(null);
+  const [saveLine, setSaveLine] = useState<string | null>(null);
+  const stateRef = useRef<TakeEditorState>(state);
+  const dragBaseRef = useRef(0);
+  const preview = useNotePreview(state.notes, { enabled: visible });
+
+  const derived = useMemo(() => deriveTake(state), [state]);
+
+  /** Every edit lands here: one place updates the model and the host's copy. */
+  const apply = useCallback(
+    (next: TakeEditorState, auditionMidi?: number) => {
+      if (next !== stateRef.current) {
+        stateRef.current = next;
+        setState(next);
+        onChanged?.(deriveTake(next).take);
+      }
+      if (typeof auditionMidi === 'number') void preview.playNote(auditionMidi);
+    },
+    [onChanged, preview],
+  );
+
+  const selected = selectedId ? findNote(state, selectedId) : null;
+  const step = gridStepSec(state.tempoBpm);
+
+  const staffAbc = useMemo(() => {
+    const signature = staffKeySignature(staffKeyFromKey(derived.key));
+    return takeToAbc(state.notes, {
+      signature,
+      eighthSec: step,
+      title: 'Your corrected take',
+    });
+  }, [derived.key, state.notes, step]);
+
+  // ── the touch layer's gestures ───────────────────────────────────────────
+  const pitchPan = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dy) > 6,
+        onPanResponderRelease: (_event, gesture) => {
+          if (!selectedId) return;
+          const semitones = Math.round(-gesture.dy / LANE_PX_PER_SEMITONE);
+          if (semitones === 0) return;
+          const note = findNote(stateRef.current, selectedId);
+          if (!note) return;
+          const target = note.midi + semitones;
+          apply(setNotePitch(stateRef.current, selectedId, target), target);
+        },
+      }),
+    [apply, selectedId],
+  );
+
+  const boundaryPan = useCallback(
+    (edge: 'start' | 'end') =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => {
+          if (!selectedId) return;
+          const note = findNote(stateRef.current, selectedId);
+          if (!note) return;
+          dragBaseRef.current = edge === 'start' ? note.startSec : note.startSec + note.durationSec;
+        },
+        onPanResponderMove: (_event, gesture) => {
+          if (!selectedId) return;
+          const seconds = dragBaseRef.current + gesture.dx / LANE_PX_PER_SEC;
+          apply(setNoteBoundary(stateRef.current, selectedId, edge, seconds));
+        },
+      }),
+    [apply, selectedId],
+  );
+
+  // ── actions ──────────────────────────────────────────────────────────────
+  const select = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      setChordIndex(null);
+      const note = findNote(stateRef.current, id);
+      if (note) void preview.playNote(note.midi);
+    },
+    [preview],
+  );
+
+  const doAddNote = useCallback(() => {
+    if (!selectedId) return;
+    const anchorIndex = stateRef.current.notes.findIndex((note) => note.id === selectedId);
+    const next = addNoteAfter(stateRef.current, selectedId);
+    const added = anchorIndex >= 0 ? next.notes[anchorIndex + 1] ?? null : null;
+    apply(next);
+    if (added) {
+      setSelectedId(added.id);
+      void preview.playNote(added.midi);
+    }
+  }, [apply, preview, selectedId]);
+
+  const doRemove = useCallback(() => {
+    if (!selectedId) return;
+    if (!canRemoveNote(stateRef.current, selectedId)) {
+      setSaveLine(EDITOR_LAST_NOTE_REASON);
+      return;
+    }
+    const index = stateRef.current.notes.findIndex((note) => note.id === selectedId);
+    const next = removeNote(stateRef.current, selectedId);
+    apply(next);
+    const neighbour = next.notes[Math.min(Math.max(0, index - 1), next.notes.length - 1)] ?? null;
+    setSelectedId(neighbour ? neighbour.id : null);
+  }, [apply, selectedId]);
+
+  const doRest = useCallback(() => {
+    if (!selectedId) return;
+    apply(insertRestAfter(stateRef.current, selectedId));
+  }, [apply, selectedId]);
+
+  const doRedetect = useCallback(() => {
+    if (!selectedId) return;
+    if (!frames || frames.length === 0) {
+      setSaveLine(EDITOR_NO_REDETECT_REASON);
+      return;
+    }
+    const next = redetectNote(stateRef.current, selectedId, frames);
+    const note = findNote(next, selectedId);
+    apply(next, note ? note.midi : undefined);
+  }, [apply, frames, selectedId]);
+
+  const doDuration = useCallback(
+    (factor: number, deltaSteps: number) => {
+      if (!selectedId) return;
+      const note = findNote(stateRef.current, selectedId);
+      if (!note) return;
+      const wanted = (note.startSec + note.durationSec) * factor + deltaSteps * step;
+      apply(setNoteBoundary(stateRef.current, selectedId, 'end', wanted));
+    },
+    [apply, selectedId, step],
+  );
+
+  const doTranspose = useCallback(
+    (semitones: number) => {
+      apply(transposeTake(stateRef.current, semitones));
+    },
+    [apply],
+  );
+
+  const doSnap = useCallback(() => {
+    apply(snapTakeToScale(stateRef.current, derived.key));
+  }, [apply, derived.key]);
+
+  const doSave = useCallback(
+    async (mode: TakeSaveMode) => {
+      if (saving) return;
+      setSaving(mode);
+      setSaveLine(null);
+      const result = await saveCorrectedTake({
+        rowId,
+        take: derived.take,
+        audioUri: audioUri ?? null,
+        mode,
+      });
+      setSaving(null);
+      setSaveLine(result.line);
+      if (result.ok) onSaved?.(derived.take, mode, result.rowId);
+      else if (result.mode === 'update' && !rowId) {
+        // Not a dead end: the copy action is right there, and it always works.
+        setSaveLine(`${result.line}`);
+      }
+    },
+    [audioUri, derived.take, onSaved, rowId, saving],
+  );
+
+  // Android BACK closes the editor, never the app (the in-place flow rule).
+  useHardwareBack(() => {
+    if (visible) {
+      onClose();
+      return true;
+    }
+    return false;
+  });
+
+  const railBase = selected ? selected.midi : null;
+  const rail = useMemo(() => {
+    if (railBase === null) return [];
+    const out: number[] = [];
+    for (let offset = -6; offset <= 6; offset++) out.push(railBase + offset);
+    return out;
+  }, [railBase]);
+
+  const palette = useMemo(() => chordPalette(derived.key), [derived.key]);
+
+  const canUpdate = !!rowId;
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel={EDITOR_DONE_CTA}
+          >
+            <Text style={styles.backText}>{EDITOR_DONE_CTA}</Text>
+          </TouchableOpacity>
+          <Text style={styles.title}>{EDITOR_TITLE}</Text>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.body}>
+          <Text style={styles.intro}>{EDITOR_INTRO}</Text>
+          <Text style={styles.tip}>{EDITOR_COACH_TIP}</Text>
+
+          {/* The take's re-derived facts, after EVERY edit (brief §3b: the key and
+              the chords are recomputed, never left stale). */}
+          <View style={styles.factCard}>
+            <Text style={styles.factKey}>
+              {derived.keyLabel ? `Key: ${derived.keyLabel}` : 'No key detected in this take'}
+            </Text>
+            {derived.summaryLine ? (
+              <Text style={styles.factSummary}>{derived.summaryLine}</Text>
+            ) : (
+              <Text style={styles.factSummary}>
+                Nothing changed yet — this is the take exactly as detected.
+              </Text>
+            )}
+          </View>
+
+          {/* 1. THE STAFF — the take as notation, redrawn from the CURRENT notes. */}
+          <View style={styles.staffBox}>
+            <AbcScoreView abc={staffAbc} ink={TAKE_STAFF_CLEANED_INK} background={TAKE_STAFF_PAPER} />
+          </View>
+
+          {/* 2. THE TOUCH LAYER — one block per note, real duration, drag + edges. */}
+          <Text style={styles.laneLabel}>{EDITOR_LANE_LABEL}</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.lane}>
+            <View style={styles.laneRow}>
+              {state.notes.map((note, index) => {
+                const isSelected = note.id === selectedId;
+                const width = Math.max(
+                  44,
+                  Math.round(note.durationSec * LANE_PX_PER_SEC),
+                );
+                return (
+                  <View key={note.id} style={styles.noteWrap}>
+                    <View
+                      style={[
+                        styles.noteBlock,
+                        isSelected && styles.noteBlockSelected,
+                        preview.cursor === index && styles.noteBlockCursor,
+                        { width },
+                      ]}
+                      {...(isSelected ? pitchPan.panHandlers : {})}
+                    >
+                      <TouchableOpacity
+                        style={styles.noteBlockInner}
+                        onPress={() => select(note.id)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Note ${index + 1}: ${noteLabel(note.midi)}, ${noteTag(note)}`}
+                      >
+                        <Text style={styles.noteBlockText}>{noteLabel(note.midi)}</Text>
+                        <Text style={styles.noteBlockTag}>
+                          {note.source === 'added' ? '+' : note.source === 'corrected' ? '✎' : '·'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    {isSelected && (
+                      <>
+                        <View style={[styles.handle, styles.handleStart]} {...boundaryPan('start').panHandlers} />
+                        <View style={[styles.handle, styles.handleEnd]} {...boundaryPan('end').panHandlers} />
+                      </>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </ScrollView>
+
+          {/* 3. THE SELECTED NOTE — the semitone rail (audible), timing, structure. */}
+          {selected ? (
+            <View style={styles.panel}>
+              <Text style={styles.panelTitle}>
+                {noteLabel(selected.midi)} · {noteTag(selected)}
+              </Text>
+              <Text style={styles.panelSub}>
+                Pick a semitone — each one plays as you tap it.
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.rail}>
+                <View style={styles.railRow}>
+                  {rail.map((midi) => (
+                    <TouchableOpacity
+                      key={midi}
+                      style={[styles.railChip, midi === selected.midi && styles.railChipOn]}
+                      onPress={() => apply(setNotePitch(stateRef.current, selected.id, midi), midi)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Set pitch ${noteLabel(midi)}`}
+                    >
+                      <Text
+                        style={[
+                          styles.railChipText,
+                          midi === selected.midi && styles.railChipTextOn,
+                        ]}
+                      >
+                        {noteLabel(midi)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+              <View style={styles.btnRow}>
+                <TouchableOpacity
+                  style={styles.opBtn}
+                  onPress={() => {
+                    const target = selected.midi - 12;
+                    apply(setNotePitch(stateRef.current, selected.id, target), target);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Octave down"
+                >
+                  <Text style={styles.opBtnText}>−12</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.opBtn}
+                  onPress={() => {
+                    const target = selected.midi + 12;
+                    apply(setNotePitch(stateRef.current, selected.id, target), target);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Octave up"
+                >
+                  <Text style={styles.opBtnText}>+12</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.opBtn}
+                  onPress={() => doDuration(1, -1)}
+                  accessibilityRole="button"
+                  accessibilityLabel={EDITOR_SHORTER_CTA}
+                >
+                  <Text style={styles.opBtnText}>{EDITOR_SHORTER_CTA}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.opBtn}
+                  onPress={() => doDuration(1, 1)}
+                  accessibilityRole="button"
+                  accessibilityLabel={EDITOR_LONGER_CTA}
+                >
+                  <Text style={styles.opBtnText}>{EDITOR_LONGER_CTA}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.opBtn}
+                  onPress={() => doDuration(2, 0)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Double the length"
+                >
+                  <Text style={styles.opBtnText}>×2</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.opBtn}
+                  onPress={() => doDuration(0.5, 0)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Halve the length"
+                >
+                  <Text style={styles.opBtnText}>÷2</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.btnRow}>
+                <TouchableOpacity
+                  style={styles.opBtn}
+                  onPress={doAddNote}
+                  accessibilityRole="button"
+                  accessibilityLabel={EDITOR_ADD_NOTE_CTA}
+                >
+                  <Text style={styles.opBtnText}>{EDITOR_ADD_NOTE_CTA}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.opBtn, !canRemoveNote(state, selected.id) && styles.opBtnOff]}
+                  onPress={doRemove}
+                  accessibilityRole="button"
+                  accessibilityLabel={EDITOR_REMOVE_NOTE_CTA}
+                >
+                  <Text style={styles.opBtnText}>{EDITOR_REMOVE_NOTE_CTA}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.opBtn}
+                  onPress={doRest}
+                  accessibilityRole="button"
+                  accessibilityLabel={EDITOR_REST_CTA}
+                >
+                  <Text style={styles.opBtnText}>{EDITOR_REST_CTA}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.opBtn, (!frames || frames.length === 0) && styles.opBtnOff]}
+                  onPress={doRedetect}
+                  accessibilityRole="button"
+                  accessibilityLabel={EDITOR_REDETECT_CTA}
+                >
+                  <Text style={styles.opBtnText}>{EDITOR_REDETECT_CTA}</Text>
+                </TouchableOpacity>
+              </View>
+              {!canRemoveNote(state, selected.id) && (
+                <Text style={styles.reason}>{EDITOR_LAST_NOTE_REASON}</Text>
+              )}
+              {(!frames || frames.length === 0) && (
+                <Text style={styles.reason}>{EDITOR_NO_REDETECT_REASON}</Text>
+              )}
+            </View>
+          ) : (
+            <Text style={styles.reason}>
+              Tap a note on the lane above to correct its pitch, timing or length.
+            </Text>
+          )}
+
+          {/* 4. THE CHORD ROW — suggested, or the user's own ("yours"). */}
+          <View style={styles.panel}>
+            <Text style={styles.panelTitle}>{EDITOR_CHORD_LABEL}</Text>
+            {derived.chords.length > 0 ? (
+              <View style={styles.chordRow}>
+                {derived.chords.map((slot) => (
+                  <TouchableOpacity
+                    key={`${slot.index}-${slot.name}`}
+                    style={[
+                      styles.chordChip,
+                      slot.tag === CHORD_TAG_YOURS && styles.chordChipYours,
+                      chordIndex === slot.index && styles.chordChipOn,
+                    ]}
+                    onPress={() => {
+                      setChordIndex(slot.index);
+                      setFreeChord(slot.name);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Chord ${slot.name}, ${slot.tag}`}
+                  >
+                    <Text style={styles.chordChipText}>
+                      {slot.degree ? `${slot.degree} ` : ''}
+                      {slot.name}
+                    </Text>
+                    <Text style={styles.chordChipTag}>
+                      {slot.tag === CHORD_TAG_YOURS ? 'yours' : CHORD_TAG_SUGGESTED}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.reason}>{EDITOR_NO_KEY_LINE || EDITOR_NO_CHORDS_LINE}</Text>
+            )}
+
+            {chordIndex !== null && (
+              <View style={styles.chordEditor}>
+                {palette.length > 0 && (
+                  <View style={styles.chordRow}>
+                    {palette.map((entry) => (
+                      <TouchableOpacity
+                        key={`${entry.degree}-${entry.name}`}
+                        style={styles.paletteChip}
+                        onPress={() => {
+                          setFreeChord(entry.name);
+                          apply(overrideChord(stateRef.current, chordIndex, entry.name, entry.degree));
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Use chord ${entry.name}`}
+                      >
+                        <Text style={styles.paletteChipText}>
+                          {entry.degree} {entry.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                <TextInput
+                  style={styles.chordInput}
+                  value={freeChord}
+                  onChangeText={setFreeChord}
+                  placeholder={EDITOR_CHORD_FREE_HINT}
+                  placeholderTextColor="#7d7d99"
+                  autoCapitalize="characters"
+                  accessibilityLabel={EDITOR_CHORD_FREE_HINT}
+                />
+                <View style={styles.btnRow}>
+                  <TouchableOpacity
+                    style={styles.opBtn}
+                    onPress={() => apply(overrideChord(stateRef.current, chordIndex, freeChord))}
+                    accessibilityRole="button"
+                    accessibilityLabel={EDITOR_CHORD_USE_CTA}
+                  >
+                    <Text style={styles.opBtnText}>{EDITOR_CHORD_USE_CTA}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.opBtn}
+                    onPress={() => apply(resetChord(stateRef.current, chordIndex))}
+                    accessibilityRole="button"
+                    accessibilityLabel={EDITOR_CHORD_RESET_CTA}
+                  >
+                    <Text style={styles.opBtnText}>{EDITOR_CHORD_RESET_CTA}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.opBtn}
+                    onPress={() => apply(clearChordOverrides(stateRef.current))}
+                    accessibilityRole="button"
+                    accessibilityLabel={EDITOR_CHORD_RESET_ALL_CTA}
+                  >
+                    <Text style={styles.opBtnText}>{EDITOR_CHORD_RESET_ALL_CTA}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+
+          {/* 5. THE BATCH FIXES + THE ESCAPE HATCHES. */}
+          <View style={styles.panel}>
+            <Text style={styles.panelTitle}>{EDITOR_TRANSPOSE_LABEL}</Text>
+            <View style={styles.btnRow}>
+              <TouchableOpacity
+                style={styles.opBtn}
+                onPress={() => doTranspose(-1)}
+                accessibilityRole="button"
+                accessibilityLabel="Transpose the take down one semitone"
+              >
+                <Text style={styles.opBtnText}>−1 semitone</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.opBtn}
+                onPress={() => doTranspose(1)}
+                accessibilityRole="button"
+                accessibilityLabel="Transpose the take up one semitone"
+              >
+                <Text style={styles.opBtnText}>+1 semitone</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.opBtn, !derived.key && styles.opBtnOff]}
+                onPress={doSnap}
+                accessibilityRole="button"
+                accessibilityLabel={EDITOR_SNAP_TO_KEY_CTA}
+              >
+                <Text style={styles.opBtnText}>{EDITOR_SNAP_TO_KEY_CTA}</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.reason}>
+              Transpose moves at most ±{MAX_TRANSPOSE_SEMITONES} semitones at a time.
+            </Text>
+            <View style={styles.btnRow}>
+              <TouchableOpacity
+                style={[styles.opBtn, !canUndo(state) && styles.opBtnOff]}
+                onPress={() => apply(undo(stateRef.current))}
+                accessibilityRole="button"
+                accessibilityLabel={EDITOR_UNDO_CTA}
+              >
+                <Text style={styles.opBtnText}>{EDITOR_UNDO_CTA}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.opBtn, !canRedo(state) && styles.opBtnOff]}
+                onPress={() => apply(redo(stateRef.current))}
+                accessibilityRole="button"
+                accessibilityLabel={EDITOR_REDO_CTA}
+              >
+                <Text style={styles.opBtnText}>{EDITOR_REDO_CTA}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.opBtn}
+                onPress={() => {
+                  apply(resetToDetected(stateRef.current));
+                  setSelectedId(null);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={EDITOR_RESET_CTA}
+              >
+                <Text style={styles.opBtnText}>{EDITOR_RESET_CTA}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* 6. THE TAGS LEGEND — the user can always tell what is theirs. */}
+          <Text style={styles.legend}>
+            {NOTE_TAG_DETECTED} · {NOTE_TAG_CORRECTED} · {NOTE_TAG_ADDED}
+          </Text>
+
+          {/* 7. THE DOCKED PREVIEW (v33 slice G) — owner-ratified option 4: ONE
+              control row INSIDE this editor, above the sticky save bar. It plays
+              the corrected take (this screen's own notes), never a separate
+              screen and never a second player. */}
+          <TakePreviewSection preview={preview} />
+        </ScrollView>
+
+        {/* THE STICKY SAVE BAR — the only two writes in the flow. */}
+        <View style={styles.saveBar}>
+          {saveLine ? <Text style={styles.saveLine}>{saveLine}</Text> : null}
+          <View style={styles.saveRow}>
+            <TouchableOpacity
+              style={[styles.savePrimary, (!canUpdate || !!saving) && styles.saveOff]}
+              onPress={() => void doSave('update')}
+              disabled={!canUpdate || !!saving}
+              accessibilityRole="button"
+              accessibilityLabel={SAVE_UPDATE_CTA}
+            >
+              <Text style={styles.savePrimaryText}>
+                {saving === 'update' ? EDITOR_SAVING_LABEL : SAVE_UPDATE_CTA}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.saveSecondary, !!saving && styles.saveOff]}
+              onPress={() => void doSave('copy')}
+              disabled={!!saving}
+              accessibilityRole="button"
+              accessibilityLabel={SAVE_COPY_CTA}
+            >
+              <Text style={styles.saveSecondaryText}>
+                {saving === 'copy' ? EDITOR_SAVING_LABEL : SAVE_COPY_CTA}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.saveHint}>
+            {canUpdate ? SAVE_UPDATE_HINT : 'This take is not in History yet — save a copy.'}
+          </Text>
+          <Text style={styles.saveHint}>{SAVE_COPY_HINT}</Text>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#12122b' },
+  header: { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 8 },
+  backBtn: { minHeight: 44, justifyContent: 'center' },
+  backText: { color: '#e94560', fontSize: 16, fontWeight: '600' },
+  title: { color: '#ffffff', fontSize: 22, fontWeight: '800', marginTop: 2 },
+  body: { paddingHorizontal: 20, paddingBottom: 24 },
+  intro: { color: '#c0c0d0', fontSize: 13, lineHeight: 19 },
+  tip: { color: '#4ecdc4', fontSize: 12, lineHeight: 18, marginTop: 8 },
+  factCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    padding: 14,
+    marginTop: 14,
+  },
+  factKey: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  factSummary: { color: '#a0a0b8', fontSize: 12, lineHeight: 17, marginTop: 6 },
+  staffBox: { height: 150, marginTop: 14, borderRadius: 12, overflow: 'hidden' },
+  laneLabel: { color: '#7d7d99', fontSize: 11, lineHeight: 16, marginTop: 12 },
+  lane: { marginTop: 8, maxHeight: 96 },
+  laneRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
+  noteWrap: { position: 'relative', marginRight: 6, justifyContent: 'center' },
+  noteBlock: {
+    backgroundColor: '#0f3460',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#4ecdc4',
+    minHeight: 52,
+    justifyContent: 'center',
+  },
+  noteBlockSelected: { backgroundColor: '#1d4b7a', borderColor: '#ffffff' },
+  noteBlockCursor: { borderColor: '#ffb347' },
+  noteBlockInner: { minHeight: 52, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  noteBlockText: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
+  noteBlockTag: { color: '#4ecdc4', fontSize: 11, marginTop: 2 },
+  handle: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 18,
+    backgroundColor: 'rgba(78,205,196,0.25)',
+  },
+  handleStart: { left: -9, borderTopLeftRadius: 10, borderBottomLeftRadius: 10 },
+  handleEnd: { right: -9, borderTopRightRadius: 10, borderBottomRightRadius: 10 },
+  panel: {
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    padding: 14,
+    marginTop: 14,
+  },
+  panelTitle: { color: '#ffffff', fontSize: 15, fontWeight: '800' },
+  panelSub: { color: '#7d7d99', fontSize: 11, marginTop: 4 },
+  rail: { marginTop: 10, maxHeight: 56 },
+  railRow: { flexDirection: 'row', alignItems: 'center' },
+  railChip: {
+    minHeight: 44,
+    minWidth: 44,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    backgroundColor: '#12122b',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  railChipOn: { borderColor: '#4ecdc4', backgroundColor: '#0f3460' },
+  railChipText: { color: '#c0c0d0', fontSize: 13, fontWeight: '700' },
+  railChipTextOn: { color: '#4ecdc4' },
+  btnRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
+  opBtn: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#4ecdc4',
+    backgroundColor: '#0f3460',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+    marginTop: 8,
+  },
+  opBtnOff: { borderColor: '#3a3a52', backgroundColor: '#1a1a2e' },
+  opBtnText: { color: '#4ecdc4', fontSize: 13, fontWeight: '700' },
+  reason: { color: '#ffb347', fontSize: 11, lineHeight: 16, marginTop: 8 },
+  chordRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
+  chordChip: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    backgroundColor: '#12122b',
+    justifyContent: 'center',
+    marginRight: 8,
+    marginTop: 8,
+  },
+  chordChipYours: { borderColor: '#ffb347' },
+  chordChipOn: { borderColor: '#4ecdc4' },
+  chordChipText: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
+  chordChipTag: { color: '#7d7d99', fontSize: 10, marginTop: 2 },
+  chordEditor: { marginTop: 6 },
+  paletteChip: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#4ecdc4',
+    backgroundColor: '#0f3460',
+    justifyContent: 'center',
+    marginRight: 8,
+    marginTop: 8,
+  },
+  paletteChipText: { color: '#4ecdc4', fontSize: 13, fontWeight: '700' },
+  chordInput: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    color: '#ffffff',
+    backgroundColor: '#12122b',
+    marginTop: 10,
+  },
+  legend: { color: '#7d7d99', fontSize: 11, marginTop: 14, textAlign: 'center' },
+  saveBar: {
+    borderTopWidth: 1,
+    borderTopColor: '#0f3460',
+    backgroundColor: '#1a1a2e',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 20,
+  },
+  saveRow: { flexDirection: 'row' },
+  savePrimary: {
+    flex: 1,
+    minHeight: 48,
+    backgroundColor: '#e94560',
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  savePrimaryText: { color: '#ffffff', fontSize: 15, fontWeight: '800' },
+  saveSecondary: {
+    flex: 1,
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: '#4ecdc4',
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveSecondaryText: { color: '#4ecdc4', fontSize: 15, fontWeight: '700' },
+  saveOff: { opacity: 0.55 },
+  saveLine: { color: '#ffb347', fontSize: 12, lineHeight: 17, marginBottom: 8 },
+  saveHint: { color: '#7d7d99', fontSize: 11, lineHeight: 15, marginTop: 6 },
+});

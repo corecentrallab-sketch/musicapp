@@ -28,7 +28,11 @@
  *   • ~300 ms debounce per settled query, newest response wins (a slow request
  *     for "fur" can never overwrite the results for "für elise");
  *   • no match  → "No pieces match — try another title or composer" PLUS the
- *     retailer section with the honest "not in our free library" hint;
+ *     retailer section with the honest "not in our free library" hint — but only
+ *     after the TYPO LADDER has been tried (v33 §F3): the user's own words first,
+ *     then the model's variants of them, re-run through this same catalog search;
+ *     when a variant is what matched, `retryNoticeLine` says so above the list and
+ *     the honesty of the empty state is preserved when nothing matched;
  *   • failure   → honest error with a Retry button (never an empty list);
  *   • sheet badge → "🎼 Sheet music" only when the catalog really has a
  *     curated score, otherwise "Coming soon" (no invented links);
@@ -64,11 +68,20 @@ import {
   sheetBadgeLabel,
   sortPiecesForDisplay,
 } from '../services/catalogSearch';
+// Typo tolerance (v33 §F3, owner 10-04: "Toccata & Fugue does not surface, even
+// when typed as a common misspelling like 'toccatta and fugue'"). The ladder and
+// the honest notice come from the model — this screen may not invent either.
+import { queryVariants, rankFuzzyMatches, retryNoticeLine } from '../services/fuzzySearch';
 import {
   EXTERNAL_NO_MATCH_HINT,
   externalSearchSection,
 } from '../services/searchExternal';
 import { SearchExternalSection } from '../components/SearchExternalSection';
+// v33 §H (owner 10-04): "Scan a cover" — photograph a score's title page and
+// land on THIS screen's own search. The label and the honest no-OCR state come
+// from the model (services/coverScan.ts); this screen never invents either.
+import { CoverScanModal } from '../components/CoverScanModal';
+import { coverScanAffordanceLabel } from '../services/coverScan';
 import { PurchaseWebView } from '../components/PurchaseWebView';
 import { mergeCatalogIntoDetail } from '../services/historyPiece';
 import { PieceDetailScreen } from './PieceDetailScreen';
@@ -86,6 +99,10 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
   const [pieces, setPieces] = useState<CatalogPiece[]>([]);
   const [total, setTotal] = useState(0);
   const [status, setStatus] = useState<Status>('loading');
+  // The honest "which query actually found these" line (v33 §F3). Set ONLY when
+  // the user's own words found nothing and a variant of them did — never on a
+  // first-try hit, where there is nothing to explain.
+  const [retryNotice, setRetryNotice] = useState<string | null>(null);
   // Bumped by the Retry button to re-run the current query.
   const [reloadToken, setReloadToken] = useState(0);
   // Full-screen piece page for a tapped row (rendered in place, like History).
@@ -93,6 +110,10 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
   // The licensed retailer the user tapped (opened in the in-app shell). Never
   // set by anything but a tap — no auto-redirect (owner 08-24).
   const [retailerUrl, setRetailerUrl] = useState<string | null>(null);
+  // v33 §H: the cover-photo flow (camera → confirm → THIS screen's search). It is
+  // opened only by the affordance's own tap, and it adds no second search: the
+  // confirmed text is written into `query`, the field the user types into.
+  const [showCoverScan, setShowCoverScan] = useState(false);
   // Guards against a stale response replacing newer results.
   const searchRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
@@ -100,24 +121,59 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
   // Debounced catalog search: one request per settled query.
   useEffect(() => {
     const trimmed = normalizeQuery(query);
+    const typed = trimmed;
     const token = ++searchRequestRef.current;
     setStatus('loading');
 
     const timer = setTimeout(() => {
-      void searchPieces(trimmed)
-        .then((res) => {
+      void (async () => {
+        try {
+          const res = await searchPieces(trimmed);
           if (token !== searchRequestRef.current) return;
           const sorted = sortPiecesForDisplay(res.pieces);
+
+          // ── The typo ladder (v33 §F3) ──
+          // The user's own words are always tried FIRST (above). Only when they
+          // find nothing does the screen re-run the SAME catalog search with the
+          // model's variants, in the model's order, and rank what comes back. The
+          // winner is what the user sees, and the notice names the query that
+          // actually matched — no silent substitution, no invented results.
+          if (sorted.length === 0 && typed.length > 0) {
+            for (const variant of queryVariants(typed)) {
+              if (variant === typed) continue;
+              const retry = await searchPieces(variant);
+              if (token !== searchRequestRef.current) return;
+              const ranked = rankFuzzyMatches(variant, sortPiecesForDisplay(retry.pieces));
+              if (ranked.length > 0) {
+                const matched = ranked.map((entry) => entry.item);
+                setPieces(matched);
+                setTotal(matched.length);
+                setRetryNotice(retryNoticeLine(typed, variant));
+                setStatus('ready');
+                return;
+              }
+            }
+            // Every variant came up empty too: the honest empty state stands, with
+            // the retailers below it (the no-dead-end rule from 09-28).
+            setPieces([]);
+            setTotal(0);
+            setRetryNotice(null);
+            setStatus('empty');
+            return;
+          }
+
           setPieces(sorted);
           setTotal(res.total);
+          setRetryNotice(null);
           setStatus(sorted.length === 0 ? 'empty' : 'ready');
-        })
-        .catch(() => {
+        } catch {
           if (token !== searchRequestRef.current) return;
           setPieces([]);
           setTotal(0);
+          setRetryNotice(null);
           setStatus('error');
-        });
+        }
+      })();
     }, CATALOG_SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
@@ -166,6 +222,29 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
   }, []);
 
   /**
+   * v33 §H — "Scan a cover". The affordance opens the camera surface; the photo
+   * itself never becomes a query. The user confirms the text in the modal's own
+   * field (EMPTY in this build: there is no on-device reader, and a prefilled
+   * guess would be a fabricated read), and what they confirm comes back through
+   * `handleCoverQuery` — the same entry point as typing.
+   */
+  const handleScanCover = useCallback(() => {
+    setShowCoverScan(true);
+  }, []);
+
+  const handleCloseCoverScan = useCallback(() => {
+    setShowCoverScan(false);
+  }, []);
+
+  const handleCoverQuery = useCallback((text: string) => {
+    setShowCoverScan(false);
+    // The ONE search entry point: the debounced effect above, unchanged. A
+    // scanned title therefore produces exactly the results a typed one does
+    // (internal catalog + the official sheet music money path).
+    setQuery(text);
+  }, []);
+
+  /**
    * The external half of the results — a licensed-retailer search for whatever
    * the user typed. SIMPLE dependency on the query (and the internal match count,
    * which only changes the honest subtitle): no request, no debounce, nothing
@@ -173,6 +252,11 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
    * matched nothing. Empty query → `visible: false` → the section renders nothing.
    */
   const external = externalSearchSection(query, pieces.length);
+
+  // The affordance's own label (v33 §H). It names what the user does — photograph
+  // a cover — and, while this build has no on-device reader, it does not claim
+  // the photo will be read for them.
+  const coverScanLabel = coverScanAffordanceLabel();
 
   const renderItem = ({ item }: { item: CatalogPiece }) => {
     const meta = [item.composer, item.catalog].filter(
@@ -219,6 +303,10 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
   // piece first, then back to whoever opened the search. Guarded by
   // src/services/backExitContract.ts.
   useHardwareBack(() => {
+    if (showCoverScan) {
+      handleCloseCoverScan();
+      return true;
+    }
     if (showDetail) {
       handleCloseDetail();
       return true;
@@ -277,9 +365,30 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
         ) : null}
       </View>
 
+      {/* v33 §H: the camera affordance sits with the search field it feeds —
+          one small row, no new screen. Its label comes from coverScan.ts, so the
+          copy and the honest "no reader in this build" state stay in one place.
+          Zero-promise: it promises a search, never that we read the photo. */}
+      <TouchableOpacity
+        style={styles.coverScanRow}
+        onPress={handleScanCover}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={coverScanLabel}
+      >
+        <Text style={styles.coverScanText}>{coverScanLabel}</Text>
+      </TouchableOpacity>
+
       <Text style={styles.subtitle}>
         Free public-domain and classical pieces — search, then open the score.
       </Text>
+
+      {/* What actually matched (v33 §F3): shown only when the user's own words
+          found nothing and a variant of them did. It sits above the results so
+          the list can never look like a first-try hit for a typo'd query. */}
+      {retryNotice ? (
+        <Text style={styles.retryNotice}>{retryNotice}</Text>
+      ) : null}
 
       {status === 'loading' && pieces.length === 0 ? (
         <View style={styles.center}>
@@ -354,6 +463,14 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
       {/* The retailer's own search page (previews + checkout), in the shared
           in-app shell: Modal root, BACK / "← Back to NoteSnap" return HERE, and
           it only ever opens from a tap. */}
+      {/* The camera surface (v33 §H): capture → confirm → the search above.
+          Tap-driven only — it exists solely behind the affordance's onPress. */}
+      <CoverScanModal
+        visible={showCoverScan}
+        onClose={handleCloseCoverScan}
+        onConfirm={handleCoverQuery}
+      />
+
       <PurchaseWebView
         url={retailerUrl}
         title={
@@ -391,6 +508,35 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 18,
     fontWeight: '700',
+  },
+
+  // The "Scan a cover" affordance (v33 §H): a quiet row under the search field,
+  // never a second primary action on this screen.
+  coverScanRow: {
+    alignSelf: 'flex-start',
+    marginHorizontal: 20,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    backgroundColor: '#16213e',
+  },
+  coverScanText: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  // The "what actually matched" line for a typo'd query (v33 §F3): quiet, above
+  // the list, never a warning — it explains the results, it does not scold.
+  retryNotice: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    lineHeight: 19,
+    marginHorizontal: 20,
+    marginTop: 10,
   },
 
   // Search field

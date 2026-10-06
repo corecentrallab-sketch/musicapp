@@ -5,20 +5,35 @@
  *
  * WHAT IT IS. The whole screen the user lands on the moment they choose to hum,
  * whistle or sing: a recording badge, a real-time VU meter fed by the recorder's
- * own metering samples, the elapsed time, a live note strip, and the stop
- * control. When the take ends the SAME window becomes the result: the note-by-
- * note sequence (as hummed, and auto-cleaned to the detected key), the detected
- * key, the SUGGESTED chords, and the actions — save the melody, write it as
- * MIDI, record another.
+ * own metering samples, the elapsed time, a live note strip, the honest
+ * "When you stop" card, and the stop control. When the take ends the SAME window
+ * becomes the result: the note-by-note sequence (as hummed, and auto-cleaned to
+ * the detected key), the take drawn as notation, the detected key, the SUGGESTED
+ * chords, and the actions — correct the take, write it as MIDI, find this melody,
+ * record another. NO Save button: the take is written into History the moment it
+ * ends, and the page says so with a chip (owner ratification 10-04).
+ *
+ * ── v33 §B: THE WINDOW IS CAPTURE-ONLY (owner device-pass 10-03) ────────────
+ *   • NO match card and NO "no match for that melody" card renders on this page.
+ *     Matching is a separate step the user chooses: FIND_THIS_MELODY_CTA, which
+ *     hands the take to the flow's own result step (the miss card lives there,
+ *     never here).
+ *   • the "CAPTURE ONLY" chip + its plain line state the rule ON THE SURFACE, so
+ *     the user knows what this page does before they press anything.
+ *   • the "When you stop" card says in facts what the take becomes.
+ *   • the auto-save is shown as a CHIP, never as a button that could only fail.
  *
  * WHY IT IS ITS OWN COMPONENT. The window owns no recorder, no network and no
  * storage: the flow that hosts it (src/screens/HumSearchScreen.tsx) owns the
  * take, the hum match and the persistence, and hands this component the numbers
  * to draw. That is what lets the same window render a re-opened melody from
- * History and keeps every rule about a take in one place.
+ * History and keeps every rule about a take in one place. The notation card
+ * (TakeStaffCard) is passed IN as `staff`, so this window still owns no
+ * renderer.
  *
  * THE HONESTY RULES THE SURFACE RENDERS (they are decided in
- * src/services/melodyCapture.ts and asserted by scripts/melodyCapture.test.ts):
+ * src/services/melodyCapture.ts and asserted by scripts/melodyCapture.test.ts +
+ * scripts/v33UiWiring.test.ts):
  *   • a cleaned sequence is ALWAYS labelled "Auto-cleaned …", said in words
  *     ("3 of 7 notes nudged onto the scale") — never a studio-transcription
  *     claim, and the as-hummed sequence is always shown beside it;
@@ -26,8 +41,8 @@
  *     carries no harmony — and with no detected key there are NO chords, only
  *     the honest line saying why;
  *   • a take with nothing in it (or one we could not read) is its own state with
- *     its own honest copy, and the save/export actions are DISABLED WITH THE
- *     REASON — never a button that could only fail;
+ *     its own honest copy, and the export action is DISABLED WITH THE REASON —
+ *     never a button that could only fail;
  *   • the live note strip says plainly when this build cannot show notes while
  *     the user sings (the take is read note by note when it ends). It never
  *     implies notes are appearing when they are not;
@@ -46,16 +61,27 @@ import {
   View,
 } from 'react-native';
 import {
+  CAPTURE_ONLY_CHIP_LABEL,
+  CAPTURE_ONLY_LINE,
   CAPTURE_WINDOW_TITLE,
   CHORDS_HONESTY_LINE,
   CLEANED_SEQUENCE_LABEL,
+  CORRECT_TAKE_CTA,
+  CORRECT_TAKE_HINT,
+  DONE_CTA,
+  FIND_THIS_MELODY_CTA,
+  FIND_THIS_MELODY_HINT,
+  FINDING_MELODY_LABEL,
   LIVE_BADGE_LABEL,
   RAW_SEQUENCE_LABEL,
-  SAVED_MELODY_CTA,
-  SAVE_MELODY_CTA,
-  SAVE_MELODY_HINT,
+  RECORD_ANOTHER_CTA,
+  SAVED_CHIP_HINT,
+  SAVED_CHIP_LABEL,
   STOP_CTA_LABEL,
   SUGGESTED_CHORDS_LABEL,
+  TAKE_HEADING,
+  WHEN_YOU_STOP_ITEMS,
+  WHEN_YOU_STOP_TITLE,
   buildLiveTrace,
   type MelodyAnalysis,
   type MelodyWindowCopy,
@@ -81,24 +107,30 @@ export interface MelodyCaptureWindowProps {
   liveSourceReady?: boolean;
   /** The analysed take (null until one has been read). */
   analysis: MelodyAnalysis | null;
-  /** The bonus match line ("That's Für Elise — it's in our library"). */
-  matchLine?: string | null;
-  /** Open the matched piece's own page (the PD bonus). */
-  onOpenMatch?: () => void;
+  /** "Find this melody ›" — the SEPARATE matching step (never inline here). */
+  onFindMelody?: () => void;
+  /** True while the flow is running that step (the button says so). */
+  findingMelody?: boolean;
+  /** The step's own outcome line, when the flow has one. */
+  findNote?: string | null;
+  /** Open the take-correction editor (v33 §D) on this take. */
+  onCorrectTake?: () => void;
   onStop: () => void;
   onClose: () => void;
   onRecordAgain: () => void;
-  onSave: () => void;
-  /** True once the take is in History. */
+  /** True once the take is in History — shown as the chip, never a Save button. */
   saved: boolean;
+  /** The flow's own line about the auto-save (why it could not be written …). */
   saveNote?: string | null;
   onExportMidi: () => void;
   exporting: boolean;
   exportNote?: string | null;
   exportKeyLine?: string | null;
+  /** The take drawn as notation (v33 §C) — built by the flow, rendered here. */
+  staff?: React.ReactNode;
   /** Copy owned by the hosting flow (the mode-naming lines it must render). */
   copy: MelodyWindowCopy;
-  /** The flow's own notices (the no-match card, the error card). */
+  /** The flow's own notices (its error cards, the read-again action). */
   children?: React.ReactNode;
 }
 
@@ -117,18 +149,20 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
   liveNotes,
   liveSourceReady,
   analysis,
-  matchLine,
-  onOpenMatch,
+  onFindMelody,
+  findingMelody,
+  findNote,
+  onCorrectTake,
   onStop,
   onClose,
   onRecordAgain,
-  onSave,
   saved,
   saveNote,
   onExportMidi,
   exporting,
   exportNote,
   exportKeyLine,
+  staff,
   copy: text,
   children,
 }) => {
@@ -146,8 +180,16 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
         <Text style={styles.headerTitle}>{CAPTURE_WINDOW_TITLE}</Text>
       </View>
 
+      {/* THE CAPTURE-ONLY RULE, ON THE SURFACE (brief §B.1). The user has to be
+          able to see that this page matches nothing — the rule may not live only
+          in the team's copy deck. */}
+      <View style={styles.captureOnlyRow}>
+        <Text style={styles.captureOnlyChip}>{CAPTURE_ONLY_CHIP_LABEL}</Text>
+        <Text style={styles.captureOnlyLine}>{CAPTURE_ONLY_LINE}</Text>
+      </View>
+
       {recording ? (
-        <View style={styles.liveStage}>
+        <ScrollView contentContainerStyle={styles.liveStage}>
           <View style={styles.liveRow}>
             <View style={styles.liveBadge}>
               <View style={styles.liveDot} />
@@ -194,13 +236,28 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
             )}
           </View>
 
+          {/* ── "WHEN YOU STOP" (brief §B, design callout 1) ──
+              The honest contract, printed BEFORE the user presses stop: what the
+              take becomes, in facts this build backs. Every line is a claim the
+              pipeline really keeps (auto-save, auto-clean, suggested chords, no
+              matching on this page). */}
+          <View style={styles.whenBox}>
+            <Text style={styles.whenTitle}>{WHEN_YOU_STOP_TITLE}</Text>
+            {WHEN_YOU_STOP_ITEMS.map((item) => (
+              <View key={item} style={styles.whenRow}>
+                <Text style={styles.whenBullet}>•</Text>
+                <Text style={styles.whenText}>{item}</Text>
+              </View>
+            ))}
+          </View>
+
           <Text style={styles.recordingLine}>{text.recordingLine}</Text>
           <Text style={styles.hint}>{text.hint}</Text>
 
           <TouchableOpacity style={styles.stopBtn} onPress={onStop} activeOpacity={0.8}>
             <Text style={styles.stopBtnText}>{STOP_CTA_LABEL}</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       ) : (
         <ScrollView contentContainerStyle={styles.reviewStage}>
           {analysing && (
@@ -222,7 +279,7 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
 
               {analysis.state === 'ready' && (
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Your notes</Text>
+                  <Text style={styles.sectionTitle}>{TAKE_HEADING}</Text>
                   <Text style={styles.sectionSub}>{RAW_SEQUENCE_LABEL}</Text>
                   <Text style={styles.sequence}>{analysis.rawSequence}</Text>
                   {analysis.rawHidden > 0 && (
@@ -242,6 +299,10 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
                   <Text style={styles.cleanedLabel}>{analysis.cleanedLabel}</Text>
                 </View>
               )}
+
+              {/* ── THE TAKE AS NOTATION (v33 §C) ── built by the flow, so this
+                  window still owns no renderer. */}
+              {analysis.state === 'ready' ? staff : null}
 
               {analysis.state === 'ready' && (
                 <View style={styles.section}>
@@ -282,35 +343,37 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
                 </View>
               )}
 
-              {matchLine ? (
-                <View style={styles.matchCard}>
-                  <Text style={styles.matchText}>{matchLine}</Text>
-                  {onOpenMatch && (
-                    <TouchableOpacity style={styles.matchBtn} onPress={onOpenMatch} activeOpacity={0.7}>
-                      <Text style={styles.matchBtnText}>Open the piece</Text>
-                    </TouchableOpacity>
-                  )}
+              {/* THE AUTO-SAVE, AS A CHIP (owner ratification 10-04: there is no
+                  Save button on this page — the take is already in History). */}
+              {saved ? (
+                <View style={styles.savedChip}>
+                  <Text style={styles.savedChipText}>✓ {SAVED_CHIP_LABEL}</Text>
+                  <Text style={styles.savedChipHint}>{SAVED_CHIP_HINT}</Text>
                 </View>
               ) : null}
+              {!saved && saveNote ? (
+                <Text style={styles.actionReason}>{saveNote}</Text>
+              ) : null}
 
-              {/* THE MONEY-FREE, HONEST ACTION ROW. Save and Export are gated on
-                  what the take really supports, with the reason printed under a
-                  disabled control. */}
-              <TouchableOpacity
-                style={[styles.primaryBtn, !analysis.canSave && styles.btnDisabled]}
-                onPress={onSave}
-                disabled={!analysis.canSave}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.primaryBtnText}>{saved ? SAVED_MELODY_CTA : SAVE_MELODY_CTA}</Text>
-              </TouchableOpacity>
-              {analysis.canSave ? (
-                <Text style={styles.actionHint}>{SAVE_MELODY_HINT}</Text>
-              ) : (
-                <Text style={styles.actionReason}>{analysis.disabledReason}</Text>
-              )}
-              {saveNote ? <Text style={styles.actionNote}>{saveNote}</Text> : null}
+              {/* ── THE TAKE-CORRECTION EDITOR'S DOOR (v33 §D) ── a real action
+                  on the take the user is looking at. */}
+              {analysis.state === 'ready' && onCorrectTake ? (
+                <>
+                  <TouchableOpacity
+                    style={styles.correctBtn}
+                    onPress={onCorrectTake}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={CORRECT_TAKE_CTA}
+                  >
+                    <Text style={styles.correctBtnText}>{CORRECT_TAKE_CTA}</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.actionHint}>{CORRECT_TAKE_HINT}</Text>
+                </>
+              ) : null}
 
+              {/* ── THE ACTION BAR (owner-ratified order, NO Save button) ──
+                  Export MIDI · Find this melody › · Record another melody · Done. */}
               <TouchableOpacity
                 style={[styles.midiBtn, !analysis.canExportMidi && styles.btnDisabled]}
                 onPress={onExportMidi}
@@ -329,11 +392,44 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
               {exportKeyLine ? <Text style={styles.exportKey}>{exportKeyLine}</Text> : null}
               {exportNote ? <Text style={styles.actionNote}>{exportNote}</Text> : null}
 
-              <TouchableOpacity style={styles.secondaryBtn} onPress={onRecordAgain} activeOpacity={0.8}>
-                <Text style={styles.secondaryBtnText}>Record another melody</Text>
+              {/* FIND THIS MELODY — the ONLY door to results from this page, and
+                  it is the user's own explicit step (brief §B.2). */}
+              {onFindMelody ? (
+                <TouchableOpacity
+                  style={[styles.findBtn, !analysis.canSave && styles.btnDisabled]}
+                  onPress={onFindMelody}
+                  disabled={!analysis.canSave || !!findingMelody}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={FIND_THIS_MELODY_CTA}
+                >
+                  <Text style={styles.findBtnText}>
+                    {findingMelody ? FINDING_MELODY_LABEL : FIND_THIS_MELODY_CTA}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              {onFindMelody ? (
+                <Text style={styles.actionHint}>{FIND_THIS_MELODY_HINT}</Text>
+              ) : null}
+              {findNote ? <Text style={styles.actionNote}>{findNote}</Text> : null}
+
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={onRecordAgain}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={RECORD_ANOTHER_CTA}
+              >
+                <Text style={styles.secondaryBtnText}>{RECORD_ANOTHER_CTA}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.quietBtn} onPress={onClose} activeOpacity={0.8}>
-                <Text style={styles.quietBtnText}>Done</Text>
+              <TouchableOpacity
+                style={styles.quietBtn}
+                onPress={onClose}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={DONE_CTA}
+              >
+                <Text style={styles.quietBtnText}>{DONE_CTA}</Text>
               </TouchableOpacity>
             </>
           )}
@@ -357,7 +453,27 @@ const styles = StyleSheet.create({
   backBtn: { marginRight: 12 },
   backText: { color: '#e94560', fontSize: 16, fontWeight: '600' },
   headerTitle: { color: '#ffffff', fontSize: 18, fontWeight: '700' },
-  liveStage: { flex: 1, alignItems: 'center', paddingHorizontal: 24, paddingTop: 8 },
+  captureOnlyRow: {
+    paddingHorizontal: 20,
+    paddingBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  captureOnlyChip: {
+    color: '#4ecdc4',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginRight: 8,
+    overflow: 'hidden',
+  },
+  captureOnlyLine: { color: '#7d7d99', fontSize: 11, flexShrink: 1 },
+  liveStage: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 60 },
   liveRow: {
     width: '100%',
     flexDirection: 'row',
@@ -432,6 +548,19 @@ const styles = StyleSheet.create({
   stripLabel: { color: '#7d7d99', fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
   stripText: { color: '#ffffff', fontSize: 15, fontWeight: '600', marginTop: 6, lineHeight: 21 },
   stripChip: { color: '#4ecdc4', fontSize: 12, fontWeight: '700', marginTop: 6 },
+  whenBox: {
+    width: '100%',
+    backgroundColor: '#16213e',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    padding: 16,
+    marginTop: 16,
+  },
+  whenTitle: { color: '#ffffff', fontSize: 15, fontWeight: '800', marginBottom: 8 },
+  whenRow: { flexDirection: 'row', marginTop: 6 },
+  whenBullet: { color: '#4ecdc4', fontSize: 13, marginRight: 8, lineHeight: 19 },
+  whenText: { color: '#c0c0d0', fontSize: 13, lineHeight: 19, flexShrink: 1 },
   recordingLine: { color: '#ff8fa3', fontSize: 14, fontWeight: '700', marginTop: 18 },
   hint: { color: '#a0a0b8', fontSize: 13, textAlign: 'center', marginTop: 6 },
   stopBtn: {
@@ -490,40 +619,26 @@ const styles = StyleSheet.create({
   chordDegreeLine: { color: '#c0c0d0', fontSize: 13, marginTop: 6 },
   chordNone: { color: '#a0a0b8', fontSize: 13, lineHeight: 19, marginTop: 8 },
   chordsHonesty: { color: '#7d7d99', fontSize: 11, lineHeight: 16, marginTop: 10 },
-  matchCard: {
+  savedChip: {
     backgroundColor: '#0f3460',
-    borderRadius: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#4ecdc4',
     padding: 14,
     marginBottom: 12,
   },
-  matchText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
-  matchBtn: {
-    marginTop: 10,
+  savedChipText: { color: '#4ecdc4', fontSize: 15, fontWeight: '800' },
+  savedChipHint: { color: '#a0a0b8', fontSize: 12, lineHeight: 17, marginTop: 4 },
+  correctBtn: {
+    backgroundColor: '#0f3460',
     borderColor: '#4ecdc4',
     borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  matchBtnText: { color: '#4ecdc4', fontSize: 14, fontWeight: '700' },
-  primaryBtn: {
-    backgroundColor: '#e94560',
     borderRadius: 14,
-    padding: 15,
+    paddingVertical: 15,
     alignItems: 'center',
     marginTop: 6,
   },
-  primaryBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
-  btnDisabled: { backgroundColor: '#3a3a52' },
-  actionHint: { color: '#a0a0b8', fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 6 },
-  actionReason: {
-    color: '#ffb347',
-    fontSize: 12,
-    lineHeight: 17,
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  actionNote: { color: '#4ecdc4', fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 6 },
+  correctBtnText: { color: '#4ecdc4', fontSize: 16, fontWeight: '800' },
   midiBtn: {
     backgroundColor: '#0f3460',
     borderColor: '#4ecdc4',
@@ -534,6 +649,26 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   midiBtnText: { color: '#4ecdc4', fontSize: 15, fontWeight: '700' },
+  findBtn: {
+    backgroundColor: '#16213e',
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  findBtnText: { color: '#4ecdc4', fontSize: 15, fontWeight: '700' },
+  btnDisabled: { backgroundColor: '#3a3a52', borderColor: '#3a3a52' },
+  actionHint: { color: '#a0a0b8', fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 6 },
+  actionReason: {
+    color: '#ffb347',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  actionNote: { color: '#4ecdc4', fontSize: 12, lineHeight: 17, textAlign: 'center', marginTop: 6 },
   exportKey: { color: '#4ecdc4', fontSize: 13, fontWeight: '600', textAlign: 'center', marginTop: 8 },
   secondaryBtn: {
     borderColor: '#0f3460',

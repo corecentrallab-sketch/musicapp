@@ -59,7 +59,7 @@ function scoreFromAbc(abc: string, title: string): AbcScore {
 }
 
 export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => {
-  const [selected, setSelected] = useState<AbcScore>(PUBLIC_DOMAIN_ABC_SCORES[0]);
+  const [selected, setSelected] = useState<AbcScore | null>(null);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -102,6 +102,18 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
         if (!cancelled && found) {
           setSelected(found);
           setOffset(0);
+          return;
+        }
+      }
+      // Nothing specific was requested: this is the picker open (the "Choose a
+      // piece" row below), so it lands on the first bundled score. This is NOT
+      // the old first-frame default — the state above starts EMPTY, so the staff
+      // can never paint one piece while another one is on its way (v33 §F5).
+      if (!cancelled) {
+        const first = PUBLIC_DOMAIN_ABC_SCORES[0];
+        if (first) {
+          setSelected(first);
+          setOffset(0);
         }
       }
     })();
@@ -111,12 +123,14 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
   }, [itemId, sourcePieceId, navigation]);
 
   const transposedAbc = useMemo(
-    () => transposeAbc(selected.abc, offset),
+    () => (selected ? transposeAbc(selected.abc, offset) : ''),
     [selected, offset]
   );
 
   const keyLabels = useMemo(() => {
-    const source = extractAbcKey(selected.abc) ?? selected.keyLabel ?? 'C';
+    const source = selected
+      ? extractAbcKey(selected.abc) ?? selected.keyLabel ?? 'C'
+      : 'C';
     return transposeKeyLabel(source, offset);
   }, [selected, offset]);
 
@@ -135,9 +149,10 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
   }, []);
 
   const offsetZero = offset === 0;
-  const canSave = !offsetZero && selected.isPublicDomain === true;
+  const canSave = !offsetZero && selected?.isPublicDomain === true;
 
   const handleSave = useCallback(async () => {
+    if (!selected) return;
     if (offsetZero || selected.isPublicDomain !== true) return;
     setSaving(true);
     try {
@@ -158,7 +173,7 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
     }
   }, [offsetZero, selected, keyLabels, offset, transposedAbc]);
 
-  if (loading) {
+  if (loading || !selected) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#e94560" />

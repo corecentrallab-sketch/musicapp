@@ -936,8 +936,12 @@ function humEntryTests(): void {
     `the entry is wired to ${HUM_ENTRY_HANDLER}`,
   );
   assert(
-    /<Text style=\{styles\.humEntryText\}>\{HUM_SECONDARY_CTA\}<\/Text>/.test(home),
-    "the entry's visible label IS the shared secondary CTA copy (never a rival hero label)",
+    /<Text style=\{styles\.humEntryBody\}>\{HUM_SIBLING_BODY\}<\/Text>/.test(home),
+    "the entry's visible body IS the shared secondary CTA copy (never a rival hero label)",
+  );
+  assert(
+    /<Text style=\{styles\.humEntryTitle\}>\{HUM_SIBLING_TITLE\}<\/Text>/.test(home),
+    'the hum sibling card carries its own title (v33 §E: a card, not a text row)',
   );
   assert(
     /accessibilityLabel=\{HUM_SECONDARY_CTA\}/.test(home),

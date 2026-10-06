@@ -1,0 +1,213 @@
+#!/usr/bin/env node
+/**
+ * gen-tone-bank.js — writes the v33 preview's TONE BANK (slice G/D).
+ *
+ * WHY GENERATED. The Hum-Along preview plays the user's OWN take, synthesized on
+ * the device. React Native cannot synthesize audio without a native module, so
+ * the app ships a small bank of one-shot tones — one WAV per instrument per
+ * semitone — and `require()`s them. Generating them (rather than shipping
+ * third-party samples) keeps the bank ours, tiny, and free of any licence
+ * question: every file here is a mathematically simple synthesized tone.
+ *
+ * WHAT IT WRITES
+ *   assets/tones/<instrument>/m<midi>.wav   for piano / strings / guitar,
+ *                                           midi 36..96 (the editor's own pitch
+ *                                           clamp range, so no note is silent)
+ *   src/services/toneBank.ts                the require() map the hook reads
+ *
+ * HOW TO RE-RUN
+ *   node scripts/gen-tone-bank.js        (from the repo root)
+ *
+ * Format: 11 025 Hz, 16-bit mono PCM — ~14 KB per tone, and bright enough for
+ * every fundamental in the bank (the highest, C7, is well under Nyquist).
+ */
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.resolve(__dirname, '..');
+const ASSET_ROOT = path.join(ROOT, 'assets', 'tones');
+const BANK_MODULE = path.join(ROOT, 'src', 'services', 'toneBank.ts');
+
+const SAMPLE_RATE = 11025;
+const MIN_MIDI = 36;
+const MAX_MIDI = 96;
+
+/** One instrument's timbre: partials, envelope and a little pluck noise. */
+const INSTRUMENTS = {
+  piano: {
+    seconds: 0.85,
+    partials: [
+      [1, 1.0],
+      [2, 0.42],
+      [3, 0.2],
+      [4, 0.1],
+      [5, 0.05],
+    ],
+    attack: 0.006,
+    decay: 4.2,
+    sustain: 0,
+    noise: 0.03,
+    noiseDecay: 260,
+    gain: 0.34,
+  },
+  strings: {
+    seconds: 1.1,
+    partials: [
+      [1, 1.0],
+      [2, 0.3],
+      [3, 0.16],
+      [4, 0.09],
+    ],
+    attack: 0.09,
+    decay: 1.1,
+    sustain: 0.45,
+    noise: 0.012,
+    noiseDecay: 40,
+    gain: 0.3,
+  },
+  guitar: {
+    seconds: 0.8,
+    partials: [
+      [1, 1.0],
+      [2, 0.5],
+      [3, 0.28],
+      [4, 0.12],
+    ],
+    attack: 0.004,
+    decay: 5.0,
+    sustain: 0,
+    noise: 0.06,
+    noiseDecay: 700,
+    gain: 0.32,
+  },
+};
+
+function midiToHz(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+/** A tiny deterministic noise source (so the bank is byte-reproducible). */
+function noiseAt(index) {
+  const x = Math.sin(index * 12.9898 + 78.233) * 43758.5453;
+  return (x - Math.floor(x)) * 2 - 1;
+}
+
+function renderTone(midi, spec) {
+  const hz = midiToHz(midi);
+  const frames = Math.round(SAMPLE_RATE * spec.seconds);
+  const out = new Int16Array(frames);
+  const twoPi = Math.PI * 2;
+  for (let i = 0; i < frames; i++) {
+    const t = i / SAMPLE_RATE;
+    // Attack → exponential decay → (optional) sustain floor.
+    const attack = Math.min(1, t / spec.attack);
+    const body = Math.exp(-t / spec.decay);
+    const env = attack * (spec.sustain + (1 - spec.sustain) * body);
+    let value = 0;
+    for (const [multiple, weight] of spec.partials) {
+      const partialHz = hz * multiple;
+      if (partialHz > SAMPLE_RATE / 2 - 200) continue; // never alias
+      value += weight * Math.sin(twoPi * partialHz * t);
+    }
+    value += spec.noise * noiseAt(i) * Math.exp(-t * spec.noiseDecay);
+    // Fade the last 15 ms so the file never ends on a click.
+    const remaining = spec.seconds - t;
+    const tail = remaining < 0.015 ? Math.max(0, remaining / 0.015) : 1;
+    const sample = Math.max(-1, Math.min(1, value * env * tail * spec.gain));
+    out[i] = Math.round(sample * 32767);
+  }
+  return out;
+}
+
+function wavBuffer(samples) {
+  const dataBytes = samples.length * 2;
+  const buffer = Buffer.alloc(44 + dataBytes);
+  buffer.write('RIFF', 0, 'ascii');
+  buffer.writeUInt32LE(36 + dataBytes, 4);
+  buffer.write('WAVE', 8, 'ascii');
+  buffer.write('fmt ', 12, 'ascii');
+  buffer.writeUInt32LE(16, 16); // PCM header size
+  buffer.writeUInt16LE(1, 20); // PCM
+  buffer.writeUInt16LE(1, 22); // mono
+  buffer.writeUInt32LE(SAMPLE_RATE, 24);
+  buffer.writeUInt32LE(SAMPLE_RATE * 2, 28); // byte rate
+  buffer.writeUInt16LE(2, 32); // block align
+  buffer.writeUInt16LE(16, 34); // bits per sample
+  buffer.write('data', 36, 'ascii');
+  buffer.writeUInt32LE(dataBytes, 40);
+  for (let i = 0; i < samples.length; i++) {
+    buffer.writeInt16LE(samples[i], 44 + i * 2);
+  }
+  return buffer;
+}
+
+function main() {
+  let written = 0;
+  const ids = Object.keys(INSTRUMENTS);
+  for (const id of ids) {
+    const dir = path.join(ASSET_ROOT, id);
+    fs.mkdirSync(dir, { recursive: true });
+    for (let midi = MIN_MIDI; midi <= MAX_MIDI; midi++) {
+      const samples = renderTone(midi, INSTRUMENTS[id]);
+      fs.writeFileSync(path.join(dir, `m${midi}.wav`), wavBuffer(samples));
+      written += 1;
+    }
+  }
+
+  const lines = [];
+  lines.push('/**');
+  lines.push(' * toneBank.ts — THE PREVIEW\'S TONE BANK (v33 slice G).');
+  lines.push(' *');
+  lines.push(' * GENERATED by scripts/gen-tone-bank.js — do not edit by hand; re-run the');
+  lines.push(' * script instead. Every file it points at is a synthesized one-shot tone,');
+  lines.push(' * written by that script: no third-party samples, no licence question.');
+  lines.push(' *');
+  lines.push(` * ${ids.join(' / ')} × midi ${MIN_MIDI}..${MAX_MIDI} (the editor's own pitch range, so`);
+  lines.push(' * every note a user can set has a tone to hear).');
+  lines.push(' */');
+  lines.push("import type { PreviewInstrumentId } from './takePreview';");
+  lines.push('');
+  lines.push('declare const require: (name: string) => number;');
+  lines.push('');
+  lines.push('/** The lowest/highest semitone the bank really holds. */');
+  lines.push(`export const TONE_MIN_MIDI = ${MIN_MIDI};`);
+  lines.push(`export const TONE_MAX_MIDI = ${MAX_MIDI};`);
+  lines.push('');
+  for (const id of ids) {
+    lines.push(`const ${id.toUpperCase()}: Record<number, number> = {`);
+    for (let midi = MIN_MIDI; midi <= MAX_MIDI; midi++) {
+      lines.push(`  ${midi}: require('../../assets/tones/${id}/m${midi}.wav'),`);
+    }
+    lines.push('};');
+    lines.push('');
+  }
+  lines.push('const BANK: Record<PreviewInstrumentId, Record<number, number>> = {');
+  for (const id of ids) lines.push(`  ${id}: ${id.toUpperCase()},`);
+  lines.push('};');
+  lines.push('');
+  lines.push('/** The instrument ids the bank really covers (the preview lists these). */');
+  lines.push(`export const TONE_BANK_INSTRUMENTS: readonly PreviewInstrumentId[] = [${ids
+    .map((id) => `'${id}'`)
+    .join(', ')}];`);
+  lines.push('');
+  lines.push('/**');
+  lines.push(' * The module id of one tone, or null when the bank has nothing for it.');
+  lines.push(' * The range covers the editor\'s own pitch clamp, so null is a real bug, not a');
+  lines.push(' * silent note: the caller says so instead of playing the wrong pitch.');
+  lines.push(' */');
+  lines.push('export function toneSourceFor(');
+  lines.push('  instrument: PreviewInstrumentId | string | null | undefined,');
+  lines.push('  midi: number,');
+  lines.push('): number | null {');
+  lines.push("  const table = BANK[instrument as PreviewInstrumentId] ?? BANK.piano;");
+  lines.push('  const value = Math.round(Number(midi));');
+  lines.push('  if (!Number.isFinite(value)) return null;');
+  lines.push('  return table[value] ?? null;');
+  lines.push('}');
+  lines.push('');
+  fs.writeFileSync(BANK_MODULE, `${lines.join('\n')}`);
+  console.log(`tones written: ${written}`);
+  console.log(`map written:   ${path.relative(ROOT, BANK_MODULE)}`);
+}
+
+main();

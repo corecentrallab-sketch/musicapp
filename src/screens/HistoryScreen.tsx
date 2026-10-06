@@ -74,9 +74,24 @@ import { keyCaption } from '../services/keyDetection';
 // a row is a melody rather than a recognized piece — a melody id resolves to no
 // catalog piece, so tapping one must NOT go to the piece page (it would be an
 // honest "coming soon" with the user's own tune behind it, i.e. a dead end).
-import { personalMelodyFromRow } from '../services/melodyCapture';
+import { personalMelodyFromRow, CORRECT_TAKE_CTA } from '../services/melodyCapture';
+// RE-LISTENING TO THE SAVED TAKE (v33 §F1, owner 10-04): the row plays the clip
+// the capture window persisted (notesnap-melodies/), never a re-synthesis of the
+// note data. The copy and the availability decision are in the service; the
+// expo-av player is the hook below (one player for the whole list).
+import {
+  TAKE_PLAYBACK_CAPTION,
+  TAKE_PLAYBACK_MISSING_LINE,
+  takePlaybackAccessibilityLabel,
+  takePlaybackAvailable,
+  takePlaybackLabel,
+} from '../services/takePlayback';
+import { useTakeClipPlayer } from '../hooks/useTakeClipPlayer';
 // The capture window itself, mounted in place to re-open a saved melody.
 import { HumSearchScreen } from './HumSearchScreen';
+// THE TAKE-CORRECTION EDITOR (v33 §D) — the same component the capture window
+// opens, mounted here for a History melody row.
+import { TakeCorrectionEditor } from '../components/TakeCorrectionEditor';
 import type { DailyChallengePiece, SavedPiece } from '../types';
 
 /** Zeroed streak (engine-derived) used until the first read resolves. */
@@ -113,6 +128,15 @@ export const HistoryScreen: React.FC = () => {
    */
   const [openMelody, setOpenMelody] = useState<SavedPiece | null>(null);
   /**
+   * THE TAKE-CORRECTION EDITOR (v33 §D), opened from a melody row's own action.
+   * The row carries the take, the row id and the kept clip, so the SAME editor
+   * component the capture window opens is driven entirely by this row: no second
+   * editor, no second save path.
+   */
+  const [editTake, setEditTake] = useState<SavedPiece | null>(null);
+  /** The honest line a saved correction leaves on that row. */
+  const [editTakeNote, setEditTakeNote] = useState<{ id: string; text: string } | null>(null);
+  /**
    * The History search box's query (owner 10-01). It filters the SAVED
    * recognitions in memory — no network, no catalog — so looking for "the piece I
    * just played" can only ever surface rows the user actually recognized.
@@ -132,6 +156,12 @@ export const HistoryScreen: React.FC = () => {
   // finished attempt left behind — shown on that row only.
   const [exportingId, setExportingId] = useState<string | null>(null);
   const [exportNote, setExportNote] = useState<{ id: string; text: string } | null>(null);
+  /**
+   * The saved-take player (v33 §F1). ONE player for the whole list — FlatList
+   * rows cannot each hold a hook — and it is keyed by row id, so exactly one
+   * take is ever audible and the button that says ⏸ Stop is the row playing.
+   */
+  const takePlayer = useTakeClipPlayer();
   /**
    * The row's purchase action opens the licensed retailer in the app's ONE
    * in-app shell, mounted at THIS screen's root (bundle C, owner 10-02), so the
@@ -388,6 +418,47 @@ export const HistoryScreen: React.FC = () => {
                   {keyCaption(item.capture?.key)}
                 </Text>
               )}
+              {/* RE-LISTEN TO THE SAVED TAKE (v33 §F1, owner 10-04). The row
+                  plays the clip the capture window persisted — the user's own
+                  recording, not a re-synthesis — and the pick is by ROW ID, so
+                  pressing another row stops this one. A row whose clip is gone
+                  says so and keeps every other action working. */}
+              {takePlaybackAvailable(item) ? (
+                <TouchableOpacity
+                  style={styles.playTakeBtn}
+                  onPress={() =>
+                    takePlayer.toggle({
+                      id: item.id,
+                      personalMelody: item.personalMelody ?? null,
+                    })
+                  }
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={takePlaybackAccessibilityLabel(
+                    item.title,
+                    takePlayer.playingId === item.id,
+                  )}
+                >
+                  <Text style={styles.playTakeBtnText}>
+                    {takePlaybackLabel({
+                      playing: takePlayer.playingId === item.id,
+                      busy: takePlayer.busyId === item.id,
+                    })}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.playTakeMissing} numberOfLines={2}>
+                  {TAKE_PLAYBACK_MISSING_LINE}
+                </Text>
+              )}
+              {takePlayer.playingId === item.id && (
+                <Text style={styles.playTakeCaption} numberOfLines={2}>
+                  {TAKE_PLAYBACK_CAPTION}
+                </Text>
+              )}
+              {takePlayer.note?.id === item.id && (
+                <Text style={styles.midiNote}>{takePlayer.note.text}</Text>
+              )}
               <TouchableOpacity
                 style={styles.midiBtn}
                 onPress={() => handleExportTake(item)}
@@ -402,6 +473,23 @@ export const HistoryScreen: React.FC = () => {
               </TouchableOpacity>
               {exportNote?.id === item.id && (
                 <Text style={styles.midiNote}>{exportNote.text}</Text>
+              )}
+              {/* THE TAKE-CORRECTION EDITOR'S SECOND DOOR (v33 §D). The brief's §2
+                  says the editor is reached from the capture window AND from a
+                  History melody row — the SAME component, no third copy — and the
+                  correction re-saves onto this row, so the row's take, its MIDI
+                  export and the playback all read what the user corrected. */}
+              <TouchableOpacity
+                style={styles.editTakeBtn}
+                onPress={() => setEditTake(item)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${CORRECT_TAKE_CTA} for ${item.title}`}
+              >
+                <Text style={styles.editTakeBtnText}>{CORRECT_TAKE_CTA}</Text>
+              </TouchableOpacity>
+              {editTakeNote?.id === item.id && (
+                <Text style={styles.midiNote}>{editTakeNote.text}</Text>
               )}
             </>
           ) : null}
@@ -588,6 +676,31 @@ export const HistoryScreen: React.FC = () => {
           onClose={() => setPurchaseWebUrl(null)}
         />
       )}
+
+      {/* THE TAKE-CORRECTION EDITOR, mounted at the screen's root like the shell
+          above. It writes the corrected take onto THIS row through the one seam
+          (services/correctedTakeStore), so the row's take line, its key, its MIDI
+          export and the launch+1 playback all read the correction. */}
+      {editTake ? (
+        <TakeCorrectionEditor
+          visible
+          take={editTake.capture ?? null}
+          rowId={editTake.id}
+          audioUri={editTake.personalMelody?.audioUri ?? null}
+          frames={null}
+          onSaved={(_corrected, _mode, savedRowId) => {
+            setEditTakeNote({
+              id: editTake.id,
+              text:
+                _mode === 'update'
+                  ? 'Your corrections are saved — this row, the MIDI export and the preview all use them now.'
+                  : 'Saved as a corrected copy in your History — this row keeps the take you started from.',
+            });
+            if (savedRowId) void reload();
+          }}
+          onClose={() => setEditTake(null)}
+        />
+      ) : null}
     </View>
   );
 };
@@ -769,8 +882,45 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  /** The row's MIDI export action (v29 Batch A) — teal outline, like the app's
-   *  other "extra capability" actions. It presses independently of the card. */
+  /**
+   * Re-listening to the row's SAVED take (v33 §F1, owner 10-04): a real 44dp
+   * control, teal like the app's other "extra capability" actions, playing the
+   * persisted clip — never audio re-built from the notes.
+   */
+  playTakeBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#16213e',
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    marginTop: 8,
+  },
+  playTakeBtnText: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  /** Which audio this is — said out loud while it plays (never a re-synthesis). */
+  playTakeCaption: {
+    fontSize: 12,
+    color: '#4ecdc4',
+    lineHeight: 17,
+    marginTop: 6,
+  },
+  /** The honest line for a melody row saved before its clip was kept. */
+  playTakeMissing: {
+    fontSize: 12,
+    color: '#a0a0b8',
+    lineHeight: 17,
+    marginTop: 8,
+  },
+  /**
+   * The row's MIDI export action (v29 Batch A) — teal outline, like the app's
+   * other "extra capability" actions. It presses independently of the card.
+   */
   midiBtn: {
     alignSelf: 'flex-start',
     backgroundColor: '#0f3460',
@@ -781,6 +931,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginTop: 8,
   },
+  /**
+   * The row's MIDI export action (v29 Batch A) — teal outline, like the app's
+   * other "extra capability" actions. It presses independently of the card.
+   */
   midiBtnText: {
     color: '#4ecdc4',
     fontSize: 13,
@@ -791,6 +945,26 @@ const styles = StyleSheet.create({
     color: '#a0a0b8',
     lineHeight: 17,
     marginTop: 6,
+  },
+  /**
+   * The melody row's "correct the take" action (v33 §D) — the editor's second
+   * door. 44dp tall like every other real control on the row.
+   */
+  editTakeBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#16213e',
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    marginTop: 8,
+  },
+  editTakeBtnText: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    fontWeight: '700',
   },
   removeBtn: {
     width: 32,

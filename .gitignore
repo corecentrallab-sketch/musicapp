@@ -14,3 +14,4 @@ web-build/
 !.env.example
 credentials.json
 *.keystore
+node_modules

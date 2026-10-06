@@ -67,6 +67,9 @@ import {
   FIND_PIECE_ENTRY_LABEL,
   HUM_FALLBACK_LIBRARY_NOTE,
   HUM_SECONDARY_CTA,
+  HUM_SIBLING_BODY,
+  HUM_SIBLING_TITLE,
+  HUM_SPLIT_TEACH_LINE,
   frontDoorStartFailure,
   heroAccessibilityLabel,
   heroLabel,
@@ -92,6 +95,7 @@ import {
   BROWSE_LIBRARY_ACCESSIBILITY_LABEL,
   BROWSE_LIBRARY_HINT,
   BROWSE_LIBRARY_LABEL,
+  DISCOVER_BAND_NOTE,
   FIND_ANY_SONG_CHIP_ACCESSIBILITY_LABEL,
   FIND_ANY_SONG_CHIP_LABEL,
   FRONT_DOOR_BETA_NOTE,
@@ -591,7 +595,7 @@ export const HomeScreen: React.FC = () => {
             // Save the category WITH the record: a modern song must never reach
             // History genre-less and be filled in by a fallback later. The
             // provider's REAL genre when it sent one (owner request 09-25).
-            genre: modernGenreLabel(m),
+            genre: modernGenreLabel(m) ?? undefined,
             // Save the LICENSED LINKS the match arrived with (owner 10-01): the
             // saved row used to carry identity only, so tapping it in History
             // reached nothing and the sheet-music card was a dead end. This is
@@ -1432,36 +1436,13 @@ export const HomeScreen: React.FC = () => {
               order (frontDoor.findAnySongChipWired) — it must never disturb the
               hero's own order.
 
-              The chip is deliberately LIGHTER than the recognition core: no fill,
-              a hairline border, smaller type, its own style — never
-              styles.recognitionBtn, never the hero handler. It opens the EXISTING
-              find-a-song search (the same showFindPiece flag + FindPieceScreen
-              mount the band-C row uses), so there is no second search surface and
-              no new box. §B.1's honest limit: this chip opens the title/artist
-              SEARCH, not the recording door (that sentence belongs to
-              HUM_TO_MODERN_BLURB / the modern route). */}
-          <View style={styles.frontDoorRow}>
-          <TouchableOpacity
-            style={styles.humEntryBtn}
-            onPress={handleHumEntry}
-            activeOpacity={0.6}
-            accessibilityRole="button"
-            accessibilityLabel={HUM_SECONDARY_CTA}
-          >
-            <Text style={styles.humEntryEmoji}>🎤</Text>
-            <Text style={styles.humEntryText}>{HUM_SECONDARY_CTA}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.findAnySongChip}
-            onPress={handleFindAnySong}
-            activeOpacity={0.6}
-            accessibilityRole="button"
-            accessibilityLabel={FIND_ANY_SONG_CHIP_ACCESSIBILITY_LABEL}
-          >
-            <Text style={styles.findAnySongChipText}>{FIND_ANY_SONG_CHIP_LABEL}</Text>
-          </TouchableOpacity>
-          </View>
+              v33 §E (owner 10-03, designer concept 5) RESTRUCTURED THIS BLOCK:
+              the hum entry is no longer a quiet text row beside a search chip —
+              it is a full SIBLING CARD directly under the Listen hero (see below
+              the hero card), and the search chip has moved OUT of this block
+              into its own Discover band (owner 10-04: the search bar under
+              hum/whistle "does not fit the flow there"). Band A therefore holds
+              the two LISTENING doors + the honest beta note, nothing else. */}
 
           {/* Honest beta note — the recognition library is small and growing.
               In hum mode it says what the hum fallback can actually do. */}
@@ -1469,24 +1450,49 @@ export const HomeScreen: React.FC = () => {
             {humFallback ? HUM_FALLBACK_LIBRARY_NOTE : FRONT_DOOR_BETA_NOTE}
           </Text>
         </View>
+
+        {/* The HUM SIBLING CARD (v33 §E, owner 10-03): a real full-width card
+            directly beneath the Listen hero — same weight class, its own title +
+            body + one tap — NOT a chip and NOT a menu item. It opens the SAME
+            hum flow as before (handleHumEntry → HumSearchScreen, whose capture
+            window starts recording on mount), so there is no second hum
+            implementation. Its copy comes from frontDoor.ts, and the teach line
+            under the pair names which door is which. */}
+        <TouchableOpacity
+          style={styles.humEntryBtn}
+          onPress={handleHumEntry}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={HUM_SECONDARY_CTA}
+        >
+          <Text style={styles.humEntryTitle}>{HUM_SIBLING_TITLE}</Text>
+          <Text style={styles.humEntryBody}>{HUM_SIBLING_BODY}</Text>
+        </TouchableOpacity>
+        <Text style={styles.humSplitLine}>{HUM_SPLIT_TEACH_LINE}</Text>
         </View>
 
+        {/* ══ DISCOVER BAND (v33 §E + §F3b, owner 10-04) ══
+            The "Find any song" search entry has its OWN band now, directly under
+            the Listen/Hum pair — it was inside band A beside the hum row, which
+            the owner's device pass read as "does not fit the flow there". One
+            entry, one job: open the real search field (FindPieceScreen), which is
+            the app's money path (free scores + the official sheet music). Search
+            is therefore reachable WITHOUT entering the hum flow, and the
+            Listen/Hum block contains only the two listening doors. */}
+        <View style={styles.band} testID={BAND_TEST_IDS.discover}>
+          <Text style={styles.bandTitle}>{BAND_TITLES.discover}</Text>
+          <Text style={styles.discoverNote}>{DISCOVER_BAND_NOTE}</Text>
+          <TouchableOpacity
+            style={styles.findAnySongChip}
+            onPress={handleFindAnySong}
+            activeOpacity={0.6}
+            accessibilityRole="search"
+            accessibilityLabel={FIND_ANY_SONG_CHIP_ACCESSIBILITY_LABEL}
+          >
+            <Text style={styles.findAnySongChipText}>{FIND_ANY_SONG_CHIP_LABEL}</Text>
+          </TouchableOpacity>
+        </View>
 
-        {/* Outside-play streak nudge (slice 2): quiet, dismissible, and never
-            rendered while the mic is live or a result is on screen. It is a
-            BANNER, not a door entry, so it belongs to no band — the bands below
-            carry the door's tappable meanings. */}
-        <StreakNudgeCard
-          surface="home"
-          hidden={
-            recorder.isRecording ||
-            showRecognitionResults ||
-            showScoreViewer ||
-            showHumSearch ||
-            showModernSearch ||
-            showFindPiece
-          }
-        />
 
         {/* ══ BAND B — TODAY ══ (re-flow bundle D, owner 10-02)
             ONE card, ONE destination every day. It replaces four overlapping
@@ -1572,6 +1578,24 @@ export const HomeScreen: React.FC = () => {
             <Text style={styles.cardCta}>{todayCardCta(dailyChallenge)}</Text>
           </TouchableOpacity>
         </View>
+          {/* The streak nudge (slice 2) is part of THIS band (owner 10-04 §F4):
+              the practice group is one group, so the card the user is nudged
+              toward and the nudge itself sit together — it is no longer floating
+              between the listening band and today's card. It stays a BANNER: it
+              adds no tap of its own (band B keeps exactly one onPress, its
+              today card), it is quiet, dismissible, and never rendered while the
+              mic is live or a result is on screen. */}
+          <StreakNudgeCard
+            surface="home"
+            hidden={
+              recorder.isRecording ||
+              showRecognitionResults ||
+              showScoreViewer ||
+              showHumSearch ||
+              showModernSearch ||
+              showFindPiece
+            }
+          />
 
         {/* ══ BAND C — BROWSE + KEEP GOING ══ (re-flow bundle D, owner 10-02)
             One meaning per entry: the honest search row (the real field is one tap
@@ -1853,25 +1877,48 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#0f3460',
   },
-  // The hum/whistle/sing entry (owner 09-25). Deliberately lighter than the
-  // find-a-piece row and than the big red hero button: it is a labelled
-  // secondary path, not a second hero — no filled background, no accent border.
+  // v33 §E (owner 10-03, designer concept 5): the hum entry is a SIBLING CARD
+  // directly under the Listen hero card — full width, same weight class, its own
+  // title + body + one tap, teal (#4ecdc4, the "you can act here" colour of the
+  // v33 concepts). It is deliberately NOT a chip, NOT a menu item and NOT the
+  // quiet underlined text row it was in v32.
   humEntryBtn: {
-    flexDirection: 'row',
+    alignSelf: 'stretch',
+    width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#4ecdc4',
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    marginBottom: 8,
   },
-  humEntryEmoji: {
-    fontSize: 16,
-    marginRight: 8,
+  humEntryTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#4ecdc4',
+    marginBottom: 4,
   },
-  humEntryText: {
-    fontSize: 14,
+  humEntryBody: {
+    fontSize: 13,
     color: '#a0a0b8',
-    textDecorationLine: 'underline',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  // The one line under the pair that teaches which door is which (concept 5).
+  humSplitLine: {
+    fontSize: 12,
+    color: '#8a8aa3',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  // The Discover band's one honest line above the search entry.
+  discoverNote: {
+    fontSize: 12,
+    color: '#a0a0b8',
+    marginBottom: 10,
   },
   findPieceEmoji: {
     fontSize: 18,
@@ -1985,19 +2032,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  // Band A's two secondary entries side by side: the hum row and the "Find any
-  // song" chip (bundle B). The row wraps, so neither label is clipped.
-  frontDoorRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    width: '100%',
-  },
   // The "Find any song" chip — the LIGHTEST tappable thing on the door: no fill,
   // a hairline border, smaller type than the hero CTA, and never
   // styles.recognitionBtn. This is the owner's weight rule (§B.4) in pixels.
+  // v33 §E: it now renders in the DISCOVER band, not inside the Listen/Hum block.
   findAnySongChip: {
     flexDirection: 'row',
     alignItems: 'center',

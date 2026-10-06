@@ -252,7 +252,7 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
             // Save the category WITH the record: a modern song that reaches
             // History with no genre would later be filled in by a fallback.
             // The provider's real genre when it sent one (owner 09-25).
-            genre: modernGenreLabel(m),
+            genre: modernGenreLabel(m) ?? undefined,
             // Save the LICENSED LINKS the match arrived with (owner 10-01): the
             // saved row used to carry identity only, so tapping it in History
             // reached nothing and the sheet-music card was a dead end. `null`

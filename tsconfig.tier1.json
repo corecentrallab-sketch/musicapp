@@ -49,6 +49,14 @@
     "src/services/midiExport.ts",
     "src/services/keyDetection.ts",
     "src/services/melodyCapture.ts",
+    "src/services/fuzzySearch.ts",
+    "src/services/coverScan.ts",
+    "src/services/theme.ts",
+    "src/services/takePreview.ts",
+    "src/services/takeEditor.ts",
+    "src/services/takeStaff.ts",
+    "src/services/v33UiContract.ts",
+    "src/services/takePlayback.ts",
     "src/services/midiExportContract.ts",
     "src/services/resultSurface.ts",
     "src/services/resultSurfaceContract.ts",
@@ -94,6 +102,8 @@
     "scripts/resultSurface.test.ts",
     "scripts/historyDeadEnd.test.ts",
     "scripts/searchExternal.test.ts",
-    "scripts/zeroPromise.test.ts"
+    "scripts/zeroPromise.test.ts",
+    "scripts/v33TakeEditor.test.ts",
+    "scripts/v33UiWiring.test.ts"
   ]
 }

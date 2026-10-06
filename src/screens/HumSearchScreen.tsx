@@ -44,7 +44,7 @@
  *      it again" action instead of a dead end.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useHardwareBack } from '../hooks/useHardwareBack';
 import { fetchPieceById, humToSearch } from '../services/api';
@@ -95,6 +95,15 @@ import {
 // lands on. Mounted here as an overlay — the capture window stays mounted
 // underneath, so closing the card reveals the user's own melody again.
 import { RecognitionResultView } from '../components/RecognitionResultView';
+// THE TAKE AS NOTATION (v33 §C): the staff card the capture window renders in
+// its `staff` slot — the dimmed raw trace, the "auto-clean ✦" divider and the
+// crisp auto-cleaned line, with the take's SUGGESTED chords above the staff.
+import { TakeStaffCard } from '../components/TakeStaffCard';
+// THE TAKE-CORRECTION EDITOR (v33 §D): the full-screen surface that corrects the
+// notes, pitch, timing and chords of THIS take. It saves through the one seam
+// (services/correctedTakeStore), and the flow re-reads the corrected take so the
+// sequence, the key, the chords, the MIDI export and History all show it.
+import { TakeCorrectionEditor } from '../components/TakeCorrectionEditor';
 import type { RecognitionResponse, SavedPiece } from '../types';
 import type { SavedCaptureTake } from '../services/midiExport';
 
@@ -125,12 +134,25 @@ const CAPTURE_COPY: MelodyWindowCopy = {
 
 /**
  * 'review' is the window showing the take's own result (its sequence, key and
- * suggested chords); 'no-match' is that SAME window plus the honest library-miss
- * card; 'error' is a capture that could not be made at all. There is deliberately
- * no stage that renders a result card of its own — the ONE result surface
- * (bundle A) is what shows a match, so a second card can never come back.
+ * suggested chords); 'no-match' is that SAME window with the library pass's miss
+ * held for the separate "Find this melody ›" step; 'error' is a capture that
+ * could not be made at all. There is deliberately no stage that renders a result
+ * card of its own — the ONE result surface (bundle A) is what shows a match, so
+ * a second card can never come back.
+ *
+ * v33 §B (owner device-pass 10-03): the miss NO LONGER RENDERS ON THE CAPTURE
+ * PAGE. `'no-match'` is the state the pass reached; the card itself lives in the
+ * overlay below and is opened only by the user's own "Find this melody ›" tap, so
+ * the page under it stays capture-only.
  */
 type Stage = 'recording' | 'analysing' | 'review' | 'no-match' | 'error';
+
+/**
+ * The separate "Find this melody ›" step's own state: `idle` before/after the
+ * pass, `checking` while it is in flight (the page's button says so), `hit` once
+ * the ONE result surface holds the match.
+ */
+type MatchState = 'idle' | 'checking' | 'hit';
 
 interface HumSearchScreenProps {
   onClose: () => void;
@@ -167,12 +189,24 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [capturedAt, setCapturedAt] = useState<string>('');
   const [analysis, setAnalysis] = useState<MelodyAnalysis | null>(null);
+  /**
+   * THE TAKE-CORRECTION EDITOR'S state (v33 §D). While it is open the flow holds
+   * the take it was handed; when the user SAVES, the corrected take replaces it
+   * here, so the sequence, the staff, the key, the chords, the MIDI export and
+   * the History row all move together — one take, one source of truth.
+   */
+  const [editorOpen, setEditorOpen] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
   const [exportKey, setExportKey] = useState<string | null>(null);
   const [matchLine, setMatchLine] = useState<string | null>(null);
+  // The separate "Find this melody ›" step (v33 §B): its state, and whether the
+  // user has actually opened it (a miss may NEVER render on the capture page).
+  const [matchState, setMatchState] = useState<MatchState>('idle');
+  const [findOpen, setFindOpen] = useState(false);
+  const [findNote, setFindNote] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopInFlightRef = useRef(false);
@@ -213,7 +247,14 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
    * library could not be checked.
    */
   const handleMatch = useCallback(async (uri: string, skip: boolean) => {
-    if (skip) return;
+    if (skip) {
+      // Nothing readable in the take: there is no melody to check, and the page
+      // already says so. The step stays available for a re-read take.
+      setMatchState('idle');
+      return;
+    }
+    setMatchState('checking');
+    setFindNote(null);
     try {
       const resp = await humToSearch(uri);
       const res = humOutcome(resp);
@@ -244,15 +285,40 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
         }
         setMatchLine(`That's ${res.topMatch.title} — it's in our free library.`);
         setHumResult(humMatchToResultResponse(resp, res.matches, sheet));
+        setMatchState('hit');
       } else {
-        // Only a window that has FINISHED its take may move to the miss card:
-        // a late answer must never interrupt a new recording.
+        // THE MISS, HELD FOR THE EXPLICIT STEP (v33 §B.1). Only a window that has
+        // FINISHED its take may record the miss (a late answer must never
+        // interrupt a new recording) — and it draws NOTHING here: the card is in
+        // the overlay below, opened by the user's own "Find this melody ›" tap.
         setStage((previous) => (previous === 'review' ? 'no-match' : previous));
+        setMatchState('idle');
       }
     } catch {
-      setMatchLine('We could not check the library just now — your melody is saved either way.');
+      setMatchState('idle');
+      setFindNote('We could not check the library just now — your melody is saved either way.');
     }
   }, []);
+
+  /**
+   * THE EXPLICIT "Find this melody ›" STEP (v33 §B.2). This is the ONLY door from
+   * the capture page to a matching result: a hit opens the shared result surface,
+   * a miss opens the honest miss card — both as overlays over the take, never as
+   * boxes inside it. The take is already saved either way, so this step can never
+   * be a dead end: closing it reveals the user's own melody again.
+   */
+  const handleFindMelody = useCallback(() => {
+    if (matchState === 'checking') return;
+    if (matchState === 'hit' && humResult) {
+      setHumResult(humResult);
+      return;
+    }
+    if (stage === 'no-match') {
+      setFindOpen(true);
+      return;
+    }
+    setFindNote('There is nothing to check yet — record a melody first.');
+  }, [humResult, matchState, stage]);
 
   /**
    * Stop the take and turn it into the user's own melody. The ORDER matters:
@@ -384,6 +450,7 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
     setHumResult(null);
     setAnalysis(null);
     setTake(null);
+    setEditorOpen(false);
     setAudioUri(null);
     setTakeUri(null);
     setSaved(false);
@@ -391,6 +458,9 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
     setExportNote(null);
     setExportKey(null);
     setMatchLine(null);
+    setMatchState('idle');
+    setFindOpen(false);
+    setFindNote(null);
     setErrorMessage(null);
     setElapsedMs(0);
     recorder.resetForRetry();
@@ -399,31 +469,6 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
       void handleStart();
     }, 300);
   }, [handleStart, recorder]);
-
-  /**
-   * "Save melody": an explicit write, so a melody whose automatic save failed
-   * (or a re-opened take that was never stored) can still be kept. Idempotent —
-   * the row id is the take's own, so this can never create a second row.
-   */
-  const handleSave = useCallback(async () => {
-    if (!analysis) return;
-    if (!analysis.canSave) {
-      setSaveNote(analysis.disabledReason);
-      return;
-    }
-    const row = await savePersonalMelodyRow({
-      rowId: analysis.rowId,
-      capturedAt: capturedAt || take?.capturedAt || analysis.rowId,
-      take,
-      audioUri,
-    });
-    if (row) {
-      setSaved(true);
-      setSaveNote('Saved to your History.');
-    } else {
-      setSaveNote('Could not write this melody into your History — please try again.');
-    }
-  }, [analysis, audioUri, capturedAt, take]);
 
   /**
    * "Export MIDI": the user's own take as a Standard MIDI File, through the
@@ -442,7 +487,15 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
     setExportNote(null);
     setExportKey(null);
     try {
-      if (takeUri) {
+      if (take) {
+        // THE TAKE THIS PAGE SHOWS IS WHAT GETS EXPORTED (v33 §D). Re-decoding the
+        // recording here would silently export the PRE-correction take, so the
+        // displayed take (which the editor's corrections are written into) is the
+        // source of truth for the export, exactly as it is for History.
+        const result = await exportCaptureMidiFromTake(take, { title: analysis?.rowTitle });
+        setExportNote(result.message);
+        setExportKey(keyCaption(result.key));
+      } else if (takeUri) {
         const result = await exportCaptureMidiFromRecording({ uri: takeUri });
         setExportNote(result.message);
         // The key the FILE was written in (the SMF key-signature verdict), or
@@ -519,31 +572,79 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
   const windowPhase: MelodyWindowPhase =
     stage === 'recording' ? 'recording' : stage === 'analysing' ? 'analysing' : 'review';
 
+  /**
+   * THE TAKE AS NOTATION (v33 §C). The window owns no renderer, so the flow
+   * builds the card and hands it in. It is only built for a take that has notes
+   * (a silent or unreadable take keeps the window's own honest state card), and
+   * every note on it comes from THIS take — never from a matched song.
+   */
+  const staffCard = useMemo(() => {
+    if (!take || analysis?.state !== 'ready') return null;
+    return (
+      <TakeStaffCard
+        take={take}
+        chordNames={analysis.chords.chords.map((chord) => chord.name)}
+        chordHonestLine={analysis.chords.honestLine}
+        title={analysis.rowTitle}
+      />
+    );
+  }, [take, analysis]);
+
+  /**
+   * A SAVED CORRECTION (v33 §D). The editor has already written the corrected
+   * take through the one seam; the flow adopts it, so the sequence, the staff,
+   * the key, the chords and the MIDI export all describe the CORRECTED take from
+   * here on. The editor stays open (the user may keep correcting) and its own
+   * save line says what happened.
+   */
+  const handleTakeCorrected = useCallback((corrected: SavedCaptureTake) => {
+    setTake(corrected);
+    setAnalysis(buildMelodyAnalysis(corrected));
+    setSaved(true);
+    setSaveNote(null);
+  }, []);
+
   return (
-    <MelodyCaptureWindow
-      phase={windowPhase}
-      levels={recorder.liveLevels}
-      elapsedMs={elapsedMs}
-      // This build has NO live pitch source (the recorder hands us the finished
-      // clip and a dB level, not a PCM stream), so the window says in words that
-      // the notes are written when the take ends. The strip renders live notes
-      // the moment a frame source can supply them.
-      liveSourceReady={false}
-      analysis={analysis}
-      matchLine={matchLine}
-      onOpenMatch={humResult ? () => setHumResult(humResult) : undefined}
-      onStop={handleStop}
-      onClose={onClose}
-      onRecordAgain={handleRetry}
-      onSave={handleSave}
-      saved={saved}
-      saveNote={saveNote}
-      onExportMidi={handleExportMidi}
-      exporting={exporting}
-      exportNote={exportNote}
-      exportKeyLine={exportKey}
-      copy={CAPTURE_COPY}
-    >
+    <>
+      {/* THE TAKE-CORRECTION EDITOR (v33 §D) — mounted here, driven by the take
+          this flow holds, reached through the window's own "Correct notes, pitch
+          or chords ›" door. */}
+      <TakeCorrectionEditor
+        visible={editorOpen}
+        take={take}
+        rowId={analysis?.rowId ?? null}
+        audioUri={audioUri}
+        frames={null}
+        onSaved={handleTakeCorrected}
+        onClose={() => setEditorOpen(false)}
+      />
+
+      <MelodyCaptureWindow
+        phase={windowPhase}
+        levels={recorder.liveLevels}
+        elapsedMs={elapsedMs}
+        // This build has NO live pitch source (the recorder hands us the finished
+        // clip and a dB level, not a PCM stream), so the window says in words that
+        // the notes are written when the take ends. The strip renders live notes
+        // the moment a frame source can supply them.
+        liveSourceReady={false}
+        analysis={analysis}
+        onFindMelody={handleFindMelody}
+        findingMelody={matchState === 'checking'}
+        findNote={findNote}
+        onStop={handleStop}
+        onClose={onClose}
+        onRecordAgain={handleRetry}
+        saved={saved}
+        saveNote={saveNote}
+        onExportMidi={handleExportMidi}
+        exporting={exporting}
+        exportNote={exportNote}
+        exportKeyLine={exportKey}
+        staff={staffCard}
+        onCorrectTake={() => setEditorOpen(true)}
+        copy={CAPTURE_COPY}
+      >
       {recorder.error && !recorder.isRecording && (
         <View style={styles.errorCard}>
           <Text style={styles.errorText}>{recorder.error}</Text>
@@ -572,35 +673,54 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
         </TouchableOpacity>
       )}
 
-      {/* THE LIBRARY MISS — honest, banded, with retry. The copy comes from
-          humNoMatchMessage(): "we were close" vs "we're not sure — library still
-          growing". Never a raw percentage, never a fabricated title. The user's
-          own melody is already on screen above this card and already saved. */}
-      {stage === 'no-match' && outcome && (
-        <View style={styles.resultCard}>
-          <Text style={styles.resultEmoji}>🔍</Text>
-          <Text style={styles.resultTitle}>No match for that melody</Text>
-          <Text style={styles.resultText}>{humNoMatchMessage(outcome)}</Text>
-          {hub && <Text style={styles.hintText}>{hub}</Text>}
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleRetry}>
-            <Text style={styles.primaryBtnText}>{HUM_RETRY_CTA}</Text>
-          </TouchableOpacity>
-          {/* THE BRIDGE (owner-approved 09-22): our melody catalog is small, so a
-              melody we don't hold must not be the end of the road. This hands the
-              user to the modern "Find any song" flow, where the actual recording
-              is identified and the official sheet music is linked. */}
-          {onSwitchToModern && (
-            <TouchableOpacity
-              style={styles.bridgeBtn}
-              onPress={onSwitchToModern}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.bridgeBtnText}>{HUM_TO_MODERN_CTA}</Text>
-              <Text style={styles.bridgeBtnHint}>{HUM_TO_MODERN_BLURB}</Text>
-            </TouchableOpacity>
+      {/* THE LIBRARY MISS — ALWAYS AN OVERLAY, NEVER ON THE PAGE (v33 §B.1).
+          The capture window is capture-only, so this card lives in a Modal and is
+          reachable only through the explicit "Find this melody ›" step. The copy
+          comes from humNoMatchMessage(): "we were close" vs "we're not sure —
+          library still growing". Never a raw percentage, never a fabricated
+          title. The user's own melody is already saved, so closing this reveals
+          it again. */}
+      <Modal
+        visible={findOpen}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setFindOpen(false)}
+      >
+        <View style={styles.missScreen}>
+          {stage === 'no-match' && outcome && (
+            <View style={styles.resultCard}>
+              <Text style={styles.resultEmoji}>🔍</Text>
+              <Text style={styles.resultTitle}>No match for that melody</Text>
+              <Text style={styles.resultText}>{humNoMatchMessage(outcome)}</Text>
+              {hub && <Text style={styles.hintText}>{hub}</Text>}
+              <TouchableOpacity style={styles.primaryBtn} onPress={handleRetry}>
+                <Text style={styles.primaryBtnText}>{HUM_RETRY_CTA}</Text>
+              </TouchableOpacity>
+              {/* THE BRIDGE (owner-approved 09-22): our melody catalog is small, so
+                  a melody we don't hold must not be the end of the road. This hands
+                  the user to the modern "Find any song" flow, where the actual
+                  recording is identified and the official sheet music is linked. */}
+              {onSwitchToModern && (
+                <TouchableOpacity
+                  style={styles.bridgeBtn}
+                  onPress={onSwitchToModern}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.bridgeBtnText}>{HUM_TO_MODERN_CTA}</Text>
+                  <Text style={styles.bridgeBtnHint}>{HUM_TO_MODERN_BLURB}</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.quietBtn}
+                onPress={() => setFindOpen(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.quietBtnText}>Back to my take</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
-      )}
+      </Modal>
 
       {/* ── THE ONE RESULT SURFACE (bundle A) ──
           A confident hum match opens the SAME surface every other match uses,
@@ -624,7 +744,8 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
           }}
         />
       ) : null}
-    </MelodyCaptureWindow>
+      </MelodyCaptureWindow>
+    </>
   );
 };
 
@@ -730,4 +851,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
   },
+  /** The miss overlay's own screen (the capture page is never re-laid out). */
+  missScreen: {
+    flex: 1,
+    backgroundColor: '#12122b',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  /** The overlay's own quiet exit — back to the user's take, never a dead end. */
+  quietBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 6 },
+  quietBtnText: { color: '#a0a0b8', fontSize: 14, fontWeight: '600' },
 });
