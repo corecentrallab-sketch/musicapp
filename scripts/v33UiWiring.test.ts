@@ -32,6 +32,7 @@ import {
   takeActionBarWired,
   transposedCopyIsWhatReopens,
   settingsAppliesTheChosenTheme,
+  coverScanFlowWired,
 } from '../src/services/v33UiContract';
 import { oneMeaningPerCard } from '../src/services/frontDoorBands';
 import {
@@ -1030,6 +1031,86 @@ assertEq(
   false,
   'MUTATION: an editor that never selects the library copy FAILS transposedCopyIsWhatReopens',
 );
+
+// ────────── slice H — "Scan a cover" feeds the REAL search ──────────
+const FIND_PIECE_H = 'src/screens/FindPieceScreen.tsx';
+const COVER_MODAL = 'src/components/CoverScanModal.tsx';
+const findPieceSourceH = readAppFile(FIND_PIECE_H);
+const coverModalSource = readAppFile(COVER_MODAL);
+
+console.log('\nslice H — a photographed cover lands on the same search');
+assert(findPieceSourceH.length > 8000, `read ${FIND_PIECE_H} (${findPieceSourceH.length} chars)`);
+assert(coverModalSource.length > 3000, `read ${COVER_MODAL} (${coverModalSource.length} chars)`);
+assertEq(
+  coverScanFlowWired(findPieceSourceH, coverModalSource),
+  true,
+  'the search bar carries a real camera affordance, the confirmed title runs the screen’s OWN search, and with no reader in this build the confirm field is EMPTY (no fake OCR)',
+);
+
+// MUTATION 56: the confirm field is prefilled with a guess — i.e. the photo is
+// pretended to have been read. This is the exact dishonesty the rule bans.
+const prefilled = coverModalSource.replace(
+  "const [confirmText, setConfirmText] = useState('')",
+  "const [confirmText, setConfirmText] = useState('Für Elise')",
+);
+assert(prefilled !== coverModalSource, 'the prefilled-confirm mutation changed the real modal');
+assertEq(
+  coverScanFlowWired(findPieceSourceH, prefilled),
+  false,
+  'MUTATION: a confirm field prefilled as if the photo had been read FAILS coverScanFlowWired',
+);
+// MUTATION 57: the photo text is passed in as ocrText (a recogniser that is not
+// in this build, asserting itself anyway).
+const fakeRead = coverModalSource.replace(
+  'ocrText: null',
+  "ocrText: 'Für Elise'",
+);
+assert(fakeRead !== coverModalSource, 'the fake-read mutation changed the real modal');
+assertEq(
+  coverScanFlowWired(findPieceSourceH, fakeRead),
+  false,
+  'MUTATION: an ocrText that no recogniser produced FAILS coverScanFlowWired',
+);
+// MUTATION 58: a real OCR module is pulled in (the build claims to read photos).
+const withOcrModule = coverModalSource.replace(
+  "import { CameraView, useCameraPermissions } from 'expo-camera';",
+  "import { CameraView, useCameraPermissions } from 'expo-camera';\nimport TextRecognition from 'react-native-text-recognition';",
+);
+assert(withOcrModule !== coverModalSource, 'the ocr-module mutation changed the real modal');
+assertEq(
+  coverScanFlowWired(findPieceSourceH, withOcrModule),
+  false,
+  'MUTATION: a text-recognition module in the flow FAILS coverScanFlowWired',
+);
+// MUTATION 59: the affordance is decorative — the camera surface is never mounted.
+const noModal = findPieceSourceH.replace('<CoverScanModal', '');
+assert(noModal !== findPieceSourceH, 'the no-modal mutation changed the real search screen');
+assertEq(
+  coverScanFlowWired(noModal, coverModalSource),
+  false,
+  'MUTATION: an affordance that opens nothing FAILS coverScanFlowWired',
+);
+// MUTATION 60: the confirmed title bypasses this screen's search field (a second
+// search path, a second result set).
+const secondSearchPath = findPieceSourceH.replace('setQuery(text);', "setQuery('');");
+assert(secondSearchPath !== findPieceSourceH, 'the bypass mutation changed the real search screen');
+assertEq(
+  coverScanFlowWired(secondSearchPath, coverModalSource),
+  false,
+  'MUTATION: a confirmed title that never reaches the real search FAILS coverScanFlowWired',
+);
+// MUTATION 61: the surface stops capturing — a photo that was never taken.
+const noCapture = coverModalSource.replace(
+  'await cameraRef.current.takePictureAsync({ quality: 0.7 })',
+  'await Promise.resolve(null)',
+);
+assert(noCapture !== coverModalSource, 'the no-capture mutation changed the real modal');
+assertEq(
+  coverScanFlowWired(findPieceSourceH, noCapture),
+  false,
+  'MUTATION: a camera surface that never captures FAILS coverScanFlowWired',
+);
+
 
 console.log(`\n${passes} passed, ${failures} failed`);
 if (failures > 0) process.exit(1);

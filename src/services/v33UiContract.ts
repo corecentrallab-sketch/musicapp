@@ -776,3 +776,82 @@ export function transposedCopyIsWhatReopens(
   return true;
 }
 
+// ────────── H: "Scan a cover" is wired to the REAL search (v33 §H) ──────────
+
+/**
+ * The cover-scan affordance (owner 10-04 §H): a camera row on the find-a-piece
+ * search bar that photographs a score's title page and lands on the SAME search
+ * a typed title produces.
+ *
+ * Three things must be true, and each one has a way to be silently wrong:
+ *   1. WIRED, not decorative — the affordance has a real onPress that opens the
+ *      camera surface, and what the user confirms goes back through
+ *      `setQuery(text)`, the one entry point this screen already has. A second
+ *      search path would be a second set of results (and a second money path).
+ *   2. REAL capture — the surface uses expo-camera's takePictureAsync.
+ *   3. HONEST — this build has NO on-device text recogniser
+ *      (COVER_SCAN_OCR_AVAILABLE === false). The photo therefore yields no text:
+ *      the confirm field starts EMPTY, the model's own `no-ocr` line is what the
+ *      user reads, and there is no recogniser module anywhere in the flow. A
+ *      prefilled guess, or a fake "we read your cover", fails here.
+ *
+ * `searchSource` is src/screens/FindPieceScreen.tsx; `modalSource` is
+ * src/components/CoverScanModal.tsx.
+ */
+export function coverScanFlowWired(
+  searchSource: string,
+  modalSource: string,
+): boolean {
+  const search = maskComments(searchSource);
+  const modal = maskComments(modalSource);
+  if (search.length < 3000) return false;
+  if (modal.length < 2000) return false;
+
+  // 1. The affordance is on the search bar and it OPENS the camera surface.
+  if (search.indexOf('coverScanAffordanceLabel()') < 0) return false;
+  if (search.indexOf('setShowCoverScan(true)') < 0) return false;
+  if (search.indexOf('<CoverScanModal') < 0) return false;
+  if (search.indexOf('visible={showCoverScan}') < 0) return false;
+  // 2. …and the confirmed text runs the screen's OWN search (no second path).
+  if (search.indexOf('onConfirm={handleCoverQuery}') < 0) return false;
+  if (!/handleCoverQuery = useCallback\(\(text: string\)[\s\S]{0,600}?setQuery\(text\)/.test(search)) {
+    return false;
+  }
+  // 3. Real capture on the device.
+  if (modal.indexOf("from 'expo-camera'") < 0) return false;
+  if (modal.indexOf('takePictureAsync(') < 0) return false;
+  // 3b. …and no recogniser: nothing in this flow can read the photo for the user.
+  for (const module of OCR_MODULES) {
+    if (search.toLowerCase().indexOf(module) >= 0) return false;
+    if (modal.toLowerCase().indexOf(module) >= 0) return false;
+  }
+  // 4. The honest state: no OCR ⇒ no text ⇒ an EMPTY confirm field, with the
+  //    model's own no-ocr line shown (never a fabricated read).
+  if (modal.indexOf('coverQueryFromScan({') < 0) return false;
+  if (modal.indexOf('ocrText: null') < 0) return false;
+  if (modal.indexOf('ocrAvailable: COVER_SCAN_OCR_AVAILABLE') < 0) return false;
+  if (modal.indexOf('scanned.line') < 0) return false;
+  if (modal.indexOf("const [confirmText, setConfirmText] = useState('')") < 0) {
+    return false;
+  }
+  // 5. Only the user's own confirmed words leave the modal, and an empty field
+  //    runs nothing (no query invented out of a photo).
+  if (modal.indexOf('onConfirm(text)') < 0) return false;
+  if (!/const confirm = useCallback\(\(\) => \{[\s\S]{0,600}?if \(!text\) return;/.test(modal)) {
+    return false;
+  }
+  return true;
+}
+
+/** Modules that would mean the photo is being read in this build. None may be
+ *  present anywhere in the cover-scan flow (see the honest-state rule above). */
+const OCR_MODULES: readonly string[] = [
+  'mlkit',
+  'ml-kit',
+  'text-recognition',
+  'textrecognition',
+  'vision-camera',
+  'react-native-ml',
+  'tesseract',
+];
+
