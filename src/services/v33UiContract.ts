@@ -672,6 +672,58 @@ export function practiceComponentsAreGrouped(
   return true;
 }
 
+// ────────── F2: the Settings dark/light toggle (v33 §F2) ──────────
+
+/**
+ * The Settings screen really carries the light/dark choice (owner 10-04 email
+ * batch: "a dark/light mode toggle in Settings"). The mode, the palette and the
+ * copy come from services/theme.ts through services/themeStore.ts — the screen
+ * may not invent its own colours or its own strings.
+ *
+ * A toggle that only relabels a switch proves nothing, so this asserts BOTH
+ * halves: the choice is RENDERED with the model's copy and both directions reach
+ * the persisting store, AND the resolved tokens really repaint the screen (the
+ * container, the cards, the text) rather than only the new section.
+ *
+ * `screenSource` is src/screens/SettingsScreen.tsx.
+ */
+export function settingsAppliesTheChosenTheme(screenSource: string): boolean {
+  const masked = maskComments(screenSource);
+  if (masked.length < 8000) return false;
+  // The persisted binding, both directions, and the honest applied line.
+  if (masked.indexOf('useThemeMode(') < 0) return false;
+  if (masked.indexOf("setThemeMode('dark')") < 0) return false;
+  if (masked.indexOf("setThemeMode('light')") < 0) return false;
+  if (masked.indexOf('themeAppliedLine(themeMode)') < 0) return false;
+  // The Appearance copy is RENDERED (not merely imported — the F1 lesson).
+  for (const marker of [
+    '{THEME_SECTION_TITLE}',
+    '{THEME_ROW_TITLE}',
+    '{THEME_DARK_LABEL}',
+    '{THEME_LIGHT_LABEL}',
+    '{THEME_HONEST_NOTE}',
+  ]) {
+    if (masked.indexOf(marker) < 0) return false;
+  }
+  if (masked.indexOf('accessibilityLabel={THEME_ACCESSIBILITY_LABEL}') < 0) return false;
+  // …and the chosen mode is what the surface reads back.
+  if (masked.indexOf("themeMode === 'dark'") < 0) return false;
+  if (masked.indexOf("themeMode === 'light'") < 0) return false;
+  // The tokens repaint the WHOLE screen, not just the new section.
+  if (masked.indexOf('style={[styles.container, themed.screen]}') < 0) return false;
+  if (masked.indexOf('backgroundColor: theme.background') < 0) return false;
+  if (masked.indexOf('backgroundColor: theme.surface') < 0) return false;
+  if (masked.indexOf('borderColor: theme.border') < 0) return false;
+  if (masked.indexOf('color: theme.text') < 0) return false;
+  if (masked.indexOf('color: theme.subtext') < 0) return false;
+  if (masked.indexOf('color: theme.accent') < 0) return false;
+  // The themed surfaces are the real ones (the plan card and the billing card),
+  // not one decorative element.
+  if (masked.indexOf('[styles.planCard, themed.card]') < 0) return false;
+  if (masked.indexOf('[styles.infoCard, themed.card]') < 0) return false;
+  return true;
+}
+
 // ────────── F5: a transposed copy really re-opens (v33 §F5) ──────────
 
 /**

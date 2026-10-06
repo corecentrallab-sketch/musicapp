@@ -25,10 +25,28 @@ import {
   previewEngineNeverRewritesTheTake,
   previewIsDockedInTheEditor,
   searchHasItsOwnDiscoverBand,
+  searchRetriesTyposAndSaysSo,
   staffCardDrawsBothRows,
   staffIsTheUsersOwnTake,
   takeActionBarWired,
+  settingsAppliesTheChosenTheme,
 } from '../src/services/v33UiContract';
+import {
+  queryVariants,
+  rankFuzzyMatches,
+  retryNoticeLine,
+} from '../src/services/fuzzySearch';
+import {
+  DARK_THEME,
+  DEFAULT_THEME_MODE,
+  LIGHT_THEME,
+  THEME_HONEST_NOTE,
+  THEME_STORAGE_KEY,
+  resolveThemeMode,
+  themeAppliedLine,
+  themeFor,
+  toggleThemeMode,
+} from '../src/services/theme';
 import {
   TAKE_PLAY_BUSY_LABEL,
   TAKE_PLAY_LABEL,
@@ -692,6 +710,87 @@ assertEq(
   historyRowPlaysItsSavedClip(controlOutsideBlock, clipHookSource),
   false,
   'MUTATION: a playback control outside the take block FAILS historyRowPlaysItsSavedClip',
+);
+
+// ────────── slice F2 — the Settings dark/light toggle ──────────
+const SETTINGS = 'src/screens/SettingsScreen.tsx';
+const settingsSource = readAppFile(SETTINGS);
+
+console.log('\nslice F2 — Settings carries the dark/light choice');
+assert(settingsSource.length > 12000, `read ${SETTINGS} (${settingsSource.length} chars)`);
+assertEq(
+  settingsAppliesTheChosenTheme(settingsSource),
+  true,
+  'the Appearance section is rendered from the model copy, both directions reach the persisting store, and the tokens repaint the screen',
+);
+// The model itself: one palette table, one persisted key, one resolver.
+assertEq(DEFAULT_THEME_MODE, 'dark', 'the app still ships dark (the owner’s styling is the default)');
+assertEq(themeFor('light').background, LIGHT_THEME.background, 'the light palette resolves for light');
+assertEq(themeFor('dark').text, DARK_THEME.text, 'the dark palette resolves for dark');
+assertEq(themeFor(null).background, DARK_THEME.background, 'no stored value means the app default');
+assertEq(resolveThemeMode('  "Light" '), 'light', 'a stored value with quotes/whitespace still resolves');
+assertEq(resolveThemeMode('chartreuse'), 'dark', 'an unrecognised stored value falls back to the default');
+assertEq(toggleThemeMode('dark'), 'light', 'toggling from dark gives light');
+assertEq(toggleThemeMode('light'), 'dark', 'toggling from light gives dark');
+assertEq(
+  themeFor('light').background === themeFor('dark').background,
+  false,
+  'the two modes really differ (a toggle that changes nothing is not a toggle)',
+);
+assert(
+  THEME_STORAGE_KEY.length > 0 && themeAppliedLine('light').includes('Light'),
+  'the applied line names the mode it applied',
+);
+assert(
+  /Settings screen/.test(THEME_HONEST_NOTE) && /rest of the app/i.test(THEME_HONEST_NOTE),
+  'the honest note names the surfaces this build themes and the ones it does not',
+);
+
+// MUTATION 38: the honest scope note goes (the section would imply a whole-app switch).
+const themedNoNote = settingsSource.replace('{THEME_HONEST_NOTE}', '{"Dark mode"}');
+assert(themedNoNote !== settingsSource, 'the no-note mutation changed the real Settings screen');
+assertEq(
+  settingsAppliesTheChosenTheme(themedNoNote),
+  false,
+  'MUTATION: a toggle with no honest scope note FAILS settingsAppliesTheChosenTheme',
+);
+// MUTATION 39: the screen stops repainting (the toggle only relabels itself).
+const paintedOnce = settingsSource.replace(
+  'style={[styles.container, themed.screen]}',
+  'style={styles.container}',
+);
+assert(paintedOnce !== settingsSource, 'the unpainted-screen mutation changed the real Settings screen');
+assertEq(
+  settingsAppliesTheChosenTheme(paintedOnce),
+  false,
+  'MUTATION: a screen that never reads the background token FAILS settingsAppliesTheChosenTheme',
+);
+// MUTATION 40: only one direction is reachable (light can never be chosen).
+const oneWay = settingsSource.replace("setThemeMode('light')", "setThemeMode('dark')");
+assert(oneWay !== settingsSource, 'the one-way mutation changed the real Settings screen');
+assertEq(
+  settingsAppliesTheChosenTheme(oneWay),
+  false,
+  'MUTATION: a toggle that can only pick one mode FAILS settingsAppliesTheChosenTheme',
+);
+// MUTATION 41: the persisting store is bypassed for local state (the choice would
+// be forgotten on restart).
+const localOnly = settingsSource.replace('useThemeMode()', 'useFixedThemeMode()');
+assert(localOnly !== settingsSource, 'the local-only mutation changed the real Settings screen');
+assertEq(
+  settingsAppliesTheChosenTheme(localOnly),
+  false,
+  'MUTATION: a toggle that does not use the persisted binding FAILS settingsAppliesTheChosenTheme',
+);
+// MUTATION 42: the cards keep their v32 hexes (only the new section follows).
+const cardsFrozen = settingsSource
+  .split('[styles.planCard, themed.card]')
+  .join('[styles.planCard]');
+assert(cardsFrozen !== settingsSource, 'the frozen-cards mutation changed the real Settings screen');
+assertEq(
+  settingsAppliesTheChosenTheme(cardsFrozen),
+  false,
+  'MUTATION: a plan card that keeps its own colour FAILS settingsAppliesTheChosenTheme',
 );
 
 console.log(`\n${passes} passed, ${failures} failed`);

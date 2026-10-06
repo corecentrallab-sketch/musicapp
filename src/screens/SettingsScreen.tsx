@@ -39,6 +39,21 @@ import {
 import { getReminderMinutes, setReminderMinutes as persistReminderMinutes } from '../services/storage';
 import { createCheckoutSession, checkEntitlement } from '../services/api';
 import { getDeviceId } from '../services/device';
+// The app's light/dark choice (v33 §F2, owner 10-04 email batch: "a dark/light
+// mode toggle in Settings"). The mode, the palette and the persisted-value
+// contract live in services/theme.ts; the read/write binding in themeStore.ts.
+// This screen is the TOGGLE, and the tokens below are what actually repaint it —
+// no surface on this screen carries its own colour any more.
+import { useThemeMode } from '../services/themeStore';
+import {
+  THEME_ACCESSIBILITY_LABEL,
+  THEME_DARK_LABEL,
+  THEME_HONEST_NOTE,
+  THEME_LIGHT_LABEL,
+  THEME_ROW_TITLE,
+  THEME_SECTION_TITLE,
+  themeAppliedLine,
+} from '../services/theme';
 
 // Owner-account Stripe price IDs (USD). These are public identifiers passed to
 // our own API — the API is what creates the Checkout session on the owner's
@@ -99,6 +114,11 @@ export const SettingsScreen: React.FC = () => {
   // The practice-reminder time, in minutes since local midnight (owner 09-25).
   // 18:00 until the user picks another time — the exact pre-existing behaviour.
   const [reminderMinutes, setReminderMinutes] = useState(DEFAULT_REMINDER_MINUTES);
+  // The chosen theme (v33 §F2). `theme` is the RESOLVED token table for the
+  // current mode: every surface below reads its colours from here, so flipping
+  // the toggle repaints the screen instead of only relabelling a switch. The
+  // store persists the choice (themeStore), so it survives a restart.
+  const { mode: themeMode, tokens: theme, setMode: setThemeMode } = useThemeMode();
 
   useEffect(() => {
     getNotificationEnabled().then(setNotificationsEnabled);
@@ -185,26 +205,42 @@ export const SettingsScreen: React.FC = () => {
 
   const planLabel = proState.plan ? PLAN_LABELS[proState.plan] ?? 'NoteSnap Pro' : null;
 
+  /**
+   * The screen's colours, resolved from the chosen theme (v33 §F2). Each entry is
+   * one ROLE, so a new palette is a value in theme.ts and never a hunt through
+   * this file. `styles` keeps the layout; these override every colour.
+   */
+  const themed = {
+    screen: { backgroundColor: theme.background },
+    title: { color: theme.accent },
+    subtitle: { color: theme.subtext },
+    muted: { color: theme.subtext },
+    strong: { color: theme.text },
+    card: { backgroundColor: theme.surface, borderColor: theme.border },
+    chip: { backgroundColor: theme.chipBg, borderColor: theme.border },
+    chipText: { color: theme.chipText },
+  };
+
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, themed.screen]}
       contentContainerStyle={styles.content}
     >
       {/* ── Current Plan ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Your Plan</Text>
-        <View style={styles.planCard}>
+        <Text style={[styles.sectionTitle, themed.title]}>Your Plan</Text>
+        <View style={[styles.planCard, themed.card]}>
           {checking ? (
-            <ActivityIndicator color="#e94560" size="small" />
+            <ActivityIndicator color={theme.accent} size="small" />
           ) : (
             <>
               <Text style={styles.planEmoji}>
                 {proState.isPro ? '⭐' : '🎵'}
               </Text>
-              <Text style={styles.planName}>
+              <Text style={[styles.planName, themed.strong]}>
                 {proState.isPro ? planLabel ?? 'NoteSnap Pro' : 'NoteSnap Free'}
               </Text>
-              <Text style={styles.planStatus}>
+              <Text style={[styles.planStatus, themed.muted]}>
                 {proState.isPro
                   ? 'Unlimited recognitions'
                   : '5 recognitions / month'}
@@ -222,8 +258,8 @@ export const SettingsScreen: React.FC = () => {
       {/* ── Upgrade Options (shown for free users) ── */}
       {!checking && !proState.isPro && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Upgrade</Text>
-          <Text style={styles.sectionSubtitle}>
+          <Text style={[styles.sectionTitle, themed.title]}>Upgrade</Text>
+          <Text style={[styles.sectionSubtitle, themed.subtitle]}>
             You're on the free plan — 5 recognitions/month.{'\n'}
             Upgrade anytime for unlimited access.
           </Text>
@@ -231,7 +267,7 @@ export const SettingsScreen: React.FC = () => {
           {PLANS.map((plan) => (
             <TouchableOpacity
               key={plan.id}
-              style={[styles.upgradeCard, plan.highlight && styles.upgradeCardHighlight]}
+              style={[styles.upgradeCard, themed.card, plan.highlight && styles.upgradeCardHighlight]}
               onPress={() => handleUpgrade(plan.id)}
               disabled={loadingPlan !== null}
               activeOpacity={0.7}
@@ -242,15 +278,15 @@ export const SettingsScreen: React.FC = () => {
                 </View>
               )}
               <View style={styles.upgradeInfo}>
-                <Text style={styles.upgradeName}>{plan.name}</Text>
-                <Text style={styles.upgradePrice}>{plan.price}</Text>
+                <Text style={[styles.upgradeName, themed.strong]}>{plan.name}</Text>
+                <Text style={[styles.upgradePrice, themed.muted]}>{plan.price}</Text>
                 {plan.savings && (
                   <Text style={styles.upgradeSavings}>{plan.savings}</Text>
                 )}
-                <Text style={styles.upgradeFeature}>{plan.feature}</Text>
+                <Text style={[styles.upgradeFeature, themed.muted]}>{plan.feature}</Text>
               </View>
               {loadingPlan === plan.id ? (
-                <ActivityIndicator color="#e94560" size="small" />
+                <ActivityIndicator color={theme.accent} size="small" />
               ) : (
                 <View style={[styles.upgradeBtn, plan.highlight && styles.upgradeBtnPrimary]}>
                   <Text style={[styles.upgradeBtnText, plan.highlight && styles.upgradeBtnTextPrimary]}>
@@ -264,15 +300,15 @@ export const SettingsScreen: React.FC = () => {
       )}
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Practice reminders</Text>
-        <View style={styles.infoCard}>
+        <Text style={[styles.sectionTitle, themed.title]}>Practice reminders</Text>
+        <View style={[styles.infoCard, themed.card]}>
           <View style={styles.reminderRow}>
             <View style={styles.reminderCopy}>
-              <Text style={styles.reminderTitle}>Daily streak nudge</Text>
-              <Text style={styles.infoText}>{reminderSettingCopy(reminderMinutes)}</Text>
+              <Text style={[styles.reminderTitle, themed.strong]}>Daily streak nudge</Text>
+              <Text style={[styles.infoText, themed.muted]}>{reminderSettingCopy(reminderMinutes)}</Text>
             </View>
-            <TouchableOpacity onPress={toggleNotifications} style={[styles.toggle, notificationsEnabled && styles.toggleOn]} accessibilityRole="switch" accessibilityState={{ checked: notificationsEnabled }}>
-              <Text style={styles.toggleText}>{notificationsEnabled ? 'ON' : 'OFF'}</Text>
+            <TouchableOpacity onPress={toggleNotifications} style={[styles.toggle, themed.chip, notificationsEnabled && { backgroundColor: theme.accent }]} accessibilityRole="switch" accessibilityState={{ checked: notificationsEnabled }}>
+              <Text style={[styles.toggleText, themed.chipText]}>{notificationsEnabled ? 'ON' : 'OFF'}</Text>
             </TouchableOpacity>
           </View>
           {/* The reminder TIME the user chooses (owner 09-25). Deliberately a
@@ -329,14 +365,65 @@ export const SettingsScreen: React.FC = () => {
 
       {/* ── Billing Info ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Billing</Text>
-        <View style={styles.infoCard}>
-          <Text style={styles.infoText}>
+        <Text style={[styles.sectionTitle, themed.title]}>Billing</Text>
+        <View style={[styles.infoCard, themed.card]}>
+          <Text style={[styles.infoText, themed.muted]}>
             • Cancel anytime — one tap, no hassle{'\n'}
             • Free plan available with 5 recognitions/month{'\n'}
             • No commitments — you're in control{'\n'}
             • Payment processed securely by Stripe
           </Text>
+        </View>
+      </View>
+
+      {/* ── Appearance (v33 §F2, owner 10-04 email batch) ──
+          The dark/light choice. Two segment buttons rather than a bare switch:
+          both states are named, so the user can see what they are choosing and
+          what is currently on. The write goes through themeStore (AsyncStorage),
+          so the choice survives a restart; `themeAppliedLine` says so in words.
+          The honest scope note (THEME_HONEST_NOTE) names exactly which surfaces
+          this build themes — the rest of the app stays dark, and the section
+          says that instead of implying a whole-app switch. */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, themed.title]}>{THEME_SECTION_TITLE}</Text>
+        <View style={[styles.infoCard, themed.card]}>
+          <View style={styles.reminderRow}>
+            <View style={styles.reminderCopy}>
+              <Text style={[styles.reminderTitle, themed.strong]}>{THEME_ROW_TITLE}</Text>
+              <Text style={[styles.infoText, themed.muted]}>{themeAppliedLine(themeMode)}</Text>
+            </View>
+          </View>
+
+          <View style={styles.themeChoiceRow}>
+            <TouchableOpacity
+              style={[
+                styles.themeChoice,
+                themed.chip,
+                themeMode === 'dark' && { backgroundColor: theme.accent, borderColor: theme.accent },
+              ]}
+              onPress={() => setThemeMode('dark')}
+              accessibilityRole="button"
+              accessibilityState={{ selected: themeMode === 'dark' }}
+              accessibilityLabel={THEME_ACCESSIBILITY_LABEL}
+            >
+              <Text style={[styles.themeChoiceText, themed.chipText]}>{THEME_DARK_LABEL}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.themeChoice,
+                themed.chip,
+                themeMode === 'light' && { backgroundColor: theme.accent, borderColor: theme.accent },
+              ]}
+              onPress={() => setThemeMode('light')}
+              accessibilityRole="button"
+              accessibilityState={{ selected: themeMode === 'light' }}
+              accessibilityLabel={THEME_ACCESSIBILITY_LABEL}
+            >
+              <Text style={[styles.themeChoiceText, themed.chipText]}>{THEME_LIGHT_LABEL}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={[styles.themeNote, themed.muted]}>{THEME_HONEST_NOTE}</Text>
         </View>
       </View>
 
@@ -385,6 +472,20 @@ const styles = StyleSheet.create({
   toggle: { backgroundColor: '#3a3a5c', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 },
   toggleOn: { backgroundColor: '#e94560' },
   toggleText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+
+  // The Appearance segment buttons (v33 §F2). Layout only — every colour comes
+  // from the resolved theme tokens at the call site.
+  themeChoiceRow: { flexDirection: 'row', marginTop: 12, gap: 10 },
+  themeChoice: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  themeChoiceText: { fontSize: 15, fontWeight: '700' },
+  themeNote: { fontSize: 13, lineHeight: 19, marginTop: 12 },
 
   // Current Plan
   planCard: {
