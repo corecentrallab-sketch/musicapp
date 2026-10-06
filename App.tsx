@@ -13,6 +13,7 @@ import { ScanScoreScreen } from './src/screens/ScanScoreScreen';
 import { CloudSyncScreen } from './src/screens/CloudSyncScreen';
 import { MetronomeScreen } from './src/screens/MetronomeScreen';
 import { NotationEditorScreen } from './src/screens/NotationEditorScreen';
+import { AudioUnavailableChip } from './src/components/AudioUnavailableChip';
 import {
   hasCompletedOnboarding,
   saveOnboardingAnswers,
@@ -142,6 +143,16 @@ export default function App() {
           />
         </Stack.Navigator>
       </NavigationContainer>
+      {/*
+        THE VISIBLE AUDIO FAILURE (v34 fix 1c). Every audio path (the History take
+        player, the tone preview, the session setup, the recorder) reports to
+        services/audioDiagnostics, and this chip is the ONE place that renders it —
+        "Audio unavailable: <reason>" with a ✕ that dismisses it. It renders
+        nothing while the audio stack is healthy, is absolutely positioned with
+        `pointerEvents="box-none"`, and never blocks a touch: the owner's v33 pass
+        could not say WHY the app was quiet, and this is the answer on screen.
+      */}
+      <AudioUnavailableChip />
     </SafeAreaProvider>
   );
 }
