@@ -46,6 +46,10 @@ import { getDeviceId } from '../services/device';
 // no surface on this screen carries its own colour any more.
 import { useThemeMode } from '../services/themeStore';
 import {
+  PRACTICE_SECTION_SUBTITLE,
+  PRACTICE_SECTION_TITLE,
+  PRACTICE_STREAK_ROW_HINT,
+  PRACTICE_STREAK_ROW_TITLE,
   THEME_ACCESSIBILITY_LABEL,
   THEME_DARK_LABEL,
   THEME_HONEST_NOTE,
@@ -226,6 +230,72 @@ export const SettingsScreen: React.FC = () => {
       style={[styles.container, themed.screen]}
       contentContainerStyle={styles.content}
     >
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, themed.title]}>{PRACTICE_SECTION_TITLE}</Text>
+        <Text style={[styles.sectionSubtitle, themed.subtitle]}>{PRACTICE_SECTION_SUBTITLE}</Text>
+        <View style={[styles.infoCard, themed.card]}>
+          <View style={styles.reminderRow}>
+            <View style={styles.reminderCopy}>
+              <Text style={[styles.reminderTitle, themed.strong]}>{PRACTICE_STREAK_ROW_TITLE}</Text>
+              <Text style={[styles.infoText, themed.muted]}>{PRACTICE_STREAK_ROW_HINT}</Text>
+              <Text style={[styles.infoText, themed.muted]}>{reminderSettingCopy(reminderMinutes)}</Text>
+            </View>
+            <TouchableOpacity onPress={toggleNotifications} style={[styles.toggle, themed.chip, notificationsEnabled && { backgroundColor: theme.accent }]} accessibilityRole="switch" accessibilityState={{ checked: notificationsEnabled }}>
+              <Text style={[styles.toggleText, themed.chipText]}>{notificationsEnabled ? 'ON' : 'OFF'}</Text>
+            </TouchableOpacity>
+          </View>
+          {/* The reminder TIME the user chooses (owner 09-25). Deliberately a
+              lightweight in-repo picker — hour and 5-minute steppers — rather than
+              a native time dialog: no new dependency, no OS-styled modal, and the
+              chosen value is the same minutes-of-day the scheduler arms. */}
+          <View style={styles.timePickerRow}>
+            <View style={styles.timeStepper}>
+              <TouchableOpacity
+                style={styles.timeStepBtn}
+                disabled={!notificationsEnabled}
+                accessibilityRole="button"
+                accessibilityLabel="Remind me an hour earlier"
+                onPress={() => onChangeReminderTime(stepReminderMinutes(reminderMinutes, -60))}
+              >
+                <Text style={styles.timeStepText}>-</Text>
+              </TouchableOpacity>
+              <Text style={styles.timeStepLabel}>Hour</Text>
+              <TouchableOpacity
+                style={styles.timeStepBtn}
+                disabled={!notificationsEnabled}
+                accessibilityRole="button"
+                accessibilityLabel="Remind me an hour later"
+                onPress={() => onChangeReminderTime(stepReminderMinutes(reminderMinutes, 60))}
+              >
+                <Text style={styles.timeStepText}>+</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.timePickerValue}>{formatReminderTime(reminderMinutes)}</Text>
+            <View style={styles.timeStepper}>
+              <TouchableOpacity
+                style={styles.timeStepBtn}
+                disabled={!notificationsEnabled}
+                accessibilityRole="button"
+                accessibilityLabel="Remind me five minutes earlier"
+                onPress={() => onChangeReminderTime(stepReminderMinutes(reminderMinutes, -5))}
+              >
+                <Text style={styles.timeStepText}>-</Text>
+              </TouchableOpacity>
+              <Text style={styles.timeStepLabel}>5 min</Text>
+              <TouchableOpacity
+                style={styles.timeStepBtn}
+                disabled={!notificationsEnabled}
+                accessibilityRole="button"
+                accessibilityLabel="Remind me five minutes later"
+                onPress={() => onChangeReminderTime(stepReminderMinutes(reminderMinutes, 5))}
+              >
+                <Text style={styles.timeStepText}>+</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+
       {/* ── Current Plan ── */}
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, themed.title]}>Your Plan</Text>
@@ -298,70 +368,6 @@ export const SettingsScreen: React.FC = () => {
           ))}
         </View>
       )}
-
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, themed.title]}>Practice reminders</Text>
-        <View style={[styles.infoCard, themed.card]}>
-          <View style={styles.reminderRow}>
-            <View style={styles.reminderCopy}>
-              <Text style={[styles.reminderTitle, themed.strong]}>Daily streak nudge</Text>
-              <Text style={[styles.infoText, themed.muted]}>{reminderSettingCopy(reminderMinutes)}</Text>
-            </View>
-            <TouchableOpacity onPress={toggleNotifications} style={[styles.toggle, themed.chip, notificationsEnabled && { backgroundColor: theme.accent }]} accessibilityRole="switch" accessibilityState={{ checked: notificationsEnabled }}>
-              <Text style={[styles.toggleText, themed.chipText]}>{notificationsEnabled ? 'ON' : 'OFF'}</Text>
-            </TouchableOpacity>
-          </View>
-          {/* The reminder TIME the user chooses (owner 09-25). Deliberately a
-              lightweight in-repo picker — hour and 5-minute steppers — rather than
-              a native time dialog: no new dependency, no OS-styled modal, and the
-              chosen value is the same minutes-of-day the scheduler arms. */}
-          <View style={styles.timePickerRow}>
-            <View style={styles.timeStepper}>
-              <TouchableOpacity
-                style={styles.timeStepBtn}
-                disabled={!notificationsEnabled}
-                accessibilityRole="button"
-                accessibilityLabel="Remind me an hour earlier"
-                onPress={() => onChangeReminderTime(stepReminderMinutes(reminderMinutes, -60))}
-              >
-                <Text style={styles.timeStepText}>-</Text>
-              </TouchableOpacity>
-              <Text style={styles.timeStepLabel}>Hour</Text>
-              <TouchableOpacity
-                style={styles.timeStepBtn}
-                disabled={!notificationsEnabled}
-                accessibilityRole="button"
-                accessibilityLabel="Remind me an hour later"
-                onPress={() => onChangeReminderTime(stepReminderMinutes(reminderMinutes, 60))}
-              >
-                <Text style={styles.timeStepText}>+</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.timePickerValue}>{formatReminderTime(reminderMinutes)}</Text>
-            <View style={styles.timeStepper}>
-              <TouchableOpacity
-                style={styles.timeStepBtn}
-                disabled={!notificationsEnabled}
-                accessibilityRole="button"
-                accessibilityLabel="Remind me five minutes earlier"
-                onPress={() => onChangeReminderTime(stepReminderMinutes(reminderMinutes, -5))}
-              >
-                <Text style={styles.timeStepText}>-</Text>
-              </TouchableOpacity>
-              <Text style={styles.timeStepLabel}>5 min</Text>
-              <TouchableOpacity
-                style={styles.timeStepBtn}
-                disabled={!notificationsEnabled}
-                accessibilityRole="button"
-                accessibilityLabel="Remind me five minutes later"
-                onPress={() => onChangeReminderTime(stepReminderMinutes(reminderMinutes, 5))}
-              >
-                <Text style={styles.timeStepText}>+</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </View>
 
       {/* ── Billing Info ── */}
       <View style={styles.section}>

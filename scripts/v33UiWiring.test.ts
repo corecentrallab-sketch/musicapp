@@ -26,11 +26,18 @@ import {
   previewIsDockedInTheEditor,
   searchHasItsOwnDiscoverBand,
   searchRetriesTyposAndSaysSo,
+  practiceComponentsAreGrouped,
   staffCardDrawsBothRows,
   staffIsTheUsersOwnTake,
   takeActionBarWired,
+  transposedCopyIsWhatReopens,
   settingsAppliesTheChosenTheme,
 } from '../src/services/v33UiContract';
+import { oneMeaningPerCard } from '../src/services/frontDoorBands';
+import {
+  PRACTICE_SECTION_SUBTITLE,
+  PRACTICE_SECTION_TITLE,
+} from '../src/services/theme';
 import {
   queryVariants,
   rankFuzzyMatches,
@@ -257,7 +264,7 @@ const staffConflict = (() => {
     return '';
   }
 })();
-const abcViewSource = readAppFile(ABC_VIEW);
+const f5AbcViewSource = readAppFile(ABC_VIEW);
 
 console.log('\nslice C — the take as notation (dimmed raw + crisp auto-cleaned)');
 assert(staffConflict.length > 1500, `read ${STAFF_CARD} (${staffConflict.length} chars)`);
@@ -272,7 +279,7 @@ assertEq(
   'the staff is built from the decoded take and handed in through the window slot',
 );
 assertEq(
-  abcViewHasInkSeam(abcViewSource),
+  abcViewHasInkSeam(f5AbcViewSource),
   true,
   'the one renderer grew the ink seam (foregroundColor + CSS + reload key)',
 );
@@ -315,8 +322,8 @@ assertEq(
 );
 // MUTATION 12: the ink seam is dropped from the renderer (the raw/cleaned
 // distinction would silently become one colour).
-const noOption = abcViewSource.replace('foregroundColor: ink', 'foregroundColor: "#000000"');
-assert(noOption !== abcViewSource, 'the ink-option mutation changed the real renderer');
+const noOption = f5AbcViewSource.replace('foregroundColor: ink', 'foregroundColor: "#000000"');
+assert(noOption !== f5AbcViewSource, 'the ink-option mutation changed the real renderer');
 assertEq(
   abcViewHasInkSeam(noOption),
   false,
@@ -791,6 +798,237 @@ assertEq(
   settingsAppliesTheChosenTheme(cardsFrozen),
   false,
   'MUTATION: a plan card that keeps its own colour FAILS settingsAppliesTheChosenTheme',
+);
+
+// ────────── slice F3 — a typo'd query is retried and the retry is named ──────────
+const FIND_PIECE = 'src/screens/FindPieceScreen.tsx';
+const findPieceSource = readAppFile(FIND_PIECE);
+
+console.log('\nslice F3 — the find-a-piece search retries a misspelling');
+assert(findPieceSource.length > 12000, `read ${FIND_PIECE} (${findPieceSource.length} chars)`);
+assertEq(
+  searchRetriesTyposAndSaysSo(findPieceSource),
+  true,
+  'the screen retries the SAME catalog search with the model’s variants and renders the notice naming what matched',
+);
+// The owner's own case, on the model: "toccatta and fugue" must lead to the
+// corrected phrase, and the notice must name both queries.
+const typoVariants = queryVariants('toccatta and fugue');
+assert(
+  typoVariants.includes('toccata and fugue'),
+  'the ladder corrects the owner’s typo: "toccatta and fugue" → "toccata and fugue"',
+);
+assertEq(typoVariants[0], 'toccatta and fugue', 'the user’s own words are tried FIRST');
+assertEq(
+  retryNoticeLine('toccatta and fugue', 'toccata and fugue'),
+  'No exact match for “toccatta and fugue” — showing what “toccata and fugue” found in our library.',
+  'the notice names the typed query and the query that actually matched',
+);
+assertEq(
+  retryNoticeLine('fur elise', 'fur elise'),
+  null,
+  'a first-try hit shows no notice (there is nothing to explain)',
+);
+assertEq(
+  retryNoticeLine('  FüR  Elisé ', 'fur elise'),
+  null,
+  'the same query in another case/diacritic form is not a retry',
+);
+const ranked = rankFuzzyMatches('toccata fugue', [
+  { id: 'wrong', title: 'Fugue in G minor', composer: 'Bach' },
+  { id: 'right', title: 'Toccata and Fugue in D minor', composer: 'Bach', catalog: 'BWV 565' },
+] as { id: string; title: string; composer?: string; catalog?: string }[]);
+assertEq(ranked.length, 2, 'both candidates answer the corrected query');
+assertEq(ranked[0].item.id, 'right', 'the fuzzy ranking puts the real match first');
+
+// MUTATION 43: the notice is computed but never shown (the user would see a
+// result list for a query they did not type, with no explanation).
+const noticeDropped = findPieceSource.replace('{retryNotice}', '{"matched"}');
+assert(noticeDropped !== findPieceSource, 'the dropped-notice mutation changed the real search screen');
+assertEq(
+  searchRetriesTyposAndSaysSo(noticeDropped),
+  false,
+  'MUTATION: a retry notice that is never rendered FAILS searchRetriesTyposAndSaysSo',
+);
+// MUTATION 44: the ladder reaches a DIFFERENT search (a second way to find
+// pieces, which the results header and the retailer section would not agree with).
+const secondSeam = findPieceSource.replace(
+  'const retry = await searchPieces(variant);',
+  'const retry = await searchEverything(variant);',
+);
+assert(secondSeam !== findPieceSource, 'the second-seam mutation changed the real search screen');
+assertEq(
+  searchRetriesTyposAndSaysSo(secondSeam),
+  false,
+  'MUTATION: a retry ladder on another search seam FAILS searchRetriesTyposAndSaysSo',
+);
+// MUTATION 45: nothing matches and the screen claims results anyway (the honest
+// empty state — and the retailer section under it — is what the rule protects).
+const noEmptyState = findPieceSource.replace("setStatus('empty')", "setStatus('ready')");
+assert(noEmptyState !== findPieceSource, 'the no-empty-state mutation changed the real search screen');
+assertEq(
+  searchRetriesTyposAndSaysSo(noEmptyState),
+  false,
+  'MUTATION: a search with no honest empty state FAILS searchRetriesTyposAndSaysSo',
+);
+// MUTATION 46: the notice text is hand-rolled in the screen (the model's line is
+// the one place that knows which query matched).
+const handRolledNotice = findPieceSource.replace(
+  'setRetryNotice(retryNoticeLine(typed, variant));',
+  'setRetryNotice(`showing ${variant}`);',
+);
+assert(
+  handRolledNotice !== findPieceSource,
+  'the hand-rolled-notice mutation changed the real search screen',
+);
+assertEq(
+  searchRetriesTyposAndSaysSo(handRolledNotice),
+  false,
+  'MUTATION: a hand-rolled retry notice FAILS searchRetriesTyposAndSaysSo',
+);
+
+// ────────── slice F4 — the practice components are ONE group ──────────
+console.log('\nslice F4 — the practice/streak group is grouped');
+assertEq(
+  practiceComponentsAreGrouped(settingsSource, homeSource),
+  true,
+  'the Settings section is titled from the model and sits above "Your Plan", and the Home nudge lives inside band B',
+);
+// The two halves the owner named: the retitled Settings section, and the Home
+// nudge beside today's card. Quiet copy checks (the model's own words).
+assertEq(String(PRACTICE_SECTION_TITLE) === 'Practice reminders', false, 'the section is retitled off the v32 string');
+assert(
+  /streak/i.test(PRACTICE_SECTION_TITLE),
+  'the section title names the streak (that is what it owns now)',
+);
+assert(
+  PRACTICE_SECTION_SUBTITLE.length > 40,
+  'the section explains how the Home card and the reminder work together',
+);
+// Band B keeps its ONE meaning: the nudge adds no tap of its own.
+assertEq(
+  oneMeaningPerCard(homeSource),
+  true,
+  'band B still holds exactly one onPress and none of the retired practice cards came back',
+);
+
+// MUTATION 47: the practice section keeps the v32 title (a retitle that did not
+// happen — the marker is gone and the old string is back).
+const oldTitle = settingsSource.replace(
+  '{PRACTICE_SECTION_TITLE}',
+  "{'Practice reminders'}",
+);
+assert(oldTitle !== settingsSource, 'the old-title mutation changed the real Settings screen');
+assertEq(
+  practiceComponentsAreGrouped(oldTitle, homeSource),
+  false,
+  'MUTATION: a section still titled "Practice reminders" FAILS practiceComponentsAreGrouped',
+);
+// MUTATION 48: the reminder row is left with the v32 hardcoded label.
+const oldRow = settingsSource.replace(
+  '{PRACTICE_STREAK_ROW_TITLE}',
+  "{'Daily streak nudge'}",
+);
+assert(oldRow !== settingsSource, 'the old-row mutation changed the real Settings screen');
+assertEq(
+  practiceComponentsAreGrouped(oldRow, homeSource),
+  false,
+  'MUTATION: a row still labelled "Daily streak nudge" FAILS practiceComponentsAreGrouped',
+);
+// MUTATION 49: the section slides back down BELOW "Your Plan" (and below the
+// billing sections) — the one ordering the owner named.
+const movedDown = settingsSource
+  .split('PRACTICE_SECTION_TITLE')
+  .join('PRACTICE_TITLE')
+  .replace('>Your Plan<', '>Your Plan<{PRACTICE_SECTION_TITLE}');
+assert(movedDown !== settingsSource, 'the moved-down mutation changed the real Settings screen');
+assertEq(
+  practiceComponentsAreGrouped(movedDown, homeSource),
+  false,
+  'MUTATION: a practice section below "Your Plan" FAILS practiceComponentsAreGrouped',
+);
+// MUTATION 50: the nudge floats back out, into the Discover band instead of band B.
+const floatingNudge = homeSource.replace(
+  '<View style={styles.band} testID={BAND_TEST_IDS.discover}>',
+  '<StreakNudgeCard surface="home" hidden={false} />\n        <View style={styles.band} testID={BAND_TEST_IDS.discover}>',
+);
+assert(floatingNudge !== homeSource, 'the floating-nudge mutation changed the real Home screen');
+assertEq(
+  practiceComponentsAreGrouped(settingsSource, floatingNudge),
+  false,
+  'MUTATION: a nudge floating between bands FAILS practiceComponentsAreGrouped',
+);
+// MUTATION 51: band B loses the nudge entirely (the group is split again).
+const nudgeGone = homeSource.replace('<StreakNudgeCard', '<NudgeCard').replace(
+  '</StreakNudgeCard>',
+  '</NudgeCard>',
+);
+assert(nudgeGone !== homeSource, 'the nudge-gone mutation changed the real Home screen');
+assertEq(
+  practiceComponentsAreGrouped(settingsSource, nudgeGone),
+  false,
+  'MUTATION: a Home with no streak nudge in band B FAILS practiceComponentsAreGrouped',
+);
+
+// ────────── slice F5 — a transposed copy is what re-opens ──────────
+const NOTATION_EDITOR = 'src/screens/NotationEditorScreen.tsx';
+const ABC_VIEW = 'src/components/AbcScoreView.tsx';
+const notationEditorSource = readAppFile(NOTATION_EDITOR);
+const f5ViewSource = readAppFile(ABC_VIEW);
+
+console.log('\nslice F5 — a saved transposed copy is what re-opens');
+assert(notationEditorSource.length > 8000, `read ${NOTATION_EDITOR} (${notationEditorSource.length} chars)`);
+assert(f5ViewSource.length > 3000, `read ${ABC_VIEW} (${f5ViewSource.length} chars)`);
+assertEq(
+  transposedCopyIsWhatReopens(notationEditorSource, f5ViewSource),
+  true,
+  'the editor holds NO default score when one was requested, says "Loading score…", and the staff is keyed on the whole ABC content',
+);
+
+// MUTATION 52: the v32 WebView key comes back (length + first character — the
+// exact key under which a transposed copy re-used the original's render).
+const v32Key = f5ViewSource.replace(
+  'abcRenderKey(abc, ink, background)',
+  '`abc-score-${abc.length}-${abc.charCodeAt(0)}-${ink}-${background}`',
+);
+assert(v32Key !== f5ViewSource, 'the v32-key mutation changed the real score view');
+assertEq(
+  transposedCopyIsWhatReopens(notationEditorSource, v32Key),
+  false,
+  'MUTATION: a WebView keyed on length + first character FAILS transposedCopyIsWhatReopens',
+);
+// MUTATION 53: the bundled default score paints again on the first frame.
+const bundledDefault = notationEditorSource.replace(
+  'useState<AbcScore | null>(null)',
+  'useState<AbcScore | null>(PUBLIC_DOMAIN_ABC_SCORES[0])',
+);
+assert(bundledDefault !== notationEditorSource, 'the default-score mutation changed the real editor');
+assertEq(
+  transposedCopyIsWhatReopens(bundledDefault, f5ViewSource),
+  false,
+  'MUTATION: an editor that pre-paints the bundled score FAILS transposedCopyIsWhatReopens',
+);
+// MUTATION 54: the editor renders before the requested score arrives.
+const rendersTooSoon = notationEditorSource.replace(
+  'if (loading || !selected)',
+  'if (loading)',
+);
+assert(rendersTooSoon !== notationEditorSource, 'the early-render mutation changed the real editor');
+assertEq(
+  transposedCopyIsWhatReopens(rendersTooSoon, f5ViewSource),
+  false,
+  'MUTATION: an editor that renders without a selected score FAILS transposedCopyIsWhatReopens',
+);
+// MUTATION 55: the library copy is loaded but never becomes the score shown.
+const neverSelected = notationEditorSource.replace(
+  'setSelected(scoreFromAbc(abc, item.title));',
+  'setSelected(null);',
+);
+assert(neverSelected !== notationEditorSource, 'the never-selected mutation changed the real editor');
+assertEq(
+  transposedCopyIsWhatReopens(neverSelected, f5ViewSource),
+  false,
+  'MUTATION: an editor that never selects the library copy FAILS transposedCopyIsWhatReopens',
 );
 
 console.log(`\n${passes} passed, ${failures} failed`);

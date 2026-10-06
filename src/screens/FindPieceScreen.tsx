@@ -28,7 +28,11 @@
  *   • ~300 ms debounce per settled query, newest response wins (a slow request
  *     for "fur" can never overwrite the results for "für elise");
  *   • no match  → "No pieces match — try another title or composer" PLUS the
- *     retailer section with the honest "not in our free library" hint;
+ *     retailer section with the honest "not in our free library" hint — but only
+ *     after the TYPO LADDER has been tried (v33 §F3): the user's own words first,
+ *     then the model's variants of them, re-run through this same catalog search;
+ *     when a variant is what matched, `retryNoticeLine` says so above the list and
+ *     the honesty of the empty state is preserved when nothing matched;
  *   • failure   → honest error with a Retry button (never an empty list);
  *   • sheet badge → "🎼 Sheet music" only when the catalog really has a
  *     curated score, otherwise "Coming soon" (no invented links);
@@ -64,6 +68,10 @@ import {
   sheetBadgeLabel,
   sortPiecesForDisplay,
 } from '../services/catalogSearch';
+// Typo tolerance (v33 §F3, owner 10-04: "Toccata & Fugue does not surface, even
+// when typed as a common misspelling like 'toccatta and fugue'"). The ladder and
+// the honest notice come from the model — this screen may not invent either.
+import { queryVariants, rankFuzzyMatches, retryNoticeLine } from '../services/fuzzySearch';
 import {
   EXTERNAL_NO_MATCH_HINT,
   externalSearchSection,
@@ -86,6 +94,10 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
   const [pieces, setPieces] = useState<CatalogPiece[]>([]);
   const [total, setTotal] = useState(0);
   const [status, setStatus] = useState<Status>('loading');
+  // The honest "which query actually found these" line (v33 §F3). Set ONLY when
+  // the user's own words found nothing and a variant of them did — never on a
+  // first-try hit, where there is nothing to explain.
+  const [retryNotice, setRetryNotice] = useState<string | null>(null);
   // Bumped by the Retry button to re-run the current query.
   const [reloadToken, setReloadToken] = useState(0);
   // Full-screen piece page for a tapped row (rendered in place, like History).
@@ -100,24 +112,59 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
   // Debounced catalog search: one request per settled query.
   useEffect(() => {
     const trimmed = normalizeQuery(query);
+    const typed = trimmed;
     const token = ++searchRequestRef.current;
     setStatus('loading');
 
     const timer = setTimeout(() => {
-      void searchPieces(trimmed)
-        .then((res) => {
+      void (async () => {
+        try {
+          const res = await searchPieces(trimmed);
           if (token !== searchRequestRef.current) return;
           const sorted = sortPiecesForDisplay(res.pieces);
+
+          // ── The typo ladder (v33 §F3) ──
+          // The user's own words are always tried FIRST (above). Only when they
+          // find nothing does the screen re-run the SAME catalog search with the
+          // model's variants, in the model's order, and rank what comes back. The
+          // winner is what the user sees, and the notice names the query that
+          // actually matched — no silent substitution, no invented results.
+          if (sorted.length === 0 && typed.length > 0) {
+            for (const variant of queryVariants(typed)) {
+              if (variant === typed) continue;
+              const retry = await searchPieces(variant);
+              if (token !== searchRequestRef.current) return;
+              const ranked = rankFuzzyMatches(variant, sortPiecesForDisplay(retry.pieces));
+              if (ranked.length > 0) {
+                const matched = ranked.map((entry) => entry.item);
+                setPieces(matched);
+                setTotal(matched.length);
+                setRetryNotice(retryNoticeLine(typed, variant));
+                setStatus('ready');
+                return;
+              }
+            }
+            // Every variant came up empty too: the honest empty state stands, with
+            // the retailers below it (the no-dead-end rule from 09-28).
+            setPieces([]);
+            setTotal(0);
+            setRetryNotice(null);
+            setStatus('empty');
+            return;
+          }
+
           setPieces(sorted);
           setTotal(res.total);
+          setRetryNotice(null);
           setStatus(sorted.length === 0 ? 'empty' : 'ready');
-        })
-        .catch(() => {
+        } catch {
           if (token !== searchRequestRef.current) return;
           setPieces([]);
           setTotal(0);
+          setRetryNotice(null);
           setStatus('error');
-        });
+        }
+      })();
     }, CATALOG_SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
@@ -281,6 +328,13 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
         Free public-domain and classical pieces — search, then open the score.
       </Text>
 
+      {/* What actually matched (v33 §F3): shown only when the user's own words
+          found nothing and a variant of them did. It sits above the results so
+          the list can never look like a first-try hit for a typo'd query. */}
+      {retryNotice ? (
+        <Text style={styles.retryNotice}>{retryNotice}</Text>
+      ) : null}
+
       {status === 'loading' && pieces.length === 0 ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#e94560" />
@@ -391,6 +445,16 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 18,
     fontWeight: '700',
+  },
+
+  // The "what actually matched" line for a typo'd query (v33 §F3): quiet, above
+  // the list, never a warning — it explains the results, it does not scold.
+  retryNotice: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    lineHeight: 19,
+    marginHorizontal: 20,
+    marginTop: 10,
   },
 
   // Search field

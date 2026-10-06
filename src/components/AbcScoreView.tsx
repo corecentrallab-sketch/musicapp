@@ -98,6 +98,34 @@ export function generateAbcHtml(
 </html>`;
 }
 
+/**
+ * The WebView's rendering key for a score (v33 §F5b, owner 10-04).
+ *
+ * WHY IT EXISTS. The view used to key on `abc.length` and the FIRST character of
+ * the ABC string. A transposed copy of a score has very nearly the same length
+ * and the same first character as the original, so re-opening the saved copy
+ * reused the WebView that was already showing the ORIGINAL — the transposed score
+ * never appeared. The owner hit exactly that. Keying on the WHOLE content (a
+ * fingerprint over every character, plus the ink and the paper, which both change
+ * the document) means any difference at all repaints.
+ *
+ * PURE and exported so the gate can assert the property directly: two different
+ * ABCs may never share a key, and the same ABC with the same ink/paper must.
+ */
+export function abcRenderKey(
+  abc: string,
+  ink: string = ABC_DEFAULT_INK,
+  background: string = ABC_DEFAULT_BACKGROUND,
+): string {
+  const text = typeof abc === 'string' ? abc : '';
+  let hash = 2166136261;
+  for (const character of text) {
+    hash ^= character.charCodeAt(0);
+    hash = (hash * 16777619) >>> 0;
+  }
+  return `abc-${text.length}-${hash.toString(36)}-${ink}-${background}`;
+}
+
 export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   abc,
   ink = ABC_DEFAULT_INK,
@@ -106,10 +134,7 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   // Use the abc text (and the ink, which changes the document) as a rendering
   // key so a fresh WebView reloads whenever the score or its colour changes.
   const html = useMemo(() => generateAbcHtml(abc, ink, background), [abc, ink, background]);
-  const key = useMemo(
-    () => `abc-score-${abc.length}-${abc.charCodeAt(0)}-${ink}-${background}`,
-    [abc, ink, background],
-  );
+  const key = useMemo(() => abcRenderKey(abc, ink, background), [abc, ink, background]);
 
   return (
     <View style={[styles.container, { backgroundColor: background }]}>

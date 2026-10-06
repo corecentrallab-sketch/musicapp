@@ -1494,22 +1494,6 @@ export const HomeScreen: React.FC = () => {
         </View>
 
 
-        {/* Outside-play streak nudge (slice 2): quiet, dismissible, and never
-            rendered while the mic is live or a result is on screen. It is a
-            BANNER, not a door entry, so it belongs to no band — the bands below
-            carry the door's tappable meanings. */}
-        <StreakNudgeCard
-          surface="home"
-          hidden={
-            recorder.isRecording ||
-            showRecognitionResults ||
-            showScoreViewer ||
-            showHumSearch ||
-            showModernSearch ||
-            showFindPiece
-          }
-        />
-
         {/* ══ BAND B — TODAY ══ (re-flow bundle D, owner 10-02)
             ONE card, ONE destination every day. It replaces four overlapping
             practice targets — the standing streak card, "⏱️ Practice today",
@@ -1594,6 +1578,24 @@ export const HomeScreen: React.FC = () => {
             <Text style={styles.cardCta}>{todayCardCta(dailyChallenge)}</Text>
           </TouchableOpacity>
         </View>
+          {/* The streak nudge (slice 2) is part of THIS band (owner 10-04 §F4):
+              the practice group is one group, so the card the user is nudged
+              toward and the nudge itself sit together — it is no longer floating
+              between the listening band and today's card. It stays a BANNER: it
+              adds no tap of its own (band B keeps exactly one onPress, its
+              today card), it is quiet, dismissible, and never rendered while the
+              mic is live or a result is on screen. */}
+          <StreakNudgeCard
+            surface="home"
+            hidden={
+              recorder.isRecording ||
+              showRecognitionResults ||
+              showScoreViewer ||
+              showHumSearch ||
+              showModernSearch ||
+              showFindPiece
+            }
+          />
 
         {/* ══ BAND C — BROWSE + KEEP GOING ══ (re-flow bundle D, owner 10-02)
             One meaning per entry: the honest search row (the real field is one tap
