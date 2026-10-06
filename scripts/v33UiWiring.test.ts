@@ -19,6 +19,7 @@ import {
   editorReachedFromBothDoors,
   editorSurfaceCorrectsEveryFact,
   editorWritesThroughOneSeam,
+  historyRowPlaysItsSavedClip,
   humIsTheHerosSiblingCard,
   matchResultsAreOffThePage,
   previewEngineNeverRewritesTheTake,
@@ -28,6 +29,15 @@ import {
   staffIsTheUsersOwnTake,
   takeActionBarWired,
 } from '../src/services/v33UiContract';
+import {
+  TAKE_PLAY_BUSY_LABEL,
+  TAKE_PLAY_LABEL,
+  TAKE_PLAYBACK_CAPTION,
+  TAKE_PLAYBACK_MISSING_LINE,
+  TAKE_STOP_LABEL,
+  takePlaybackAvailable,
+  takePlaybackLabel,
+} from '../src/services/takePlayback';
 import {
   CAPTURE_ONLY_CHIP_LABEL,
   CAPTURE_ONLY_LINE,
@@ -577,6 +587,111 @@ assertEq(
   searchHasItsOwnDiscoverBand(emptyDiscover),
   false,
   'MUTATION: a Discover band with no search entry FAILS searchHasItsOwnDiscoverBand',
+);
+
+// ────────── slice F1 — a History melody row plays its SAVED clip ──────────
+const HISTORY_F1 = 'src/screens/HistoryScreen.tsx';
+const CLIP_HOOK = 'src/hooks/useTakeClipPlayer.ts';
+
+const f1HistorySource = readAppFile(HISTORY_F1);
+const clipHookSource = readAppFile(CLIP_HOOK);
+
+console.log('\nslice F1 — History re-listens to the SAVED take');
+assert(f1HistorySource.length > 20000, `read ${HISTORY_F1} (${f1HistorySource.length} chars)`);
+assert(clipHookSource.length > 1200, `read ${CLIP_HOOK} (${clipHookSource.length} chars)`);
+assertEq(
+  historyRowPlaysItsSavedClip(f1HistorySource, clipHookSource),
+  true,
+  'the melody row plays its own persisted clip through expo-av, inside the melody block, with the honest caption',
+);
+// The copy: which audio this is, and what a missing clip means.
+assert(
+  /not a re-synthesis/i.test(TAKE_PLAYBACK_CAPTION),
+  'the caption says the playback is the saved recording, not a re-synthesis',
+);
+assert(
+  /still work/i.test(TAKE_PLAYBACK_MISSING_LINE),
+  'a row with no clip says every other action still works',
+);
+assertEq(takePlaybackAvailable(null), false, 'no row means nothing to play');
+assertEq(
+  takePlaybackAvailable({ personalMelody: { audioUri: null } }),
+  false,
+  'a row with no clip path offers no playback control',
+);
+assertEq(
+  takePlaybackAvailable({ personalMelody: { audioUri: '   ' } }),
+  false,
+  'a blank clip path is not a clip',
+);
+assertEq(
+  takePlaybackAvailable({ personalMelody: { audioUri: 'file:///notesnap-melodies/a.m4a' } }),
+  true,
+  'a row that kept its persisted clip can be re-listened to',
+);
+assertEq(
+  takePlaybackLabel({ playing: false, busy: false }) === TAKE_PLAY_LABEL,
+  true,
+  'idle label invites play',
+);
+assertEq(
+  takePlaybackLabel({ playing: true }) === TAKE_STOP_LABEL,
+  true,
+  'the playing row offers Stop (one control, two states)',
+);
+assertEq(
+  takePlaybackLabel({ playing: false, busy: true }) === TAKE_PLAY_BUSY_LABEL,
+  true,
+  'a loading clip says so instead of looking dead',
+);
+
+// MUTATION 34: the row stops handing the player its OWN clip (the dead-control
+// class: a play button wired to nothing).
+const cliplessRow = f1HistorySource.replace(
+  'personalMelody: item.personalMelody ?? null,',
+  'personalMelody: null,',
+);
+assert(cliplessRow !== f1HistorySource, 'the clip-less-row mutation changed the real History screen');
+assertEq(
+  historyRowPlaysItsSavedClip(cliplessRow, clipHookSource),
+  false,
+  'MUTATION: a playback control that does not play the row clip FAILS historyRowPlaysItsSavedClip',
+);
+// MUTATION 35: the player RE-SYNTHESISES the take instead of playing the clip.
+const synthPlayer = clipHookSource.replace(
+  'const { sound } = await Audio.Sound.createAsync(',
+  'const timeline = buildPreviewTimeline([] as never, {} as never);\n          const { sound } = await Audio.Sound.createAsync(',
+);
+assert(synthPlayer !== clipHookSource, 'the synth-player mutation changed the real hook');
+assertEq(
+  historyRowPlaysItsSavedClip(f1HistorySource, synthPlayer),
+  false,
+  'MUTATION: a player that re-builds the audio FAILS historyRowPlaysItsSavedClip',
+);
+// MUTATION 36: the honest caption goes (the row would claim nothing about what
+// the user is hearing).
+const noCaptionRow = f1HistorySource
+  .split('{TAKE_PLAYBACK_CAPTION}')
+  .join('{"plays your take"}');
+assert(noCaptionRow !== f1HistorySource, 'the no-caption mutation changed the real History screen');
+assertEq(
+  historyRowPlaysItsSavedClip(noCaptionRow, clipHookSource),
+  false,
+  'MUTATION: playback with no "your own take" caption FAILS historyRowPlaysItsSavedClip',
+);
+// MUTATION 37: the control leaves the melody block (a non-melody row has no take).
+const controlOutsideBlock = f1HistorySource.replace(
+  'item.capture?.notes?.length ? (',
+  'true ? (',
+);
+assert(
+  controlOutsideBlock !== f1HistorySource,
+  'the outside-the-block mutation changed the real History screen',
+);
+assertEq(
+  historyRowPlaysItsSavedClip(controlOutsideBlock, clipHookSource),
+  false,
+  'MUTATION: a playback control outside the take block FAILS historyRowPlaysItsSavedClip',
 );
 
 console.log(`\n${passes} passed, ${failures} failed`);

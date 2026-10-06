@@ -75,6 +75,18 @@ import { keyCaption } from '../services/keyDetection';
 // catalog piece, so tapping one must NOT go to the piece page (it would be an
 // honest "coming soon" with the user's own tune behind it, i.e. a dead end).
 import { personalMelodyFromRow, CORRECT_TAKE_CTA } from '../services/melodyCapture';
+// RE-LISTENING TO THE SAVED TAKE (v33 §F1, owner 10-04): the row plays the clip
+// the capture window persisted (notesnap-melodies/), never a re-synthesis of the
+// note data. The copy and the availability decision are in the service; the
+// expo-av player is the hook below (one player for the whole list).
+import {
+  TAKE_PLAYBACK_CAPTION,
+  TAKE_PLAYBACK_MISSING_LINE,
+  takePlaybackAccessibilityLabel,
+  takePlaybackAvailable,
+  takePlaybackLabel,
+} from '../services/takePlayback';
+import { useTakeClipPlayer } from '../hooks/useTakeClipPlayer';
 // The capture window itself, mounted in place to re-open a saved melody.
 import { HumSearchScreen } from './HumSearchScreen';
 // THE TAKE-CORRECTION EDITOR (v33 §D) — the same component the capture window
@@ -144,6 +156,12 @@ export const HistoryScreen: React.FC = () => {
   // finished attempt left behind — shown on that row only.
   const [exportingId, setExportingId] = useState<string | null>(null);
   const [exportNote, setExportNote] = useState<{ id: string; text: string } | null>(null);
+  /**
+   * The saved-take player (v33 §F1). ONE player for the whole list — FlatList
+   * rows cannot each hold a hook — and it is keyed by row id, so exactly one
+   * take is ever audible and the button that says ⏸ Stop is the row playing.
+   */
+  const takePlayer = useTakeClipPlayer();
   /**
    * The row's purchase action opens the licensed retailer in the app's ONE
    * in-app shell, mounted at THIS screen's root (bundle C, owner 10-02), so the
@@ -399,6 +417,47 @@ export const HistoryScreen: React.FC = () => {
                 <Text style={styles.itemTakeKey} numberOfLines={1}>
                   {keyCaption(item.capture?.key)}
                 </Text>
+              )}
+              {/* RE-LISTEN TO THE SAVED TAKE (v33 §F1, owner 10-04). The row
+                  plays the clip the capture window persisted — the user's own
+                  recording, not a re-synthesis — and the pick is by ROW ID, so
+                  pressing another row stops this one. A row whose clip is gone
+                  says so and keeps every other action working. */}
+              {takePlaybackAvailable(item) ? (
+                <TouchableOpacity
+                  style={styles.playTakeBtn}
+                  onPress={() =>
+                    takePlayer.toggle({
+                      id: item.id,
+                      personalMelody: item.personalMelody ?? null,
+                    })
+                  }
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={takePlaybackAccessibilityLabel(
+                    item.title,
+                    takePlayer.playingId === item.id,
+                  )}
+                >
+                  <Text style={styles.playTakeBtnText}>
+                    {takePlaybackLabel({
+                      playing: takePlayer.playingId === item.id,
+                      busy: takePlayer.busyId === item.id,
+                    })}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.playTakeMissing} numberOfLines={2}>
+                  {TAKE_PLAYBACK_MISSING_LINE}
+                </Text>
+              )}
+              {takePlayer.playingId === item.id && (
+                <Text style={styles.playTakeCaption} numberOfLines={2}>
+                  {TAKE_PLAYBACK_CAPTION}
+                </Text>
+              )}
+              {takePlayer.note?.id === item.id && (
+                <Text style={styles.midiNote}>{takePlayer.note.text}</Text>
               )}
               <TouchableOpacity
                 style={styles.midiBtn}
@@ -824,6 +883,41 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   /**
+   * Re-listening to the row's SAVED take (v33 §F1, owner 10-04): a real 44dp
+   * control, teal like the app's other "extra capability" actions, playing the
+   * persisted clip — never audio re-built from the notes.
+   */
+  playTakeBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#16213e',
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    marginTop: 8,
+  },
+  playTakeBtnText: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  /** Which audio this is — said out loud while it plays (never a re-synthesis). */
+  playTakeCaption: {
+    fontSize: 12,
+    color: '#4ecdc4',
+    lineHeight: 17,
+    marginTop: 6,
+  },
+  /** The honest line for a melody row saved before its clip was kept. */
+  playTakeMissing: {
+    fontSize: 12,
+    color: '#a0a0b8',
+    lineHeight: 17,
+    marginTop: 8,
+  },
+  /**
    * The row's MIDI export action (v29 Batch A) — teal outline, like the app's
    * other "extra capability" actions. It presses independently of the card.
    */
@@ -837,6 +931,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginTop: 8,
   },
+  /**
+   * The row's MIDI export action (v29 Batch A) — teal outline, like the app's
+   * other "extra capability" actions. It presses independently of the card.
+   */
   midiBtnText: {
     color: '#4ecdc4',
     fontSize: 13,

@@ -531,3 +531,196 @@ export function searchHasItsOwnDiscoverBand(homeSource: string): boolean {
   if (discover.indexOf('DISCOVER_BAND_NOTE') < 0) return false;
   return true;
 }
+
+// ────────── F1: a History melody row plays its SAVED clip (v33 §F1) ──────────
+
+/** Operations that REBUILD audio — none may appear in the clip player. */
+const AUDIO_REBUILDERS: readonly string[] = [
+  'buildPreviewTimeline(',
+  'toneSourceFor(',
+  'toneBank',
+  'createBuffer(',
+];
+
+/**
+ * A History melody row plays the take it SAVED (owner 10-04 §F1): the row's own
+ * `personalMelody.audioUri` — the clip the capture window persisted in
+ * notesnap-melodies/ — through expo-av, with the control living INSIDE the
+ * melody block (beside MIDI export / the correction editor) and the honest
+ * caption on the row while it plays. The player never re-synthesises the notes:
+ * that would be a different recording, not the user's take.
+ *
+ * `historySource` is src/screens/HistoryScreen.tsx; `hookSource` is
+ * src/hooks/useTakeClipPlayer.ts.
+ */
+export function historyRowPlaysItsSavedClip(
+  historySource: string,
+  hookSource: string,
+): boolean {
+  const history = maskComments(historySource);
+  const hook = maskComments(hookSource);
+  if (history.length < 5000) return false;
+  if (hook.length < 1200) return false;
+  // The control is inside the melody block (a non-melody row has no take).
+  if (
+    !appearsInOrder(history, [
+      'item.capture?.notes?.length ? (',
+      'takePlaybackAvailable(item)',
+      'styles.playTakeBtn',
+    ])
+  ) {
+    return false;
+  }
+  // …and it hands the player THAT ROW's own clip.
+  if (history.indexOf('takePlayer.toggle({') < 0) return false;
+  if (history.indexOf('id: item.id,') < 0) return false;
+  if (history.indexOf('personalMelody: item.personalMelody ?? null,') < 0) return false;
+  // Labels, accessibility and the honest lines all come from the model.
+  if (history.indexOf('takePlaybackLabel({') < 0) return false;
+  if (history.indexOf('takePlaybackAccessibilityLabel(') < 0) return false;
+  // The RENDERED use, not the import line: a caption that is only imported is
+  // not a caption the user can read.
+  if (history.indexOf('{TAKE_PLAYBACK_CAPTION}') < 0) return false;
+  if (history.indexOf('{TAKE_PLAYBACK_MISSING_LINE}') < 0) return false;
+  if (history.indexOf('takePlayer.note?.id === item.id') < 0) return false;
+  // A row with no clip says so instead of offering a dead button.
+  if (!/\) : \(/.test(history)) return false;
+  if (history.indexOf('styles.playTakeMissing') < 0) return false;
+  // The player itself: expo-av, the FILE URI, and exactly one audible take.
+  if (hook.indexOf('Audio.Sound.createAsync(') < 0) return false;
+  if (hook.indexOf('{ uri }') < 0) return false;
+  if (hook.indexOf('stopAsync()') < 0) return false;
+  if (hook.indexOf('unloadAsync()') < 0) return false;
+  if (hook.indexOf('setOnPlaybackStatusUpdate(') < 0) return false;
+  for (const rebuilder of AUDIO_REBUILDERS) {
+    if (hook.indexOf(rebuilder) >= 0) return false;
+  }
+  return true;
+}
+
+// ────────── F3: the search retries a typo'd query (v33 §F3) ──────────
+
+/**
+ * The find-a-piece search is not a dead end on a MISSPELLING (owner 10-04:
+ * "toccatta and fugue" for a piece the library holds): when the typed query
+ * finds nothing, the screen retries the model's variant ladder and prints which
+ * query actually produced the results it shows. The ladder and the notice line
+ * come from services/fuzzySearch.ts — the screen may not invent its own.
+ *
+ * `screenSource` is src/screens/FindPieceScreen.tsx.
+ */
+export function searchRetriesTyposAndSaysSo(screenSource: string): boolean {
+  const masked = maskComments(screenSource);
+  if (masked.length < 4000) return false;
+  if (masked.indexOf('queryVariants(') < 0) return false;
+  if (masked.indexOf('retryNoticeLine(') < 0) return false;
+  if (masked.indexOf('rankFuzzyMatches(') < 0) return false;
+  // The ladder re-runs the REAL catalog search (same seam, no second search).
+  if (countOf(masked, 'searchPieces(') < 2) return false;
+  // The user's own words are tried FIRST, and the ladder only runs when they
+  // found nothing.
+  if (masked.indexOf('sorted.length === 0') < 0) return false;
+  // The notice is state, rendered on the surface (never computed and dropped).
+  if (masked.indexOf('setRetryNotice(') < 0) return false;
+  if (masked.indexOf('{retryNotice}') < 0) return false;
+  if (masked.indexOf('styles.retryNotice') < 0) return false;
+  // A variant that found nothing leaves the honest empty state alone.
+  if (masked.indexOf("setStatus('empty')") < 0) return false;
+  return true;
+}
+
+// ────────── F4: the practice components are grouped (v33 §F4) ──────────
+
+/**
+ * The practice/streak components are ONE group, in both places the owner named
+ * (10-04): the Settings section is titled from the shared model (not the
+ * hardcoded v32 strings) and sits ABOVE "Your Plan", and the Home streak nudge
+ * lives INSIDE band B (today's practice card), not floating between bands.
+ *
+ * `settingsSource` is src/screens/SettingsScreen.tsx; `homeSource` is
+ * src/screens/HomeScreen.tsx.
+ */
+export function practiceComponentsAreGrouped(
+  settingsSource: string,
+  homeSource: string,
+): boolean {
+  const settings = maskComments(settingsSource);
+  const home = maskComments(homeSource);
+  if (settings.length < 4000) return false;
+  if (home.length < 5000) return false;
+  // Settings: the section title/subtitle and the streak row copy come from the
+  // model — the v32 literals are gone (a retitle that leaves the old string in
+  // place proves nothing).
+  if (settings.indexOf('PRACTICE_SECTION_TITLE') < 0) return false;
+  if (settings.indexOf('PRACTICE_SECTION_SUBTITLE') < 0) return false;
+  if (settings.indexOf('PRACTICE_STREAK_ROW_TITLE') < 0) return false;
+  if (settings.indexOf('Practice reminders') >= 0) return false;
+  if (settings.indexOf('Daily streak nudge') >= 0) return false;
+  // …and the group sits ABOVE the plan/billing sections (owner: the reminder
+  // read as part of Billing, which is what the retitle is for).
+  if (!appearsInOrder(settings, ['PRACTICE_SECTION_TITLE', '>Your Plan<'])) return false;
+  // Home: the streak nudge is part of band B (today's practice card).
+  const bandB = bandRegion(home, 'today');
+  if (!bandB) return false;
+  if (bandB.indexOf('<StreakNudgeCard') < 0) return false;
+  if (bandB.indexOf('surface="home"') < 0) return false;
+  // It is NOT left floating between the listening band and band B.
+  const bandA = bandRegion(home, 'identify');
+  const discover = bandRegion(home, 'discover');
+  if (bandA.indexOf('<StreakNudgeCard') >= 0) return false;
+  if (discover.indexOf('<StreakNudgeCard') >= 0) return false;
+  return true;
+}
+
+// ────────── F5: a transposed copy really re-opens (v33 §F5) ──────────
+
+/**
+ * A score the user transposed and saved must be what they SEE when they re-open
+ * it (owner 10-04 §F5: "transposed score not visible on re-open").
+ *
+ * TWO defects produced that report, and both are guarded here:
+ *   1. the editor painted the BUNDLED default score first (Für Elise) and then
+ *      replaced it with the library copy — so the first frame was somebody
+ *      else's piece, not the user's transposed copy;
+ *   2. the WebView was keyed on `abc.length` + the first character, so a loaded
+ *      copy whose ABC has the same length and leading character as the default
+ *      (exactly the case for a transposed copy of that same piece) reused the
+ *      stale render — the transposed score never appeared.
+ *
+ * The fix: the editor holds NO default score when a score was requested (it says
+ * "Loading score…" until the requested one resolves), and the score view keys on
+ * the whole ABC (a content fingerprint from abcRenderKey), so any change —
+ * including the store→read of a transposed copy — repaints.
+ *
+ * `editorSource` is src/screens/NotationEditorScreen.tsx; `viewSource` is
+ * src/components/AbcScoreView.tsx.
+ */
+export function transposedCopyIsWhatReopens(
+  editorSource: string,
+  viewSource: string,
+): boolean {
+  const editor = maskComments(editorSource);
+  const view = maskComments(viewSource);
+  if (editor.length < 3000) return false;
+  if (view.length < 1200) return false;
+  // The editor starts with NO score (no bundled default on the first frame)…
+  if (!/useState<AbcScore \| null>\(null\)/.test(editor)) return false;
+  if (/useState<AbcScore>\(\s*PUBLIC_DOMAIN_ABC_SCORES\[0\]\s*\)/.test(editor)) return false;
+  // …says so honestly while the requested one loads, and never renders the
+  // staff without a score.
+  if (editor.indexOf('if (loading || !selected)') < 0) return false;
+  // The requested library copy is loaded through the store's own read seam and
+  // becomes the selected score.
+  if (editor.indexOf('getLibraryItem(itemId)') < 0) return false;
+  if (editor.indexOf('readAbcText(item)') < 0) return false;
+  if (editor.indexOf('scoreFromAbc(abc, item.title)') < 0) return false;
+  // The staff renders the SELECTED score's abc (never a constant).
+  if (editor.indexOf('transposedAbc') < 0) return false;
+  if (countOf(editor, '<AbcScoreView abc={') !== 1) return false;
+  // The renderer keys on the whole ABC content, not on its length/prefix.
+  if (view.indexOf('abcRenderKey(') < 0) return false;
+  if (/abc\.length/.test(view)) return false;
+  if (/abc\.charCodeAt\(/.test(view)) return false;
+  return true;
+}
+
