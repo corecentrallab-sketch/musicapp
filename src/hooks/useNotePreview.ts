@@ -21,6 +21,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Audio } from 'expo-av';
 import { toneSourceFor } from '../services/toneBank';
+import { loadToneSound } from '../services/audioSession';
+import {
+  clearAudioFailure,
+  currentAudioFailure,
+  reportAudioFailure,
+} from '../services/audioDiagnostics';
 import {
   PREVIEW_TEMPO_DEFAULT_PCT,
   buildPreviewTimeline,
@@ -103,23 +109,38 @@ export function useNotePreview(
   const playTone = useCallback(
     async (midi: number, which: PreviewInstrumentId): Promise<boolean> => {
       const source = toneSourceFor(which, midi);
-      if (source === null) return false;
+      if (source === null) {
+        // A real gap in the bank (the pitch is outside it) is REPORTED, not
+        // swallowed: v33 returned false here silently, which is indistinguishable
+        // on a device from a broken asset.
+        reportAudioFailure({
+          source: 'tone-preview',
+          reason: 'tone-load',
+          detail: `no tone bank entry for ${which} midi ${Math.round(midi)}`,
+        });
+        return false;
+      }
       const key = `${which}:${Math.round(midi)}`;
       try {
         let sound = soundsRef.current.get(key);
         if (!sound) {
-          const created = await Audio.Sound.createAsync(source, {
-            shouldPlay: false,
-            volume: 1,
-          });
-          sound = created.sound;
+          // THE LOADER walks the source rungs (module id → android.resource://
+          // names), sets the playback audio session first, and reports the honest
+          // reason when nothing loads (v34).
+          const loaded = await loadToneSound(which, midi);
+          if (!loaded) return false;
+          sound = loaded.sound;
           soundsRef.current.set(key, sound);
         }
         await sound.replayAsync();
+        // A tone that just played means the audio path is healthy: the chip goes
+        // away instead of leaving a stale reason on screen.
+        const standing = currentAudioFailure();
+        if (standing && standing.source === 'tone-preview') clearAudioFailure();
         return true;
-      } catch {
-        // A tone that will not load is silent, never a crash: the surface still
-        // draws the cursor, and nothing claims sound that did not play.
+      } catch (err) {
+        // Never silent again: the failure is on the screen (v34).
+        reportAudioFailure({ source: 'tone-preview', reason: 'unknown', detail: err });
         return false;
       }
     },

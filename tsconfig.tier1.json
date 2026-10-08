@@ -68,6 +68,11 @@
     "src/services/pdGuitarCatalog.ts",
     "scripts/pdGuitarCatalog.test.ts",
     "src/services/abcTranspose.ts",
+    "src/services/audioDiagnostics.ts",
+    "src/services/toneSourceLadder.ts",
+    "src/services/editorGestures.ts",
+    "src/services/editorTakeLoad.ts",
+    "src/services/v34UiContract.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
     "scripts/practiceCoach.test.ts",
@@ -104,6 +109,8 @@
     "scripts/searchExternal.test.ts",
     "scripts/zeroPromise.test.ts",
     "scripts/v33TakeEditor.test.ts",
-    "scripts/v33UiWiring.test.ts"
+    "scripts/v33UiWiring.test.ts",
+    "scripts/v34Fixes.test.ts",
+    "scripts/v34UiWiring.test.ts"
   ]
 }

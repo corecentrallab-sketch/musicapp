@@ -35,7 +35,7 @@
  * The MODEL is src/services/takeEditor.ts (pure, fully asserted by
  * scripts/v33TakeEditor.test.ts); this file only draws it and routes the taps.
  */
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   PanResponder,
@@ -88,6 +88,18 @@ import {
   type TakeEditorState,
 } from '../services/takeEditor';
 import { staffKeyFromKey, staffKeySignature, takeToAbc } from '../services/takeStaff';
+import {
+  EDITOR_NO_TAKE_LINE,
+  shouldReloadEditorModel,
+  takeIdentityOf,
+  takeNoteCount,
+} from '../services/editorTakeLoad';
+import {
+  pageScrollEnabledDuringDrag,
+  shouldCaptureEdgeDrag,
+  shouldCapturePitchDrag,
+  shouldStartEditorDrag,
+} from '../services/editorGestures';
 import { AbcScoreView } from './AbcScoreView';
 import { TakePreviewSection } from './TakePreviewSection';
 import {
@@ -166,9 +178,51 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   const [freeChord, setFreeChord] = useState('');
   const [saving, setSaving] = useState<TakeSaveMode | null>(null);
   const [saveLine, setSaveLine] = useState<string | null>(null);
+  /** True only while a note drag owns the gesture (the page may not scroll then). */
+  const [dragging, setDragging] = useState(false);
   const stateRef = useRef<TakeEditorState>(state);
   const dragBaseRef = useRef(0);
+  /** The take the MODEL was built from — the reload decision reads it (v34). */
+  const loadedIdentityRef = useRef<string | null>(null);
+  const wasVisibleRef = useRef(false);
   const preview = useNotePreview(state.notes, { enabled: visible });
+
+  /**
+   * THE MODEL RELOADS FROM THE TAKE THE HOST HOLDS (v34 fix 2).
+   *
+   * v33 built the editable model exactly once, in the useState initializer, from
+   * whatever `take` was at MOUNT. A host that mounts the editor before its take
+   * exists (the capture flow: `take` starts null) therefore opened a BLANK editor
+   * with "No key detected in this take" on every attempt, and a take read back
+   * from persistence never reached the model at all. The rule (pure, asserted by
+   * scripts/v34Fixes.test.ts) is in services/editorTakeLoad.ts: reload on every
+   * OPEN, on a late-arriving take with notes, and on a different take the user has
+   * not edited — never under a user who has edits in flight.
+   */
+  useEffect(() => {
+    const opened = visible && !wasVisibleRef.current;
+    wasVisibleRef.current = visible;
+    if (!visible) return;
+    const incomingIdentity = takeIdentityOf(take, rowId);
+    const current = stateRef.current;
+    const reload = shouldReloadEditorModel({
+      loadedIdentity: loadedIdentityRef.current,
+      incomingIdentity,
+      opened,
+      edited: current.past.length > 0 || current.future.length > 0,
+      currentNoteCount: current.notes.length,
+      incomingNoteCount: takeNoteCount(take),
+    });
+    if (!reload) return;
+    const next = createEditorState(take);
+    loadedIdentityRef.current = incomingIdentity;
+    stateRef.current = next;
+    setState(next);
+    setSelectedId(null);
+    setChordIndex(null);
+    setFreeChord('');
+    setSaveLine(null);
+  }, [rowId, take, visible]);
 
   const derived = useMemo(() => deriveTake(state), [state]);
 
@@ -198,12 +252,22 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   }, [derived.key, state.notes, step]);
 
   // ── the touch layer's gestures ───────────────────────────────────────────
+  // A DRAG LAYER INSIDE A SCROLLER MAY ONLY TAKE A GESTURE IT CAN USE (v34 fix 3).
+  // v33 claimed the touch the moment a finger landed (`onStartShouldSetPanResponder:
+  // () => true`) on a full-width band in the middle of the page, and the timing
+  // handles claimed every move — so a scroll that started there never reached the
+  // page's ScrollView and the page read as frozen. The intent rules live in
+  // services/editorGestures.ts (pure, asserted by the gate).
   const pitchPan = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dy) > 6,
+        onStartShouldSetPanResponder: shouldStartEditorDrag,
+        onMoveShouldSetPanResponder: (_event, gesture) =>
+          shouldCapturePitchDrag(gesture.dx, gesture.dy),
+        onPanResponderGrant: () => setDragging(true),
+        onPanResponderTerminate: () => setDragging(false),
         onPanResponderRelease: (_event, gesture) => {
+          setDragging(false);
           if (!selectedId) return;
           const semitones = Math.round(-gesture.dy / LANE_PX_PER_SEMITONE);
           if (semitones === 0) return;
@@ -219,14 +283,18 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   const boundaryPan = useCallback(
     (edge: 'start' | 'end') =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponder: shouldStartEditorDrag,
+        onMoveShouldSetPanResponder: (_event, gesture) =>
+          shouldCaptureEdgeDrag(gesture.dx, gesture.dy),
         onPanResponderGrant: () => {
+          setDragging(true);
           if (!selectedId) return;
           const note = findNote(stateRef.current, selectedId);
           if (!note) return;
           dragBaseRef.current = edge === 'start' ? note.startSec : note.startSec + note.durationSec;
         },
+        onPanResponderTerminate: () => setDragging(false),
+        onPanResponderRelease: () => setDragging(false),
         onPanResponderMove: (_event, gesture) => {
           if (!selectedId) return;
           const seconds = dragBaseRef.current + gesture.dx / LANE_PX_PER_SEC;
@@ -368,16 +436,29 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
           <Text style={styles.title}>{EDITOR_TITLE}</Text>
         </View>
 
-        <ScrollView contentContainerStyle={styles.body}>
+        {/* THE PAGE MAY ALWAYS SCROLL (v34 fix 3): it is stopped ONLY while a note
+            drag really owns the gesture, never because a touch started on the
+            drag lane. */}
+        <ScrollView
+          contentContainerStyle={styles.body}
+          scrollEnabled={pageScrollEnabledDuringDrag(dragging)}
+        >
           <Text style={styles.intro}>{EDITOR_INTRO}</Text>
           <Text style={styles.tip}>{EDITOR_COACH_TIP}</Text>
 
           {/* The take's re-derived facts, after EVERY edit (brief §3b: the key and
               the chords are recomputed, never left stale). */}
           <View style={styles.factCard}>
-            <Text style={styles.factKey}>
-              {derived.keyLabel ? `Key: ${derived.keyLabel}` : 'No key detected in this take'}
-            </Text>
+            {takeNoteCount(take) === 0 ? (
+              /* NO TAKE, IN WORDS (v34 fix 2). v33 showed a blank staff and "No key
+                 detected in this take", which reads as a broken app; the truth is
+                 that this melody was saved without notes. */
+              <Text style={styles.factKey}>{EDITOR_NO_TAKE_LINE}</Text>
+            ) : (
+              <Text style={styles.factKey}>
+                {derived.keyLabel ? `Key: ${derived.keyLabel}` : 'No key detected in this take'}
+              </Text>
+            )}
             {derived.summaryLine ? (
               <Text style={styles.factSummary}>{derived.summaryLine}</Text>
             ) : (
@@ -387,8 +468,12 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
             )}
           </View>
 
-          {/* 1. THE STAFF — the take as notation, redrawn from the CURRENT notes. */}
-          <View style={styles.staffBox}>
+          {/* 1. THE STAFF — the take as notation, redrawn from the CURRENT notes.
+              DECORATIVE: it is drawn in a WebView, and a WebView swallows the
+              page's scroll gestures (it is not part of RN's responder system), so
+              `pointerEvents="none"` keeps the page scrollable from the biggest
+              surface on it. All editing happens on the lane below (v34 fix 3). */}
+          <View style={styles.staffBox} pointerEvents="none">
             <AbcScoreView abc={staffAbc} ink={TAKE_STAFF_CLEANED_INK} background={TAKE_STAFF_PAPER} />
           </View>
 

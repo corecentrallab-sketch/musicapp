@@ -16,6 +16,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Audio } from 'expo-av';
+import { reportAudioFailure, usableDetail } from '../services/audioDiagnostics';
+import { ensurePlaybackAudioMode } from '../services/audioSession';
 import {
   TAKE_PLAYBACK_FAILED_LINE,
   TAKE_PLAYBACK_MISSING_LINE,
@@ -63,6 +65,13 @@ export function useTakeClipPlayer(): TakeClipPlayer {
       if (!takePlaybackAvailable(row)) {
         stop();
         setNote({ id: row.id, text: TAKE_PLAYBACK_MISSING_LINE });
+        // The row keeps its own sentence AND the reason reaches the app-wide chip
+        // (v34): "the recording is not on this device any more".
+        reportAudioFailure({
+          source: 'take-playback',
+          reason: 'clip-missing',
+          detail: `row ${row.id} has no clip path`,
+        });
         return;
       }
       const uri = row.personalMelody?.audioUri;
@@ -84,6 +93,11 @@ export function useTakeClipPlayer(): TakeClipPlayer {
 
       void (async () => {
         try {
+          // THE SESSION FIRST (v34). expo-av reports a play on a session that was
+          // never established as success and then plays nothing: on Android the
+          // player's volume is literally 0 while it does not hold audio focus, so
+          // the mode has to be (re)applied on the way into every play.
+          await ensurePlaybackAudioMode();
           const { sound } = await Audio.Sound.createAsync(
             { uri },
             { shouldPlay: true },
@@ -104,12 +118,19 @@ export function useTakeClipPlayer(): TakeClipPlayer {
               void sound.unloadAsync();
             }
           });
-        } catch {
+        } catch (err) {
           if (token !== tokenRef.current) return;
           soundRef.current = null;
           setBusyId(null);
           setPlayingId(null);
           setNote({ id: row.id, text: TAKE_PLAYBACK_FAILED_LINE });
+          // v33 swallowed the reason entirely; the owner's device pass had nothing
+          // to read. The chip now carries the device's own message (v34).
+          reportAudioFailure({
+            source: 'take-playback',
+            reason: 'clip-load',
+            detail: usableDetail(err) || uri,
+          });
         }
       })();
     },

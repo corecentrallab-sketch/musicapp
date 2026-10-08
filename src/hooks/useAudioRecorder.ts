@@ -25,6 +25,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { Platform, PermissionsAndroid, Alert, Linking } from 'react-native';
+import { enterRecordingAudioMode, restorePlaybackAudioMode } from '../services/audioSession';
 import {
   buildCaptureTelemetry,
   type CaptureDiagnostics,
@@ -369,16 +370,11 @@ export function useAudioRecorder() {
         await releaseRecording(stale);
       }
 
-      // Configure audio mode for recording. Bounded: a hung audio-mode call must
-      // not be able to leave the UI waiting forever.
-      await withTimeout(
-        Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
-        }),
-        AUDIO_MODE_TIMEOUT_MS,
-        undefined,
-      );
+      // Configure the session for recording — ONE definition, shared with every
+      // playback surface (services/audioSession.ts) so the recording session and
+      // the playback session can never drift apart (v34). Bounded: a hung
+      // audio-mode call must not be able to leave the UI waiting forever.
+      await withTimeout(enterRecordingAudioMode(), AUDIO_MODE_TIMEOUT_MS, false);
 
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync(RECORDING_OPTIONS);
@@ -482,15 +478,10 @@ export function useAudioRecorder() {
     await releaseRecording(recording);
     setIsRecording(false);
 
-    // Always release the audio session back to normal playback mode (bounded).
-    await withTimeout(
-      Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-      }),
-      AUDIO_MODE_TIMEOUT_MS,
-      undefined,
-    );
+    // Always release the session back to the app's PLAYBACK mode — the full
+    // mode, not just the two keys (v34): leaving a record-configured session in
+    // place is what makes everything the user presses afterwards silent. Bounded.
+    await withTimeout(restorePlaybackAudioMode(), AUDIO_MODE_TIMEOUT_MS, false);
 
     if (!uri) return noteStopFailure('no-uri');
 
