@@ -1,3 +1,4 @@
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -29,6 +30,7 @@ interface CapturedPage {
  * single "scanned score" item with pages in order.
  */
 export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const [pages, setPages] = useState<CapturedPage[]>([]);
@@ -80,7 +82,7 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
   if (!permission) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#e94560" />
+        <ActivityIndicator size="large" color={theme.accent} />
       </View>
     );
   }
@@ -88,7 +90,7 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
   if (!permission.granted) {
     return (
       <View style={styles.centered}>
-        <Ionicons name="camera-outline" size={56} color="#e94560" />
+        <Ionicons name="camera-outline" size={56} color={theme.accent} />
         <Text style={styles.permissionTitle}>Camera access needed</Text>
         <Text style={styles.permissionBody}>
           NoteSnap uses your camera to photograph sheet music pages and store
@@ -153,7 +155,7 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
           disabled={pages.length === 0}
           accessibilityLabel="Remove last page"
         >
-          <Ionicons name="trash-outline" size={22} color="#eaeaff" />
+          <Ionicons name="trash-outline" size={22} color={theme.text} />
           <Text style={styles.controlLabel}>Undo</Text>
         </Pressable>
 
@@ -185,7 +187,7 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#10101c',

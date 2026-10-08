@@ -8,6 +8,7 @@
  * action button receive a tap. Without an action the toast cannot swallow a tap
  * meant for the screen underneath, so play continues untouched.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useEffect, useRef } from 'react';
 import { Animated, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import type { Badge } from '../types';
@@ -33,6 +34,7 @@ export const BadgeToast: React.FC<BadgeToastProps> = ({
   onAction,
   actionLabel,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-20)).current;
 
@@ -98,7 +100,7 @@ export const BadgeToast: React.FC<BadgeToastProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     position: 'absolute',
     top: 60,

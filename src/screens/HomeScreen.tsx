@@ -8,6 +8,7 @@
  * 2. Auto-stops after 8s or manual tap → sends audio to API
  * 3. Results shown in RecognitionResultView modal
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
@@ -194,6 +195,7 @@ const RECORDING_TIMEOUT_MS = 12000;
 const RETRY_DELAY_MS = 300;
 
 export const HomeScreen: React.FC = () => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   // Tab-navigation handle (used to jump to Settings → Pro upgrade from the
   // quota-exhausted modal).
   const navigation =
@@ -1345,7 +1347,7 @@ export const HomeScreen: React.FC = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#e94560"
+            tintColor={theme.accent}
           />
         }
       >
@@ -1699,7 +1701,7 @@ export const HomeScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

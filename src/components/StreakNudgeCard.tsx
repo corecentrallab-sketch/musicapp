@@ -12,6 +12,7 @@
  *
  * Always dismissible. One gentle card per local day, then silence.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { ReinforcementNudge } from '../services/practiceReinforcement';
@@ -37,6 +38,7 @@ export const StreakNudgeCard: React.FC<StreakNudgeCardProps> = ({
   surface,
   hidden = false,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [nudge, setNudge] = useState<ReinforcementNudge | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
@@ -91,7 +93,7 @@ export const StreakNudgeCard: React.FC<StreakNudgeCardProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'flex-start',

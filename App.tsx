@@ -2,7 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  DefaultTheme as NavigationDefaultTheme,
+  DarkTheme as NavigationDarkTheme,
+  type Theme as NavigationTheme,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, Text, ActivityIndicator, Dimensions } from 'react-native';
 import { TabNavigator } from './src/navigation/TabNavigator';
@@ -14,6 +19,13 @@ import { CloudSyncScreen } from './src/screens/CloudSyncScreen';
 import { MetronomeScreen } from './src/screens/MetronomeScreen';
 import { NotationEditorScreen } from './src/screens/NotationEditorScreen';
 import { AudioUnavailableChip } from './src/components/AudioUnavailableChip';
+// The app's light/dark choice (v33 §F2, made APP-WIDE in v34b: owner FAIL item 6
+// — "Light button only works on one page, the settings page"). The provider is
+// mounted HERE, at the repo root and OUTSIDE NavigationContainer, so the container
+// itself, every screen, every modal and the status bar all read the ONE mode. The
+// palette + resolver live in src/services/theme.ts, the React binding in
+// src/services/themeStore.ts, the per-screen repaint in src/services/themeApply.ts.
+import { ThemeModeProvider, useThemeMode } from './src/services/themeStore';
 import {
   hasCompletedOnboarding,
   saveOnboardingAnswers,
@@ -22,17 +34,49 @@ import type { OnboardingAnswers, RootStackParamList } from './src/types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-const stackScreenOptions = {
-  headerStyle: { backgroundColor: '#16213e' },
-  headerTintColor: '#e94560',
-  headerTitleStyle: { fontWeight: '700' as const },
-  headerBackButtonDisplayMode: 'minimal' as const,
-  contentStyle: { backgroundColor: '#1a1a2e' },
-};
+/**
+ * The navigation container's own theme (react-navigation). It paints the gaps
+ * between screens and the default background of a screen without one, so leaving
+ * it light is what produced a white flash on a dark app — and leaving it dark is
+ * what kept a light app dark. Built from the SAME tokens as every screen.
+ */
+function navigationTheme(mode: string, theme: {
+  background: string;
+  surface: string;
+  text: string;
+  border: string;
+  accent: string;
+  subtext: string;
+}): NavigationTheme {
+  const base = mode === 'light' ? NavigationDefaultTheme : NavigationDarkTheme;
+  return {
+    ...base,
+    dark: mode !== 'light',
+    colors: {
+      ...base.colors,
+      primary: theme.accent,
+      background: theme.background,
+      card: theme.surface,
+      text: theme.text,
+      border: theme.border,
+      notification: theme.accent,
+    },
+  };
+}
 
-export default function App() {
+/**
+ * The app shell — everything that depends on the chosen theme. It is a separate
+ * component because it READS the theme, and only a component under the provider
+ * can do that (the root App is the provider itself).
+ */
+function AppShell() {
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  // The chosen palette (v33 §F2 → v34b app-wide). `theme` repaints the loading
+  // view, the stack headers/footers, the status bar and the container; the
+  // screens do the same with their own useThemedStyles binding.
+  const { mode, tokens: theme } = useThemeMode();
+  const statusBarStyle = mode === 'light' ? 'dark' : 'light';
   useEffect(() => {
     (async () => {
       const completed = await hasCompletedOnboarding();
@@ -71,16 +115,16 @@ export default function App() {
       <View
         style={{
           flex: 1,
-          backgroundColor: '#1a1a2e',
+          backgroundColor: theme.surfaceAlt,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
         <Text style={{ fontSize: 48, marginBottom: 16 }}>🎵</Text>
-        <ActivityIndicator size="large" color="#e94560" />
+        <ActivityIndicator size="large" color={theme.accent} />
         <Text
           style={{
-            color: '#a0a0b8',
+            color: theme.subtext,
             marginTop: 16,
             fontSize: 16,
           }}
@@ -93,7 +137,7 @@ export default function App() {
   if (showOnboarding) {
     return (
       <SafeAreaProvider>
-        <StatusBar style="light" />
+        <StatusBar style={statusBarStyle} />
         <OnboardingScreen
           onComplete={handleOnboardingComplete}
           onSkip={handleOnboardingSkip}
@@ -101,10 +145,19 @@ export default function App() {
       </SafeAreaProvider>
     );
   }
+  // The stack's own chrome, from the same tokens as the screens: header fill =
+  // surface, title/back tint = accent, an empty screen's body = surfaceAlt.
+  const stackScreenOptions = {
+    headerStyle: { backgroundColor: theme.surface },
+    headerTintColor: theme.accent,
+    headerTitleStyle: { fontWeight: '700' as const, color: theme.text },
+    headerBackButtonDisplayMode: 'minimal' as const,
+    contentStyle: { backgroundColor: theme.surfaceAlt },
+  };
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
-        <StatusBar style="auto" />
+      <NavigationContainer theme={navigationTheme(mode, theme)}>
+        <StatusBar style={statusBarStyle} />
         <Stack.Navigator screenOptions={stackScreenOptions}>
           <Stack.Screen
             name="Tabs"
@@ -154,5 +207,16 @@ export default function App() {
       */}
       <AudioUnavailableChip />
     </SafeAreaProvider>
+  );
+}
+
+export default function App() {
+  // ONE provider over the whole app (v34b). Every screen, the navigation
+  // container, the status bar and the audio chip read the mode from here, so the
+  // Settings toggle repaints the WHOLE app live — the owner's FAIL item 6.
+  return (
+    <ThemeModeProvider>
+      <AppShell />
+    </ThemeModeProvider>
   );
 }

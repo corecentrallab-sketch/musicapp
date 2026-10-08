@@ -1,3 +1,4 @@
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -28,6 +29,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'PdfViewer'>;
  * while auto-scrolling. Full reader polish (annotations) is a later phase.
  */
 export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const { itemId } = route.params;
   const pdfRef = useRef<React.ElementRef<typeof Pdf>>(null);
   const [uri, setUri] = useState<string | null>(null);
@@ -137,7 +139,7 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
   if (failed) {
     return (
       <View style={styles.centered}>
-        <Ionicons name="alert-circle-outline" size={48} color="#e94560" />
+        <Ionicons name="alert-circle-outline" size={48} color={theme.accent} />
         <Text style={styles.errorText}>
           This PDF could not be opened.
         </Text>
@@ -171,7 +173,7 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
         />
       ) : (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#e94560" />
+          <ActivityIndicator size="large" color={theme.accent} />
         </View>
       )}
 
@@ -189,7 +191,7 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
           disabled={page <= 1}
           accessibilityLabel="Previous page"
         >
-          <Ionicons name="chevron-up" size={20} color="#eaeaff" />
+          <Ionicons name="chevron-up" size={20} color={theme.text} />
         </Pressable>
         <Text style={styles.pageLabel}>
           Page {pageCount > 0 ? page : '–'} of {pageCount > 0 ? pageCount : '–'}
@@ -206,14 +208,14 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
           disabled={pageCount > 0 && page >= pageCount}
           accessibilityLabel="Next page"
         >
-          <Ionicons name="chevron-down" size={20} color="#eaeaff" />
+          <Ionicons name="chevron-down" size={20} color={theme.text} />
         </Pressable>
       </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#10101c',

@@ -17,6 +17,7 @@
  * fails if any take-writing operation is ever imported into the engine, and
  * takePreview.PREVIEW_TEMPO_NEVER_REWRITES, asserted in the tier1 suite.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
@@ -51,6 +52,7 @@ export interface TakePreviewSectionProps {
 }
 
 export const TakePreviewSection: React.FC<TakePreviewSectionProps> = ({ preview }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const instrument = previewInstrument(preview.instrument);
   const tempos: number[] = [];
   for (let pct = PREVIEW_TEMPO_MIN_PCT; pct <= PREVIEW_TEMPO_MAX_PCT; pct += PREVIEW_TEMPO_STEP_PCT) {
@@ -152,7 +154,7 @@ export const TakePreviewSection: React.FC<TakePreviewSectionProps> = ({ preview 
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   card: {
     backgroundColor: '#16213e',
     borderRadius: 16,

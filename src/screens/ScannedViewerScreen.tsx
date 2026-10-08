@@ -1,3 +1,4 @@
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -26,6 +27,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ScannedViewer'>;
  * beats/page steppers) and pause-on-tap while auto-scrolling.
  */
 export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const { itemId } = route.params;
   const { width } = useWindowDimensions();
   const [item, setItem] = useState<LibraryItem | null>(null);
@@ -79,7 +81,7 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#e94560" />
+        <ActivityIndicator size="large" color={theme.accent} />
       </View>
     );
   }
@@ -151,7 +153,7 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#10101c',

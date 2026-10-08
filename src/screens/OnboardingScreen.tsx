@@ -2,6 +2,7 @@
  * Onboarding wizard — shown on first launch.
  * 3-4 screens with skip option.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useState } from 'react';
 import {
   View,
@@ -24,6 +25,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   onComplete,
   onSkip,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [stepIndex, setStepIndex] = useState(0);
   const [instrument, setInstrument] = useState<Instrument>('piano');
   const [level, setLevel] = useState<SkillLevel>('beginner');
@@ -206,7 +208,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

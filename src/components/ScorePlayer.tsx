@@ -9,6 +9,7 @@
  *
  * Designed to be visually calm so it never distracts from reading the score.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import Slider from "@react-native-community/slider";
@@ -30,6 +31,7 @@ export const ScorePlayer: React.FC<ScorePlayerProps> = ({
   source,
   label = "Score audio",
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const {
     state,
     togglePlay,
@@ -70,9 +72,9 @@ export const ScorePlayer: React.FC<ScorePlayerProps> = ({
             maximumValue={Math.max(durationMillis, 1)}
             value={Math.min(positionMillis, Math.max(durationMillis, 1))}
             onSlidingComplete={(v) => void seekTo(v)}
-            minimumTrackTintColor="#e94560"
-            maximumTrackTintColor="#3a3a55"
-            thumbTintColor="#e94560"
+            minimumTrackTintColor={theme.accent}
+            maximumTrackTintColor={theme.chipBg}
+            thumbTintColor={theme.accent}
             disabled={!isLoaded}
           />
         </View>
@@ -150,7 +152,7 @@ export const ScorePlayer: React.FC<ScorePlayerProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     backgroundColor: "#16213e",
     borderTopWidth: 1,

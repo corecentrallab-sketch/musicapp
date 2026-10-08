@@ -12,6 +12,7 @@
  * crossed nothing and has no streak renders nothing at all (the parent simply
  * does not mount this card).
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ShareCard } from './ShareCard';
@@ -37,6 +38,7 @@ export const ReinforcementMomentCard: React.FC<ReinforcementMomentCardProps> = (
   genre,
   onDismiss,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   // The celebration the user chose to share (any of them can be shared).
   const [sharing, setSharing] = useState<Celebration | null>(null);
 
@@ -95,7 +97,7 @@ export const ReinforcementMomentCard: React.FC<ReinforcementMomentCardProps> = (
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   card: {
     marginTop: 12,
     backgroundColor: '#0f3460',

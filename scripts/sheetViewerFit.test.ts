@@ -365,9 +365,13 @@ function htmlTests(): void {
     html.includes("document.body.className = immersive ? 'immersive' : ''"),
     'immersive mode switches the document class',
   );
+  // v34b: the pill is THEMED (the reader follows the app's mode), so the literal
+  // moved into the variable's dark fallback. The contract is unchanged and still
+  // asserted: the pill is translucent over the sheet, never opaque.
   assert(
-    html.includes('body.immersive #pageIndicator') && html.includes('background: rgba(22, 33, 62, 0.72)'),
-    'immersive mode shows a translucent page pill',
+    html.includes('body.immersive #pageIndicator') &&
+      html.includes('var(--sheet-pill-bg, rgba(22, 33, 62, 0.72))'),
+    'immersive mode shows a translucent page pill (themed; the dark value is the fallback)',
   );
   assert(
     html.includes('pointer-events: none'),

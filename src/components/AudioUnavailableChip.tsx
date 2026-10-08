@@ -10,6 +10,7 @@
  * It renders NOTHING when the audio stack is healthy, so a healthy build looks
  * exactly as it did before (no permanent banner, no dead area).
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
@@ -24,6 +25,7 @@ import {
 export const AUDIO_CHIP_DISMISS_LABEL = 'Dismiss audio message';
 
 export const AudioUnavailableChip: React.FC = () => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [failure, setFailure] = useState<AudioFailure | null>(() => currentAudioFailure());
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export const AudioUnavailableChip: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   wrap: {
     position: 'absolute',
     left: 0,

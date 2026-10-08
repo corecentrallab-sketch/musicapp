@@ -2,15 +2,17 @@
  * theme.ts — the app's light/dark choice (v33 slice F, owner 10-04 email batch:
  * "a dark/light mode toggle in Settings").
  *
- * HONEST SCOPE. A full theme of every screen is a large, risky pass; this module
- * ships the REAL mechanism (one palette table, one persisted mode, one resolver)
- * and this build applies it to the Settings screen and to the v33 melody tools
- * (capture window, take editor, preview) — the surfaces this release actually
- * touches. The remaining screens keep their dark styling until the next pass,
- * and Settings says so in words rather than implying the whole app switched.
+ * SCOPE (v34b, owner FAIL item 6 — "Light button only works on one page, the
+ * settings page"): the choice is now APP-WIDE. This module stays the ONE palette
+ * table + ONE resolver + ONE persisted-value contract; services/themeStore.ts
+ * holds the shared React binding mounted at the app root, and
+ * services/themeApply.ts re-paints every screen's StyleSheet from these tokens.
+ * Dark mode is the identity (the app's own design), so nothing about the existing
+ * dark look changes; light mode is these values, applied everywhere.
  *
  * PURE (no react / react-native / fs / AsyncStorage): the palette, the resolver
- * and the persisted-value contract are asserted by scripts/v33TakeEditor.test.ts.
+ * and the persisted-value contract are asserted by scripts/v33TakeEditor.test.ts
+ * and scripts/v34bThemeWiring.test.ts.
  */
 
 export type ThemeMode = 'dark' | 'light';
@@ -106,9 +108,9 @@ export const THEME_ROW_TITLE = 'Dark mode';
 export const THEME_DARK_LABEL = 'Dark';
 export const THEME_LIGHT_LABEL = 'Light';
 export const THEME_ACCESSIBILITY_LABEL = 'Dark mode — switch the app between dark and light';
-/** The honest scope note (see the module header). */
+/** What the choice does — app-wide since v34b (owner FAIL item 6). */
 export const THEME_HONEST_NOTE =
-  'This build themes the Settings screen and the new melody tools (capture, editor, preview). The rest of the app keeps its dark styling for now.';
+  'Your choice follows you across the whole app: every screen, the tab bar, the sheet readers and the system bar.';
 /** What the toggle says it did. */
 export function themeAppliedLine(mode: ThemeMode | string | null | undefined): string {
   return resolveThemeMode(mode) === 'light'

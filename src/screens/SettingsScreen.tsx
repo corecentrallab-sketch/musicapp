@@ -40,11 +40,12 @@ import { getReminderMinutes, setReminderMinutes as persistReminderMinutes } from
 import { createCheckoutSession, checkEntitlement } from '../services/api';
 import { getDeviceId } from '../services/device';
 // The app's light/dark choice (v33 §F2, owner 10-04 email batch: "a dark/light
-// mode toggle in Settings"). The mode, the palette and the persisted-value
-// contract live in services/theme.ts; the read/write binding in themeStore.ts.
-// This screen is the TOGGLE, and the tokens below are what actually repaint it —
-// no surface on this screen carries its own colour any more.
-import { useThemeMode } from '../services/themeStore';
+// mode toggle in Settings"; v34b: the SAME choice now repaints every screen —
+// owner FAIL item 6). The mode, the palette and the persisted-value contract live
+// in services/theme.ts; the app-wide read/write binding in themeStore.ts
+// (useThemeMode = the shared mode, useThemedStyles = this screen's StyleSheet
+// re-painted for the chosen palette). This screen is the TOGGLE.
+import { useThemeMode, useThemedStyles } from '../services/themeStore';
 import {
   PRACTICE_SECTION_SUBTITLE,
   PRACTICE_SECTION_TITLE,
@@ -118,11 +119,14 @@ export const SettingsScreen: React.FC = () => {
   // The practice-reminder time, in minutes since local midnight (owner 09-25).
   // 18:00 until the user picks another time — the exact pre-existing behaviour.
   const [reminderMinutes, setReminderMinutes] = useState(DEFAULT_REMINDER_MINUTES);
-  // The chosen theme (v33 §F2). `theme` is the RESOLVED token table for the
-  // current mode: every surface below reads its colours from here, so flipping
-  // the toggle repaints the screen instead of only relabelling a switch. The
-  // store persists the choice (themeStore), so it survives a restart.
+  // The chosen theme (v33 §F2, app-wide in v34b). `theme` is the RESOLVED token
+  // table for the current mode: every surface below reads its colours from here,
+  // so flipping the toggle repaints the screen instead of only relabelling a
+  // switch. `styles` is this screen's own StyleSheet re-painted from the same
+  // tokens (the leftovers the `themed` map below does not name). The store
+  // persists the choice (themeStore), so it survives a restart.
   const { mode: themeMode, tokens: theme, setMode: setThemeMode } = useThemeMode();
+  const { styles } = useThemedStyles(baseStyles);
 
   useEffect(() => {
     getNotificationEnabled().then(setNotificationsEnabled);
@@ -387,9 +391,10 @@ export const SettingsScreen: React.FC = () => {
           both states are named, so the user can see what they are choosing and
           what is currently on. The write goes through themeStore (AsyncStorage),
           so the choice survives a restart; `themeAppliedLine` says so in words.
-          The honest scope note (THEME_HONEST_NOTE) names exactly which surfaces
-          this build themes — the rest of the app stays dark, and the section
-          says that instead of implying a whole-app switch. */}
+          The honest scope note (THEME_HONEST_NOTE) says the choice is APP-WIDE
+          (v34b, owner FAIL item 6): every screen, the tab bar, the sheet readers
+          and the status bar follow it. Build ≥ v34b, so no surface is excepted
+          in the copy — the note names the real scope instead of claiming less. */}
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, themed.title]}>{THEME_SECTION_TITLE}</Text>
         <View style={[styles.infoCard, themed.card]}>
@@ -438,7 +443,7 @@ export const SettingsScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

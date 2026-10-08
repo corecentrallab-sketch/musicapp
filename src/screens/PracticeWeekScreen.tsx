@@ -13,6 +13,7 @@
  * beyond the pure helpers in services/homeCards.ts (unit-tested under plain
  * Node). Rendered in place by Home, like the app's other full-screen flows.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -68,6 +69,7 @@ export const PracticeWeekScreen: React.FC<PracticeWeekScreenProps> = ({
   onPracticeToday,
   onFindPiece,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [data, setData] = useState<WeekData | null>(null);
   const [readFailed, setReadFailed] = useState(false);
   // Android hardware BACK (in-place flow — owner bug class 09-23). Home renders
@@ -135,7 +137,7 @@ export const PracticeWeekScreen: React.FC<PracticeWeekScreenProps> = ({
       <View style={styles.container}>
         {header}
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#e94560" />
+          <ActivityIndicator size="large" color={theme.accent} />
           <Text style={styles.centerSubtext}>Loading your practice week…</Text>
         </View>
       </View>
@@ -244,7 +246,7 @@ export const PracticeWeekScreen: React.FC<PracticeWeekScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

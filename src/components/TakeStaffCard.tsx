@@ -24,6 +24,7 @@
  * by the pure module src/services/takeStaff.ts — no new renderer, and every
  * spelling/bar/rest rule is asserted by scripts/v33TakeEditor.test.ts.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { AbcScoreView } from './AbcScoreView';
@@ -67,6 +68,7 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
   chordHonestLine,
   title,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const rows = useMemo(() => {
     const notes = Array.isArray(take?.notes) ? take!.notes : [];
     // The cleaned line comes from the app's ONE cleaning pass, fed the same
@@ -145,7 +147,7 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   card: {
     backgroundColor: '#16213e',
     borderRadius: 18,

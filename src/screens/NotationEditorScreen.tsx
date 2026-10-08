@@ -11,6 +11,7 @@
  * originate here (also PD). No copyrighted/modern music flows through this
  * editor. Full note-by-note editing is a later phase — this is transpose-only.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -59,6 +60,7 @@ function scoreFromAbc(abc: string, title: string): AbcScore {
 }
 
 export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [selected, setSelected] = useState<AbcScore | null>(null);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -176,7 +178,7 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
   if (loading || !selected) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#e94560" />
+        <ActivityIndicator size="large" color={theme.accent} />
         <Text style={styles.centeredText}>Loading score…</Text>
       </View>
     );
@@ -229,12 +231,12 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
             disabled={offset <= MIN_OFFSET}
             accessibilityLabel="Transpose down one semitone"
           >
-            <Ionicons name="remove" size={26} color="#e94560" />
+            <Ionicons name="remove" size={26} color={theme.accent} />
           </Pressable>
 
           <View style={styles.keyReadout}>
             <Text style={styles.keyFrom}>{keyLabels.from}</Text>
-            <Ionicons name="arrow-forward" size={18} color="#4a4a6a" />
+            <Ionicons name="arrow-forward" size={18} color={theme.subtext} />
             <Text style={styles.keyTo}>{keyLabels.to}</Text>
           </View>
 
@@ -244,7 +246,7 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
             disabled={offset >= MAX_OFFSET}
             accessibilityLabel="Transpose up one semitone"
           >
-            <Ionicons name="add" size={26} color="#e94560" />
+            <Ionicons name="add" size={26} color={theme.accent} />
           </Pressable>
         </View>
 
@@ -277,7 +279,7 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
         </View>
         {!itemId && selected.isPublicDomain && (
           <View style={styles.pdBadge}>
-            <Ionicons name="leaf" size={12} color="#4ecdc4" />
+            <Ionicons name="leaf" size={12} color={theme.positive} />
             <Text style={styles.pdBadgeText}>Public domain</Text>
           </View>
         )}
@@ -308,7 +310,7 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
