@@ -779,24 +779,32 @@ export function transposedCopyIsWhatReopens(
 // ────────── H: "Scan a cover" is wired to the REAL search (v33 §H) ──────────
 
 /**
- * The cover-scan affordance (owner 10-04 §H): a camera row on the find-a-piece
- * search bar that photographs a score's title page and lands on the SAME search
- * a typed title produces.
+ * The cover-scan affordance (owner 10-04 §H; the READ is v36 fix 4, owner FAIL
+ * 10-08: "snaps a picture and can save it — snaps but does not scan"). A camera
+ * row on the find-a-piece search bar photographs a score's title page — the
+ * on-device recogniser reads the WORDS on it — and lands on the SAME search a
+ * typed title produces.
  *
- * Three things must be true, and each one has a way to be silently wrong:
+ * Four things must be true, and each one has a way to be silently wrong:
  *   1. WIRED, not decorative — the affordance has a real onPress that opens the
  *      camera surface, and what the user confirms goes back through
  *      `setQuery(text)`, the one entry point this screen already has. A second
  *      search path would be a second set of results (and a second money path).
  *   2. REAL capture — the surface uses expo-camera's takePictureAsync.
- *   3. HONEST — this build has NO on-device text recogniser
- *      (COVER_SCAN_OCR_AVAILABLE === false). The photo therefore yields no text:
- *      the confirm field starts EMPTY, the model's own `no-ocr` line is what the
- *      user reads, and there is no recogniser module anywhere in the flow. A
- *      prefilled guess, or a fake "we read your cover", fails here.
+ *   3. REALLY READ — the captured photo is handed to the on-device recogniser
+ *      (`readCoverText(photo.uri)`), and the confirm field is filled from THAT
+ *      READ's output and nothing else. The field's initial value is '' so a
+ *      surface that never read anything shows an empty field, not a guess.
+ *   4. HONEST — the read's own outcome drives the line the user reads
+ *      (`scanned.line`), and the field's emptiness is what stops a search: an
+ *      empty field is never sent to `setQuery`. Nothing here may say the photo is
+ *      read "later" or "not in this build" (the recogniser ships now), and no
+ *      recogniser may appear on the SEARCH screen — the read belongs to the
+ *      camera surface alone.
  *
  * `searchSource` is src/screens/FindPieceScreen.tsx; `modalSource` is
- * src/components/CoverScanModal.tsx.
+ * src/components/CoverScanModal.tsx. The reader itself is guarded separately by
+ * `coverScanReadsPhoto` (src/services/coverScanOcr.ts).
  */
 export function coverScanFlowWired(
   searchSource: string,
@@ -817,25 +825,34 @@ export function coverScanFlowWired(
   if (!/handleCoverQuery = useCallback\(\(text: string\)[\s\S]{0,600}?setQuery\(text\)/.test(search)) {
     return false;
   }
+  // The recogniser lives in the camera surface: the search screen must not hold
+  // one (it would be a second, unattended read of the user's photo).
+  for (const module of COVER_SCAN_OCR_MODULE_IDS) {
+    if (search.toLowerCase().indexOf(module) >= 0) return false;
+  }
   // 3. Real capture on the device.
   if (modal.indexOf("from 'expo-camera'") < 0) return false;
   if (modal.indexOf('takePictureAsync(') < 0) return false;
-  // 3b. …and no recogniser: nothing in this flow can read the photo for the user.
-  for (const module of OCR_MODULES) {
-    if (search.toLowerCase().indexOf(module) >= 0) return false;
-    if (modal.toLowerCase().indexOf(module) >= 0) return false;
-  }
-  // 4. The honest state: no OCR ⇒ no text ⇒ an EMPTY confirm field, with the
-  //    model's own no-ocr line shown (never a fabricated read).
-  if (modal.indexOf('coverQueryFromScan({') < 0) return false;
-  if (modal.indexOf('ocrText: null') < 0) return false;
-  if (modal.indexOf('ocrAvailable: COVER_SCAN_OCR_AVAILABLE') < 0) return false;
-  if (modal.indexOf('scanned.line') < 0) return false;
+  // 3b. …and the photo is really READ: the captured uri goes to the on-device
+  //     recogniser, and what it returns is what fills the field.
+  if (modal.indexOf('readCoverText(photo.uri)') < 0) return false;
+  if (modal.indexOf('setRead(result)') < 0) return false;
+  if (modal.indexOf('ocrText: result.text') < 0) return false;
+  if (modal.indexOf('ocrFailed: result.failed') < 0) return false;
+  if (!/setConfirmText\(\s*coverQueryFromScan\(/.test(modal)) return false;
+  // 4. The field starts EMPTY (nothing read yet ⇒ nothing written) and only the
+  //    read's own outcome is rendered for the user to act on.
   if (modal.indexOf("const [confirmText, setConfirmText] = useState('')") < 0) {
     return false;
   }
+  if (modal.indexOf('ocrText: read?.text ?? null') < 0) return false;
+  if (modal.indexOf('ocrFailed: read?.failed === true') < 0) return false;
+  if (modal.indexOf('scanned.line') < 0) return false;
+  // 4b. …and the surface must NOT carry the pre-v36 claim that reading a photo is
+  //     still to come: that sentence is the owner's "snaps but does not scan".
+  if (modal.toLowerCase().indexOf('not in this build') >= 0) return false;
   // 5. Only the user's own confirmed words leave the modal, and an empty field
-  //    runs nothing (no query invented out of a photo).
+  //    runs nothing (no query invented out of a photo, in any state).
   if (modal.indexOf('onConfirm(text)') < 0) return false;
   if (!/const confirm = useCallback\(\(\) => \{[\s\S]{0,600}?if \(!text\) return;/.test(modal)) {
     return false;
@@ -843,15 +860,48 @@ export function coverScanFlowWired(
   return true;
 }
 
-/** Modules that would mean the photo is being read in this build. None may be
- *  present anywhere in the cover-scan flow (see the honest-state rule above). */
-const OCR_MODULES: readonly string[] = [
+/**
+ * The reader behind the scan (v36 fix 4): src/services/coverScanOcr.ts.
+ *
+ * This is a NATIVE module, so the failure modes are the point of the guard — a
+ * recogniser that is missing on the device, or that rejects the image, must give
+ * the user an honest failure instead of taking the screen down or, far worse,
+ * inventing text from a photo it never read:
+ *   1. a real on-device recogniser module is what does the reading;
+ *   2. it is called on the captured photo's own uri — never on a constant;
+ *   3. the text returned is the recogniser's own output field, not a literal;
+ *   4. the call sits in a try/catch that RETURNS `failed: true`, so nothing is
+ *      raised into the screen and a broken read can never become a query.
+ */
+export function coverScanReadsPhoto(ocrSource: string): boolean {
+  const src = maskComments(ocrSource);
+  if (src.length < 400) return false;
+  // 1. The recogniser module itself.
+  if (!COVER_SCAN_OCR_MODULE_IDS.some((id) => src.includes(id))) return false;
+  // 2. Called on the photo it was handed.
+  if (src.indexOf('recognize(photoUri)') < 0) return false;
+  // 3. The text is the recogniser's own output.
+  if (src.indexOf('result.text') < 0) return false;
+  // 4. A failing read is returned as an honest state, never thrown, never
+  //    silently turned into a successful empty read.
+  if (!/try\s*\{/.test(src)) return false;
+  if (!/catch\s*\(/.test(src)) return false;
+  if (src.indexOf('failed: true') < 0) return false;
+  return true;
+}
+
+/**
+ * Modules that mean a photo is read on-device. The READER (services/coverScanOcr.ts)
+ * must contain one — that is what `coverScanReadsPhoto` asserts — and the search
+ * screen must contain none, so the read has exactly one home. (Before v36 this
+ * list was a flat ban: the build shipped no recogniser at all.)
+ */
+export const COVER_SCAN_OCR_MODULE_IDS: readonly string[] = [
+  '@react-native-ml-kit/text-recognition',
+  'react-native-ml-kit',
   'mlkit',
   'ml-kit',
   'text-recognition',
   'textrecognition',
-  'vision-camera',
-  'react-native-ml',
-  'tesseract',
 ];
 

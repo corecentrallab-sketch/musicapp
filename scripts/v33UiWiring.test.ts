@@ -33,6 +33,7 @@ import {
   transposedCopyIsWhatReopens,
   settingsAppliesTheChosenTheme,
   coverScanFlowWired,
+  coverScanReadsPhoto,
 } from '../src/services/v33UiContract';
 import { oneMeaningPerCard } from '../src/services/frontDoorBands';
 import {
@@ -1040,16 +1041,77 @@ assertEq(
 // ────────── slice H — "Scan a cover" feeds the REAL search ──────────
 const FIND_PIECE_H = 'src/screens/FindPieceScreen.tsx';
 const COVER_MODAL = 'src/components/CoverScanModal.tsx';
+const COVER_OCR = 'src/services/coverScanOcr.ts';
 const findPieceSourceH = readAppFile(FIND_PIECE_H);
 const coverModalSource = readAppFile(COVER_MODAL);
+const coverOcrSource = readAppFile(COVER_OCR);
 
 console.log('\nslice H — a photographed cover lands on the same search');
 assert(findPieceSourceH.length > 8000, `read ${FIND_PIECE_H} (${findPieceSourceH.length} chars)`);
 assert(coverModalSource.length > 3000, `read ${COVER_MODAL} (${coverModalSource.length} chars)`);
+
+// v36 fix 4 — the owner's "snaps but does not scan": the read itself is guarded
+// against the REAL reader source, and its failure modes are the point.
+assert(coverOcrSource.length > 400, `read ${COVER_OCR} (${coverOcrSource.length} chars)`);
+assertEq(
+  coverScanReadsPhoto(coverOcrSource),
+  true,
+  'the reader calls an on-device recogniser on the photo it was handed and returns an honest failure instead of throwing',
+);
+// MUTATION 55a: a reader wired to a module that does not recognise text.
+const noRecogniser = coverOcrSource
+  .split('@react-native-ml-kit/text-recognition')
+  .join('react-native-some-other-lib');
+assert(noRecogniser !== coverOcrSource, 'the no-recogniser mutation changed the real reader');
+assertEq(
+  coverScanReadsPhoto(noRecogniser),
+  false,
+  'MUTATION: a reader with no on-device recogniser FAILS coverScanReadsPhoto',
+);
+// MUTATION 55b: the recogniser is pointed at something that is not the photo.
+const otherImage = coverOcrSource.replace(
+  'TextRecognition.recognize(photoUri)',
+  "TextRecognition.recognize('some-other-image')",
+);
+assert(otherImage !== coverOcrSource, 'the wrong-image mutation changed the real reader');
+assertEq(
+  coverScanReadsPhoto(otherImage),
+  false,
+  'MUTATION: a recogniser that reads something other than the captured photo FAILS coverScanReadsPhoto',
+);
+// MUTATION 55c: the text is fabricated rather than taken from the recogniser —
+// the exact dishonesty ("we read your cover") the rule bans.
+const inventedText = coverOcrSource.replace(
+  "typeof result?.text === 'string' ? result.text : ''",
+  "'Für Elise'",
+);
+assert(inventedText !== coverOcrSource, 'the invented-text mutation changed the real reader');
+assertEq(
+  coverScanReadsPhoto(inventedText),
+  false,
+  'MUTATION: text invented instead of read FAILS coverScanReadsPhoto',
+);
+// MUTATION 55d: the read can throw into the screen (no honest failure state).
+const throwingRead = coverOcrSource.replace('try {', 'if (true) {');
+assert(throwingRead !== coverOcrSource, 'the throwing-read mutation changed the real reader');
+assertEq(
+  coverScanReadsPhoto(throwingRead),
+  false,
+  'MUTATION: a read that is not wrapped so it can return an honest failure FAILS coverScanReadsPhoto',
+);
+// MUTATION 55e: a failing read is reported as a successful empty one.
+const silentFailure = coverOcrSource.split('failed: true').join('failed: false');
+assert(silentFailure !== coverOcrSource, 'the silent-failure mutation changed the real reader');
+assertEq(
+  coverScanReadsPhoto(silentFailure),
+  false,
+  'MUTATION: a swallowed read failure FAILS coverScanReadsPhoto',
+);
+
 assertEq(
   coverScanFlowWired(findPieceSourceH, coverModalSource),
   true,
-  'the search bar carries a real camera affordance, the confirmed title runs the screen’s OWN search, and with no reader in this build the confirm field is EMPTY (no fake OCR)',
+  'the search bar carries a real camera affordance, the captured photo is READ on device, the field carries what was read, and the confirmed title runs the screen’s OWN search',
 );
 
 // MUTATION 56: the confirm field is prefilled with a guess — i.e. the photo is
@@ -1064,28 +1126,47 @@ assertEq(
   false,
   'MUTATION: a confirm field prefilled as if the photo had been read FAILS coverScanFlowWired',
 );
-// MUTATION 57: the photo text is passed in as ocrText (a recogniser that is not
-// in this build, asserting itself anyway).
+// MUTATION 57: the field is filled from a literal instead of from the read — the
+// capture runs, the recogniser is never asked, and the user still sees a title.
 const fakeRead = coverModalSource.replace(
-  'ocrText: null',
-  "ocrText: 'Für Elise'",
+  'coverQueryFromScan({ ocrText: result.text, ocrFailed: result.failed }).query',
+  "'Für Elise'",
 );
 assert(fakeRead !== coverModalSource, 'the fake-read mutation changed the real modal');
 assertEq(
   coverScanFlowWired(findPieceSourceH, fakeRead),
   false,
-  'MUTATION: an ocrText that no recogniser produced FAILS coverScanFlowWired',
+  'MUTATION: a confirm field filled from a literal rather than from the read FAILS coverScanFlowWired',
 );
-// MUTATION 58: a real OCR module is pulled in (the build claims to read photos).
-const withOcrModule = coverModalSource.replace(
-  "import { CameraView, useCameraPermissions } from 'expo-camera';",
-  "import { CameraView, useCameraPermissions } from 'expo-camera';\nimport TextRecognition from 'react-native-text-recognition';",
-);
-assert(withOcrModule !== coverModalSource, 'the ocr-module mutation changed the real modal');
+// MUTATION 58: the captured photo is never handed to the reader — the camera
+// surface exists ("it snaps") but nothing scans.
+const noRead = coverModalSource.replace('readCoverText(photo.uri)', 'Promise.resolve(null)');
+assert(noRead !== coverModalSource, 'the no-read mutation changed the real modal');
 assertEq(
-  coverScanFlowWired(findPieceSourceH, withOcrModule),
+  coverScanFlowWired(findPieceSourceH, noRead),
   false,
-  'MUTATION: a text-recognition module in the flow FAILS coverScanFlowWired',
+  'MUTATION: a camera surface that never reads the photo FAILS coverScanFlowWired',
+);
+// MUTATION 58b: the read's outcome is dropped — a failed read renders as if it
+// had produced text (the failure state is what the user must see).
+const ignoredFailure = coverModalSource.replace('ocrFailed: result.failed', 'ocrFailed: false');
+assert(ignoredFailure !== coverModalSource, 'the ignored-failure mutation changed the real modal');
+assertEq(
+  coverScanFlowWired(findPieceSourceH, ignoredFailure),
+  false,
+  'MUTATION: a read failure the surface ignores FAILS coverScanFlowWired',
+);
+// MUTATION 58c: the pre-v36 "reading a photo is not in this build" claim comes
+// back — the owner's "snaps but does not scan", stated in the surface itself.
+const staleClaim = coverModalSource.replace(
+  '{COVER_SCAN_READING_LINE}',
+  "{'Reading text from a photo is not in this build'}",
+);
+assert(staleClaim !== coverModalSource, 'the stale-claim mutation changed the real modal');
+assertEq(
+  coverScanFlowWired(findPieceSourceH, staleClaim),
+  false,
+  'MUTATION: the surface claiming photos cannot be read FAILS coverScanFlowWired',
 );
 // MUTATION 59: the affordance is decorative — the camera surface is never mounted.
 const noModal = findPieceSourceH.replace('<CoverScanModal', '');

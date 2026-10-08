@@ -91,10 +91,15 @@ import {
   toggleThemeMode,
 } from '../src/services/theme';
 import {
+  COVER_SCAN_CTA,
   COVER_SCAN_MAX_QUERY,
   COVER_SCAN_NO_OCR_LINE,
+  COVER_SCAN_OCR_AVAILABLE,
+  COVER_SCAN_OCR_FAILED_LINE,
+  COVER_SCAN_TEXT_ONLY_LINE,
   coverQueryFromScan,
   coverQueryFromText,
+  coverScanAffordanceLabel,
 } from '../src/services/coverScan';
 import {
   editDistance,
@@ -539,18 +544,54 @@ function coverScanTests(): void {
   assertEq(long.query.length, COVER_SCAN_MAX_QUERY, 'a very long line is cut to the search field’s limit');
   assert(long.truncated, 'and says it was cut');
 
-  const unavailable = coverQueryFromScan({ ocrText: null });
-  assertEq(unavailable.status, 'no-ocr', 'this build reports the honest no-OCR state');
+  const unavailable = coverQueryFromScan({ ocrText: null, ocrAvailable: false });
+  assertEq(unavailable.status, 'no-ocr', 'a build with no recogniser reports the honest no-OCR state');
   assertEq(unavailable.query, '', 'and offers no invented query');
   assert(
     COVER_SCAN_NO_OCR_LINE.indexOf('type the title you see') >= 0,
     'the line tells the user exactly what to do instead (no dead end)',
   );
-  const read = coverQueryFromScan({ ocrText: 'Für Elise\nBeethoven', ocrAvailable: true });
-  assertEq(read.status, 'ready', 'with a recogniser present a readable cover is ready');
+  // v36 fix 4 — THE READ. This build ships an on-device recogniser, so the flow's
+  // own default is a real read, and the affordance says what it does.
+  assertEq(COVER_SCAN_OCR_AVAILABLE, true, 'this build ships an on-device recogniser');
+  assertEq(
+    coverScanAffordanceLabel(),
+    COVER_SCAN_CTA,
+    'and the search box calls it what it is: scan a cover',
+  );
+  const read = coverQueryFromScan({ ocrText: 'Für Elise\nBeethoven' });
+  assertEq(read.status, 'ready', 'a readable cover is ready');
   assertEq(read.query, 'Für Elise Beethoven', 'and the query keeps the title as printed');
-  const blank = coverQueryFromScan({ ocrText: '   \n \n', ocrAvailable: true });
-  assertEq(blank.status, 'no-text', 'a blank photo is its own honest state');
+  const blank = coverQueryFromScan({ ocrText: '   \n \n' });
+  assertEq(blank.status, 'no-text', 'a page with no readable title is its own honest state');
+  assertEq(blank.query, '', 'and yields no query (never a guess)');
+  // A read that FAILED is NOT a blank page: it is its own state, its own line, and
+  // it can never be dressed up as a query.
+  const failed = coverQueryFromScan({ ocrText: null, ocrFailed: true });
+  assertEq(failed.status, 'ocr-failed', 'a failed read reports the honest failure state');
+  assertEq(failed.query, '', 'and never yields a query');
+  assertEq(failed.line, COVER_SCAN_OCR_FAILED_LINE, 'with the failure line, not the blank-page one');
+  assert(
+    failed.line.indexOf('type the title you see') >= 0,
+    'and the typed search is still one tap away (no dead end)',
+  );
+  // Failure outranks text: a recogniser that broke must never be reported as a
+  // successful read, even if it happened to return something on the way out.
+  assertEq(
+    coverQueryFromScan({ ocrText: 'Für Elise', ocrFailed: true }).status,
+    'ocr-failed',
+    'a failed read outranks any text it returned',
+  );
+  // The scope claim: words only. A scan is not OMR and produces no note data.
+  assert(
+    COVER_SCAN_TEXT_ONLY_LINE.indexOf('never the notes') >= 0,
+    'the scope line says the scan reads the words, never the notes',
+  );
+  assert(
+    COVER_SCAN_TEXT_ONLY_LINE.toLowerCase().indexOf('notation') < 0 &&
+      COVER_SCAN_TEXT_ONLY_LINE.toLowerCase().indexOf('transcri') < 0,
+    'and never claims notation or transcription (no OMR promise in a scan)',
+  );
 }
 
 function fuzzyTests(): void {

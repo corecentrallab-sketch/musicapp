@@ -1,21 +1,27 @@
 /**
  * coverScan.ts — "Scan the cover" for the find-a-piece search (v33 slice H,
- * owner 10-04 email batch).
+ * owner 10-04 email batch; the SCAN step itself landed in v36 fix 4, owner FAIL
+ * 10-08: "snaps a picture and can save it — snaps but does not scan").
  *
  * WHAT IT DOES. The search box gets a camera affordance: photograph the title
- * page of a score, turn the text into a search query, land on the SAME results a
- * typed search produces. It is a query-shortcut, never a second search: the
- * normalised text is handed to the existing catalog search, and the user always
- * sees the query before it runs (no dead ends, no silent guesses).
+ * page of a score, the on-device recogniser reads the TEXT on it, and the reading
+ * becomes a search query that lands on the SAME results a typed search produces.
+ * It is a query-shortcut, never a second search: the normalised text is handed to
+ * the existing catalog search, and the user always sees the query — and can fix
+ * it — before it runs (no dead ends, no silent guesses).
  *
- * ON-DEVICE TEXT READING — HONEST STATE OF THIS BUILD. Real OCR needs an
- * on-device recogniser, which in React Native is a NATIVE module (ML Kit /
- * equivalents). This build has no such dependency, so the scan flow ships as
- * capture → CONFIRM → search with the confirm field EMPTY and the surface saying
- * plainly that reading the photo is not in this build (COVER_SCAN_NO_OCR_LINE).
- * The OCR call itself is isolated behind `coverQueryFromScan`, so adding the
- * recogniser later is one function, not a rewrite. Nothing here pretends a photo
- * was read when it was not.
+ * ON-DEVICE TEXT READING — WHAT IS AND IS NOT READ (v36 fix 4). The reader is a
+ * real on-device recogniser (see services/coverScanOcr.ts); the photo never
+ * leaves the device. It reads the TITLE PAGE'S TEXT ONLY — never the notes, so
+ * this is not, and never claims to be, OMR (score→notation) or a transcription:
+ * nothing here produces note data, and a modern-song match still never renders
+ * generated notation. A read that fails is its OWN honest state
+ * (COVER_SCAN_OCR_FAILED_LINE) with an empty field to type into — a failure is
+ * never dressed up as "we found nothing on that page".
+ *
+ * The OCR call is isolated behind this module's `coverQueryFromScan`, so the
+ * pure decision (what text we got, what the user reads, whether a search may run)
+ * is testable without the native module.
  *
  * PURE (no react / react-native / fs / camera): the query normalisation, the
  * noise dropping and the honest states are asserted by
@@ -32,8 +38,11 @@ export const COVER_SCAN_SEARCH_CTA = 'Search this title';
 export const COVER_SCAN_RETAKE_CTA = 'Retake photo';
 export const COVER_SCAN_CANCEL_CTA = 'Cancel';
 
-/** True when this build has an on-device recogniser wired (see the header). */
-export const COVER_SCAN_OCR_AVAILABLE = false;
+/** True when this build has an on-device recogniser wired (v36 fix 4). */
+export const COVER_SCAN_OCR_AVAILABLE = true;
+
+/** The honest line while the recogniser is working on the photo. */
+export const COVER_SCAN_READING_LINE = 'Reading the title page on your device…';
 
 /** The honest line when the photo cannot be read for the user. */
 export const COVER_SCAN_NO_OCR_LINE =
@@ -41,6 +50,19 @@ export const COVER_SCAN_NO_OCR_LINE =
 /** The honest line when a reader IS present but found nothing usable. */
 export const COVER_SCAN_NO_TEXT_LINE =
   'We could not find a title in that photo — type it instead, or try again in better light.';
+/**
+ * The honest line when the reader itself failed (module unavailable on this
+ * device, or the read threw). Its own state: a broken read is not the same claim
+ * as "your page has no title on it", and it is never a fabricated query.
+ */
+export const COVER_SCAN_OCR_FAILED_LINE =
+  'We could not read that photo on this device — type the title you see and the same search runs.';
+/**
+ * What the scan does and does not read. The recogniser reads the title page's
+ * TEXT only; it never reads the notes, so nothing here is OMR or a transcription.
+ */
+export const COVER_SCAN_TEXT_ONLY_LINE =
+  'The scan reads the words on the cover only — never the notes. Nothing leaves your device.';
 /** The camera is the app's own permission, and it can be refused. */
 export const COVER_SCAN_PERMISSION_LINE =
   'Camera access is off — turn it on in Settings, or type the title instead.';
@@ -115,7 +137,7 @@ export function coverQueryFromText(text: string | null | undefined): CoverQuery 
   return { query, lines, dropped, truncated };
 }
 
-export type CoverScanStatus = 'ready' | 'no-text' | 'no-ocr';
+export type CoverScanStatus = 'ready' | 'no-text' | 'no-ocr' | 'ocr-failed';
 
 export interface CoverScanOutcome {
   status: CoverScanStatus;
@@ -126,17 +148,28 @@ export interface CoverScanOutcome {
 }
 
 /**
- * What the scan produced. `ocrText` is what an on-device recogniser returned
- * (null when this build has none — the honest `no-ocr` state, which still lets
- * the user type the title and search).
+ * What the scan produced. `ocrText` is what the on-device recogniser returned
+ * (null when nothing has been read yet, or when this build has no reader wired —
+ * the honest `no-ocr` state, which still lets the user type the title and search);
+ * `ocrFailed` is true when the READ ITSELF failed (module unavailable, or the
+ * recogniser threw) — its own honest state, never confused with "blank page".
+ *
+ * Only `ready` ever yields a query, so a failed or empty read can never run a
+ * search: the field stays empty and the user's own words are what search.
  */
 export function coverQueryFromScan(input: {
   ocrText?: string | null;
   ocrAvailable?: boolean;
+  ocrFailed?: boolean;
 }): CoverScanOutcome {
   const available = input.ocrAvailable ?? COVER_SCAN_OCR_AVAILABLE;
   if (!available) {
     return { status: 'no-ocr', query: '', line: COVER_SCAN_NO_OCR_LINE };
+  }
+  // Checked BEFORE the text: a read that broke is not a page with no title on it,
+  // and the difference is what the user needs to act on.
+  if (input.ocrFailed) {
+    return { status: 'ocr-failed', query: '', line: COVER_SCAN_OCR_FAILED_LINE };
   }
   const result = coverQueryFromText(input.ocrText ?? '');
   if (!result.query) {
