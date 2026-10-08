@@ -43,6 +43,7 @@
  *      melody whose sound was kept but could not be read gets a real "try reading
  *      it again" action instead of a dead end.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
@@ -175,6 +176,7 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
   onSwitchToModern,
   reopen,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const recorder = useAudioRecorder();
   const [stage, setStage] = useState<Stage>('recording');
   const [outcome, setOutcome] = useState<HumOutcome | null>(null);
@@ -749,7 +751,7 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   errorCard: {
     backgroundColor: '#1a1a2e',
     borderRadius: 12,

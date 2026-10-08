@@ -23,6 +23,7 @@
  * carries its own previews and its own checkout. The copy says so, and it never
  * promises free access to a copyrighted work.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
@@ -45,6 +46,7 @@ export const SearchExternalSection: React.FC<SearchExternalSectionProps> = ({
   section,
   onOpen,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   // Empty query → nothing to search for, so no section at all.
   if (!section.visible) return null;
   const smdUrl = section.smdUrl;
@@ -96,7 +98,7 @@ export const SearchExternalSection: React.FC<SearchExternalSectionProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   wrap: {
     marginHorizontal: 20,
     marginTop: 18,

@@ -1,3 +1,4 @@
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
@@ -70,6 +71,7 @@ function formatDate(iso: string): string {
 }
 
 export const LibraryScreen: React.FC = () => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const navigation = useNavigation<Nav>();
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -252,7 +254,7 @@ export const LibraryScreen: React.FC = () => {
             <Ionicons
               name={KIND_ICONS[item.kind]}
               size={24}
-              color="#e94560"
+              color={theme.accent}
             />
           )}
         </View>
@@ -270,7 +272,7 @@ export const LibraryScreen: React.FC = () => {
         </View>
         <Text style={styles.rowDate}>{formatDate(item.createdAt)}</Text>
         {isOpenableKind(item.kind) ? (
-          <Ionicons name="chevron-forward" size={16} color="#4a4a6a" />
+          <Ionicons name="chevron-forward" size={16} color={theme.subtext} />
         ) : (
           <Text style={[styles.badge, styles.badgeSoon]}>Soon</Text>
         )}
@@ -311,7 +313,7 @@ export const LibraryScreen: React.FC = () => {
           onPress={() => navigation.navigate('ScanScore')}
           disabled={busy}
         >
-          <Ionicons name="camera" size={18} color="#e94560" />
+          <Ionicons name="camera" size={18} color={theme.accent} />
           <Text style={styles.actionButtonTextSecondary}>Scan score</Text>
         </Pressable>
       </View>
@@ -353,7 +355,7 @@ export const LibraryScreen: React.FC = () => {
               autoFocus
               selectTextOnFocus
               placeholder="Title"
-              placeholderTextColor="#6a6a8a"
+              placeholderTextColor={theme.subtext}
               onSubmitEditing={confirmRename}
               returnKeyType="done"
             />
@@ -379,7 +381,7 @@ export const LibraryScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

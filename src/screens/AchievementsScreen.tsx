@@ -28,6 +28,7 @@
  * see src/services/backExitContract.ts), and one handler closes it from both the
  * on-screen close and the Android BACK dismissal.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
@@ -68,6 +69,7 @@ interface AchievementsScreenProps {
 }
 
 export const AchievementsScreen: React.FC<AchievementsScreenProps> = ({ onClose }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [rows, setRows] = useState<MedalProgress[]>([]);
   const [next, setNext] = useState<MedalProgress | null>(null);
   const [stats, setStats] = useState<MedalStats>(EMPTY_MEDAL_STATS);
@@ -248,7 +250,7 @@ export const AchievementsScreen: React.FC<AchievementsScreenProps> = ({ onClose 
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

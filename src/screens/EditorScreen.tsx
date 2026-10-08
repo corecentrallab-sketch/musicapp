@@ -4,6 +4,7 @@
  * The tab hosts NoteSnap's practice tools. The metronome is live; the notation
  * editor (correcting/transposing scores) is still in the works.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +15,7 @@ import type { RootStackParamList } from '../types';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export const EditorScreen: React.FC = () => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const navigation = useNavigation<Nav>();
 
   return (
@@ -30,7 +32,7 @@ export const EditorScreen: React.FC = () => {
         accessibilityLabel="Metronome — keep time with tap tempo and accents"
       >
         <View style={styles.cardIcon}>
-          <Ionicons name="speedometer" size={26} color="#e94560" />
+          <Ionicons name="speedometer" size={26} color={theme.accent} />
         </View>
         <View style={styles.cardBody}>
           <Text style={styles.cardTitle}>Metronome</Text>
@@ -38,7 +40,7 @@ export const EditorScreen: React.FC = () => {
             Keep time with tap tempo, accent patterns, and a visual pulse.
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={18} color="#4a4a6a" />
+        <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
       </Pressable>
 
       {/* Notation editor (transpose v1) is live, so this card is a control
@@ -53,7 +55,7 @@ export const EditorScreen: React.FC = () => {
         accessibilityLabel="Notation editor — transpose a public-domain score into a new key and save the copy"
       >
         <View style={styles.cardIcon}>
-          <Ionicons name="create" size={26} color="#e94560" />
+          <Ionicons name="create" size={26} color={theme.accent} />
         </View>
         <View style={styles.cardBody}>
           <Text style={styles.cardTitle}>Notation editor</Text>
@@ -62,13 +64,13 @@ export const EditorScreen: React.FC = () => {
             Note-by-note editing is coming.
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={18} color="#4a4a6a" />
+        <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
       </Pressable>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

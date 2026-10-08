@@ -35,6 +35,7 @@
  * The MODEL is src/services/takeEditor.ts (pure, fully asserted by
  * scripts/v33TakeEditor.test.ts); this file only draws it and routes the taps.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
@@ -172,6 +173,7 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   onChanged,
   onClose,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [state, setState] = useState<TakeEditorState>(() => createEditorState(take));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [chordIndex, setChordIndex] = useState<number | null>(null);
@@ -717,7 +719,7 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
                   value={freeChord}
                   onChangeText={setFreeChord}
                   placeholder={EDITOR_CHORD_FREE_HINT}
-                  placeholderTextColor="#7d7d99"
+                  placeholderTextColor={theme.subtext}
                   autoCapitalize="characters"
                   accessibilityLabel={EDITOR_CHORD_FREE_HINT}
                 />
@@ -863,7 +865,7 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#12122b' },
   header: { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 8 },
   backBtn: { minHeight: 44, justifyContent: 'center' },

@@ -32,6 +32,7 @@
  * that a purchase route never leaves NoteSnap, and that promise is guarded by
  * src/services/purchaseCta.ts (`noPurchaseActionLeavesTheApp`).
  */
+import { useThemedStyles } from '../services/themeStore';
 import React from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { WebView } from 'react-native-webview';
@@ -49,6 +50,7 @@ export const PurchaseWebView: React.FC<PurchaseWebViewProps> = ({
   title,
   onClose,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   // The retry counter is the WebView's `key`: bumping it re-mounts the page, which
   // is the only way to make a WebView that failed to load try again.
   const [attempt, setAttempt] = React.useState(0);
@@ -103,7 +105,7 @@ export const PurchaseWebView: React.FC<PurchaseWebViewProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#16213e' },
   header: {
     flexDirection: 'row',

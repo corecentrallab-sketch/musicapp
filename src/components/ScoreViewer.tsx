@@ -22,6 +22,7 @@
  * Page turning still works via tap edges, swipe, and the bottom bar.
  */
 
+import { useThemedStyles } from '../services/themeStore';
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
@@ -76,6 +77,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
   audioSource,
   audioLabel,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [pageInfo, setPageInfo] = useState({ page: 1, total: 0 });
@@ -269,7 +271,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
               accessibilityRole="button"
               accessibilityLabel={IMMERSIVE_ENTER_LABEL}
             >
-              <Ionicons name="expand-outline" size={22} color="#eaeaff" />
+              <Ionicons name="expand-outline" size={22} color={theme.text} />
             </TouchableOpacity>
           </View>
         )}
@@ -298,7 +300,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
           {/* Native loading overlay */}
           {loading && (
             <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color="#e94560" />
+              <ActivityIndicator size="large" color={theme.accent} />
               <Text style={styles.loadingText}>Loading sheet music...</Text>
             </View>
           )}
@@ -329,7 +331,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
                 accessibilityLabel={AUTO_TURN_TOGGLE_LABEL}
                 accessibilityState={{ expanded: showAutoTurnBar }}
               >
-                <Ionicons name="timer-outline" size={14} color="#eaeaff" />
+                <Ionicons name="timer-outline" size={14} color={theme.text} />
                 <Text style={styles.floatingChipText}>
                   {autoTurnChipLabel(autoScrollStatus, secondsPerPage)}
                 </Text>
@@ -342,7 +344,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
                 accessibilityLabel={IMMERSIVE_EXIT_LABEL}
                 hitSlop={8}
               >
-                <Ionicons name="contract-outline" size={18} color="#eaeaff" />
+                <Ionicons name="contract-outline" size={18} color={theme.text} />
               </TouchableOpacity>
             </View>
           )}
@@ -371,7 +373,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
         {/* Honest stop at the end of the piece. */}
         {autoTurnEnded && (
           <View style={styles.autoTurnEndedBar}>
-            <Ionicons name="flag-outline" size={14} color="#a0a0b8" />
+            <Ionicons name="flag-outline" size={14} color={theme.subtext} />
             <Text style={styles.autoTurnEndedText}>
               Auto-turn stopped — last page ({pageInfo.page} of {pageInfo.total})
             </Text>
@@ -421,7 +423,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
               <Ionicons
                 name="timer-outline"
                 size={16}
-                color={showAutoTurnBar ? '#ffffff' : '#a0a0b8'}
+                color={showAutoTurnBar ? theme.text : theme.subtext}
               />
               <Text
                 style={[
@@ -458,7 +460,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
 
 const FLOATING_TOP = Platform.OS === 'ios' ? 56 : 32;
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

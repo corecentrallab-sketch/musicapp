@@ -17,6 +17,7 @@
  * recognized — which is not what "find the piece I just played" means in History.
  * Global catalog discovery still lives on Home's own Find-a-piece entry.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -109,6 +110,7 @@ function formatSavedDate(iso: string): string {
 }
 
 export const HistoryScreen: React.FC = () => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [items, setItems] = useState<SavedPiece[]>([]);
   const [streak, setStreak] = useState<DisplayStreak>(EMPTY_STREAK);
   const [loading, setLoading] = useState(true);
@@ -557,7 +559,7 @@ export const HistoryScreen: React.FC = () => {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#e94560" />
+        <ActivityIndicator size="large" color={theme.accent} />
         <Text style={styles.centerSubtext}>Loading history...</Text>
       </View>
     );
@@ -604,7 +606,7 @@ export const HistoryScreen: React.FC = () => {
                 value={query}
                 onChangeText={setQuery}
                 placeholder="Search saved by title or composer"
-                placeholderTextColor="#707090"
+                placeholderTextColor={theme.subtext}
                 autoCorrect={false}
                 autoCapitalize="none"
                 returnKeyType="search"
@@ -659,7 +661,7 @@ export const HistoryScreen: React.FC = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#e94560"
+            tintColor={theme.accent}
           />
         }
       />
@@ -705,7 +707,7 @@ export const HistoryScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

@@ -15,6 +15,7 @@
  * CSS, so the notes, the staff lines and the title all take the colour.
  */
 
+import { useThemedStyles } from '../services/themeStore';
 import React, { useMemo } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
@@ -131,6 +132,7 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   ink = ABC_DEFAULT_INK,
   background = ABC_DEFAULT_BACKGROUND,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   // Use the abc text (and the ink, which changes the document) as a rendering
   // key so a fresh WebView reloads whenever the score or its colour changes.
   const html = useMemo(() => generateAbcHtml(abc, ink, background), [abc, ink, background]);
@@ -152,7 +154,7 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: ABC_DEFAULT_BACKGROUND,

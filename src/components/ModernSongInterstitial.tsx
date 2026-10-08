@@ -10,6 +10,7 @@
  * library). We never host or provide any copyrighted file — only the retailer
  * link the backend supplied.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -90,6 +91,7 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
   onBrowseLibrary,
   onSearchForIt,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   // In-app retailer WebView (our own app shell) — preserves the user's position
   // so they land back in NoteSnap. Opened only on explicit button tap.
   const [retailerUrl, setRetailerUrl] = useState<string | null>(null);
@@ -130,7 +132,7 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
       <Modal visible transparent animationType="fade" onRequestClose={onClose}>
         <View style={styles.overlay}>
           <View style={styles.card}>
-            <ActivityIndicator size="large" color="#e94560" />
+            <ActivityIndicator size="large" color={theme.accent} />
             <Text style={styles.loadingTitle}>Listening for a song...</Text>
           </View>
         </View>
@@ -369,7 +371,7 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.85)',

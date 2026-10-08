@@ -51,6 +51,7 @@
  *     (through the shared result surface); a modern-song match never renders
  *     generated notation for the song (standing rule).
  */
+import { useThemedStyles } from '../services/themeStore';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -166,6 +167,7 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
   copy: text,
   children,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const trace = buildLiveTrace({ levels, elapsedMs, liveNotes, liveSourceReady });
   const newestDb = levels.length > 0 ? levels[levels.length - 1] : null;
   const analysing = phase === 'analysing';
@@ -214,7 +216,7 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
                     {
                       height: 8 + Math.round(bar * 76),
                       opacity: 0.35 + 0.65 * bar,
-                      backgroundColor: bar >= 0.85 ? '#e94560' : '#4ecdc4',
+                      backgroundColor: bar >= 0.85 ? theme.accent : theme.positive,
                     },
                   ]}
                 />
@@ -262,7 +264,7 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
         <ScrollView contentContainerStyle={styles.reviewStage}>
           {analysing && (
             <View style={styles.analysingCard}>
-              <ActivityIndicator size="large" color="#e94560" />
+              <ActivityIndicator size="large" color={theme.accent} />
               <Text style={styles.analysingText}>{text.analysingLine}</Text>
               <Text style={styles.analysingSub}>{text.analysingSubline}</Text>
             </View>
@@ -441,7 +443,7 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#12122b' },
   header: {
     flexDirection: 'row',

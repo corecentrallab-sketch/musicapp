@@ -22,6 +22,7 @@
  *    The card is not a purchase surface — the page's single retailer CTA is the
  *    sheet-music card above it.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useEffect, useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useCoachRun } from '../hooks/useCoachRun';
@@ -75,6 +76,7 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
   samplesProvider,
   onSessionActiveChange,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   // The piece's reference melody: catalog abc → bundled public-domain seed → none.
   const resolved = useMemo(
     () => resolvePieceAbc({ abc, title, composer, pieceId }),
@@ -207,7 +209,7 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
 
           {isProcessing && (
             <View style={styles.processingRow}>
-              <ActivityIndicator size="small" color="#4ecdc4" />
+              <ActivityIndicator size="small" color={theme.positive} />
               <Text style={styles.processingText}>Finding the notes in your take…</Text>
             </View>
           )}
@@ -285,7 +287,7 @@ export const CoachPracticeCard: React.FC<CoachPracticeCardProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   card: {
     backgroundColor: '#16213e',
     borderRadius: 16,

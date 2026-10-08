@@ -52,6 +52,8 @@
     "src/services/fuzzySearch.ts",
     "src/services/coverScan.ts",
     "src/services/theme.ts",
+    "src/services/themeApply.ts",
+    "src/services/v34bThemeContract.ts",
     "src/services/takePreview.ts",
     "src/services/takeEditor.ts",
     "src/services/takeStaff.ts",
@@ -111,6 +113,7 @@
     "scripts/v33TakeEditor.test.ts",
     "scripts/v33UiWiring.test.ts",
     "scripts/v34Fixes.test.ts",
-    "scripts/v34UiWiring.test.ts"
+    "scripts/v34UiWiring.test.ts",
+    "scripts/v34bThemeWiring.test.ts"
   ]
 }

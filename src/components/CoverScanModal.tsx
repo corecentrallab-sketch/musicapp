@@ -21,6 +21,7 @@
  * cached. Score interiors are never read into note data — that is the separate
  * OMR workstream, explicitly out of v33.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -64,6 +65,7 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
   onClose,
   onConfirm,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   // The captured photo (on-device only). null = still on the camera step.
@@ -144,7 +146,7 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
 
         {!permission ? (
           <View style={styles.center}>
-            <ActivityIndicator size="large" color="#e94560" />
+            <ActivityIndicator size="large" color={theme.accent} />
           </View>
         ) : !permission.granted ? (
           /* The camera is the app's own permission and it can be refused. Either
@@ -198,7 +200,7 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
               value={confirmText}
               onChangeText={setConfirmText}
               placeholder={COVER_SCAN_CONFIRM_HINT}
-              placeholderTextColor="#8a8aa3"
+              placeholderTextColor={theme.subtext}
               autoCorrect={false}
               autoCapitalize="words"
               returnKeyType="search"
@@ -225,7 +227,7 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

@@ -19,6 +19,7 @@
  * src/services/modernRetryContract.ts + scripts/recognitionRetry.test.ts guard
  * this class of "silent" defect in the source itself.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
@@ -93,6 +94,7 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
   onBrowseLibrary,
   onSearchForIt,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const recorder = useAudioRecorder();
   const [recording, setRecording] = useState(false);
   /** A capture start is in flight (permission / prepare / startAsync). */
@@ -430,7 +432,7 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

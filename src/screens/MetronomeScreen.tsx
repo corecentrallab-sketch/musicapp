@@ -20,6 +20,7 @@
  * The whole screen is offline: both click sounds are bundled WAV assets loaded
  * once into expo-av `Audio.Sound` objects and replayed per beat.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -78,6 +79,7 @@ const ACCENT_SOUND_SOURCE = require('../../assets/sounds/click-accent.wav') as A
 const BEAT_SOUND_SOURCE = require('../../assets/sounds/click-beat.wav') as AVPlaybackSource;
 
 export const MetronomeScreen: React.FC = () => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   // ── UI state ────────────────────────────────────────────────
   const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [timeSignature, setTimeSignature] = useState<TimeSignature>(TIME_SIGNATURES[0]);
@@ -333,8 +335,8 @@ export const MetronomeScreen: React.FC = () => {
   );
 
   const isAccent = currentBeat === 0;
-  const orbColor = isAccent ? ACCENT_COLOR : BEAT_COLOR;
-  const orbGlow = isAccent ? ACCENT_COLOR : '#0f3460';
+  const orbColor = isAccent ? theme.accent : theme.positive;
+  const orbGlow = isAccent ? theme.accent : theme.chipBg;
 
   return (
     <View style={styles.container}>
@@ -353,7 +355,7 @@ export const MetronomeScreen: React.FC = () => {
           accessibilityLabel="Decrease tempo"
           hitSlop={8}
         >
-          <Ionicons name="remove" size={22} color="#eaeaff" />
+          <Ionicons name="remove" size={22} color={theme.text} />
         </Pressable>
         <Slider
           style={styles.slider}
@@ -362,9 +364,9 @@ export const MetronomeScreen: React.FC = () => {
           step={1}
           value={bpm}
           onValueChange={applyBpm}
-          minimumTrackTintColor={ACCENT_COLOR}
-          maximumTrackTintColor="#3a3a5c"
-          thumbTintColor="#e94560"
+          minimumTrackTintColor={theme.accent}
+          maximumTrackTintColor={theme.chipBg}
+          thumbTintColor={theme.accent}
           accessibilityLabel="Tempo"
         />
         <Pressable
@@ -374,7 +376,7 @@ export const MetronomeScreen: React.FC = () => {
           accessibilityLabel="Increase tempo"
           hitSlop={8}
         >
-          <Ionicons name="add" size={22} color="#eaeaff" />
+          <Ionicons name="add" size={22} color={theme.text} />
         </Pressable>
       </View>
 
@@ -485,7 +487,7 @@ export const MetronomeScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

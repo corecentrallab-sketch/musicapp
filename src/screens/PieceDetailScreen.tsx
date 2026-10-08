@@ -5,6 +5,7 @@
  * After practicing a piece for >2 minutes, prompts the user to share
  * their progress via the ShareCard component.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
@@ -77,6 +78,7 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
   onHumIt,
   onFindPiece,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [sharing, setSharing] = useState(false);
   const [showScoreViewer, setShowScoreViewer] = useState(false);
   const startedAt = useRef<number | null>(null);
@@ -580,7 +582,7 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

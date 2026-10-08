@@ -16,6 +16,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { AutoScrollApi, AutoScrollStatus } from '../hooks/useAutoScroll';
+import { useThemedStyles } from '../services/themeStore';
 
 const ACCENT = '#e94560';
 const MUTED_TEXT = '#a0a0b8';
@@ -59,7 +60,12 @@ const Stepper: React.FC<StepperProps> = ({
   decrementDisabled = false,
   incrementDisabled = false,
   accessibilityLabel,
-}) => (
+}) => {
+  // The shared light/dark palette (v34b): this sub-component paints its own
+  // buttons and labels, so it reads the theme itself (a concise-body arrow
+  // function cannot hold the hook, hence the block body).
+  const { styles, theme } = useThemedStyles(baseStyles);
+  return (
   <View style={styles.stepperGroup}>
     <Pressable
       style={({ pressed }) => [
@@ -73,7 +79,7 @@ const Stepper: React.FC<StepperProps> = ({
       accessibilityLabel={`${accessibilityLabel} decrease`}
       hitSlop={6}
     >
-      <Ionicons name="remove" size={16} color="#eaeaff" />
+      <Ionicons name="remove" size={16} color={theme.text} />
     </Pressable>
     <View style={styles.stepperValue}>
       <Text style={styles.stepperValueText}>{value}</Text>
@@ -91,10 +97,11 @@ const Stepper: React.FC<StepperProps> = ({
       accessibilityLabel={`${accessibilityLabel} increase`}
       hitSlop={6}
     >
-      <Ionicons name="add" size={16} color="#eaeaff" />
+      <Ionicons name="add" size={16} color={theme.text} />
     </Pressable>
   </View>
-);
+  );
+};
 
 interface AutoScrollControlProps {
   /** The full API object returned by useAutoScroll. */
@@ -117,6 +124,8 @@ export const AutoScrollControl: React.FC<AutoScrollControlProps> = ({
     stepBpm,
     stepBeatsPerPage,
   } = autoScroll;
+  // The shared light/dark palette (v34b).
+  const { styles, theme } = useThemedStyles(baseStyles);
 
   const isActive = status !== 'idle';
   const toggleDisabled = disabled && status === 'idle';
@@ -147,7 +156,7 @@ export const AutoScrollControl: React.FC<AutoScrollControlProps> = ({
           <Ionicons
             name={status === 'running' ? 'pause' : 'play'}
             size={18}
-            color="#ffffff"
+            color={theme.text}
           />
         </Pressable>
 
@@ -182,7 +191,7 @@ export const AutoScrollControl: React.FC<AutoScrollControlProps> = ({
             accessibilityLabel="Stop auto-scroll"
             hitSlop={6}
           >
-            <Ionicons name="stop" size={16} color="#eaeaff" />
+            <Ionicons name="stop" size={16} color={theme.text} />
           </Pressable>
         )}
       </View>
@@ -194,7 +203,7 @@ export const AutoScrollControl: React.FC<AutoScrollControlProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   bar: {
     backgroundColor: '#16213e',
     borderTopWidth: 1,

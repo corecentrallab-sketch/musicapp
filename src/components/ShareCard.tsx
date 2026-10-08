@@ -16,6 +16,7 @@
  * Failure paths are no longer silent: a failed capture logs + tells the user
  * the share is text-only, and the Share button always re-enables afterwards.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useRef, useCallback, useState, useEffect } from 'react';
 import {
   View,
@@ -99,6 +100,7 @@ export const ShareCard: React.FC<ShareCardProps> = ({
   minutesLabel,
   medal,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const cardRef = useRef<View>(null);
   const [capturing, setCapturing] = useState(false);
   // Honest, non-blocking status line: which form the share actually took, or
@@ -294,7 +296,7 @@ export const ShareCard: React.FC<ShareCardProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

@@ -46,6 +46,7 @@
  * services/searchExternal.ts and is unit-tested; this screen is a thin caller.
  * The wiring itself is guarded by services/searchExternalContract.ts.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -95,6 +96,7 @@ interface FindPieceScreenProps {
 }
 
 export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [query, setQuery] = useState('');
   const [pieces, setPieces] = useState<CatalogPiece[]>([]);
   const [total, setTotal] = useState(0);
@@ -345,7 +347,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
           value={query}
           onChangeText={setQuery}
           placeholder="Search by title or composer"
-          placeholderTextColor="#8a8aa3"
+          placeholderTextColor={theme.subtext}
           autoFocus
           autoCorrect={false}
           autoCapitalize="words"
@@ -392,7 +394,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
 
       {status === 'loading' && pieces.length === 0 ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#e94560" />
+          <ActivityIndicator size="large" color={theme.accent} />
           <Text style={styles.centerSubtext}>Searching the catalog...</Text>
         </View>
       ) : null}
@@ -484,7 +486,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

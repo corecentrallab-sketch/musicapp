@@ -13,6 +13,7 @@
  * something a musician should ever see — so it is deleted rather than hidden.
  * The capture path still measures the same numbers for the on-device log.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React from 'react';
 import {
   View,
@@ -191,6 +192,7 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   onHumIt,
   onBrowseLibrary,
 }) => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [showDetail, setShowDetail] = React.useState(false);
   const [showScoreViewer, setShowScoreViewer] = React.useState(false);
   const [selectedMatch, setSelectedMatch] = React.useState<RecognitionMatch | null>(null);
@@ -258,7 +260,7 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
       >
         <View style={styles.overlay}>
           <View style={styles.card}>
-            <ActivityIndicator size="large" color="#e94560" />
+            <ActivityIndicator size="large" color={theme.accent} />
             <Text style={styles.loadingText}>Identifying music...</Text>
             <Text style={styles.loadingSubtext}>
               Analyzing audio fingerprint
@@ -738,7 +740,7 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.8)',

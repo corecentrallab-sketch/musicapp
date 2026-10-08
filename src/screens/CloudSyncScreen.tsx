@@ -5,6 +5,7 @@
  * last-synced time. When the owner hasn't supplied OAuth credentials yet, the
  * relevant row shows an honest "not configured" state naming the env vars.
  */
+import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -61,6 +62,7 @@ function formatTimestamp(iso: string | null): string {
 }
 
 export const CloudSyncScreen: React.FC = () => {
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [dropbox, setDropbox] = useState<ProviderState>(EMPTY);
   const [gdrive, setGdrive] = useState<ProviderState>(EMPTY);
   const [connecting, setConnecting] = useState<CloudProvider | null>(null);
@@ -192,7 +194,7 @@ export const CloudSyncScreen: React.FC = () => {
       <View style={styles.providerCard}>
         <View style={styles.providerHeader}>
           <View style={styles.providerIcon}>
-            <Ionicons name={icon} size={22} color="#e94560" />
+            <Ionicons name={icon} size={22} color={theme.accent} />
           </View>
           <View style={styles.providerInfo}>
             <Text style={styles.providerName}>{label}</Text>
@@ -210,7 +212,7 @@ export const CloudSyncScreen: React.FC = () => {
             )}
           </View>
           {syncing ? (
-            <ActivityIndicator color="#e94560" />
+            <ActivityIndicator color={theme.accent} />
           ) : canConnect ? (
             <Pressable
               style={({ pressed }) => [styles.connectButton, pressed && styles.pressed]}
@@ -293,7 +295,7 @@ export const CloudSyncScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

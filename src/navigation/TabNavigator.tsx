@@ -11,12 +11,17 @@ import { LibraryScreen } from '../screens/LibraryScreen';
 import { EditorScreen } from '../screens/EditorScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import type { RootTabParamList, RootStackParamList } from '../types';
+// The app-wide light/dark palette (v34b): the tab bar and the tab headers are the
+// most visible chrome in the app, so they read the SAME shared mode as the
+// screens (services/themeStore).
+import { useThemeMode } from '../services/themeStore';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
 /** Header button on the Library tab that opens the Cloud Sync screen. */
 const LibraryHeaderButton: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { tokens: theme } = useThemeMode();
   return (
     <Pressable
       onPress={() => navigation.getParent()?.navigate('CloudSync')}
@@ -28,7 +33,7 @@ const LibraryHeaderButton: React.FC = () => {
       })}
       hitSlop={8}
     >
-      <Ionicons name="cloud-upload" size={22} color="#e94560" />
+      <Ionicons name="cloud-upload" size={22} color={theme.accent} />
     </Pressable>
   );
 };
@@ -39,22 +44,26 @@ export const TabNavigator: React.FC = () => {
   // labels sit above the gesture bar and stay tappable. (SafeAreaProvider is
   // already mounted in App.tsx.)
   const insets = useSafeAreaInsets();
+  // The chosen palette (v34b): the tab bar, its labels and the per-tab headers
+  // were hardcoded dark, which is exactly the "light only works on Settings"
+  // complaint — the navigation chrome ignored the toggle.
+  const { tokens: theme } = useThemeMode();
   return (
     <Tab.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: '#16213e' },
-        headerTintColor: '#e94560',
+        headerStyle: { backgroundColor: theme.surface },
+        headerTintColor: theme.accent,
         headerTitleStyle: { fontWeight: '700' },
         tabBarStyle: {
-          backgroundColor: '#16213e',
-          borderTopColor: '#0f3460',
+          backgroundColor: theme.surface,
+          borderTopColor: theme.border,
           borderTopWidth: 1,
           paddingBottom: 6 + insets.bottom,
           paddingTop: 6,
           height: 60 + insets.bottom,
         },
-        tabBarActiveTintColor: '#e94560',
-        tabBarInactiveTintColor: '#a0a0b8',
+        tabBarActiveTintColor: theme.accent,
+        tabBarInactiveTintColor: theme.subtext,
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '600',
