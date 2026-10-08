@@ -17,13 +17,25 @@
 
 import { useThemedStyles } from '../services/themeStore';
 import React, { useMemo } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 /** The ink a score is drawn in when the caller names none (near-black on paper). */
 export const ABC_DEFAULT_INK = '#0b1220';
 /** The paper a score is drawn on when the caller names none. */
 export const ABC_DEFAULT_BACKGROUND = '#ffffff';
+/**
+ * THE FLOOR THIS VIEWER CAN NEVER COLLAPSE BELOW (v36 fix 3).
+ *
+ * WHY IT EXISTS. The container below is `flex: 1` and its WebView is `flex: 1`.
+ * That is fine inside a box with a real height (the capture page's staff card: 132,
+ * the take editor: 150), but inside an AUTO-HEIGHT parent a `flex: 1` child lays
+ * out at ZERO — the notation editor's score card had no height, so it opened with a
+ * title, a composer line and NO SCORE. The owner hit exactly that on the saved
+ * transposed copy. A floor makes the collapse structurally impossible for every
+ * present and future call site.
+ */
+export const ABC_MIN_HEIGHT = 120;
 
 interface AbcScoreViewProps {
   /** The ABC string (header + body) to render. */
@@ -37,6 +49,21 @@ interface AbcScoreViewProps {
   ink?: string;
   /** The paper colour behind the staff (the surface the score sits on). */
   background?: string;
+  /**
+   * Whether the score itself may receive touches. DEFAULT TRUE, so every existing
+   * call site is unchanged.
+   *
+   * A score is decoration: it is drawn to be READ, and every page that hosts one
+   * scrolls (the take editor, the notation editor). A WebView is a native view
+   * outside RN's responder system, so when it is allowed to take a gesture the
+   * page it sits in stops scrolling from that surface — which is the owner's
+   * "page does not scroll down" (v34 tried `pointerEvents="none"` on the wrapper
+   * and it was not enough). Pass `interactive={false}` and the viewer CLOSES THE
+   * SURFACE OFF: the WebView cannot scroll and cannot receive touch, and a
+   * transparent touch shield sits on top of it that hands every gesture straight
+   * back to the page's scroller.
+   */
+  interactive?: boolean;
 }
 
 /**
@@ -131,6 +158,7 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   abc,
   ink = ABC_DEFAULT_INK,
   background = ABC_DEFAULT_BACKGROUND,
+  interactive = true,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   // Use the abc text (and the ink, which changes the document) as a rendering
@@ -148,8 +176,29 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
         javaScriptEnabled
         domStorageEnabled
         mixedContentMode="always"
+        scrollEnabled={interactive}
         androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
+        pointerEvents={interactive ? 'auto' : 'none'}
       />
+      {/* THE TOUCH SHIELD (v36 fix 1; only when the caller says the score is
+          decoration). It is drawn AFTER the WebView, so it is the topmost sibling
+          in this box and a finger on the staff hits THIS, never the native
+          WebView — which is the part v34's wrapper `pointerEvents="none"` could not
+          do (a WebView is a native view outside RN's responder system, so nothing
+          in the JS tree can stop Android handing it the gesture).
+          It is a `Pressable` on purpose: Pressability claims the touch-down AND
+          reports `blockNativeResponder: false`, i.e. "do not disallow the native
+          scroller" — the exact combination a button inside a ScrollView has, which
+          is why a page still scrolls from over a button. The tap does nothing (the
+          score is not a control); the finger's MOVEMENT scrolls the page. */}
+      {!interactive && (
+        <Pressable
+          style={styles.shield}
+          onPress={() => undefined}
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+        />
+      )}
     </View>
   );
 };
@@ -157,6 +206,7 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
+    minHeight: ABC_MIN_HEIGHT,
     backgroundColor: ABC_DEFAULT_BACKGROUND,
     borderRadius: 12,
     overflow: 'hidden',
@@ -164,5 +214,12 @@ const baseStyles = StyleSheet.create({
   webview: {
     flex: 1,
     backgroundColor: ABC_DEFAULT_BACKGROUND,
+  },
+  shield: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
 });

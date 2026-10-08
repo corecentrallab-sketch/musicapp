@@ -1,25 +1,30 @@
 /**
- * CoverScanModal — "Scan a cover": photograph the title page of a score and land
- * on the SAME search a typed title produces (v33 §H, owner 10-04).
+ * CoverScanModal — "Scan a cover": photograph the title page of a score, read the
+ * words on it on-device, and land on the SAME search a typed title produces
+ * (v33 §H, owner 10-04; the read itself is v36 fix 4, owner FAIL 10-08 — "snaps
+ * but does not scan").
  *
  * WHAT IT IS. The camera affordance that sits on the find-a-piece search bar
  * (the Discover band's chip opens that screen). The user photographs the cover,
- * CONFIRMS the title in a field, and the ordinary catalog search runs — one
- * search, one result surface, the same money path as a typed query. No second
- * matching path exists here and no new screen was added for it.
+ * the on-device recogniser (services/coverScanOcr.ts) reads the printed text, the
+ * field below is PRE-FILLED with that reading so the user can fix it, and the
+ * ordinary catalog search runs — one search, one result surface, the same money
+ * path as a typed query. No second matching path exists here and no new screen
+ * was added for it.
  *
- * THE HONEST PART — NO OCR IN THIS BUILD (the decision stands). On-device text
- * recognition is a NATIVE module (ML Kit / equivalents) and this build has none
- * wired: COVER_SCAN_OCR_AVAILABLE === false. So the confirm field starts EMPTY,
- * the surface says plainly that reading the photo is not in this build
- * (`scanned.line` IS COVER_SCAN_NO_OCR_LINE for this build), and NOTHING is ever
- * guessed from a photo — no fake OCR, no invented title. Filling the field in is
- * the user's act, and it is what makes the search honest.
- *
- * The photo itself is the user's own capture, kept on the device for this flow
- * only, used for identification (title/composer) and never uploaded, hosted or
- * cached. Score interiors are never read into note data — that is the separate
- * OMR workstream, explicitly out of v33.
+ * THE HONEST PART. Three distinct states, never blurred together:
+ *   • READ — the field carries what the recogniser actually returned, and the
+ *     user can correct it before searching;
+ *   • READ NOTHING USABLE — the model's own `no-text` line, empty field;
+ *   • THE READ FAILED (module missing on this device, recogniser rejected the
+ *     image) — the model's own `ocr-failed` line, empty field;
+ * and in no state is text EVER invented: the field is only ever filled from the
+ * recogniser's own output (`result.text`), never from a guess, and an empty field
+ * runs no search at all (see `confirm`). The photo itself is the user's own
+ * capture, kept on the device for this flow only: it is read for identification
+ * (title/composer) and never uploaded, hosted or cached. Score interiors are
+ * never read into note data — the recogniser reads WORDS, this is not OMR, and
+ * that is the separate workstream explicitly out of scope here.
  */
 import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useRef, useState } from 'react';
@@ -35,6 +40,7 @@ import {
   View,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { readCoverText, type CoverOcrRead } from '../services/coverScanOcr';
 import {
   COVER_SCAN_BODY,
   COVER_SCAN_CANCEL_CTA,
@@ -44,8 +50,10 @@ import {
   COVER_SCAN_OCR_AVAILABLE,
   COVER_SCAN_PERMISSION_CTA,
   COVER_SCAN_PERMISSION_LINE,
+  COVER_SCAN_READING_LINE,
   COVER_SCAN_RETAKE_CTA,
   COVER_SCAN_SEARCH_CTA,
+  COVER_SCAN_TEXT_ONLY_LINE,
   COVER_SCAN_TITLE,
   coverQueryFromScan,
 } from '../services/coverScan';
@@ -70,21 +78,27 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
   const cameraRef = useRef<CameraView>(null);
   // The captured photo (on-device only). null = still on the camera step.
   const [photoUri, setPhotoUri] = useState<string | null>(null);
-  // The confirm field. It starts EMPTY and nothing here can fill it in: this
-  // build has no reader, and a prefilled guess would be a fabricated read.
+  // What the on-device recogniser returned for that photo (null = nothing read
+  // yet). Nothing else can produce the confirm field's contents.
+  const [read, setRead] = useState<CoverOcrRead | null>(null);
+  // The confirm field. It is filled ONLY from the read above, so the user can fix
+  // the recogniser's wording — it is never filled from a guess.
   const [confirmText, setConfirmText] = useState('');
   const [capturing, setCapturing] = useState(false);
+  const [reading, setReading] = useState(false);
 
-  // What the photo produced in THIS build. With no recogniser wired the model's
-  // own answer is the honest 'no-ocr' state and its line is COVER_SCAN_NO_OCR_LINE
-  // — we show the model's answer rather than a second copy of the sentence.
+  // What the photo produced. `read` is null until the recogniser answers, so this
+  // is the model's honest "nothing read yet" state until a real read lands; a
+  // failed read is its own state (`ocr-failed`) and never a fabricated query.
   const scanned = coverQueryFromScan({
-    ocrText: null,
+    ocrText: read?.text ?? null,
+    ocrFailed: read?.failed === true,
     ocrAvailable: COVER_SCAN_OCR_AVAILABLE,
   });
 
   const close = useCallback(() => {
     setPhotoUri(null);
+    setRead(null);
     setConfirmText('');
     onClose();
   }, [onClose]);
@@ -96,18 +110,30 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.7 });
       if (photo) {
         setPhotoUri(photo.uri);
-        // Deliberately EMPTY: nothing was read, so nothing is written here.
+        setRead(null);
         setConfirmText('');
+        // READ THE PHOTO (v36 fix 4): the words on the cover, on this device. The
+        // call cannot throw — it returns an honest failure — so the screen always
+        // lands in one of the three states above.
+        setReading(true);
+        const result = await readCoverText(photo.uri);
+        setRead(result);
+        // The field's ONLY source: the normalisation of what was actually read.
+        setConfirmText(
+          coverQueryFromScan({ ocrText: result.text, ocrFailed: result.failed }).query,
+        );
       }
     } catch {
       Alert.alert('Capture failed', 'The photo could not be taken.');
     } finally {
       setCapturing(false);
+      setReading(false);
     }
   }, [capturing]);
 
   const retake = useCallback(() => {
     setPhotoUri(null);
+    setRead(null);
     setConfirmText('');
   }, []);
 
@@ -191,10 +217,17 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
             <Text style={styles.honest}>{COVER_SCAN_FALLBACK_LINE}</Text>
           </>
         ) : (
-          /* CONFIRM — the user's own words, in their own field, before any search
-             runs. The field is empty because this build read nothing. */
+          /* CONFIRM — the recogniser's own reading, in the user's own field, before
+             any search runs. While the read is in flight the field is empty and
+             says so; when it lands the field carries exactly what was read. */
           <View style={styles.confirmWrap}>
             <Text style={styles.label}>{COVER_SCAN_CONFIRM_LABEL}</Text>
+            {reading ? (
+              <View style={styles.readingRow}>
+                <ActivityIndicator size="small" color={theme.accent} />
+                <Text style={styles.readingText}>{COVER_SCAN_READING_LINE}</Text>
+              </View>
+            ) : null}
             <TextInput
               style={styles.confirmInput}
               value={confirmText}
@@ -206,11 +239,14 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
               returnKeyType="search"
               accessibilityLabel={COVER_SCAN_CONFIRM_LABEL}
             />
+            {/* The model's own answer for this state: the read's wording, its
+                honest "no title found", or its honest failure line. */}
             <Text style={styles.honest}>{scanned.line}</Text>
+            <Text style={styles.honest}>{COVER_SCAN_TEXT_ONLY_LINE}</Text>
             <Pressable
-              style={[styles.primaryBtn, !canSearch && styles.primaryBtnDisabled]}
+              style={[styles.primaryBtn, (!canSearch || reading) && styles.primaryBtnDisabled]}
               onPress={confirm}
-              disabled={!canSearch}
+              disabled={!canSearch || reading}
               accessibilityRole="button"
               accessibilityLabel={COVER_SCAN_SEARCH_CTA}
             >
@@ -306,6 +342,15 @@ const baseStyles = StyleSheet.create({
     paddingVertical: 12,
     color: '#eaeaff',
     fontSize: 15,
+  },
+  readingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  readingText: {
+    color: '#a0a0b8',
+    fontSize: 13,
   },
   honest: {
     color: '#a0a0b8',

@@ -225,10 +225,11 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
 
   /**
    * v33 §H — "Scan a cover". The affordance opens the camera surface; the photo
-   * itself never becomes a query. The user confirms the text in the modal's own
-   * field (EMPTY in this build: there is no on-device reader, and a prefilled
-   * guess would be a fabricated read), and what they confirm comes back through
-   * `handleCoverQuery` — the same entry point as typing.
+   * itself never becomes a query. The modal reads the cover ON DEVICE (v36 fix 4)
+   * and pre-fills its own field with what it read so the user can correct it — a
+   * field that is empty means nothing was read, never that something was guessed.
+   * What the user confirms comes back through `handleCoverQuery` — the same entry
+   * point as typing.
    */
   const handleScanCover = useCallback(() => {
     setShowCoverScan(true);
@@ -369,8 +370,8 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
 
       {/* v33 §H: the camera affordance sits with the search field it feeds —
           one small row, no new screen. Its label comes from coverScan.ts, so the
-          copy and the honest "no reader in this build" state stay in one place.
-          Zero-promise: it promises a search, never that we read the photo. */}
+          copy and the scan's honest states stay in one place. Zero-promise: it
+          promises a search, never that the photo was understood. */}
       <TouchableOpacity
         style={styles.coverScanRow}
         onPress={handleScanCover}

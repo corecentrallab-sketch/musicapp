@@ -102,7 +102,21 @@ import {
   shouldStartEditorDrag,
 } from '../services/editorGestures';
 import { AbcScoreView } from './AbcScoreView';
+import { TakeStaffCard } from './TakeStaffCard';
 import { TakePreviewSection } from './TakePreviewSection';
+import {
+  EDITOR_ORIGINAL_TITLE,
+  EDITOR_VIEW_CORRECTED,
+  EDITOR_VIEW_CORRECTED_CTA,
+  EDITOR_VIEW_DEFAULT,
+  EDITOR_VIEW_LABEL,
+  EDITOR_VIEW_ORIGINAL,
+  editorViewIsEditable,
+  editorViewNote,
+  editorViewSegmentLabel,
+  editorViewTarget,
+  type EditorTakeView,
+} from '../services/editorTakeViews';
 import {
   SAVE_COPY_CTA,
   SAVE_COPY_HINT,
@@ -144,6 +158,14 @@ export const EDITOR_SAVING_LABEL = 'Saving…';
 export const LANE_PX_PER_SEC = 84;
 /** How far a vertical drag must travel to mean one semitone. */
 export const LANE_PX_PER_SEMITONE = 26;
+/**
+ * THE VIEW SWITCH'S SEGMENTS, in the order they are shown (v36 fix 2, backlog
+ * #43): the editable take first — it is the default — then the read-only original.
+ */
+export const EDITOR_VIEW_OPTIONS: readonly EditorTakeView[] = [
+  EDITOR_VIEW_CORRECTED,
+  EDITOR_VIEW_ORIGINAL,
+];
 
 export interface TakeCorrectionEditorProps {
   /** Whether the editor is open (the host owns this). */
@@ -182,6 +204,13 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   const [saveLine, setSaveLine] = useState<string | null>(null);
   /** True only while a note drag owns the gesture (the page may not scroll then). */
   const [dragging, setDragging] = useState(false);
+  /**
+   * WHICH TAKE THE PAGE IS SHOWING (v36 fix 2, backlog #43): the editable take, or
+   * the take exactly as it was auto-detected. DISPLAY ONLY — see
+   * services/editorTakeViews.ts. It is not part of the model, so switching can
+   * never disturb an edit.
+   */
+  const [view, setView] = useState<EditorTakeView>(EDITOR_VIEW_DEFAULT);
   const stateRef = useRef<TakeEditorState>(state);
   const dragBaseRef = useRef(0);
   /** The take the MODEL was built from — the reload decision reads it (v34). */
@@ -205,6 +234,10 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
     const opened = visible && !wasVisibleRef.current;
     wasVisibleRef.current = visible;
     if (!visible) return;
+    // Opening the editor always lands on the EDITABLE take (v36 fix 2): a stale
+    // "original" view would show the PREVIOUS take's baseline under the new take's
+    // title, which is worse than showing nothing.
+    if (opened) setView(EDITOR_VIEW_DEFAULT);
     const incomingIdentity = takeIdentityOf(take, rowId);
     const current = stateRef.current;
     const reload = shouldReloadEditorModel({
@@ -224,9 +257,25 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
     setChordIndex(null);
     setFreeChord('');
     setSaveLine(null);
+    setView(EDITOR_VIEW_DEFAULT);
   }, [rowId, take, visible]);
 
   const derived = useMemo(() => deriveTake(state), [state]);
+  /** The editable view: the lane, the chords, the batch fixes and the preview. */
+  const editable = editorViewIsEditable(view);
+  /**
+   * THE ORIGINAL VIEW'S BASELINE (v36 fix 2, backlog #43). It is derived from the
+   * live model through `resetToDetected` — the SAME seam the "Reset to detected"
+   * button restores — so the read-only original and that button can never disagree
+   * about what "as detected" means, and it follows the take the editor is on.
+   */
+  const original = useMemo(() => deriveTake(resetToDetected(state)), [state]);
+  const originalChords = useMemo(
+    () => original.chords.map((chord) => chord.name),
+    [original],
+  );
+  /** The facts the top card describes: whichever take is on screen. */
+  const viewFacts = editable ? derived : original;
 
   /** Every edit lands here: one place updates the model and the host's copy. */
   const apply = useCallback(
@@ -266,6 +315,12 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
         onStartShouldSetPanResponder: shouldStartEditorDrag,
         onMoveShouldSetPanResponder: (_event, gesture) =>
           shouldCapturePitchDrag(gesture.dx, gesture.dy),
+        // A CLAIMED DRAG BLOCKS NATIVE SCROLLING (v36 fix 1). This is what makes
+        // the page's `scrollEnabled` flag unnecessary: an edit cannot be stolen by
+        // the scroller mid-gesture, and the scroller is never left switched off by
+        // editor state (a stuck flag was one way the page could stop scrolling for
+        // good). The page scrolls from every other touch, everywhere else.
+        onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: () => setDragging(true),
         onPanResponderTerminate: () => setDragging(false),
         onPanResponderRelease: (_event, gesture) => {
@@ -288,6 +343,7 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
         onStartShouldSetPanResponder: shouldStartEditorDrag,
         onMoveShouldSetPanResponder: (_event, gesture) =>
           shouldCaptureEdgeDrag(gesture.dx, gesture.dy),
+        onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: () => {
           setDragging(true);
           if (!selectedId) return;
@@ -438,15 +494,48 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
           <Text style={styles.title}>{EDITOR_TITLE}</Text>
         </View>
 
-        {/* THE PAGE MAY ALWAYS SCROLL (v34 fix 3): it is stopped ONLY while a note
-            drag really owns the gesture, never because a touch started on the
-            drag lane. */}
+        {/* THE PAGE MAY ALWAYS SCROLL (v34 fix 3, hardened in v36 fix 1): the
+            page's own scroller is BOUNDED here (`styles.page`) and is stopped ONLY
+            while a note drag really owns the gesture, never because a touch
+            started on the drag lane. Every surface on the page — including the
+            staff, the biggest one — hands the gesture to this ScrollView (see
+            AbcScoreView's touch shield). */}
         <ScrollView
+          style={styles.page}
           contentContainerStyle={styles.body}
           scrollEnabled={pageScrollEnabledDuringDrag(dragging)}
         >
           <Text style={styles.intro}>{EDITOR_INTRO}</Text>
           <Text style={styles.tip}>{EDITOR_COACH_TIP}</Text>
+
+          {/* 0. THE VIEW SWITCH (v36 fix 2, backlog #43) — the capture page's own
+              two-score display, brought to the editor: the editable take, or the
+              take exactly as it was auto-detected (read-only). DISPLAY ONLY: the
+              corrected take stays the one source of truth for History, the MIDI
+              export and the preview. */}
+          <View style={styles.viewSwitch}>
+            <Text style={styles.viewSwitchLabel}>{EDITOR_VIEW_LABEL}</Text>
+            <View style={styles.segmentRow}>
+              {EDITOR_VIEW_OPTIONS.map((option) => {
+                const on = option === view;
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    style={[styles.segment, on && styles.segmentOn]}
+                    onPress={() => setView(option)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={`Show ${editorViewSegmentLabel(option)}`}
+                  >
+                    <Text style={[styles.segmentText, on && styles.segmentTextOn]}>
+                      {editorViewSegmentLabel(option)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={styles.viewNote}>{editorViewNote(view)}</Text>
+          </View>
 
           {/* The take's re-derived facts, after EVERY edit (brief §3b: the key and
               the chords are recomputed, never left stale). */}
@@ -458,25 +547,36 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
               <Text style={styles.factKey}>{EDITOR_NO_TAKE_LINE}</Text>
             ) : (
               <Text style={styles.factKey}>
-                {derived.keyLabel ? `Key: ${derived.keyLabel}` : 'No key detected in this take'}
+                {viewFacts.keyLabel ? `Key: ${viewFacts.keyLabel}` : 'No key detected in this take'}
               </Text>
             )}
-            {derived.summaryLine ? (
-              <Text style={styles.factSummary}>{derived.summaryLine}</Text>
+            {editable && viewFacts.summaryLine ? (
+              <Text style={styles.factSummary}>{viewFacts.summaryLine}</Text>
             ) : (
               <Text style={styles.factSummary}>
-                Nothing changed yet — this is the take exactly as detected.
+                {editable
+                  ? 'Nothing changed yet — this is the take exactly as detected.'
+                  : editorViewNote(view)}
               </Text>
             )}
           </View>
 
+          {editable ? (
+            <>
           {/* 1. THE STAFF — the take as notation, redrawn from the CURRENT notes.
               DECORATIVE: it is drawn in a WebView, and a WebView swallows the
-              page's scroll gestures (it is not part of RN's responder system), so
-              `pointerEvents="none"` keeps the page scrollable from the biggest
-              surface on it. All editing happens on the lane below (v34 fix 3). */}
-          <View style={styles.staffBox} pointerEvents="none">
-            <AbcScoreView abc={staffAbc} ink={TAKE_STAFF_CLEANED_INK} background={TAKE_STAFF_PAPER} />
+              page's scroll gestures (it is not part of RN's responder system).
+              `interactive={false}` closes the viewer's own touch surface and mounts
+              its touch shield, so the biggest surface on the page scrolls the page
+              (v36 fix 1 — the owner's "Again page does not scroll down"). All
+              editing happens on the lane below (v34 fix 3). */}
+          <View style={styles.staffBox}>
+            <AbcScoreView
+              abc={staffAbc}
+              ink={TAKE_STAFF_CLEANED_INK}
+              background={TAKE_STAFF_PAPER}
+              interactive={false}
+            />
           </View>
 
           {/* 2. THE TOUCH LAYER — one block per note, real duration, drag + edges. */}
@@ -824,8 +924,39 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
           {/* 7. THE DOCKED PREVIEW (v33 slice G) — owner-ratified option 4: ONE
               control row INSIDE this editor, above the sticky save bar. It plays
               the corrected take (this screen's own notes), never a separate
-              screen and never a second player. */}
-          <TakePreviewSection preview={preview} />
+              screen and never a second player. It belongs to the EDITABLE view:
+              it plays the take the user is editing. */}
+              <TakePreviewSection preview={preview} />
+            </>
+          ) : (
+            /* THE ORIGINAL VIEW (v36 fix 2, backlog #43) — the take exactly as it
+               was auto-detected, in the capture page's OWN two-score card (raw
+               trace dimmed → auto-clean divider → crisp cleaned line), which is the
+               display the owner already confirmed. READ-ONLY: no lane, no chord
+               editor, no batch fixes, and the save bar still saves the CORRECTED
+               take — nothing on this view can change the take. */
+            <>
+              <Text style={styles.viewModeTitle}>{EDITOR_ORIGINAL_TITLE}</Text>
+              <TakeStaffCard
+                take={original.take}
+                chordNames={originalChords}
+                chordHonestLine={originalChords.length > 0 ? null : EDITOR_NO_CHORDS_LINE}
+                title={EDITOR_ORIGINAL_TITLE}
+                interactive={false}
+              />
+              <View style={styles.originalNote}>
+                <Text style={styles.viewNote}>{editorViewNote(view)}</Text>
+                <TouchableOpacity
+                  style={styles.backToEditing}
+                  onPress={() => setView(editorViewTarget(view))}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Switch to ${EDITOR_VIEW_CORRECTED_CTA}`}
+                >
+                  <Text style={styles.backToEditingText}>{EDITOR_VIEW_CORRECTED_CTA}</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </ScrollView>
 
         {/* THE STICKY SAVE BAR — the only two writes in the flow. */}
@@ -871,7 +1002,58 @@ const baseStyles = StyleSheet.create({
   backBtn: { minHeight: 44, justifyContent: 'center' },
   backText: { color: '#e94560', fontSize: 16, fontWeight: '600' },
   title: { color: '#ffffff', fontSize: 22, fontWeight: '800', marginTop: 2 },
+  /**
+   * THE PAGE'S SCROLLER IS BOUNDED ON PURPOSE (v36 fix 1). A ScrollView takes the
+   * space its flex style gives it; saying `flex: 1` here means the scroller can
+   * never be laid out taller than the page and clip its own bottom half (the
+   * "page does not scroll down" shape).
+   */
+  page: { flex: 1 },
   body: { paddingHorizontal: 20, paddingBottom: 24 },
+  viewSwitch: {
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    padding: 12,
+    marginTop: 14,
+  },
+  viewSwitchLabel: {
+    color: '#7d7d99',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  segmentRow: { flexDirection: 'row', marginTop: 8 },
+  segment: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    backgroundColor: '#12122b',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    marginRight: 6,
+  },
+  segmentOn: { borderColor: '#4ecdc4', backgroundColor: '#0f3460' },
+  segmentText: { color: '#c0c0d0', fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  segmentTextOn: { color: '#4ecdc4' },
+  viewNote: { color: '#a0a0b8', fontSize: 11, lineHeight: 16, marginTop: 8 },
+  viewModeTitle: { color: '#4ecdc4', fontSize: 15, fontWeight: '800', marginTop: 14 },
+  originalNote: { marginTop: 12 },
+  backToEditing: {
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#4ecdc4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  backToEditingText: { color: '#4ecdc4', fontSize: 14, fontWeight: '700' },
   intro: { color: '#c0c0d0', fontSize: 13, lineHeight: 19 },
   tip: { color: '#4ecdc4', fontSize: 12, lineHeight: 18, marginTop: 8 },
   factCard: {

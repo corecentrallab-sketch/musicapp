@@ -60,6 +60,12 @@ export interface TakeStaffCardProps {
   chordHonestLine?: string | null;
   /** The take's title for the staff header ("My melody"). */
   title?: string | null;
+  /**
+   * Whether the two staves may receive touches (v36). DEFAULT TRUE so the capture
+   * page — the flow the owner passed — is byte-identical. The take-correction
+   * editor hosts this card INSIDE its own page scroller and passes `false`, so the
+   * two WebViews can never take the page's scroll gesture (see AbcScoreView). */
+  interactive?: boolean;
 }
 
 export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
@@ -67,6 +73,7 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
   chordNames,
   chordHonestLine,
   title,
+  interactive = true,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   const rows = useMemo(() => {
@@ -119,6 +126,7 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
               abc={rows.rawAbc ?? ''}
               ink={TAKE_STAFF_RAW_INK}
               background={TAKE_STAFF_PAPER}
+              interactive={interactive}
             />
           </View>
           <Text style={styles.honesty}>{STAFF_RAW_HONESTY}</Text>
@@ -138,6 +146,7 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
               abc={rows.cleanedAbc ?? ''}
               ink={TAKE_STAFF_CLEANED_INK}
               background={TAKE_STAFF_PAPER}
+              interactive={interactive}
             />
           </View>
           <Text style={styles.honesty}>{STAFF_CLEANED_HONESTY}</Text>
