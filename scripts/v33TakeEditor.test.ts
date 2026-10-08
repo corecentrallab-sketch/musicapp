@@ -508,7 +508,14 @@ function themeTests(): void {
     'both palettes carry exactly the same roles (a surface cannot lose a colour)',
   );
   assertEq(THEME_STORAGE_KEY, 'notesnap.theme.mode', 'the choice has one storage key');
-  assert(THEME_HONEST_NOTE.indexOf('rest of the app') >= 0, 'the scope note is honest about what is themed');
+  // v34b: the theme is APP-WIDE now (owner FAIL item 6), so the note must say so and
+  // must not still tell the user that only one screen is themed. Same intent as v33
+  // (the note may not overstate or understate what the toggle does) — the text moved.
+  assert(
+    THEME_HONEST_NOTE.indexOf('whole app') >= 0 &&
+      THEME_HONEST_NOTE.toLowerCase().indexOf('rest of the app') < 0,
+    'the scope note is honest about what is themed (app-wide since v34b)',
+  );
 }
 
 function coverScanTests(): void {

@@ -749,9 +749,14 @@ assert(
   THEME_STORAGE_KEY.length > 0 && themeAppliedLine('light').includes('Light'),
   'the applied line names the mode it applied',
 );
+// v34b reclaimed this assertion: the theme is app-wide now (owner FAIL item 6), so the
+// note names the surfaces the choice REACHES instead of the one screen it used to be
+// scoped to. The v33 intent is kept — the note must name real surfaces, honestly.
 assert(
-  /Settings screen/.test(THEME_HONEST_NOTE) && /rest of the app/i.test(THEME_HONEST_NOTE),
-  'the honest note names the surfaces this build themes and the ones it does not',
+  /whole app/i.test(THEME_HONEST_NOTE) &&
+    /every screen/i.test(THEME_HONEST_NOTE) &&
+    !/rest of the app/i.test(THEME_HONEST_NOTE),
+  'the honest note names the surfaces this build themes (app-wide since v34b)',
 );
 
 // MUTATION 38: the honest scope note goes (the section would imply a whole-app switch).

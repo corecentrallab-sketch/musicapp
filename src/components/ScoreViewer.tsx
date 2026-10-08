@@ -22,7 +22,7 @@
  * Page turning still works via tap edges, swipe, and the bottom bar.
  */
 
-import { useThemedStyles } from '../services/themeStore';
+import { useThemeMode, useThemedStyles } from '../services/themeStore';
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
@@ -38,7 +38,7 @@ import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { ScorePlayer } from './ScorePlayer';
 import { AutoScrollControl } from './AutoScrollControl';
 import { useAutoScroll, type AutoScrollStatus } from '../hooks/useAutoScroll';
-import { buildSheetViewerHtml } from '../services/sheetViewerHtml';
+import { buildSheetViewerHtml, sheetThemeScript } from '../services/sheetViewerHtml';
 import {
   AUTO_TURN_TOGGLE_LABEL,
   IMMERSIVE_ENTER_LABEL,
@@ -89,8 +89,16 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
   const [autoTurnEnded, setAutoTurnEnded] = useState(false);
   const webViewRef = useRef<WebView>(null);
 
-  const pdfHtml = useMemo(() => buildSheetViewerHtml(url), [url]);
-
+  // v34b: the reader is themed like every other surface. `themeMode` comes from the
+  // ONE app-wide binding (declared FIRST — the memo below runs during this render).
+  const { mode: themeMode } = useThemeMode();
+  // The document is built for the mode the reader opened under…
+  const pdfHtml = useMemo(() => buildSheetViewerHtml(url, themeMode), [url]);
+  // …and a live toggle (Settings) re-paints the OPEN reader through the document's own
+  // setSheetTheme() — no rebuild, so the WebView keeps the page it was on.
+  useEffect(() => {
+    webViewRef.current?.injectJavaScript(sheetThemeScript(themeMode));
+  }, [themeMode]);
   /** Inject one of the document's page-turn functions. */
   const turnPage = useCallback((direction: 'next' | 'prev') => {
     webViewRef.current?.injectJavaScript(

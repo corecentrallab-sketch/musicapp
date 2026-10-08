@@ -13,7 +13,7 @@
  * something a musician should ever see — so it is deleted rather than hidden.
  * The capture path still measures the same numbers for the on-device log.
  */
-import { useThemedStyles } from '../services/themeStore';
+import { useThemeMode, useThemedStyles } from '../services/themeStore';
 import React from 'react';
 import {
   View,
@@ -193,6 +193,9 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
   onBrowseLibrary,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
+  // v34b: the inline score card renders the same WebView document as the reader, so
+  // it takes the same app-wide mode (a key'd WebView remounts when the mode flips).
+  const { mode: themeMode } = useThemeMode();
   const [showDetail, setShowDetail] = React.useState(false);
   const [showScoreViewer, setShowScoreViewer] = React.useState(false);
   const [selectedMatch, setSelectedMatch] = React.useState<RecognitionMatch | null>(null);
@@ -637,8 +640,8 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
               <View style={styles.sheetBlock}>
                 <Text style={styles.sheetBlockLabel}>{SHEET_BLOCK_LABEL}</Text>
                 <WebView
-                  key={inlineSheetUrl}
-                  source={{ html: buildSheetViewerHtml(inlineSheetUrl) }}
+                  key={`${inlineSheetUrl}:${themeMode}`}
+                  source={{ html: buildSheetViewerHtml(inlineSheetUrl, themeMode) }}
                   style={styles.inlineSheet}
                   originWhitelist={['*']}
                   javaScriptEnabled

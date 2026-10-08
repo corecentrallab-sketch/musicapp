@@ -27,14 +27,24 @@ import {
   ON_FILL_TEXT_KEYS,
 } from '../src/services/themeApply';
 import {
+  appPaintsFromTokensNotItsOwnSheet,
+  hostPassesModeToSheetDocument,
   navigationChromeIsThemed,
   screenConsumesTheTheme,
   settingsToggleWritesTheSharedMode,
+  sheetReaderRepaintsLive,
   statusBarIsThemed,
   tabBarIsThemed,
   themeApplierIsPureAndDarkIsIdentity,
   themeProviderMountedAtRoot,
 } from '../src/services/v34bThemeContract';
+import {
+  SHEET_PAPER,
+  SHEET_PALETTE,
+  buildSheetViewerHtml,
+  sheetCssVariables,
+  sheetThemeScript,
+} from '../src/services/sheetViewerHtml';
 
 declare const process: { cwd(): string; exit(code: number): never };
 declare const require: (name: string) => any;
@@ -96,6 +106,8 @@ const MELODY = read('src/components/MelodyCaptureWindow.tsx');
 const TAKE_EDITOR = read('src/components/TakeCorrectionEditor.tsx');
 const PREVIEW = read('src/components/TakePreviewSection.tsx');
 const AUTO_SCROLL = read('src/components/AutoScrollControl.tsx');
+const SCORE_VIEWER = read('src/components/ScoreViewer.tsx');
+const RESULT_VIEW = read('src/components/RecognitionResultView.tsx');
 const screenNames = screens();
 
 // ── floors: the walk found the real files ────────────────────────────
@@ -116,7 +128,24 @@ assert(tabBarIsThemed(TAB), 'TabNavigator: the tab bar, its labels, headers and 
 assert(themeApplierIsPureAndDarkIsIdentity(APPLY), 'themeApply.ts: pure, dark is the identity, light re-maps');
 assert(settingsToggleWritesTheSharedMode(SETTINGS, STORE), 'Settings: the toggle writes the SHARED persisted mode');
 assert(STORE.indexOf('useThemedStyles') > 0, 'themeStore: the shared useThemedStyles hook exists');
-assert(APP.indexOf('useThemedStyles') < 0, 'App.tsx does not fake a per-screen sheet (it uses the tokens directly)');
+assert(
+  appPaintsFromTokensNotItsOwnSheet(APP),
+  'App.tsx does not fake a per-screen sheet (it paints from the tokens directly)',
+);
+assert(SCORE_VIEWER.length > 15000, `read ScoreViewer.tsx (${SCORE_VIEWER.length} chars)`);
+assert(RESULT_VIEW.length > 30000, `read RecognitionResultView.tsx (${RESULT_VIEW.length} chars)`);
+assert(
+  hostPassesModeToSheetDocument(SCORE_VIEWER),
+  'ScoreViewer: the reader document is built for the app’s mode (no one-arg call)',
+);
+assert(
+  hostPassesModeToSheetDocument(RESULT_VIEW),
+  'RecognitionResultView: the inline score card is built for the app’s mode',
+);
+assert(
+  sheetReaderRepaintsLive(SCORE_VIEWER),
+  'ScoreViewer: a live toggle re-paints the OPEN reader (no reload, page kept)',
+);
 
 // ── EVERY screen consumes the theme (the owner's actual complaint) ───
 console.log('\nv34b — every screen consumes the shared theme');
@@ -174,6 +203,91 @@ assert(!labelSitsOnDarkFill('label', sheet), 'a label on a plain surface is not 
 assertEq(lightRoleFor('#ffffff', 'backgroundColor'), 'surface', 'white as a FILL is a surface, white as a GLYPH is text');
 assertEq(lightRoleFor('#ffffff', 'color'), 'text', 'white glyph → text');
 
+// ── the score / PDF WebView page follows the mode (owner FAIL item 6) ──
+// The reader is user-visible, so it is CONVERTED, not exempted: the document is
+// built for a mode, and the one deliberate carve-out is the PAPER (a score is
+// white paper with dark ink — inverting the page would make the staff unreadable).
+console.log('\nv34b — the sheet/PDF reader document follows the mode');
+const SHEET_URL = 'https://example.com/piece.pdf';
+const sheetDark = buildSheetViewerHtml(SHEET_URL, 'dark');
+const sheetLight = buildSheetViewerHtml(SHEET_URL, 'light');
+const sheetDefault = buildSheetViewerHtml(SHEET_URL);
+assert(
+  sheetDark.length > 4000 && sheetLight.length > 4000,
+  `built both reader documents (${sheetDark.length}/${sheetLight.length} chars)`,
+);
+assertEq(sheetDefault, sheetDark, 'no mode given = the app’s dark design (dark is the identity)');
+assert(sheetDark.indexOf('data-theme="dark"') > 0, 'the dark document declares its mode');
+assert(sheetLight.indexOf('data-theme="light"') > 0, 'the light document declares its mode');
+for (const doc of [sheetDark, sheetLight]) {
+  assert(
+    doc.indexOf(":root[data-theme='light']") > 0 &&
+      doc.indexOf(sheetCssVariables('dark')) > 0 &&
+      doc.indexOf(sheetCssVariables('light')) > 0,
+    'both documents carry BOTH columns from the one shared table (a live switch needs no rebuild)',
+  );
+  assert(
+    doc.indexOf('function setSheetTheme(') > 0 &&
+      doc.indexOf('window.setSheetTheme = setSheetTheme;') > 0,
+    'the document can be re-painted from the host (setSheetTheme)',
+  );
+  assert(
+    doc.indexOf('background: var(--sheet-chrome, #1a1a2e);') > 0,
+    'the area AROUND the page is themed (dark value kept as the fallback)',
+  );
+  assert(
+    doc.indexOf('background: var(--sheet-paper, #ffffff);') > 0,
+    'the page itself reads the paper variable',
+  );
+}
+assertEq(
+  SHEET_PALETTE.dark.chrome,
+  DARK_THEME.surfaceAlt,
+  'the dark chrome is the app’s own dark surface (unchanged from v33)',
+);
+assertEq(
+  SHEET_PALETTE.light.chrome,
+  LIGHT_THEME.surfaceAlt,
+  'the light chrome is the light surface (the same token as every screen)',
+);
+assertEq(
+  SHEET_PALETTE.dark.pillBg,
+  'rgba(22, 33, 62, 0.72)',
+  'the dark immersive page pill is byte-identical to v33 (still translucent)',
+);
+assertEq(
+  SHEET_PALETTE.light.errorTitle,
+  LIGHT_THEME.text,
+  'the light error card uses dark ink (never white on a light surface)',
+);
+assert(
+  sheetLight.indexOf(SHEET_PALETTE.light.chrome) > 0,
+  'the light document really carries the light chrome',
+);
+assertEq(
+  sheetLight.indexOf('background: #1a1a2e;'),
+  -1,
+  'no bare dark surface rule survives in the light document',
+);
+assertEq(SHEET_PAPER, '#ffffff', 'the paper is white in every mode (the exemption)');
+assert(
+  sheetCssVariables('dark').indexOf('--sheet-paper') < 0 &&
+    sheetCssVariables('light').indexOf('--sheet-paper') < 0,
+  'NEITHER mode overrides the paper (the staff is never inverted)',
+);
+assert(
+  sheetThemeScript('light').indexOf("setSheetTheme('light')") > 0,
+  'the injected script names the mode it flips to',
+);
+assert(
+  sheetThemeScript('nonsense').indexOf("setSheetTheme('dark')") > 0,
+  'an unknown mode in the injected script falls back to dark',
+);
+assert(
+  sheetThemeScript('light').indexOf('catch (e)') > 0,
+  'the injected script is defensive (a not-yet-ready document cannot throw into RN)',
+);
+
 // ── MUTATION PROBES: every guard must FAIL on un-wired text ──────────
 console.log('\nv34b — mutation probes (each guard must fail when un-wired)');
 const stripProvider = APP.replace('<ThemeModeProvider>', '').replace('<AppShell />', '');
@@ -188,6 +302,40 @@ assert(!settingsToggleWritesTheSharedMode(SETTINGS.replace("setThemeMode('light'
 assert(!settingsToggleWritesTheSharedMode(SETTINGS, STORE.replace('AsyncStorage.setItem(THEME_STORAGE_KEY', 'AsyncStorage.nope(')), 'MUTATION: dropping the persisted write fails the persistence guard');
 assert(!themeApplierIsPureAndDarkIsIdentity(APPLY.replace("if (mode !== 'light') return sheet;", '')), 'MUTATION: a non-identity dark mode fails the applier guard');
 assert(!themeProviderMountedAtRoot(APP.replace('const { mode, tokens: theme } = useThemeMode();', '')), 'MUTATION: a provider nobody reads fails the root guard');
+assert(
+  !themeProviderMountedAtRoot(APP.replace('</ThemeModeProvider>', '')),
+  'MUTATION: a provider that never closes around the shell fails the root guard',
+);
+assert(
+  !appPaintsFromTokensNotItsOwnSheet(APP + '\nconst { styles } = useThemedStyles(baseStyles);\n'),
+  'MUTATION: a per-screen sheet inside App.tsx fails the token guard',
+);
+assert(
+  !appPaintsFromTokensNotItsOwnSheet(APP.split('theme.surfaceAlt').join('#1a1a2e')),
+  'MUTATION: App.tsx painting a hardcoded colour fails the token guard',
+);
+assert(
+  !screenConsumesTheTheme(SETTINGS.replace('const { styles } = useThemedStyles(baseStyles);', '')),
+  'MUTATION: a Settings screen with no re-paintable sheet fails the screen guard',
+);
+assert(
+  !screenConsumesTheTheme(SETTINGS.replace('tokens: theme', 'tokens: none')),
+  'MUTATION: Settings tokens that do not come from the shared binding fail the screen guard',
+);
+// The ScoreViewer probe is the real file with the mode argument removed, i.e. the
+// exact pre-fix call — the guard must see it.
+assert(
+  !hostPassesModeToSheetDocument(SCORE_VIEWER.replace('buildSheetViewerHtml(url, themeMode)', 'buildSheetViewerHtml(url)')),
+  'MUTATION: a one-argument reader document fails the mode guard',
+);
+assert(
+  !hostPassesModeToSheetDocument(RESULT_VIEW.replace('buildSheetViewerHtml(inlineSheetUrl, themeMode)', 'buildSheetViewerHtml(inlineSheetUrl)')),
+  'MUTATION: a one-argument inline score card fails the mode guard',
+);
+assert(
+  !sheetReaderRepaintsLive(SCORE_VIEWER.replace('sheetThemeScript(themeMode)', "'setSheetTheme(\\'light\\');'")),
+  'MUTATION: a reader that never re-paints the open document fails the live-switch guard',
+);
 
 console.log(`\nv34bThemeWiring: ${passes} passed, ${failures} failed`);
 if (failures > 0) {

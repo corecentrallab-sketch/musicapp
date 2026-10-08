@@ -391,9 +391,10 @@ export const SettingsScreen: React.FC = () => {
           both states are named, so the user can see what they are choosing and
           what is currently on. The write goes through themeStore (AsyncStorage),
           so the choice survives a restart; `themeAppliedLine` says so in words.
-          The honest scope note (THEME_HONEST_NOTE) names exactly which surfaces
-          this build themes — the rest of the app stays dark, and the section
-          says that instead of implying a whole-app switch. */}
+          The honest scope note (THEME_HONEST_NOTE) says the choice is APP-WIDE
+          (v34b, owner FAIL item 6): every screen, the tab bar, the sheet readers
+          and the status bar follow it. Build ≥ v34b, so no surface is excepted
+          in the copy — the note names the real scope instead of claiming less. */}
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, themed.title]}>{THEME_SECTION_TITLE}</Text>
         <View style={[styles.infoCard, themed.card]}>

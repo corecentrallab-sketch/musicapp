@@ -32,23 +32,133 @@ import {
   SHEET_PAGE_MAX_HEIGHT_PCT,
   SHEET_REFIT_EPSILON,
 } from './sheetViewerFit';
+import {
+  DARK_THEME,
+  DEFAULT_THEME_MODE,
+  LIGHT_THEME,
+  resolveThemeMode,
+  type ThemeMode,
+} from './theme';
 
-/** Generate the HTML document that wraps PDF.js for rendering. */
-export function buildSheetViewerHtml(pdfUrl: string): string {
+/**
+ * THE DOCUMENT'S OWN CHROME, PER MODE (v34b, owner FAIL item 6 — app-wide theming).
+ *
+ * The reader is a user-visible surface, so the default is CONVERT: the document is
+ * built for a mode, flips with the app, and every colour it paints comes from here.
+ *
+ * The DARK column is byte-identical to what this document shipped before v34b — the
+ * app's own design is the identity, nothing about the dark reader changes. LIGHT is
+ * the light palette, read from the SAME tokens as every screen (services/theme.ts),
+ * so the reader cannot drift away from the rest of the app.
+ *
+ * THE PAPER IS THE ONE DELIBERATE EXEMPTION and is NOT themed in either mode: a
+ * score is white paper with dark ink, and inverting the page itself would make the
+ * staff unreadable — the same reasoning as AbcScoreView / TakeStaffCard, which keep
+ * their staff ink. Only the chrome AROUND the page follows the app.
+ */
+export interface SheetViewerPalette {
+  /** The area around the page (html/body, the loading and error overlays). */
+  chrome: string;
+  /** The page counter's text. */
+  indicator: string;
+  /** The immersive page pill (translucent, so the sheet shows through). */
+  pillBg: string;
+  pillText: string;
+  errorTitle: string;
+  errorBody: string;
+  spinnerTrack: string;
+  accent: string;
+}
+
+export const SHEET_PALETTE: Record<ThemeMode, SheetViewerPalette> = {
+  dark: {
+    chrome: DARK_THEME.surfaceAlt, // #1a1a2e — unchanged from v33
+    indicator: DARK_THEME.subtext, // #a0a0b8
+    pillBg: 'rgba(22, 33, 62, 0.72)', // DARK_THEME.surface at 72% — unchanged
+    pillText: '#eaeaff', // unchanged from v33
+    errorTitle: DARK_THEME.text, // #ffffff
+    errorBody: DARK_THEME.subtext,
+    spinnerTrack: DARK_THEME.border, // #0f3460
+    accent: DARK_THEME.accent, // #e94560
+  },
+  light: {
+    chrome: LIGHT_THEME.surfaceAlt, // #eef1f7
+    indicator: LIGHT_THEME.subtext, // #5b6377
+    pillBg: 'rgba(230, 235, 245, 0.85)',
+    pillText: LIGHT_THEME.chipText, // #25324a
+    errorTitle: LIGHT_THEME.text, // #161a24
+    errorBody: LIGHT_THEME.subtext,
+    spinnerTrack: LIGHT_THEME.border, // #d5dae6
+    accent: LIGHT_THEME.accent, // #c2233c
+  },
+};
+
+/** The staff's paper — the ONE surface no mode may re-colour (white paper, dark ink). */
+export const SHEET_PAPER = '#ffffff';
+
+/**
+ * One mode's CSS custom properties. BOTH blocks in the document come from this one
+ * function, so the two columns cannot drift apart.
+ */
+export function sheetCssVariables(mode: ThemeMode | string | null): string {
+  const p = SHEET_PALETTE[resolveThemeMode(mode)];
+  return [
+    `--sheet-chrome: ${p.chrome};`,
+    `--sheet-indicator: ${p.indicator};`,
+    `--sheet-pill-bg: ${p.pillBg};`,
+    `--sheet-pill-text: ${p.pillText};`,
+    `--sheet-error-title: ${p.errorTitle};`,
+    `--sheet-error-body: ${p.errorBody};`,
+    `--sheet-spinner-track: ${p.spinnerTrack};`,
+    `--sheet-accent: ${p.accent};`,
+  ].join(' ');
+}
+
+/**
+ * The script the host injects when the mode changes while a score is open. It flips
+ * the document's own attribute instead of rebuilding the source, so a live toggle
+ * re-paints the reader WITHOUT reloading the WebView and losing the reader's page.
+ * Defensive: if the document is not ready yet, the baked-in mode already stands.
+ */
+export function sheetThemeScript(mode: ThemeMode | string | null): string {
+  const resolved = resolveThemeMode(mode);
+  return `(function(){ try { if (typeof setSheetTheme === 'function') { setSheetTheme('${resolved}'); } } catch (e) {} })(); true;`;
+}
+
+/** Generate the HTML document that wraps PDF.js for rendering, for a theme MODE. */
+export function buildSheetViewerHtml(
+  pdfUrl: string,
+  mode: ThemeMode | string | null = DEFAULT_THEME_MODE,
+): string {
   // Escape the URL for safe embedding in HTML
   const escapedUrl = pdfUrl.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  // The mode this document is BUILT for (an unknown value lands on the app default).
+  const themeMode = resolveThemeMode(mode);
 
   return `<!DOCTYPE html>
-<html>
+<html data-theme="${themeMode}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
 <style>
+  /* ── v34b: the reader follows the app's mode (owner FAIL item 6) ──
+     Both columns come from ONE table (services/sheetViewerHtml.ts
+     SHEET_PALETTE, fed by services/theme.ts), so the reader cannot drift away
+     from the screens. The DARK column is what this document always painted.
+     --sheet-paper is the deliberate exemption: a score is white paper with dark
+     ink, and no mode re-colours the page itself. */
+  :root {
+    ${sheetCssVariables('dark')}
+    --sheet-paper: ${SHEET_PAPER};
+  }
+  :root[data-theme='light'] {
+    ${sheetCssVariables('light')}
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     height: 100%;
     width: 100%;
-    background: #1a1a2e;
+    background: var(--sheet-chrome, #1a1a2e);
     overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
@@ -67,7 +177,8 @@ export function buildSheetViewerHtml(pdfUrl: string): string {
     max-height: ${SHEET_PAGE_MAX_HEIGHT_PCT}%;
     box-shadow: 0 4px 24px rgba(0,0,0,0.5);
     border-radius: 4px;
-    background: #fff;
+    /* THE PAPER — the one surface no mode re-colours (white paper, dark ink). */
+    background: var(--sheet-paper, #ffffff);
   }
   #pageIndicator {
     position: absolute;
@@ -75,7 +186,7 @@ export function buildSheetViewerHtml(pdfUrl: string): string {
     left: 0;
     right: 0;
     text-align: center;
-    color: #a0a0b8;
+    color: var(--sheet-indicator, #a0a0b8);
     font-size: 13px;
     font-weight: 600;
     pointer-events: none;
@@ -89,10 +200,10 @@ export function buildSheetViewerHtml(pdfUrl: string): string {
     left: 50%;
     right: auto;
     transform: translateX(-50%);
-    background: rgba(22, 33, 62, 0.72);
+    background: var(--sheet-pill-bg, rgba(22, 33, 62, 0.72));
     border-radius: 12px;
     padding: 4px 12px;
-    color: #eaeaff;
+    color: var(--sheet-pill-text, #eaeaff);
     font-size: 12px;
   }
   #loadingOverlay {
@@ -101,14 +212,14 @@ export function buildSheetViewerHtml(pdfUrl: string): string {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #1a1a2e;
+    background: var(--sheet-chrome, #1a1a2e);
     z-index: 10;
   }
   .spinner {
     width: 40px;
     height: 40px;
-    border: 3px solid #0f3460;
-    border-top-color: #e94560;
+    border: 3px solid var(--sheet-spinner-track, #0f3460);
+    border-top-color: var(--sheet-accent, #e94560);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -121,15 +232,17 @@ export function buildSheetViewerHtml(pdfUrl: string): string {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: #1a1a2e;
+    background: var(--sheet-chrome, #1a1a2e);
     z-index: 10;
     padding: 32px;
   }
   #errorOverlay .err-icon { font-size: 48px; margin-bottom: 16px; }
-  #errorOverlay .err-title { color: #fff; font-size: 18px; font-weight: 700; margin-bottom: 8px; }
-  #errorOverlay .err-body { color: #a0a0b8; font-size: 14px; text-align: center; line-height: 1.5; margin-bottom: 20px; }
+  #errorOverlay .err-title { color: var(--sheet-error-title, #ffffff); font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+  #errorOverlay .err-body { color: var(--sheet-error-body, #a0a0b8); font-size: 14px; text-align: center; line-height: 1.5; margin-bottom: 20px; }
   #errorOverlay .err-retry {
-    background: #e94560;
+    background: var(--sheet-accent, #e94560);
+    /* a label ON a brand fill stays white in both modes — the same rule as
+       themeApply's named ON_FILL_TEXT_KEYS. */
     color: #fff;
     border: none;
     padding: 12px 28px;
@@ -307,6 +420,19 @@ export function buildSheetViewerHtml(pdfUrl: string): string {
     setTimeout(refit, 80);
     setTimeout(refit, 300);
   }
+
+  /** Re-paint this document for the app's mode (v34b). The host injects this
+   *  when the user flips the toggle while a score is open — the attribute flips
+   *  the CSS custom properties above, so the reader re-paints WITHOUT reloading
+   *  and keeps the page the reader is on. Both columns are already in the
+   *  document, so this never needs a rebuild. */
+  function setSheetTheme(mode) {
+    document.documentElement.setAttribute(
+      'data-theme',
+      mode === 'light' ? 'light' : 'dark',
+    );
+  }
+  window.setSheetTheme = setSheetTheme;
 
   function prevPage() {
     if (currentPage <= 1) return;
