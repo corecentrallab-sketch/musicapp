@@ -597,7 +597,7 @@ export const HomeScreen: React.FC = () => {
           // rather than in review — `modernGenreLabel` still yields the provider's
           // REAL genre or absent (never an invented category) and
           // `modernPurchaseUrls` still yields the backend's licensed links or null.
-          const savedPiece: SavedPiece = {
+          await saveRecognition({
             id: m.isrc || m.song,
             title: m.song,
             composer: m.artist,
@@ -612,8 +612,7 @@ export const HomeScreen: React.FC = () => {
             // `null` when the backend supplied no URL — never an invented one,
             // and never used for a public-domain piece (those saves are above).
             purchaseUrls: modernPurchaseUrls(m),
-          };
-          await saveRecognition(savedPiece);
+          } satisfies SavedPiece);
           recorder.completeRecording();
           setShowRecognitionResults(false);
           setRecognitionPhase(null);

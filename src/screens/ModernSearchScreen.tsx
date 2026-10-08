@@ -251,7 +251,7 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
           // takes, so the honest `genre` / `purchaseUrls` contracts are checked by
           // the compiler: the provider's REAL genre or absent, the backend's
           // licensed links or null — never an invented category or URL.
-          const savedPiece: SavedPiece = {
+          await saveRecognition({
             id: m.isrc || m.song,
             title: m.song,
             composer: m.artist,
@@ -265,8 +265,7 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
             // reached nothing and the sheet-music card was a dead end. `null`
             // when the backend supplied no URL — never an invented one.
             purchaseUrls: modernPurchaseUrls(m),
-          };
-          await saveRecognition(savedPiece);
+          } satisfies SavedPiece);
         }
         setInterstitial({
           loading: false,
