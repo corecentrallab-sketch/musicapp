@@ -17,7 +17,7 @@
 
 import { useThemedStyles } from '../services/themeStore';
 import React, { useMemo } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 /** The ink a score is drawn in when the caller names none (near-black on paper). */
@@ -183,18 +183,18 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
       {/* THE TOUCH SHIELD (v36 fix 1; only when the caller says the score is
           decoration). It is drawn AFTER the WebView, so it is the topmost sibling
           in this box and a finger on the staff hits THIS, never the native
-          WebView. It claims the touch so nothing below it sees it, and it lets
-          the page's ScrollView take the gesture back the moment the finger moves
-          (`onShouldBlockNativeResponder` → false = "do not disallow the native
-          scroller"), which is exactly how a button inside a scroller behaves.
-          Net effect: the biggest surface on the page scrolls the page. */}
+          WebView — which is the part v34's wrapper `pointerEvents="none"` could not
+          do (a WebView is a native view outside RN's responder system, so nothing
+          in the JS tree can stop Android handing it the gesture).
+          It is a `Pressable` on purpose: Pressability claims the touch-down AND
+          reports `blockNativeResponder: false`, i.e. "do not disallow the native
+          scroller" — the exact combination a button inside a ScrollView has, which
+          is why a page still scrolls from over a button. The tap does nothing (the
+          score is not a control); the finger's MOVEMENT scrolls the page. */}
       {!interactive && (
-        <View
+        <Pressable
           style={styles.shield}
-          onStartShouldSetResponder={() => true}
-          onMoveShouldSetResponder={() => false}
-          onResponderTerminationRequest={() => true}
-          onShouldBlockNativeResponder={() => false}
+          onPress={() => undefined}
           accessible={false}
           importantForAccessibility="no-hide-descendants"
         />

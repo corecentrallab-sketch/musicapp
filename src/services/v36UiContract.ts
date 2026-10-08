@@ -123,12 +123,15 @@ export function staffWebviewCannotTakeTheGesture(abcViewSource: string): boolean
   const webviews = src.indexOf('<WebView');
   const shield = src.indexOf('styles.shield', webviews);
   if (webviews < 0 || shield < 0) return false;
-  if (src.indexOf('onStartShouldSetResponder={() => true}', shield) < 0) return false;
-  if (src.indexOf('onShouldBlockNativeResponder={() => false}', shield) < 0) return false;
-  if (src.indexOf('onResponderTerminationRequest={() => true}', shield) < 0) return false;
+  // The shield claims the touch as a Pressable (Pressability reports
+  // blockNativeResponder: false, so the native scroller keeps the gesture) — a
+  // plain View responder would block the scroller instead, which is the bug.
+  const shieldBlock = src.slice(shield, shield + 400);
+  if (shieldBlock.indexOf('<Pressable') < 0) return false;
+  if (shieldBlock.indexOf('onPress=') < 0) return false;
   // The shield may only be mounted for a NON-interactive score: an interactive
   // score (if one ever exists) must stay reachable.
-  return /!\s*interactive\s*&&[\s\S]{0,200}?styles\.shield/.test(src);
+  return /!\s*interactive\s*&&[\s\S]{0,400}?styles\.shield/.test(src);
 }
 
 
@@ -221,6 +224,35 @@ export function transposedCopyShowsTheSheet(
  * shown as an honest error, and an empty field runs nothing.
  */
 export function coverScanReadsTheCover(modalSource: string, readerSource: string): boolean {
+  // NOT SHIPPED IN THIS PR (v36 fix 4). The owner's finding is real — the v33
+  // build has NO recogniser in the flow (`COVER_SCAN_OCR_AVAILABLE = false`), so a
+  // photographed cover never prefills the search and the user must type the title
+  // they just photographed. Reading a photo on-device needs a text recogniser, and
+  // this build has no OCR dependency of any kind (checked: no mlkit / ml-kit /
+  // text-recognition / tesseract package in package.json) — so it cannot be done
+  // with the libraries on the box. The guard is therefore deliberately INERT and
+  // returns false: it asserts nothing until the reader described below exists, so
+  // it can never be read as a claim that the cover scan works.
+  //
+  // The design to implement (kept here so the next pass does not start from zero):
+  // capture → read the photo as a LOCAL base64 data URL (expo-file-system, no
+  // upload) → a hidden WebView that hosts a WASM recogniser (tesseract.js from a
+  // pinned CDN) → the recognised text is the ONLY thing that may prefill the
+  // confirm field (raw-query honesty, no edition claims), the empty field runs
+  // nothing, a failed read shows COVER_SCAN_OCR_FAILED_LINE, and the typed
+  // fallback always stays available.
+  void modalSource;
+  void readerSource;
+  return false;
+}
+
+/** Unused until fix 4 ships; kept so the not-yet-written reader's contract is clear. */
+export const COVER_OCR_READER_NOT_SHIPPED = true;
+
+const _unshippedCoverOcrGuard = (
+  modalSource: string,
+  readerSource: string,
+): boolean => {
   const modal = maskComments(modalSource);
   const reader = maskComments(readerSource);
   if (modal.length < 3000) return false;
@@ -247,5 +279,17 @@ export function coverScanReadsTheCover(modalSource: string, readerSource: string
   //    and posts the recognized text back — it never POSTs the photo anywhere.
   if (reader.indexOf('<WebView') < 0) return false;
   if (reader.indexOf('postMessage') < 0) return false;
-  return reader.indexOf('fetch(') >= 0 ? reader.indexOf('cdn.jsdelivr.net') >= 0 : true;
+  if (reader.indexOf('onMessage') < 0) return false;
+  return true;
+};
+
+/**
+ * The unshipped guard above, exposed only so a future test can prove it bites once
+ * fix 4 lands. Nothing in the app calls it.
+ */
+export function unshippedCoverScanReadsTheCover(
+  modalSource: string,
+  readerSource: string,
+): boolean {
+  return _unshippedCoverOcrGuard(modalSource, readerSource);
 }
