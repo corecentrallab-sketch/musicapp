@@ -340,7 +340,13 @@ function gestureTests(): void {
   assertEq(shouldCaptureEdgeDrag(5, 0), false, 'a twitch below the threshold is left to the page');
   assertEq(shouldCaptureEdgeDrag(8, 8), false, 'the ratio outranks the threshold');
 
-  assertEq(pageScrollEnabledDuringDrag(true), false, 'the page is frozen ONLY while a note is really being dragged');
+  // v36 fix 1 CHANGED THIS RULE ON PURPOSE. v34 froze the page while a note drag
+  // was in flight; the owner's v35 device pass still read "Again page does not
+  // scroll down", and a scroller switched off by editor state is a second,
+  // independent way to lose scrolling for good (one stuck flag = a dead page). The
+  // drag layer now blocks native scrolling on its own responder instead, so the
+  // page is never frozen by editor state — asserted by v36Fixes.test.ts.
+  assertEq(pageScrollEnabledDuringDrag(true), true, 'the page is NEVER frozen by editor state (v36)');
   assertEq(pageScrollEnabledDuringDrag(false), true, 'the page scrolls whenever no drag owns the gesture');
 }
 
@@ -515,7 +521,9 @@ function preFixFixtures(): void {
   // v33 asserted the touch on touch-down; the fix is a function that returns false.
   assertEq(shouldStartEditorDrag(), false, 'a lane that claims touch-down is not what we install');
   assertEq(shouldCapturePitchDrag(20, 3), false, 'v33\'s "any move at all" is not a pitch drag');
-  assertEq(pageScrollEnabledDuringDrag(true), false, 'and the page is not scrollable mid-drag by accident');
+  // v33 froze the page behind its drag layer entirely; v36 keeps the page live and
+  // moves the "do not steal my edit" job onto the responder itself.
+  assertEq(pageScrollEnabledDuringDrag(true), true, 'and the page is scrollable even mid-drag (v36)');
 
   // v33 built the model ONCE at mount: the incoming take was never compared.
   const take = persistedTake();

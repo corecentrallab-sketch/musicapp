@@ -64,7 +64,7 @@ import {
   stopFailureSurface,
   type ModernSurfaceState,
 } from '../services/recognitionRetry';
-import type { ModernMatch } from '../types';
+import type { ModernMatch, SavedPiece } from '../types';
 // The retailer links a modern match arrived with, saved ON the History row
 // (owner 10-01) so the saved row can still open the sheet music it offered.
 import { modernPurchaseUrls } from '../services/purchaseCta';
@@ -246,7 +246,12 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
           // Save-to-history first (a retention lever the owner requires around
           // the affiliate moment), then show the interstitial.
           const m: ModernMatch = outcome.match;
-          await saveRecognition({
+          // TYPED AT THE SEAM (v36 fix 5 / backlog #33 — TYPE-ONLY, zero runtime
+          // change): the record is declared as the SavedPiece the storage seam
+          // takes, so the honest `genre` / `purchaseUrls` contracts are checked by
+          // the compiler: the provider's REAL genre or absent, the backend's
+          // licensed links or null — never an invented category or URL.
+          const savedPiece: SavedPiece = {
             id: m.isrc || m.song,
             title: m.song,
             composer: m.artist,
@@ -260,7 +265,8 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
             // reached nothing and the sheet-music card was a dead end. `null`
             // when the backend supplied no URL — never an invented one.
             purchaseUrls: modernPurchaseUrls(m),
-          });
+          };
+          await saveRecognition(savedPiece);
         }
         setInterstitial({
           loading: false,

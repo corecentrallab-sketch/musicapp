@@ -183,6 +183,7 @@ import type {
   RecognitionMatch,
   RecognitionResponse,
   RootTabParamList,
+  SavedPiece,
 } from '../types';
 
 /** Auto-stop recording after this many ms. Kept comfortably long so the recogniser
@@ -589,7 +590,14 @@ export const HomeScreen: React.FC = () => {
           // Save-to-history FIRST (the retention lever the owner requires around
           // the affiliate moment), then the interstitial — an explicit tap, no
           // auto-redirect.
-          await saveRecognition({
+          //
+          // TYPED AT THE SEAM (v36 fix 5 / backlog #33 — TYPE-ONLY, zero runtime
+          // change): the record is declared as the SavedPiece the storage seam
+          // takes, so the two honest contracts below are checked by the compiler
+          // rather than in review — `modernGenreLabel` still yields the provider's
+          // REAL genre or absent (never an invented category) and
+          // `modernPurchaseUrls` still yields the backend's licensed links or null.
+          const savedPiece: SavedPiece = {
             id: m.isrc || m.song,
             title: m.song,
             composer: m.artist,
@@ -604,7 +612,8 @@ export const HomeScreen: React.FC = () => {
             // `null` when the backend supplied no URL — never an invented one,
             // and never used for a public-domain piece (those saves are above).
             purchaseUrls: modernPurchaseUrls(m),
-          });
+          };
+          await saveRecognition(savedPiece);
           recorder.completeRecording();
           setShowRecognitionResults(false);
           setRecognitionPhase(null);

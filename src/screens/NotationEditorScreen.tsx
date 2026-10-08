@@ -283,7 +283,18 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
             <Text style={styles.pdBadgeText}>Public domain</Text>
           </View>
         )}
-        <AbcScoreView abc={transposedAbc} />
+        {/* THE STAFF NEEDS A REAL BOX (v36 fix 3 — "the sheet wouldn't open").
+            AbcScoreView's own container is `flex: 1` and its WebView is `flex: 1`.
+            Inside a card with NO height, a `flex: 1` child lays out at ZERO — so
+            this card opened with a title, a composer line and NO SCORE, on every
+            score, and the owner could not check that a transposed copy had saved.
+            The box below gives the renderer a definite height, and the viewer's own
+            min-height floor (ABC_MIN_HEIGHT) means no future call site can silently
+            collapse it again. `interactive={false}` closes the WebView's touch
+            surface so a finger on the staff scrolls THIS page instead. */}
+        <View style={styles.scoreStaffBox}>
+          <AbcScoreView abc={transposedAbc} interactive={false} />
+        </View>
       </View>
 
       {/* Save transposed copy */}
@@ -440,6 +451,22 @@ const baseStyles = StyleSheet.create({
     borderColor: '#0f3460',
     overflow: 'hidden',
     marginBottom: 18,
+  },
+  /**
+   * THE SCORE'S OWN BOX (v36 fix 3). A WebView needs a definite height to draw in;
+   * without one the renderer (whose container is `flex: 1`) laid out at zero height
+   * and the score card opened EMPTY — the owner's "unable to open the sheet music
+   * at all" on the saved transposed copy. Tall enough for a wrapped single-line
+   * melody at phone width, and a min-height (not a fixed height) so a longer,
+   * multi-system score can still grow.
+   */
+  scoreStaffBox: {
+    minHeight: 240,
+    marginTop: 8,
+    marginHorizontal: 12,
+    marginBottom: 14,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   scoreHeader: {
     paddingHorizontal: 16,

@@ -58,10 +58,34 @@ export function shouldCaptureEdgeDrag(dx: number, dy: number): boolean {
 }
 
 /**
- * Whether the page underneath may scroll while a drag is in flight. The page is
- * frozen ONLY while the user is really dragging a note (so an edit is never
- * stolen mid-gesture) and unfrozen the moment the finger lifts.
+ * Whether the page underneath may scroll while a drag is in flight (v36 fix 1).
+ *
+ * IT IS NOW ALWAYS TRUE, AND THAT IS THE FIX. v34 answered "no while a drag is in
+ * flight", and the page's ScrollView followed this value. The owner then reported
+ * on v35: "Again page does not scroll down". The flag was never the whole cause
+ * (v33 had no flag and the page did not scroll either — see the staff WebView's
+ * touch shield in AbcScoreView), but leaving a scroller switched off by editor
+ * state is a second, independent way to lose scrolling for good: one stuck
+ * `dragging` value and the page is dead for the rest of the session, with no user
+ * action able to recover it.
+ *
+ * Nothing is lost by never freezing the page: a drag the model actually claims
+ * already blocks native scrolling itself, on the responder
+ * (`onShouldBlockNativeResponder` → true, asserted by v36UiContract), so an edit
+ * can never be stolen mid-gesture — while a touch the drag layer does NOT want
+ * (the pitch/timing intent rules above) always reaches the page.
  */
-export function pageScrollEnabledDuringDrag(dragging: boolean): boolean {
-  return !dragging;
+export function pageScrollEnabledDuringDrag(_dragging: boolean): boolean {
+  return true;
+}
+
+/**
+ * The drag layer's OWN claim on the gesture (v36 fix 1): a drag the model accepts
+ * must not be handed to the native scroller halfway through, because that is how a
+ * correction becomes a scroll. This is the mechanism that replaced the page-wide
+ * freeze, and it is asserted in the live source by v36UiContract (twice — one per
+ * responder: the pitch drag and the timing handles).
+ */
+export function editorDragBlocksNativeScroll(): boolean {
+  return true;
 }

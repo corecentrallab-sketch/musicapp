@@ -24,6 +24,18 @@ import { WebView } from 'react-native-webview';
 export const ABC_DEFAULT_INK = '#0b1220';
 /** The paper a score is drawn on when the caller names none. */
 export const ABC_DEFAULT_BACKGROUND = '#ffffff';
+/**
+ * THE FLOOR THIS VIEWER CAN NEVER COLLAPSE BELOW (v36 fix 3).
+ *
+ * WHY IT EXISTS. The container below is `flex: 1` and its WebView is `flex: 1`.
+ * That is fine inside a box with a real height (the capture page's staff card: 132,
+ * the take editor: 150), but inside an AUTO-HEIGHT parent a `flex: 1` child lays
+ * out at ZERO — the notation editor's score card had no height, so it opened with a
+ * title, a composer line and NO SCORE. The owner hit exactly that on the saved
+ * transposed copy. A floor makes the collapse structurally impossible for every
+ * present and future call site.
+ */
+export const ABC_MIN_HEIGHT = 120;
 
 interface AbcScoreViewProps {
   /** The ABC string (header + body) to render. */
@@ -37,6 +49,21 @@ interface AbcScoreViewProps {
   ink?: string;
   /** The paper colour behind the staff (the surface the score sits on). */
   background?: string;
+  /**
+   * Whether the score itself may receive touches. DEFAULT TRUE, so every existing
+   * call site is unchanged.
+   *
+   * A score is decoration: it is drawn to be READ, and every page that hosts one
+   * scrolls (the take editor, the notation editor). A WebView is a native view
+   * outside RN's responder system, so when it is allowed to take a gesture the
+   * page it sits in stops scrolling from that surface — which is the owner's
+   * "page does not scroll down" (v34 tried `pointerEvents="none"` on the wrapper
+   * and it was not enough). Pass `interactive={false}` and the viewer CLOSES THE
+   * SURFACE OFF: the WebView cannot scroll and cannot receive touch, and a
+   * transparent touch shield sits on top of it that hands every gesture straight
+   * back to the page's scroller.
+   */
+  interactive?: boolean;
 }
 
 /**
@@ -131,6 +158,7 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   abc,
   ink = ABC_DEFAULT_INK,
   background = ABC_DEFAULT_BACKGROUND,
+  interactive = true,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   // Use the abc text (and the ink, which changes the document) as a rendering
@@ -148,8 +176,29 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
         javaScriptEnabled
         domStorageEnabled
         mixedContentMode="always"
+        scrollEnabled={interactive}
         androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
+        pointerEvents={interactive ? 'auto' : 'none'}
       />
+      {/* THE TOUCH SHIELD (v36 fix 1; only when the caller says the score is
+          decoration). It is drawn AFTER the WebView, so it is the topmost sibling
+          in this box and a finger on the staff hits THIS, never the native
+          WebView. It claims the touch so nothing below it sees it, and it lets
+          the page's ScrollView take the gesture back the moment the finger moves
+          (`onShouldBlockNativeResponder` → false = "do not disallow the native
+          scroller"), which is exactly how a button inside a scroller behaves.
+          Net effect: the biggest surface on the page scrolls the page. */}
+      {!interactive && (
+        <View
+          style={styles.shield}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => false}
+          onResponderTerminationRequest={() => true}
+          onShouldBlockNativeResponder={() => false}
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+        />
+      )}
     </View>
   );
 };
@@ -157,6 +206,7 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
+    minHeight: ABC_MIN_HEIGHT,
     backgroundColor: ABC_DEFAULT_BACKGROUND,
     borderRadius: 12,
     overflow: 'hidden',
@@ -164,5 +214,12 @@ const baseStyles = StyleSheet.create({
   webview: {
     flex: 1,
     backgroundColor: ABC_DEFAULT_BACKGROUND,
+  },
+  shield: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
 });
