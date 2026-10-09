@@ -64,6 +64,7 @@ import {
 } from '../src/services/takeEditor';
 import {
   PREVIEW_DEFAULT_INSTRUMENT,
+  PREVIEW_INSTRUMENTS,
   PREVIEW_ONLY_CAPTION,
   PREVIEW_TEMPO_DEFAULT_PCT,
   PREVIEW_TEMPO_MAX_PCT,
@@ -481,6 +482,34 @@ function previewTests(): void {
 
   assertEq(previewInstrument('guitar').label, 'Guitar', 'the instrument overlay can be changed');
   assertEq(previewInstrument('nonsense').id, PREVIEW_DEFAULT_INSTRUMENT, 'an unknown instrument falls back to piano');
+
+  // v37 item 3 — the synthesized trio became the RECORDED acoustic bank. These
+  // are the chips the owner reaches sax/trumpet/harp through (owner FAIL #7), so
+  // the copy asserted here is surface copy, not an implementation detail.
+  assertEq(
+    PREVIEW_INSTRUMENTS.map((entry) => entry.id).join(','),
+    'piano,guitar,sax,trumpet,harp',
+    'the preview offers exactly the five recorded instruments the bank holds',
+  );
+  assertEq(previewInstrument('sax').label, 'Sax', 'sax has its own chip');
+  assertEq(previewInstrument('trumpet').label, 'Trumpet', 'so does trumpet');
+  assertEq(previewInstrument('harp').label, 'Harp', 'so does harp');
+  assertEq(
+    previewInstrument('strings').id,
+    PREVIEW_DEFAULT_INSTRUMENT,
+    'the retired synthesized id falls back to piano instead of offering a silent chip',
+  );
+  assertEq(
+    new Set(PREVIEW_INSTRUMENTS.map((entry) => entry.label)).size,
+    PREVIEW_INSTRUMENTS.length,
+    'every chip has its own label',
+  );
+  assert(
+    PREVIEW_INSTRUMENTS.every(
+      (entry) => entry.label.length > 1 && entry.timbre.indexOf('recorded') >= 0,
+    ),
+    'every timbre line names the recorded sound honestly (v37 plays samples, not synthesis)',
+  );
   assert(
     previewStatusLine({ playing: true, loop: true, noteCount: 4, cursor: 2 }).indexOf('note 3 of 4') >= 0,
     'the status line says where the preview is',
