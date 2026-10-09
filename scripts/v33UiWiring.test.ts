@@ -24,6 +24,7 @@ import {
   matchResultsAreOffThePage,
   previewEngineNeverRewritesTheTake,
   previewIsDockedInTheEditor,
+  previewOffersTheWholeBank,
   searchHasItsOwnDiscoverBand,
   searchRetriesTyposAndSaysSo,
   practiceComponentsAreGrouped,
@@ -543,6 +544,50 @@ assertEq(
   previewEngineNeverRewritesTheTake(noClock),
   false,
   'MUTATION: a preview with no clock FAILS previewEngineNeverRewritesTheTake',
+);
+
+// ────────── slice G2 (v37 item 3) — the chips reach the recorded bank ──────────
+const TAKE_PREVIEW = 'src/services/takePreview.ts';
+const TONE_BANK = 'src/services/toneBank.ts';
+const takePreviewSource = readAppFile(TAKE_PREVIEW);
+const bankSource = readAppFile(TONE_BANK);
+
+console.log('\nslice G2 — the preview chips and the recorded bank are the same five (v37 item 3)');
+assert(takePreviewSource.length > 1000, `read ${TAKE_PREVIEW} (${takePreviewSource.length} chars)`);
+assert(bankSource.length > 12000, `read ${TONE_BANK} (${bankSource.length} chars)`);
+assertEq(
+  previewOffersTheWholeBank(takePreviewSource, bankSource),
+  true,
+  'the recorded bank and the instrument chips hold the SAME five ids — sax, trumpet and harp are reachable on the surface',
+);
+// MUTATION 29: the chips keep the retired synthesized id — a chip with no bank entry.
+const stringsChip = takePreviewSource.replace("id: 'harp'", "id: 'strings'");
+assert(stringsChip !== takePreviewSource, 'the strings-chip mutation changed the real preview model');
+assertEq(
+  previewOffersTheWholeBank(stringsChip, bankSource),
+  false,
+  'MUTATION: a chip for the retired synthesized timbre FAILS previewOffersTheWholeBank',
+);
+// MUTATION 30: the bank loses an instrument the chips still offer (a silent chip).
+const noSaxInBank = bankSource.replace('\n  sax: SAX,', '');
+assert(noSaxInBank !== bankSource, 'the no-sax mutation changed the real bank');
+assertEq(
+  previewOffersTheWholeBank(takePreviewSource, noSaxInBank),
+  false,
+  'MUTATION: a banked id that is not a key of the player record FAILS previewOffersTheWholeBank',
+);
+// MUTATION 31: the chips were never extended beyond the old trio — the recorded
+// bank arrives and three instruments stay unreachable on the surface.
+const oldChipsOnly = takePreviewSource
+  .split("id: 'trumpet'")
+  .join("id: 'piano'")
+  .split("id: 'harp'")
+  .join("id: 'piano'");
+assert(oldChipsOnly !== takePreviewSource, 'the old-chips mutation changed the real preview model');
+assertEq(
+  previewOffersTheWholeBank(oldChipsOnly, bankSource),
+  false,
+  'MUTATION: chips that never reach sax/trumpet/harp FAIL previewOffersTheWholeBank',
 );
 
 
