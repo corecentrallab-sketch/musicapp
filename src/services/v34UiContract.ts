@@ -21,6 +21,7 @@
  * documented-but-absent call can never satisfy a guard.
  */
 import { maskComments } from './modalBackContract';
+import { editorPageScrollerIsNeverSwitchedOff } from './v37UiContract';
 
 /** The chip's own test id — the same string the component stamps on the chip. */
 export const AUDIO_CHIP_TEST_ID = 'audio-unavailable-chip';
@@ -184,13 +185,17 @@ export function editorReloadsTakeFromHost(editorSource: string): boolean {
  * THE DRAG LAYER HANDS THE GESTURE BACK TO THE PAGE (v34 fix 3 — the frozen
  * "Correct Your Take" page). v33's lane claimed the touch on touch-down
  * (`onStartShouldSetPanResponder: () => true`) and froze the scroll; now the lane
- * installs `shouldStartEditorDrag` (which is FALSE, always) on BOTH responders,
- * claims a pitch drag only for vertical intent, a timing drag only for horizontal
- * intent, and the page's own `scrollEnabled` follows `pageScrollEnabledDuringDrag`.
+ * installs `shouldStartEditorDrag` (which is FALSE, always), claims a pitch drag
+ * only for vertical intent, a timing drag only for horizontal intent, and the
+ * page's own scroller is NEVER switchable at all (v37 item 1: the v36 constant
+ * `scrollEnabled={pageScrollEnabledDuringDrag(dragging)}` was still a value a
+ * later refactor could compute from editor state, and one stuck value freezes the
+ * page for a whole session — the prop is gone, and the scroller is remounted per
+ * session instead. See `editorPageScrollerIsNeverSwitchedOff`).
  */
 export function editorDragLayerSharesScroll(editorSource: string): boolean {
   const src = maskComments(editorSource);
-  if (src.indexOf('pageScrollEnabledDuringDrag(dragging)') < 0) return false;
+  if (!editorPageScrollerIsNeverSwitchedOff(src)) return false;
   if (src.indexOf('shouldCapturePitchDrag(') < 0) return false;
   if (src.indexOf('shouldCaptureEdgeDrag(') < 0) return false;
   const startClaims = countOf(src, 'onStartShouldSetPanResponder: shouldStartEditorDrag');

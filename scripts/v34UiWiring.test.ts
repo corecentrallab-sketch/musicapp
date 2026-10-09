@@ -30,6 +30,7 @@ import {
   previewPlaybackSetsAudioMode,
   takeClipPlayerUsesRealPlayback,
 } from '../src/services/v34UiContract';
+import { pageScrollerTagOf } from '../src/services/v37UiContract';
 
 declare const process: { cwd(): string; exit(code: number): never };
 declare const require: (name: string) => any;
@@ -332,16 +333,24 @@ assertEq(
   false,
   'MUTATION: half the fix (one responder still claims touch-down) FAILS editorDragLayerSharesScroll',
 );
-// MUTATION 17: the page's scroll no longer follows the drag.
+// MUTATION 17: the page's scroller gets a `scrollEnabled` flag again (v36's
+// constant shape, which v37 item 1 removed outright — one stuck value freezes the
+// page for a whole session, and a constant is one refactor away from being
+// computed from editor state).
+const pageTag = pageScrollerTagOf(editorSource);
+assert(pageTag !== null, 'the real editor HAS a page scroller to mutate');
 const frozenScroll = editorSource.replace(
-  'scrollEnabled={pageScrollEnabledDuringDrag(dragging)}',
-  'scrollEnabled={!dragging}',
+  pageTag as string,
+  (pageTag as string).replace(
+    '<ScrollView',
+    '<ScrollView\n          scrollEnabled={pageScrollEnabledDuringDrag(dragging)}',
+  ),
 );
 assert(frozenScroll !== editorSource, 'mutation 17 changed the real editor');
 assertEq(
   editorDragLayerSharesScroll(frozenScroll),
   false,
-  'MUTATION: a scroll flag decided inline FAILS editorDragLayerSharesScroll',
+  'MUTATION: a scroll flag on the page scroller FAILS editorDragLayerSharesScroll',
 );
 // MUTATION 18: edits stop auditioning (the user cannot hear a correction).
 const silentEdit = editorSource.replace(/preview\.playNote\(/g, 'previewNoop(');

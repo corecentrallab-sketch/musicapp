@@ -96,7 +96,6 @@ import {
   takeNoteCount,
 } from '../services/editorTakeLoad';
 import {
-  pageScrollEnabledDuringDrag,
   shouldCaptureEdgeDrag,
   shouldCapturePitchDrag,
   shouldStartEditorDrag,
@@ -202,8 +201,22 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   const [freeChord, setFreeChord] = useState('');
   const [saving, setSaving] = useState<TakeSaveMode | null>(null);
   const [saveLine, setSaveLine] = useState<string | null>(null);
-  /** True only while a note drag owns the gesture (the page may not scroll then). */
+  /** True only while a note drag owns the gesture (the drag blocks native scroll
+      through its own responder — the page's scroller is never switched off). */
   const [dragging, setDragging] = useState(false);
+  /**
+   * WHICH EDITOR SESSION THE PAGE IS ON (v37 item 1, backlog 3ff40fd1).
+   *
+   * WHY THIS EXISTS. The owner opened the editor from a History row and the page
+   * would not scroll, while the SAME component opened from the capture window
+   * scrolled fine. Everything that could be checked from the source was already
+   * right (every WebView on the page is shielded with `interactive={false}`), so
+   * what is left is a NATIVE scroller that entered a bad state and stayed in it.
+   * The page's ScrollView is therefore keyed on this counter and the counter is
+   * bumped on every OPEN: each session gets a brand-new native scroller, so a
+   * scroller that got stuck can never follow the user into the next session.
+   */
+  const [pageSession, setPageSession] = useState(0);
   /**
    * WHICH TAKE THE PAGE IS SHOWING (v36 fix 2, backlog #43): the editable take, or
    * the take exactly as it was auto-detected. DISPLAY ONLY — see
@@ -234,6 +247,11 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
     const opened = visible && !wasVisibleRef.current;
     wasVisibleRef.current = visible;
     if (!visible) return;
+    /**
+     * v37 item 1: every OPEN gets a FRESH native page scroller (see pageSession).
+     * This is the one thing about the page that must not survive a close/reopen.
+     */
+    if (opened) setPageSession((session) => session + 1);
     // Opening the editor always lands on the EDITABLE take (v36 fix 2): a stale
     // "original" view would show the PREVIOUS take's baseline under the new take's
     // title, which is worse than showing nothing.
@@ -494,16 +512,28 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
           <Text style={styles.title}>{EDITOR_TITLE}</Text>
         </View>
 
-        {/* THE PAGE MAY ALWAYS SCROLL (v34 fix 3, hardened in v36 fix 1): the
-            page's own scroller is BOUNDED here (`styles.page`) and is stopped ONLY
-            while a note drag really owns the gesture, never because a touch
-            started on the drag lane. Every surface on the page — including the
-            staff, the biggest one — hands the gesture to this ScrollView (see
-            AbcScoreView's touch shield). */}
+        {/* THE PAGE MAY ALWAYS SCROLL (v34 fix 3, hardened in v36 fix 1 and again
+            in v37 item 1): the page's own scroller is BOUNDED here
+            (`styles.page`), carries NO `scrollEnabled` prop at all — no editor
+            state may EVER be able to switch the page's scroller off, because one
+            stuck value would freeze the page for the rest of the session with no
+            user action able to recover (v36 made the old flag a constant TRUE;
+            v37 removed the prop outright) — and is REMOUNTED on every open (the
+            `key` below) so a native scroller that entered a bad state can never
+            follow the user into the next session (owner FAIL #8: opened from a
+            History row it would not scroll, while the same component opened from
+            the capture window scrolled fine). `nestedScrollEnabled` keeps the
+            horizontal note lane usable inside this vertical scroller on Android.
+            An in-flight drag is protected by the responder itself
+            (`onShouldBlockNativeResponder: () => true` — see
+            services/editorGestures.ts), so nothing is lost by never freezing the
+            page. Every surface on the page — including the staff, the biggest one
+            — hands the gesture to this ScrollView (AbcScoreView's touch shield). */}
         <ScrollView
+          key={`editor-page-${pageSession}`}
           style={styles.page}
           contentContainerStyle={styles.body}
-          scrollEnabled={pageScrollEnabledDuringDrag(dragging)}
+          nestedScrollEnabled
         >
           <Text style={styles.intro}>{EDITOR_INTRO}</Text>
           <Text style={styles.tip}>{EDITOR_COACH_TIP}</Text>

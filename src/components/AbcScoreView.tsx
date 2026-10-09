@@ -16,9 +16,14 @@
  */
 
 import { useThemedStyles } from '../services/themeStore';
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
+import {
+  abcHeightFromMessage,
+  abcHeightProbeScript,
+  abcScoreContainerHeight,
+} from '../services/scoreHeight';
 
 /** The ink a score is drawn in when the caller names none (near-black on paper). */
 export const ABC_DEFAULT_INK = '#0b1220';
@@ -64,6 +69,20 @@ interface AbcScoreViewProps {
    * back to the page's scroller.
    */
   interactive?: boolean;
+  /**
+   * THE HEIGHT THE DOCUMENT REPORTED (v37 item 2, backlog 9e71e467 — the
+   * transposed copy re-opened showing only ~4 bars).
+   *
+   * WHY. A non-interactive viewer cannot scroll itself, so it can only show as
+   * much of the score as its box is tall. Give it a box with a `minHeight` and
+   * nothing else and a longer score is simply CLIPPED — the owner's "~4 bars".
+   * The viewer's document therefore measures itself and posts its height back
+   * (see services/scoreHeight.ts), and this call site gets told, so it can grow
+   * the box it owns. The viewer ALWAYS applies the measured height to itself
+   * when it is non-interactive (an interactive viewer keeps its caller's box);
+   * the callback is for callers that own a box AROUND it.
+   */
+  onDocumentHeight?: (height: number) => void;
 }
 
 /**
@@ -122,6 +141,7 @@ export function generateAbcHtml(
     }
   })();
 </script>
+${abcHeightProbeScript()}
 </body>
 </html>`;
 }
@@ -159,15 +179,55 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   ink = ABC_DEFAULT_INK,
   background = ABC_DEFAULT_BACKGROUND,
   interactive = true,
+  onDocumentHeight,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   // Use the abc text (and the ink, which changes the document) as a rendering
   // key so a fresh WebView reloads whenever the score or its colour changes.
   const html = useMemo(() => generateAbcHtml(abc, ink, background), [abc, ink, background]);
   const key = useMemo(() => abcRenderKey(abc, ink, background), [abc, ink, background]);
+  /**
+   * THE DOCUMENT'S OWN HEIGHT (v37 item 2). It is keyed on `abcRenderKey` on
+   * purpose: a new ABC (or a new ink/paper) is a NEW document, so the height the
+   * previous document reported says nothing about this one — a stale height must
+   * never be applied to a fresh render, or the score shows the wrong box until
+   * the next message arrives.
+   */
+  const [measured, setMeasured] = useState<{ key: string; height: number } | null>(null);
+  const appliedHeight =
+    measured && measured.key === key
+      ? abcScoreContainerHeight({ interactive, measuredHeight: measured.height })
+      : null;
+
+  /**
+   * The document posts `{ type: 'abc-score-height', height }` (see
+   * services/scoreHeight.ts). Junk, foreign messages and an interactive viewer
+   * are all ignored; the state keeps its identity when nothing changed, so a
+   * repeated report cannot spin a re-render.
+   */
+  const handleMessage = (event: { nativeEvent: { data: string } }) => {
+    const reported = abcHeightFromMessage(event.nativeEvent.data);
+    if (reported === null) return;
+    if (onDocumentHeight) onDocumentHeight(reported);
+    setMeasured((previous) =>
+      previous && previous.key === key && previous.height === reported
+        ? previous
+        : { key, height: reported }
+    );
+  };
 
   return (
-    <View style={[styles.container, { backgroundColor: background }]}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: background },
+        // A FLEX: 1 CHILD IN AN AUTO-HEIGHT PARENT LAYS OUT AT ZERO (v36 fix 3).
+        // Applying a measured height therefore also has to take the container OFF
+        // the flex axis (`flex: 0` = grow 0 / shrink 0 / basis auto), or the
+        // flexBasis of 0 would win over the height and nothing would grow.
+        appliedHeight !== null && { flex: 0, height: appliedHeight },
+      ]}
+    >
       <WebView
         key={key}
         source={{ html }}
@@ -179,6 +239,7 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
         scrollEnabled={interactive}
         androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
         pointerEvents={interactive ? 'auto' : 'none'}
+        onMessage={handleMessage}
       />
       {/* THE TOUCH SHIELD (v36 fix 1; only when the caller says the score is
           decoration). It is drawn AFTER the WebView, so it is the topmost sibling

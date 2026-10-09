@@ -480,10 +480,18 @@ export const HistoryScreen: React.FC = () => {
                   says the editor is reached from the capture window AND from a
                   History melody row — the SAME component, no third copy — and the
                   correction re-saves onto this row, so the row's take, its MIDI
-                  export and the playback all read what the user corrected. */}
+                  export and the playback all read what the user corrected.
+                  v37 item 1 (owner FAIL #8): the editor is opened OUT of the press
+                  event (`requestAnimationFrame`). This button is a nested touchable
+                  inside the row's own touchable, and mounting a full-screen Modal
+                  with a brand-new native scroller in the middle of that gesture is
+                  the one difference between this door and the capture window's —
+                  the door that the owner reported as "will not scroll". Deferring
+                  lets the press finish and the native scroll responder settle
+                  before the editor's page scroller is created. */}
               <TouchableOpacity
                 style={styles.editTakeBtn}
-                onPress={() => setEditTake(item)}
+                onPress={() => requestAnimationFrame(() => setEditTake(item))}
                 activeOpacity={0.7}
                 accessibilityRole="button"
                 accessibilityLabel={`${CORRECT_TAKE_CTA} for ${item.title}`}
