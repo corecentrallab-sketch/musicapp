@@ -377,6 +377,18 @@ export interface LibraryItem {
   sizeBytes: number;
   /** ISO date string when the item was imported. */
   createdAt: string;
+  /**
+   * ADDITIVE (v37 item 4, backlog d9d458bb): the CATALOG PIECE this row is a copy
+   * of, when the row was written by "Save to library" on a public-domain result
+   * card or piece page (services/pieceLibrarySave.ts) rather than picked, scanned
+   * or synced.
+   *
+   * It exists so the save action can be idempotent and honest: the surface reads
+   * the registry for this id and shows its real "Saved to library" state, and a
+   * second tap can never write a duplicate row. Absent on every imported, scanned
+   * and synced item, which keep exactly the behaviour they had.
+   */
+  sourcePieceId?: string;
 }
 
 // ─── Catalog search ("Find a piece", GET /api/pieces?q=) ──────
