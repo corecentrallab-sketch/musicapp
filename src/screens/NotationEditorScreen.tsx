@@ -36,16 +36,27 @@ import {
   readAbcText,
 } from '../services/libraryStore';
 import {
+  REVERT_ORIGINAL_LABEL,
   clampSemitones,
   extractAbcKey,
+  originalScorePlan,
   transposeAbc,
   transposeKeyLabel,
 } from '../services/abcTranspose';
+import { abcScoreContainerHeight } from '../services/scoreHeight';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NotationEditor'>;
 
 const MIN_OFFSET = -11;
 const MAX_OFFSET = 11;
+/**
+ * THE SCORE'S BOX MAY NOT COLLAPSE (v36 fix 3) — but it is only a FLOOR. v37 item
+ * 2 (backlog 9e71e467, owner 10-09: "the transposed copy re-opens showing ~4
+ * bars") adds the missing half: the score's document reports its own height, and
+ * this box grows to it, so a longer score is laid out in full and the PAGE
+ * scrolls it instead of the viewer clipping it.
+ */
+const SCORE_STAFF_MIN_HEIGHT = 240;
 
 /** Simple AbcScore wrapper used for a library-loaded (already-transposed) copy. */
 function scoreFromAbc(abc: string, title: string): AbcScore {
@@ -65,6 +76,22 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  /**
+   * THE ABC THIS EDITOR LOADED (v37 item 2, backlog a3a6da0c). Held — not
+   * recomputed — because transposition is not invertible to look at: the user
+   * may have stepped the offset several times, and only the loaded text can be
+   * put back exactly. It is set at EVERY load point below: the library read, the
+   * requested public-domain piece, and the bundled default.
+   */
+  const [sourceAbc, setSourceAbc] = useState('');
+  /**
+   * THE HEIGHT THE SCORE'S DOCUMENT REPORTED (v37 item 2). null until the
+   * document says; it grows the box below so a long score lays out in FULL
+   * instead of being clipped to the box (the owner's "~4 bars"). It is cleared
+   * whenever a different score is loaded, because a height that belonged to the
+   * previous score says nothing about this one.
+   */
+  const [scoreHeight, setScoreHeight] = useState<number | null>(null);
 
   const sourcePieceId = route.params?.sourcePieceId;
   const itemId = route.params?.itemId;
@@ -82,6 +109,8 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
           }
           const abc = await readAbcText(item);
           if (cancelled) return;
+          setSourceAbc(abc);
+          setScoreHeight(null);
           setSelected(scoreFromAbc(abc, item.title));
           setOffset(0);
         } catch {
@@ -102,6 +131,8 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
           (p) => p.id === sourcePieceId
         );
         if (!cancelled && found) {
+          setSourceAbc(found.abc);
+          setScoreHeight(null);
           setSelected(found);
           setOffset(0);
           return;
@@ -114,6 +145,8 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
       if (!cancelled) {
         const first = PUBLIC_DOMAIN_ABC_SCORES[0];
         if (first) {
+          setSourceAbc(first.abc);
+          setScoreHeight(null);
           setSelected(first);
           setOffset(0);
         }
@@ -145,7 +178,40 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
 
   const resetOffset = useCallback(() => setOffset(0), []);
 
+  /**
+   * The score's document measured itself (v37 item 2). The height is clamped by
+   * the same pure rule the viewer uses, so a runaway document cannot grow the
+   * page without end.
+   */
+  const handleDocumentHeight = useCallback((height: number) => {
+    setScoreHeight(abcScoreContainerHeight({ interactive: false, measuredHeight: height }));
+  }, []);
+
+  /**
+   * WHAT "REVERT TO ORIGINAL" WOULD DO, as data (v37 item 2, backlog a3a6da0c).
+   */
+  const revertPlan = useMemo(
+    () => originalScorePlan(sourceAbc, selected?.abc ?? '', offset),
+    [sourceAbc, selected, offset]
+  );
+
+  /**
+   * PUT THE LOADED SCORE BACK (v37 item 2). One press: the offset returns to 0
+   * AND the shown ABC is restored from the text this editor loaded — the two are
+   * set together so the staff can never show a transposed body under an original
+   * key (or the reverse). The measured height is cleared because it belonged to
+   * the transposed render.
+   */
+  const handleRevertToOriginal = useCallback(() => {
+    const plan = originalScorePlan(sourceAbc, selected?.abc ?? '', offset);
+    setOffset(plan.offset);
+    setScoreHeight(null);
+    setSelected((current) => (current ? { ...current, abc: plan.abc } : current));
+  }, [sourceAbc, selected, offset]);
+
   const pick = useCallback((p: AbcScore) => {
+    setSourceAbc(p.abc);
+    setScoreHeight(null);
     setSelected(p);
     setOffset(0);
   }, []);
@@ -265,6 +331,23 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
             </Pressable>
           )}
         </View>
+
+        {/* REVERT TO THE LOADED SCORE (v37 item 2, backlog a3a6da0c) — ALWAYS
+            VISIBLE, so the way back to the score the user opened is never hidden
+            behind a state they may not be in: it resets the offset to 0 AND
+            restores the ABC this editor loaded (see originalScorePlan). It is
+            inert while nothing has changed, which is exactly when there is
+            nothing to put back. */}
+        <Pressable
+          style={[styles.revertBtn, !revertPlan.canRevert && styles.revertBtnOff]}
+          onPress={handleRevertToOriginal}
+          disabled={!revertPlan.canRevert}
+          accessibilityRole="button"
+          accessibilityLabel={REVERT_ORIGINAL_LABEL}
+        >
+          <Ionicons name="refresh" size={16} color={theme.accent} />
+          <Text style={styles.revertText}>{REVERT_ORIGINAL_LABEL}</Text>
+        </Pressable>
       </View>
 
       {/* Live rendered score */}
@@ -292,8 +375,23 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
             min-height floor (ABC_MIN_HEIGHT) means no future call site can silently
             collapse it again. `interactive={false}` closes the WebView's touch
             surface so a finger on the staff scrolls THIS page instead. */}
-        <View style={styles.scoreStaffBox}>
-          <AbcScoreView abc={transposedAbc} interactive={false} />
+        {/* THE BOX GROWS TO THE SCORE (v37 item 2, backlog 9e71e467). The box is
+            a FLOOR (SCORE_STAFF_MIN_HEIGHT); the score's own document reports how
+            tall it really is and the box is given that as a min-height, so a long
+            score lays out in full and THIS page scrolls it. Without it the viewer
+            (non-interactive, so it cannot scroll itself) showed only as much as
+            the box was tall — the owner's "~4 bars". `interactive={false}` keeps
+            the WebView's touch surface closed so a finger on the staff scrolls
+            this page (v36 fix 1). */}
+        <View
+          style={[
+            styles.scoreStaffBox,
+            scoreHeight !== null && {
+              minHeight: Math.max(SCORE_STAFF_MIN_HEIGHT, scoreHeight),
+            },
+          ]}
+        >
+          <AbcScoreView abc={transposedAbc} interactive={false} onDocumentHeight={handleDocumentHeight} />
         </View>
       </View>
 
@@ -441,6 +539,33 @@ const baseStyles = StyleSheet.create({
   },
   resetText: {
     color: '#e94560',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  /**
+   * THE WAY BACK TO THE LOADED SCORE (v37 item 2, backlog a3a6da0c). Always
+   * visible under the transpose card; dimmed (and inert) while nothing has
+   * changed, so it never promises a change it cannot make.
+   */
+  revertBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    alignSelf: 'center',
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    backgroundColor: '#16213e',
+  },
+  revertBtnOff: {
+    opacity: 0.45,
+  },
+  revertText: {
+    color: '#eaeaff',
     fontSize: 13,
     fontWeight: '700',
   },

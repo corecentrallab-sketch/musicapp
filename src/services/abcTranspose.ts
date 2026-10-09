@@ -408,6 +408,55 @@ export function extractAbcKey(abc: string): string | null {
   return m ? m[1] : null;
 }
 
+// ─── Revert to the original (v37 item 2, backlog a3a6da0c) ──────
+
+/**
+ * THE LABEL OF THE CONTROL THAT PUTS THE LOADED SCORE BACK (v37 item 2, owner
+ * 10-09: "the transposed copy re-opens showing ~4 bars" — with the score now
+ * measurable, the user also needs a way BACK to the score they loaded).
+ *
+ * It says what it does and nothing more: the editor never claims to have
+ * "remastered" or "restored" anything — it re-shows the ABC that was loaded.
+ */
+export const REVERT_ORIGINAL_LABEL = 'Revert to original';
+
+/** What reverting to the loaded score does, as data the screen applies. */
+export interface OriginalScorePlan {
+  /** Whether the control can change anything right now (else it is inert). */
+  canRevert: boolean;
+  /** The offset to return to — always 0, the loaded score's own key. */
+  offset: number;
+  /** The ABC to show after reverting (the loaded score, verbatim). */
+  abc: string;
+}
+
+/**
+ * THE REVERT PLAN (v37 item 2). `sourceAbc` is the ABC the editor LOADED (from
+ * the library, from `sourcePieceId`, or the default first score) — it is the one
+ * thing that can never be re-derived: transposition is lossy to look at and the
+ * user may have stepped the offset several times, so the original text has to be
+ * held, not recomputed.
+ *
+ * PURE, so the gate can pin it: reverting returns the loaded ABC verbatim and
+ * offset 0; a source that is empty (nothing loaded yet) can never be "reverted
+ * to", which keeps the control from blanking the score; and the plan is inert
+ * when nothing has changed (offset 0 AND the shown ABC is already the source).
+ */
+export function originalScorePlan(
+  sourceAbc: string,
+  currentAbc: string,
+  offset: number
+): OriginalScorePlan {
+  const source =
+    typeof sourceAbc === 'string' && sourceAbc.length > 0 ? sourceAbc : currentAbc;
+  const changed = offset !== 0 || currentAbc !== source;
+  return {
+    canRevert: changed && source.length > 0,
+    offset: 0,
+    abc: source,
+  };
+}
+
 /**
  * Convenience for the UI: given a source key label (e.g. `C`, `Dm`) and a
  * semitone offset, return `{ fromLabel, toLabel }` human names like

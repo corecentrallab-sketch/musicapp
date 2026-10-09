@@ -36,6 +36,7 @@
  * /home/team/shared/v36-mutation-probes.txt.
  */
 import { maskComments } from './modalBackContract';
+import { editorPageScrollerIsNeverSwitchedOff } from './v37UiContract';
 
 function countOf(haystack: string, needle: string): number {
   let count = 0;
@@ -83,7 +84,15 @@ export function editorPageScrollsFromEverySurface(editorSource: string): boolean
   // d. the drag layer shares the gesture honestly.
   if (countOf(src, 'onStartShouldSetPanResponder: shouldStartEditorDrag') < 2) return false;
   if (countOf(src, 'onShouldBlockNativeResponder: () => true') < 2) return false;
-  if (src.indexOf('scrollEnabled={pageScrollEnabledDuringDrag(dragging)}') < 0) return false;
+  // v37 item 1 REPLACED the v36 property here. v36 asserted a CONSTANT
+  // (`scrollEnabled={pageScrollEnabledDuringDrag(dragging)}`, `=== true`); the
+  // owner's FAIL #8 (opened from a History row, no scroll) showed that a value —
+  // even a constant — is still a value a later refactor can compute from editor
+  // state, and one stuck value freezes the page for a whole session. The page
+  // scroller now carries NO `scrollEnabled` prop at all and is remounted every
+  // session (`key={\`editor-page-${pageSession}\`}`), which is what
+  // `editorPageScrollerIsNeverSwitchedOff` requires (src/services/v37UiContract.ts).
+  if (!editorPageScrollerIsNeverSwitchedOff(src)) return false;
 
   // The owner's own words: the chords, the export/preview and the save bar are
   // reachable — every one of them is inside the single vertical scroller.
