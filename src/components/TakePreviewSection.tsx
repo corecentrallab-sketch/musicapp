@@ -3,13 +3,15 @@
  * editor (v33 slice G; owner-ratified option 4, 10-04: ONE control row inside the
  * editor above the sticky save bar — NOT a separate screen).
  *
- * WHAT IT PLAYS: the user's OWN corrected take, synthesized on the device from
- * the generated tone bank. It is not a recording and not the original song, and
- * the caption on the surface says exactly that (PREVIEW_ONLY_CAPTION).
+ * WHAT IT PLAYS: the user's OWN corrected take, played back as the RECORDED
+ * acoustic one-shot bank in `toneBank.ts` (v37; CC0/CC-BY samples, see
+ * assets/tones/SAMPLES-LICENSES.md). It is not a recording of a song and not the
+ * original song, and the caption on the surface says exactly that
+ * (PREVIEW_ONLY_CAPTION).
  *
  * THE CONTROL ROW: prev / play-pause / next / loop, the note the preview clock is
  * inside (the same cursor the editor's note lane highlights), the PREVIEW-ONLY
- * tempo rail, and the instrument overlays (piano / strings / guitar).
+ * tempo rail, and the instrument overlays (piano / guitar / sax / trumpet / harp).
  *
  * THE ONE RULE: the tempo is a PREVIEW CLOCK. Every control here routes into the
  * hook (useNotePreview), which only ever READS the notes — see

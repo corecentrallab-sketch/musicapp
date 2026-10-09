@@ -905,3 +905,83 @@ export const COVER_SCAN_OCR_MODULE_IDS: readonly string[] = [
   'textrecognition',
 ];
 
+
+// ─────────────── G2 (v37 item 3): the chips reach the whole bank ───────────────
+
+/** The string literals between a named array's brackets (`export const X … = [ … ]`). */
+export function literalsInArray(source: string, marker: string): string[] {
+  const masked = maskComments(source);
+  const at = masked.indexOf(marker);
+  if (at < 0) return [];
+  // NOTE: the type annotation itself carries brackets (`readonly X[]`), so the
+  // body starts at the `= [`, never at the first `[` after the name.
+  const eq = masked.indexOf('= [', at);
+  if (eq < 0) return [];
+  const open = eq + 2;
+  const close = masked.indexOf(']', open);
+  if (close < 0) return [];
+  const body = masked.slice(open + 1, close);
+  const out: string[] = [];
+  const re = /'([a-z][a-z0-9_-]*)'/g;
+  let match: RegExpExecArray | null = re.exec(body);
+  while (match !== null) {
+    out.push(match[1]);
+    match = re.exec(body);
+  }
+  return out;
+}
+
+/** The `id:` values of an array of `{ id: '…' }` entries. */
+export function objectIdsInArray(source: string, marker: string): string[] {
+  const masked = maskComments(source);
+  const at = masked.indexOf(marker);
+  if (at < 0) return [];
+  const eq = masked.indexOf('= [', at);
+  if (eq < 0) return [];
+  const open = eq + 2;
+  const close = masked.indexOf(']', open);
+  if (close < 0) return [];
+  const body = masked.slice(open + 1, close);
+  const out: string[] = [];
+  const re = /id:\s*'([a-z][a-z0-9_-]*)'/g;
+  let match: RegExpExecArray | null = re.exec(body);
+  while (match !== null) {
+    out.push(match[1]);
+    match = re.exec(body);
+  }
+  return out;
+}
+
+/**
+ * v37 item 3 — the owner's FAIL here was "the sounds of piano, guitar etc are not
+ * available in Correct-your-Take". A generated bank alone cannot fix that: the
+ * instrument CHIPS on the docked preview are the only way a user reaches a
+ * timbre. So the bank and the chips must hold the same ids — the retired
+ * synthesized ids ('strings') must be gone from both, every banked id must be a
+ * real key of the `Record<PreviewInstrumentId, …>` the player indexes, and the
+ * three recorded instruments v37 added (sax / trumpet / harp) must be reachable.
+ * `toneBank.ts` is typed `Record<PreviewInstrumentId, …>`, so a chip with no
+ * bank entry is a tsc error too; this scanner is what catches the OPPOSITE
+ * direction (a bank entry with no chip — silent, and unreachable on device).
+ */
+export function previewOffersTheWholeBank(
+  takePreviewSource: string,
+  bankSource: string,
+): boolean {
+  const preview = maskComments(takePreviewSource);
+  const bank = maskComments(bankSource);
+  if (preview.length < 1000 || bank.length < 1000) return false;
+  const chips = objectIdsInArray(preview, 'PREVIEW_INSTRUMENTS');
+  const banked = literalsInArray(bank, 'TONE_BANK_INSTRUMENTS');
+  if (chips.length < 5 || banked.length < 5) return false;
+  if (chips.join(',') !== banked.join(',')) return false;
+  for (const id of ['sax', 'trumpet', 'harp']) {
+    if (chips.indexOf(id) < 0) return false;
+  }
+  if (chips.indexOf('strings') >= 0) return false;
+  // Every banked id is a key of the record the player actually indexes.
+  for (const id of banked) {
+    if (bank.indexOf(`\n  ${id}:`) < 0) return false;
+  }
+  return true;
+}

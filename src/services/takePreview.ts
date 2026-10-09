@@ -19,20 +19,31 @@
  */
 import type { MidiNoteEvent } from './midiExport';
 
-/** The instrument overlays the preview offers (simple synthesized timbres). */
+/**
+ * The instrument overlays the preview offers. v37 replaced the three
+ * synthesized timbres with the RECORDED ACOUSTIC bank in `toneBank.ts`
+ * (CC0/CC-BY one-shot samples, one file per semitone — see
+ * assets/tones/SAMPLES-LICENSES.md). The ids here MUST stay identical to
+ * `TONE_BANK_INSTRUMENTS`, and `toneBank.ts` is typed
+ * `Record<PreviewInstrumentId, …>`, so the two cannot drift: a new chip without
+ * a bank would not compile, and a bank entry without a chip would be
+ * unreachable on the surface.
+ */
 export interface PreviewInstrument {
   id: PreviewInstrumentId;
   label: string;
-  /** What the user hears, in one honest word. */
+  /** What the user actually hears, in one honest line. */
   timbre: string;
 }
 
-export type PreviewInstrumentId = 'piano' | 'strings' | 'guitar';
+export type PreviewInstrumentId = 'piano' | 'guitar' | 'sax' | 'trumpet' | 'harp';
 
 export const PREVIEW_INSTRUMENTS: readonly PreviewInstrument[] = [
-  { id: 'piano', label: 'Piano', timbre: 'a soft struck tone' },
-  { id: 'strings', label: 'Strings', timbre: 'a slow bowed tone' },
-  { id: 'guitar', label: 'Guitar', timbre: 'a plucked tone' },
+  { id: 'piano', label: 'Piano', timbre: 'a recorded upright piano' },
+  { id: 'guitar', label: 'Guitar', timbre: 'a recorded acoustic guitar' },
+  { id: 'sax', label: 'Sax', timbre: 'a recorded alto saxophone' },
+  { id: 'trumpet', label: 'Trumpet', timbre: 'a recorded trumpet' },
+  { id: 'harp', label: 'Harp', timbre: 'a recorded harp' },
 ];
 
 export const PREVIEW_DEFAULT_INSTRUMENT: PreviewInstrumentId = 'piano';
