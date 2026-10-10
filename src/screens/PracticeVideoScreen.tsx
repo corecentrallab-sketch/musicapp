@@ -151,7 +151,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   rowId: requestedRowId = null,
   onClose,
 }) => {
-  const { styles } = useThemedStyles(baseStyles);
+  const { styles, theme } = useThemedStyles(baseStyles);
   const [permission, requestPermission] = useCameraPermissions();
   const recorder = useAudioRecorder();
   const cameraRef = useRef<CameraView>(null);
@@ -739,7 +739,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         ) : null}
         {phase === 'keeping' ? (
           <>
-            <ActivityIndicator color="#e94560" />
+            <ActivityIndicator color={theme.accent} />
             <Text style={styles.meta}>{line ?? PRACTICE_VIDEO_KEEPING_LINE}</Text>
           </>
         ) : null}
