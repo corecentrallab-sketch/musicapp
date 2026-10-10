@@ -50,6 +50,13 @@
         }
       ],
       [
+        "expo-calendar",
+        {
+          "calendarPermission": "NoteSnap adds one daily practice reminder to your calendar when you ask it to. It only ever creates, updates or removes that one NoteSnap event.",
+          "remindersPermission": "NoteSnap does not use your reminders."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {

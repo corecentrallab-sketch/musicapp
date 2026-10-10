@@ -17,6 +17,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
@@ -36,7 +37,59 @@ import {
   cancelStreakNudge,
   rescheduleStreakNudgeForTimeChange,
 } from '../services/notifications';
-import { getReminderMinutes, setReminderMinutes as persistReminderMinutes } from '../services/storage';
+import {
+  getCalendarReminderCalendarId,
+  getCalendarReminderEventId,
+  getReminderChannel,
+  getReminderMinutes,
+  setCalendarReminderCalendarId,
+  setCalendarReminderEventId,
+  setReminderChannel as persistReminderChannel,
+  setReminderMinutes as persistReminderMinutes,
+} from '../services/storage';
+// ── The CALENDAR channel (owner-approved 10-10, backlog b033ab48) ──────────────
+// The whole model — the channel choice, the event shape, the honest copy and the
+// plan that decides what gets armed — is a PURE tier1-gated module. This screen
+// renders its copies and calls its decisions; it does not decide anything itself,
+// and it never imports the native calendar module (the seam below is the only file
+// allowed to do that).
+import {
+  CALENDAR_HONESTY,
+  CALENDAR_HYGIENE_CTA,
+  CALENDAR_CHOICE_TITLE,
+  CALENDAR_HYGIENE_FAILED_LINE,
+  CALENDAR_OPEN_SETTINGS_CTA,
+  CALENDAR_PERMISSION_DENIED_LINE,
+  CALENDAR_ROW_TITLE,
+  CALENDAR_SURVIVES_UNINSTALL_LINE,
+  CALENDAR_TWO_REMINDERS_LINE_KEY,
+  CALENDAR_UPDATE_FAILED_LINE,
+  CHANGE_CALENDAR_CTA,
+  CHANNEL_CHOICE_BOTH_LABEL,
+  CHANNEL_CHOICE_CALENDAR_ONLY_LABEL,
+  CHOOSE_CALENDAR_CTA,
+  DEFAULT_REMINDER_CHANNEL,
+  calendarChoiceLabel,
+  calendarHygieneConfirm,
+  calendarHygieneOutcomeLine,
+  calendarHonestyText,
+  formatCalendarReminderRow,
+  isCalendarReminderStale,
+  reminderChannelPlan,
+  type ReminderChannel,
+  type WritableCalendar,
+} from '../services/calendarReminder';
+import {
+  calendarPermissionState,
+  defaultCalendarId as pickDefaultCalendarId,
+  ensureCalendarPermission,
+  listWritableCalendars,
+  removeNoteSnapReminders as removeNoteSnapRemindersFromCalendar,
+  removeReminderEvent,
+  upsertReminderEvent,
+  type CalendarPermissionState,
+} from '../services/calendarReminderDevice';
+import { CalendarPickerSheet } from '../components/CalendarPickerSheet';
 import { createCheckoutSession, checkEntitlement } from '../services/api';
 import { getDeviceId } from '../services/device';
 // The app's light/dark choice (v33 §F2, owner 10-04 email batch: "a dark/light
@@ -119,6 +172,24 @@ export const SettingsScreen: React.FC = () => {
   // The practice-reminder time, in minutes since local midnight (owner 09-25).
   // 18:00 until the user picks another time — the exact pre-existing behaviour.
   const [reminderMinutes, setReminderMinutes] = useState(DEFAULT_REMINDER_MINUTES);
+  // ── The calendar channel (owner-approved 10-10, backlog b033ab48) ──
+  // OPT-IN and OFF by default: the persisted channel stays 'notification' — i.e.
+  // exactly the reminder every existing user has — until they turn this row on.
+  const [reminderChannel, setReminderChannel] = useState<ReminderChannel>(DEFAULT_REMINDER_CHANNEL);
+  const [calendarId, setCalendarId] = useState<string | null>(null);
+  const [calendarEventId, setCalendarEventId] = useState<string | null>(null);
+  const [calendarReady, setCalendarReady] = useState(false);
+  const [writableCalendars, setWritableCalendars] = useState<WritableCalendar[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerDefaultId, setPickerDefaultId] = useState<string | null>(null);
+  const [calendarPermission, setCalendarPermission] = useState<CalendarPermissionState>({
+    available: true,
+    granted: false,
+    canAskAgain: true,
+  });
+  const [calendarNotice, setCalendarNotice] = useState<string | null>(null);
+  const [hygieneLine, setHygieneLine] = useState<string | null>(null);
+  const [hygieneBusy, setHygieneBusy] = useState(false);
   // The chosen theme (v33 §F2, app-wide in v34b). `theme` is the RESOLVED token
   // table for the current mode: every surface below reads its colours from here,
   // so flipping the toggle repaints the screen instead of only relabelling a
@@ -128,9 +199,53 @@ export const SettingsScreen: React.FC = () => {
   const { mode: themeMode, tokens: theme, setMode: setThemeMode } = useThemeMode();
   const { styles } = useThemedStyles(baseStyles);
 
+  // ── WHAT IS ARMED — derived from the ONE decision point (services/calendarReminder).
+  // These are computed here (before the handlers that read them) and passed to the
+  // row, so the screen never invents its own notion of which channel is live.
+  const calendarOn = reminderChannel !== 'notification';
+  /** The remembered calendar is no longer on this phone (honest, never a crash). */
+  const calendarStale = isCalendarReminderStale({
+    storedCalendarId: calendarId,
+    calendars: writableCalendars,
+  });
+  /** The user asked for the calendar channel and the permission is not there. */
+  const calendarDenied = calendarPermission.available && !calendarPermission.granted;
+  const selectedCalendar = writableCalendars.find((calendar) => calendar.id === calendarId) ?? null;
+  const calendarPlan = reminderChannelPlan({
+    channel: reminderChannel,
+    notificationsEnabled,
+    calendarReady,
+  });
+  const calendarRow = formatCalendarReminderRow(calendarPlan, {
+    calendarName: calendarStale ? null : calendarChoiceLabel(selectedCalendar),
+    minutes: reminderMinutes,
+    blocked: calendarDenied,
+  });
+
   useEffect(() => {
     getNotificationEnabled().then(setNotificationsEnabled);
     getReminderMinutes().then(setReminderMinutes);
+    // The calendar channel's persisted state. NOTE: opening Settings only ever
+    // READS the permission (calendarPermissionState) — the request happens on the
+    // tap that turns the row on, never on mount, because a permission dialog shown
+    // before the user has expressed any interest is how an app earns a permanent
+    // "deny" (design brief §5.1).
+    getReminderChannel().then(setReminderChannel);
+    getCalendarReminderCalendarId().then(setCalendarId);
+    getCalendarReminderEventId().then(setCalendarEventId);
+    (async () => {
+      try {
+        const permission = await calendarPermissionState();
+        setCalendarPermission(permission);
+        setWritableCalendars(await listWritableCalendars());
+        const storedCalendar = await getCalendarReminderCalendarId();
+        const storedEvent = await getCalendarReminderEventId();
+        setCalendarReady(permission.granted && Boolean(storedCalendar) && Boolean(storedEvent));
+      } catch {
+        // No calendar provider, or a read that failed: the row stays honest and
+        // the in-app reminder keeps working (never a dead end).
+      }
+    })();
     (async () => {
       try {
         const cached = await getProState();
@@ -148,14 +263,6 @@ export const SettingsScreen: React.FC = () => {
     })();
   }, []);
 
-  const toggleNotifications = useCallback(async () => {
-    const next = !notificationsEnabled;
-    setNotificationsEnabled(next);
-    await setNotificationEnabled(next);
-    if (next) await scheduleStreakNudge();
-    else await cancelStreakNudge();
-  }, [notificationsEnabled]);
-
   /**
    * Change the practice-reminder time (owner request 09-25: "practice reminders
    * at 6:00 PM" → the user picks the time). Persist the choice FIRST so the
@@ -169,9 +276,199 @@ export const SettingsScreen: React.FC = () => {
       setReminderMinutes(normalized);
       await persistReminderMinutes(normalized);
       if (notificationsEnabled) await rescheduleStreakNudgeForTimeChange();
+      // ONE time, BOTH channels (design brief §2.4): if the calendar channel is
+      // armed, the SAME minutes move the ONE event in place — never a second event
+      // and never a drift between the two reminders.
+      if (calendarOn && calendarId && !calendarStale) {
+        const write = await upsertReminderEvent({
+          eventId: calendarEventId,
+          calendarId,
+          minutes: normalized,
+        });
+        if (write.eventId !== calendarEventId) {
+          setCalendarEventId(write.eventId);
+          await setCalendarReminderEventId(write.eventId);
+        }
+        setCalendarNotice(write.ok ? null : CALENDAR_UPDATE_FAILED_LINE);
+      }
     },
-    [notificationsEnabled],
+    [calendarEventId, calendarId, calendarOn, calendarStale, notificationsEnabled],
   );
+
+  /**
+   * WHAT GETS ARMED — the ONE decision (owner 10-10). Every channel change goes
+   * through here: the plan is computed first, the event is written only because
+   * the plan asks for it, and the in-app nudge is armed or cancelled only on the
+   * plan's verdict. There is no second path that arms anything.
+   */
+  const applyChannelChoice = useCallback(
+    async (next: ReminderChannel, calendarIdForEvent?: string) => {
+      const target = calendarIdForEvent ?? calendarId;
+      const permission = await calendarPermissionState();
+      setCalendarPermission(permission);
+      const wantsCalendar = next === 'calendar' || next === 'both';
+
+      // 1. The event itself (only when the choice asks for a calendar reminder).
+      let wrote = false;
+      if (wantsCalendar && target && permission.granted) {
+        const write = await upsertReminderEvent({
+          eventId: calendarEventId,
+          calendarId: target,
+          minutes: reminderMinutes,
+        });
+        wrote = write.ok;
+        setCalendarEventId(write.eventId);
+        await setCalendarReminderEventId(write.eventId);
+        setCalendarNotice(write.ok ? null : CALENDAR_UPDATE_FAILED_LINE);
+      }
+
+      // 2. What is armed, from the plan — and the plan is told the truth about
+      //    whether the calendar channel can really fire, so a failed write (or a
+      //    revoked permission) hands the reminder back to the in-app channel
+      //    instead of leaving the user with nothing (design brief §5.4).
+      const plan = reminderChannelPlan({
+        channel: next,
+        notificationsEnabled,
+        calendarReady: wrote && Boolean(target) && permission.granted,
+      });
+      await persistReminderChannel(next);
+      setReminderChannel(next);
+      // The row's own armed state IS the plan's verdict: the calendar channel did
+      // not fire (a failed write, or the choice was the in-app one) means the row
+      // must not claim an event is armed.
+      if (plan.armCalendarEvent) {
+        setCalendarReady(true);
+      } else {
+        setCalendarReady(false);
+      }
+      if (plan.armNotification) {
+        if (!notificationsEnabled) {
+          setNotificationsEnabled(true);
+          await setNotificationEnabled(true);
+        }
+        await scheduleStreakNudge();
+      } else {
+        await cancelStreakNudge();
+      }
+      return plan;
+    },
+    [calendarEventId, calendarId, notificationsEnabled, reminderMinutes],
+  );
+
+  /**
+   * The in-app reminder row's switch (owner 09-25) — now ALSO the explicit
+   * "also keep the in-app reminder" opt-in of the owner's 10-10 decision: while
+   * the calendar channel is armed, turning this row on moves the channel to
+   * 'both' (and the calendar row immediately says "two reminders"), and turning
+   * it off moves it back to 'calendar'. Both go through the same plan
+   * (`applyChannelChoice`), so the double-ping is never silent. With the calendar
+   * channel off this is exactly the pre-existing behaviour.
+   */
+  const toggleNotifications = useCallback(async () => {
+    const next = !notificationsEnabled;
+    if (reminderChannel !== 'notification') {
+      await applyChannelChoice(next ? 'both' : 'calendar');
+      return;
+    }
+    setNotificationsEnabled(next);
+    await setNotificationEnabled(next);
+    if (next) await scheduleStreakNudge();
+    else await cancelStreakNudge();
+  }, [applyChannelChoice, notificationsEnabled, reminderChannel]);
+
+  /** The enable confirmation: the uninstall truth is said BEFORE it happens. */
+  const confirmCalendarEnable = useCallback(
+    (targetId: string, channel: ReminderChannel) => {
+      Alert.alert(CALENDAR_ROW_TITLE, `${CALENDAR_SURVIVES_UNINSTALL_LINE}\n\n${CALENDAR_HONESTY}`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Add it', onPress: () => void applyChannelChoice(channel, targetId) },
+      ]);
+    },
+    [applyChannelChoice],
+  );
+
+  /** The picker's commit: the chosen calendar is remembered, then used. */
+  const onPickCalendar = useCallback(
+    async (pickedId: string) => {
+      setPickerOpen(false);
+      setCalendarId(pickedId);
+      await setCalendarReminderCalendarId(pickedId);
+      confirmCalendarEnable(pickedId, 'calendar');
+    },
+    [confirmCalendarEnable],
+  );
+
+  /**
+   * The enable tap (design brief §2.4): permission first — ON THE TAP, never on
+   * mount — then the calendar picker on first use (or when the remembered
+   * calendar is gone), then the honest enable confirmation, then the plan.
+   */
+  const enableCalendarReminders = useCallback(async () => {
+    const granted = await ensureCalendarPermission();
+    const permission = await calendarPermissionState();
+    setCalendarPermission(permission);
+    if (!granted) {
+      setCalendarNotice(null);
+      return;
+    }
+    const calendars = await listWritableCalendars();
+    setWritableCalendars(calendars);
+    if (calendars.length === 0) {
+      setCalendarNotice(CALENDAR_HYGIENE_FAILED_LINE);
+      return;
+    }
+    const remembered = calendarId && calendars.some((calendar) => calendar.id === calendarId) ? calendarId : null;
+    if (!remembered) {
+      // First use, or the remembered calendar is no longer on this phone: the user
+      // picks. We never write the event into a different calendar behind their back.
+      setPickerDefaultId(await pickDefaultCalendarId());
+      setPickerOpen(true);
+      return;
+    }
+    confirmCalendarEnable(remembered, 'calendar');
+  }, [calendarId, confirmCalendarEnable]);
+
+  /** The one event we own, deleted FIRST — before any state forgets its id. */
+  const disableCalendarReminders = useCallback(async () => {
+    if (calendarEventId) await removeReminderEvent(calendarEventId);
+    await setCalendarReminderEventId(null);
+    setCalendarEventId(null);
+    setCalendarReady(false);
+    await persistReminderChannel(DEFAULT_REMINDER_CHANNEL);
+    setReminderChannel(DEFAULT_REMINDER_CHANNEL);
+    setCalendarNotice(null);
+    // The in-app nudge takes the time back, so turning the calendar off can never
+    // leave the user with no reminder at all.
+    if (!notificationsEnabled) {
+      setNotificationsEnabled(true);
+      await setNotificationEnabled(true);
+    }
+    await scheduleStreakNudge();
+  }, [calendarEventId, notificationsEnabled]);
+
+  /** THE REINSTALL PATH: find our own event by exact title and remove it. */
+  const runNoteSnapReminderHygiene = useCallback(async () => {
+    setHygieneBusy(true);
+    const calendars = writableCalendars.length > 0 ? writableCalendars : await listWritableCalendars();
+    const outcome = await removeNoteSnapRemindersFromCalendar(calendars);
+    setHygieneBusy(false);
+    if (!outcome.ok) {
+      setHygieneLine(CALENDAR_HYGIENE_FAILED_LINE);
+      return;
+    }
+    setHygieneLine(calendarHygieneOutcomeLine(outcome.removed));
+    if (outcome.removed > 0) {
+      await setCalendarReminderEventId(null);
+      setCalendarEventId(null);
+    }
+  }, [writableCalendars]);
+
+  const removeNoteSnapReminders = useCallback(() => {
+    Alert.alert(CALENDAR_HYGIENE_CTA, calendarHygieneConfirm(reminderMinutes), [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => void runNoteSnapReminderHygiene() },
+    ]);
+  }, [reminderMinutes, runNoteSnapReminderHygiene]);
 
   const refreshEntitlement = useCallback(async (deviceId: string): Promise<boolean> => {
     const fresh = await checkEntitlement(deviceId);
@@ -299,6 +596,167 @@ export const SettingsScreen: React.FC = () => {
           </View>
         </View>
       </View>
+
+      {/* THE CALENDAR CHANNEL (owner-approved 10-10, backlog b033ab48): opt-in,
+          OFF by default, CALENDAR-ONLY when armed, with "also keep the in-app
+          reminder" as the explicit two-reminders choice. Every line here comes
+          from the pure model, and what is armed comes from `calendarPlan`. The
+          single-line marker below is what the tier1 guard suite slices on. */}
+      {/* CALENDAR-REMINDERS-SECTION-START */}
+      <View style={styles.section}>
+        <View style={[styles.infoCard, themed.card]}>
+          <View style={styles.reminderRow}>
+            <View style={styles.reminderCopy}>
+              <Text style={[styles.reminderTitle, themed.strong]}>{calendarRow.title}</Text>
+              {calendarRow.lines.map((line) => (
+                <Text key={line} style={[styles.infoText, themed.muted]}>
+                  {line}
+                </Text>
+              ))}
+              {calendarRow.honesty.map((line) => (
+                <Text
+                  key={line}
+                  style={[
+                    styles.calendarHonestLine,
+                    themed.muted,
+                    calendarPlan.doublePing && line === CALENDAR_TWO_REMINDERS_LINE_KEY && styles.calendarWarn,
+                  ]}
+                >
+                  {calendarHonestyText(line, reminderMinutes)}
+                </Text>
+              ))}
+            </View>
+            <TouchableOpacity
+              onPress={() => {
+                if (calendarOn) void disableCalendarReminders();
+                else void enableCalendarReminders();
+              }}
+              style={[styles.toggle, themed.chip, calendarOn && { backgroundColor: theme.accent }]}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: calendarOn }}
+              accessibilityLabel={CALENDAR_ROW_TITLE}
+            >
+              <Text style={[styles.toggleText, themed.chipText]}>{calendarOn ? 'ON' : 'OFF'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {calendarOn && !calendarStale && (
+            <View style={styles.calendarActionRow}>
+              <Text style={[styles.infoText, themed.muted]}>
+                {calendarChoiceLabel(selectedCalendar)}
+              </Text>
+              <TouchableOpacity
+                style={[styles.calendarSmallBtn, themed.chip]}
+                onPress={() => setPickerOpen(true)}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.calendarSmallBtnText, themed.chipText]}>{CHANGE_CALENDAR_CTA}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {calendarStale && (
+            <View style={styles.calendarActionRow}>
+              <TouchableOpacity
+                style={[styles.calendarSmallBtn, themed.chip]}
+                onPress={() => setPickerOpen(true)}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.calendarSmallBtnText, themed.chipText]}>{CHOOSE_CALENDAR_CTA}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {calendarDenied && (
+            <View style={styles.calendarDeniedBlock}>
+              <Text style={[styles.calendarHonestLine, themed.muted]}>
+                {CALENDAR_PERMISSION_DENIED_LINE}
+              </Text>
+              <TouchableOpacity
+                style={[styles.calendarSmallBtn, themed.chip]}
+                onPress={() => {
+                  void Linking.openSettings();
+                }}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.calendarSmallBtnText, themed.chipText]}>
+                  {CALENDAR_OPEN_SETTINGS_CTA}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {calendarOn && (
+            <>
+              <Text style={[styles.calendarChoiceTitle, themed.strong]}>
+                {CALENDAR_CHOICE_TITLE}
+              </Text>
+              <View style={styles.themeChoiceRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.themeChoice,
+                    themed.chip,
+                    reminderChannel === 'calendar' && { backgroundColor: theme.accent, borderColor: theme.accent },
+                  ]}
+                  onPress={() => void applyChannelChoice('calendar')}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: reminderChannel === 'calendar' }}
+                >
+                  <Text style={[styles.themeChoiceText, themed.chipText]}>
+                    {CHANNEL_CHOICE_CALENDAR_ONLY_LABEL}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.themeChoice,
+                    themed.chip,
+                    reminderChannel === 'both' && { backgroundColor: theme.accent, borderColor: theme.accent },
+                  ]}
+                  onPress={() => void applyChannelChoice('both')}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: reminderChannel === 'both' }}
+                >
+                  <Text style={[styles.themeChoiceText, themed.chipText]}>
+                    {CHANNEL_CHOICE_BOTH_LABEL}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.calendarHonestLine, themed.muted]}>
+                {calendarRow.choiceHints.calendarOnly}
+              </Text>
+              <Text style={[styles.calendarHonestLine, themed.muted]}>{calendarRow.choiceHints.both}</Text>
+              <Text style={[styles.calendarHonestLine, themed.muted]}>{CALENDAR_SURVIVES_UNINSTALL_LINE}</Text>
+              <Text style={[styles.calendarHonestLine, themed.muted]}>{CALENDAR_HONESTY}</Text>
+            </>
+          )}
+
+          {calendarNotice && (
+            <Text style={[styles.calendarHonestLine, themed.muted]}>{calendarNotice}</Text>
+          )}
+          {hygieneLine && <Text style={[styles.calendarHonestLine, themed.muted]}>{hygieneLine}</Text>}
+
+          <View style={styles.calendarActionRow}>
+            <TouchableOpacity
+              style={[styles.calendarSmallBtn, themed.chip]}
+              disabled={hygieneBusy}
+              onPress={() => void removeNoteSnapReminders()}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.calendarSmallBtnText, themed.chipText]}>{CALENDAR_HYGIENE_CTA}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+      {/* CALENDAR-REMINDERS-SECTION-END */}
+
+      <CalendarPickerSheet
+        visible={pickerOpen}
+        calendars={writableCalendars}
+        defaultCalendarId={pickerDefaultId}
+        selectedCalendarId={calendarId}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(pickedId) => void onPickCalendar(pickedId)}
+      />
 
       {/* ── Current Plan ── */}
       <View style={styles.section}>
@@ -483,6 +941,24 @@ const baseStyles = StyleSheet.create({
   toggle: { backgroundColor: '#3a3a5c', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 },
   toggleOn: { backgroundColor: '#e94560' },
   toggleText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+
+  // The calendar-reminder row (owner 10-10, backlog b033ab48). Layout only — every
+  // colour comes from the resolved theme tokens at the call site; the two-reminder
+  // line is the one line that is highlighted, because it is the one the user needs
+  // to notice (it is shown exactly when the plan says `doublePing`).
+  calendarHonestLine: { fontSize: 13, lineHeight: 19, marginTop: 6 },
+  calendarWarn: { color: '#f0b429', fontWeight: '700' },
+  calendarChoiceTitle: { fontSize: 14, fontWeight: '700', marginTop: 14 },
+  calendarActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    gap: 10,
+  },
+  calendarDeniedBlock: { marginTop: 10 },
+  calendarSmallBtn: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  calendarSmallBtnText: { fontSize: 13, fontWeight: '700' },
 
   // The Appearance segment buttons (v33 §F2). Layout only — every colour comes
   // from the resolved theme tokens at the call site.

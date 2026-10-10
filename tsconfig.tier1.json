@@ -45,6 +45,8 @@
     "src/services/captureFeedback.ts",
     "src/services/pdRouting.ts",
     "src/services/reminderTime.ts",
+    "src/services/calendarReminder.ts",
+    "src/services/v38CalendarContract.ts",
     "src/services/scoreAudioSource.ts",
     "src/services/midiExport.ts",
     "src/services/keyDetection.ts",
@@ -124,6 +126,8 @@
     "scripts/v34UiWiring.test.ts",
     "scripts/v34bThemeWiring.test.ts",
     "scripts/v37UiWiring.test.ts",
-    "scripts/v37TakeExport.test.ts"
+    "scripts/v37TakeExport.test.ts",
+    "scripts/v38Calendar.test.ts",
+    "scripts/v38CalendarWiring.test.ts"
   ]
 }

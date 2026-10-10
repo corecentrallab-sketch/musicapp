@@ -23,6 +23,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import {
   getNotificationEnabled,
+  getReminderChannel,
   getReminderMinutes,
   getTodayPracticeMinutes,
 } from './storage';
@@ -34,6 +35,12 @@ import { nextNudgeTime } from './practiceReinforcementView';
 // The user's chosen reminder time: minutes-of-day + its hour/minute pair. The
 // default (18:00) and the formatting live in that pure module (owner 09-25).
 import { reminderHourMinute } from './reminderTime';
+// THE ONE DECISION POINT for what gets armed (owner 10-10, backlog b033ab48):
+// when the user chose the CALENDAR channel, this in-app nudge deliberately stays
+// quiet at that time — and when a calendar permission was revoked, the plan arms
+// this channel instead so the user is never left with no reminder at all.
+import { reminderChannelPlan } from './calendarReminder';
+import { calendarPermissionState } from './calendarReminderDevice';
 
 const CHANNEL_ID = 'streak-nudges';
 const NUDGE_ID = 'streak-nudge';
@@ -64,6 +71,21 @@ export async function requestNotificationPermission(): Promise<boolean> {
 export async function scheduleStreakNudge(): Promise<boolean> {
   const enabled = await getNotificationEnabled();
   if (!enabled) return false;
+
+  // WHAT GETS ARMED IS NOT DECIDED HERE (owner 10-10): the channel the user chose
+  // and whether the calendar channel can really fire both come from the ONE pure
+  // decision point. A calendar-only user is deliberately NOT pinged twice at the
+  // same minute, and a revoked calendar permission hands this channel back so the
+  // user is never left with no reminder. This is a call-site gate — the nudge's
+  // own behaviour (one streak-aware one-shot at the chosen time) is unchanged.
+  const channel = await getReminderChannel();
+  const calendarPermission = await calendarPermissionState();
+  const plan = reminderChannelPlan({
+    channel,
+    notificationsEnabled: enabled,
+    calendarReady: calendarPermission.granted,
+  });
+  if (!plan.armNotification) return false;
 
   // The engine's outside-play nudge: null unless a streak is alive and today
   // still has no practice run.
