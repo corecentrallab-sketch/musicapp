@@ -9,6 +9,7 @@ import {
   type Theme as NavigationTheme,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { View, Text, ActivityIndicator, Dimensions } from 'react-native';
 import { TabNavigator } from './src/navigation/TabNavigator';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
@@ -18,6 +19,11 @@ import { ScanScoreScreen } from './src/screens/ScanScoreScreen';
 import { CloudSyncScreen } from './src/screens/CloudSyncScreen';
 import { MetronomeScreen } from './src/screens/MetronomeScreen';
 import { NotationEditorScreen } from './src/screens/NotationEditorScreen';
+// THE PRACTICE-VIDEO SURFACE (owner GO 10-10, backlog a49fbe2d): the record mode
+// (camera + the existing audio recorder, one Stop) and the playback/overlay
+// surface. History mounts it in place for its own rows; this route is the
+// Practice Tools door.
+import { PracticeVideoScreen } from './src/screens/PracticeVideoScreen';
 import { AudioUnavailableChip } from './src/components/AudioUnavailableChip';
 // The app's light/dark choice (v33 §F2, made APP-WIDE in v34b: owner FAIL item 6
 // — "Light button only works on one page, the settings page"). The provider is
@@ -33,6 +39,22 @@ import {
 import type { OnboardingAnswers, RootStackParamList } from './src/types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+/**
+ * THE PRACTICE-VIDEO ROUTE (owner GO 10-10, backlog a49fbe2d). A tiny wrapper so
+ * the screen keeps its plain props (`rowId` / `onClose`): the route hands it the
+ * optional row the caller named — a History row plays back, no row films a new
+ * take — and closes it with the stack's own back.
+ */
+function PracticeVideoRoute({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'PracticeVideo'>) {
+  const params = route.params as { rowId?: string } | undefined;
+  return (
+    <PracticeVideoScreen rowId={params?.rowId ?? null} onClose={() => navigation.goBack()} />
+  );
+}
 
 /**
  * The navigation container's own theme (react-navigation). It paints the gaps
@@ -193,6 +215,11 @@ function AppShell() {
             name="NotationEditor"
             component={NotationEditorScreen}
             options={{ title: 'Notation editor' }}
+          />
+          <Stack.Screen
+            name="PracticeVideo"
+            component={PracticeVideoRoute}
+            options={{ title: 'Record your practice' }}
           />
         </Stack.Navigator>
       </NavigationContainer>

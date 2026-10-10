@@ -117,7 +117,7 @@ assert(STORE.length > 3000, `read themeStore.ts (${STORE.length} chars)`);
 assert(APPLY.length > 3000, `read themeApply.ts (${APPLY.length} chars)`);
 assert(SETTINGS.length > 8000, `read SettingsScreen.tsx (${SETTINGS.length} chars)`);
 assert(MELODY.length > 20000, `read MelodyCaptureWindow.tsx (${MELODY.length} chars)`);
-assertEq(screenNames.length, 18, `the walk found ${screenNames.length} screens (want 18)`);
+assertEq(screenNames.length, 19, `the walk found ${screenNames.length} screens (want 18)`);
 
 // ── the wiring guards, on the REAL sources ───────────────────────────
 console.log('\nv34b — the app-wide wiring');
