@@ -26,6 +26,7 @@ import type {
   SavedPiece,
 } from '../types';
 import type { SavedCaptureTake } from './midiExport';
+import type { PracticeVideoRef } from './practiceVideoRef';
 
 const KEYS = {
   ONBOARDING: '@notesnap/onboarding',
@@ -282,6 +283,32 @@ export async function updateRecognitionCapture(
   const index = history.findIndex((p) => p.id === pieceId);
   if (index < 0) return false;
   history[index] = { ...history[index], capture };
+  await AsyncStorage.setItem(KEYS.RECOGNITION_HISTORY, JSON.stringify(history));
+  return true;
+}
+
+/**
+ * Attach (or, with null, clear) the practice-video block on an existing History
+ * row (practice video, owner GO 10-10, backlog a49fbe2d).
+ *
+ * Additive and optional exactly like `updateRecognitionCapture`: rows without a
+ * video are untouched, a later write replaces the block only for the row named
+ * here, and clearing it (the delete path) removes the VIDEO reference while the
+ * row, its take, its notation and its exports all stay exactly as they were
+ * (decision 5 — the pair is independent).
+ *
+ * Returns false when the row is not in History (removed while filming) — callers
+ * treat that as "nothing to store", never as a failure of the take.
+ */
+export async function updateRecognitionPracticeVideo(
+  pieceId: string,
+  practiceVideo: PracticeVideoRef | null,
+): Promise<boolean> {
+  if (typeof pieceId !== 'string' || pieceId.length === 0) return false;
+  const history = await getRecognitionHistory();
+  const index = history.findIndex((p) => p.id === pieceId);
+  if (index < 0) return false;
+  history[index] = { ...history[index], practiceVideo };
   await AsyncStorage.setItem(KEYS.RECOGNITION_HISTORY, JSON.stringify(history));
   return true;
 }

@@ -11,6 +11,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
+import {
+  PRACTICE_VIDEO_CARD_SUBTITLE,
+  PRACTICE_VIDEO_CARD_TITLE,
+} from '../services/practiceVideoRef';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -63,6 +67,27 @@ export const EditorScreen: React.FC = () => {
             Transpose a public-domain score into a new key and save the copy.
             Note-by-note editing is coming.
           </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
+      </Pressable>
+
+      {/* RECORD YOUR PRACTICE (owner GO 10-10, backlog a49fbe2d). The third
+          practice tool: film yourself playing, and NoteSnap shows the notes it
+          heard in the AUDIO of that take over the video. The subtitle is the
+          honest boundary in one line — the notes come from the sound, not from
+          the picture (decision 4: own-take-only). */}
+      <Pressable
+        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+        onPress={() => navigation.navigate('PracticeVideo')}
+        accessibilityRole="button"
+        accessibilityLabel={`${PRACTICE_VIDEO_CARD_TITLE} — film yourself playing and see the notes NoteSnap heard over the video`}
+      >
+        <View style={styles.cardIcon}>
+          <Ionicons name="videocam" size={26} color={theme.accent} />
+        </View>
+        <View style={styles.cardBody}>
+          <Text style={styles.cardTitle}>{PRACTICE_VIDEO_CARD_TITLE}</Text>
+          <Text style={styles.cardSubtitle}>{PRACTICE_VIDEO_CARD_SUBTITLE}</Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
       </Pressable>

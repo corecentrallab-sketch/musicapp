@@ -3,6 +3,7 @@
  */
 
 import type { SavedCaptureTake } from '../services/midiExport';
+import type { PracticeVideoRef } from '../services/practiceVideoRef';
 
 /**
  * The personal-melody marker on a History row (melody capture, owner 10-02).
@@ -74,6 +75,25 @@ export interface SavedPiece {
    * a catalog piece (a melody id is not a piece id).
    */
   personalMelody?: PersonalMelodyRef | null;
+  /**
+   * ADDITIVE (practice video, owner GO 10-10, backlog a49fbe2d): present ONLY on
+   * a row that came from filming a practice take — the video the user filmed,
+   * paired (decision 5) with the take's own notes and audio that this row already
+   * carries.
+   *
+   * Honesty rules — the whole reason the video is a PAIR and not a single file:
+   *   • the notes are NEVER transcribed from the video. They come from the audio
+   *     take (`capture`) exactly as every other take does; the video is the
+   *     picture, and the surface says so (decision 4, own-take-only);
+   *   • `uri` points at a file in the app's DOCUMENTS directory
+   *     (`practiceVideoStore.persistPracticeVideo`) — never the recorder's cache,
+   *     which is evictable and would leave this row pointing at a dead file;
+   *   • the block is optional and additive, so deleting the video leaves the take,
+   *     its notation and its PDF/MIDI exports working (the pair is independent);
+   *   • absent on every recognition, hum and find-a-piece row, and on every row
+   *     saved before this feature.
+   */
+  practiceVideo?: PracticeVideoRef | null;
 }
 
 // ─── API types ─────────────────────────────────────────────────
@@ -341,6 +361,12 @@ export type RootStackParamList = {
    * - `itemId` — a saved ABC library item, loaded as the piece to transpose.
    */
   NotationEditor: { sourcePieceId?: string; itemId?: string } | undefined;
+  /**
+   * The practice-video screen (owner GO 10-10, backlog a49fbe2d): the record
+   * mode when opened from Practice Tools, and the playback/overlay surface when
+   * a History row is named.
+   */
+  PracticeVideo: { rowId?: string } | undefined;
 };
 
 // ─── Library (Phase 4a: import + local sheet music library) ──

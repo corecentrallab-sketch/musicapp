@@ -19,8 +19,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.notesnap.app",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "NoteSnap uses your microphone to identify music playing around you.",
-        "NSCameraUsageDescription": "NoteSnap uses your camera to scan sheet music pages into your library."
+        "NSMicrophoneUsageDescription": "NoteSnap uses your microphone to identify music playing around you, and to listen to your take while you film your own practice.",
+        "NSCameraUsageDescription": "NoteSnap uses your camera to scan sheet music pages into your library, and to film your own practice with sound."
       }
     },
     "android": {
@@ -46,7 +46,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "NoteSnap uses your camera to scan sheet music pages into your library."
+          "cameraPermission": "NoteSnap uses your camera to scan sheet music pages into your library, and to film your own practice with sound."
         }
       ],
       [

@@ -93,6 +93,24 @@ import { HumSearchScreen } from './HumSearchScreen';
 // THE TAKE-CORRECTION EDITOR (v33 §D) — the same component the capture window
 // opens, mounted here for a History melody row.
 import { TakeCorrectionEditor } from '../components/TakeCorrectionEditor';
+// THE PRACTICE-VIDEO SURFACE (owner GO 10-10, backlog a49fbe2d): the same screen
+// the Practice Tools card opens, rendered IN PLACE here so BACK returns to the
+// user's History list. Its chip/delete copy and the "is there a video" decision
+// come from the pure model; the delete itself goes through practiceVideoStore.
+import { PracticeVideoScreen } from './PracticeVideoScreen';
+import {
+  DELETE_PRACTICE_VIDEO_CANCEL_CTA,
+  DELETE_PRACTICE_VIDEO_CONFIRM_CTA,
+  DELETE_PRACTICE_VIDEO_CONFIRM_TITLE,
+  DELETE_PRACTICE_VIDEO_CTA,
+  DELETE_PRACTICE_VIDEO_FAILED_LINE,
+  DELETE_PRACTICE_VIDEO_KEEPS_TAKE_LINE,
+  WATCH_PRACTICE_VIDEO_CTA,
+  WATCH_PRACTICE_VIDEO_MISSING_LINE,
+  practiceVideoChipLine,
+  practiceVideoIsUsable,
+} from '../services/practiceVideoRef';
+import { deletePracticeVideo } from '../services/practiceVideoStore';
 import type { DailyChallengePiece, SavedPiece } from '../types';
 
 /** Zeroed streak (engine-derived) used until the first read resolves. */
@@ -138,6 +156,14 @@ export const HistoryScreen: React.FC = () => {
   const [editTake, setEditTake] = useState<SavedPiece | null>(null);
   /** The honest line a saved correction leaves on that row. */
   const [editTakeNote, setEditTakeNote] = useState<{ id: string; text: string } | null>(null);
+  /**
+   * THE PRACTICE VIDEO (owner GO 10-10, backlog a49fbe2d): the row whose video
+   * the user asked to watch (rendered IN PLACE, like the editor and the capture
+   * window — History owns this surface) and the honest sentence left behind by a
+   * delete.
+   */
+  const [watchVideoId, setWatchVideoId] = useState<string | null>(null);
+  const [videoNote, setVideoNote] = useState<{ id: string; text: string } | null>(null);
   /**
    * The History search box's query (owner 10-01). It filters the SAVED
    * recognitions in memory — no network, no catalog — so looking for "the piece I
@@ -349,6 +375,36 @@ export const HistoryScreen: React.FC = () => {
     [items, query],
   );
 
+  /**
+   * DELETE THE VIDEO, KEEP THE TAKE (owner GO 10-10, decision 5; design brief
+   * §2.5). One confirm, and the take, its notation, its editor and its PDF/MIDI
+   * exports all stay exactly as they are — the video is the only thing removed.
+   */
+  const confirmVideoDelete = useCallback(
+    (item: SavedPiece) => {
+      Alert.alert(DELETE_PRACTICE_VIDEO_CONFIRM_TITLE, DELETE_PRACTICE_VIDEO_KEEPS_TAKE_LINE, [
+        { text: DELETE_PRACTICE_VIDEO_CANCEL_CTA, style: 'cancel' },
+        {
+          text: DELETE_PRACTICE_VIDEO_CONFIRM_CTA,
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const ok = await deletePracticeVideo(item.id, item.practiceVideo ?? null);
+              setVideoNote({
+                id: item.id,
+                text: ok
+                  ? DELETE_PRACTICE_VIDEO_KEEPS_TAKE_LINE
+                  : DELETE_PRACTICE_VIDEO_FAILED_LINE,
+              });
+              if (ok) void reload();
+            })();
+          },
+        },
+      ]);
+    },
+    [reload],
+  );
+
   const renderItem = ({ item }: { item: SavedPiece }) => {
     /**
      * The row's ONE purchase action (bundle C / D7, owner 10-02): the licensed
@@ -502,6 +558,46 @@ export const HistoryScreen: React.FC = () => {
                 <Text style={styles.midiNote}>{editTakeNote.text}</Text>
               )}
             </>
+          ) : null}
+          {/* A PRACTICE VIDEO ON THIS ROW (owner GO 10-10, backlog a49fbe2d).
+              OUTSIDE the capture gate on purpose: a take that could not be read
+              still leaves the user's FILMING on this row and still worth
+              watching/sending (no dead end). The chip line comes from the pure
+              model; a row whose video file is gone says so and keeps every other
+              action working. */}
+          {practiceVideoChipLine(item.practiceVideo) ? (
+            <Text style={styles.itemTakeLabel} numberOfLines={2}>
+              {practiceVideoChipLine(item.practiceVideo)}
+            </Text>
+          ) : null}
+          {practiceVideoIsUsable(item.practiceVideo) ? (
+            <TouchableOpacity
+              style={styles.playTakeBtn}
+              onPress={() => setWatchVideoId(item.id)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`${WATCH_PRACTICE_VIDEO_CTA} for ${item.title}`}
+            >
+              <Text style={styles.playTakeBtnText}>{WATCH_PRACTICE_VIDEO_CTA}</Text>
+            </TouchableOpacity>
+          ) : item.practiceVideo ? (
+            <Text style={styles.playTakeMissing} numberOfLines={2}>
+              {WATCH_PRACTICE_VIDEO_MISSING_LINE}
+            </Text>
+          ) : null}
+          {item.practiceVideo && practiceVideoIsUsable(item.practiceVideo) ? (
+            <TouchableOpacity
+              style={styles.playTakeBtn}
+              onPress={() => confirmVideoDelete(item)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`${DELETE_PRACTICE_VIDEO_CTA} for ${item.title}`}
+            >
+              <Text style={styles.playTakeBtnText}>{DELETE_PRACTICE_VIDEO_CTA}</Text>
+            </TouchableOpacity>
+          ) : null}
+          {videoNote?.id === item.id ? (
+            <Text style={styles.midiNote}>{videoNote.text}</Text>
           ) : null}
         </View>
         <TouchableOpacity
@@ -710,6 +806,14 @@ export const HistoryScreen: React.FC = () => {
           }}
           onClose={() => setEditTake(null)}
         />
+      ) : null}
+
+      {/* THE PRACTICE VIDEO, RENDERED IN PLACE (owner GO 10-10). Opened by the
+          row's own "Watch practice video" action; closing returns to this list.
+          The playback surface reads the row back by id, so it always shows the
+          take the editor last saved. */}
+      {watchVideoId ? (
+        <PracticeVideoScreen rowId={watchVideoId} onClose={() => setWatchVideoId(null)} />
       ) : null}
     </View>
   );
