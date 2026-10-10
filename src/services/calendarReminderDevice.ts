@@ -181,6 +181,24 @@ export async function upsertReminderEvent(args: {
     now: new Date(),
     timeZone: await localTimeZone(),
   });
+  /**
+   * The model states the ONE alarm in plain terms (`relativeOffset: 0`, `'alert'`)
+   * because it is PURE and may not import expo-calendar. The native alarm wants an
+   * `AlarmMethod` enum member instead, so the translation happens HERE, in the one
+   * file allowed to know the native types: the payload that reaches the native
+   * write is the model's own payload with that single field mapped.
+   */
+  const alarms: Calendar.Alarm[] = input.alarms.map((alarm) => ({
+    relativeOffset: alarm.relativeOffset,
+    ...(alarm.method === 'alert' ? { method: Calendar.AlarmMethod.ALERT } : {}),
+  }));
+  const payload = {
+    ...input,
+    alarms,
+    // Same reason as the alarm: expo-calendar types the rule as its own enum, so
+    // the model's literal 'daily' is mapped onto the enum member HERE.
+    recurrenceRule: { frequency: Calendar.Frequency.DAILY },
+  };
 
   if (args.eventId) {
     try {
@@ -189,7 +207,7 @@ export async function upsertReminderEvent(args: {
         startDate: input.startDate,
         endDate: input.endDate,
         allDay: false,
-        alarms: input.alarms,
+        alarms,
         notes: input.notes,
       });
       return { ok: true, eventId: args.eventId, replaced: false };
@@ -201,7 +219,7 @@ export async function upsertReminderEvent(args: {
   }
 
   try {
-    const created = await Calendar.createEventAsync(args.calendarId, input);
+    const created = await Calendar.createEventAsync(args.calendarId, payload);
     return { ok: true, eventId: created, replaced: Boolean(args.eventId) };
   } catch {
     return { ok: false, eventId: null, replaced: false };

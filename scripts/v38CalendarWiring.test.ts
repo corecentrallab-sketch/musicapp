@@ -7,8 +7,10 @@
  * src/ for the "one importer" scan. Every guard must be TRUE on the real source
  * AND be shown to BITE — the same guards are then run against a mutated copy of
  * the real text and must go FALSE (skill `musicapp-guard-mutation-probes`). The
- * same mutations are applied on disk by /home/team/shared/v38-calendar-probes.py
- * with the failing guard lines captured byte-exactly.
+ * same mutations are applied on disk by
+ * /home/team/shared/v38-calendar-probes-FIXED.py with the failing guard lines
+ * captured byte-exactly and every restore verified by md5 (log:
+ * /home/team/shared/v38-calendar-probes-FIXED-log.txt).
  *
  * Plain Node, no react-native, no network. Run with: npm run test:tier1
  */

@@ -237,6 +237,14 @@ export const CALENDAR_EVENT_ALARM = { relativeOffset: 0, method: 'alert' } as co
 /** The daily rule: every day, forever — no endDate, no occurrence count. */
 export const CALENDAR_EVENT_RECURRENCE = { frequency: 'daily' } as const;
 
+/**
+ * The one alarm method this feature uses, as a LITERAL. expo-calendar types the
+ * native field as its `AlarmMethod` enum, which a widened `string` cannot satisfy;
+ * the seam (`calendarReminderDevice.ts`) maps this literal onto the enum member,
+ * because this module is pure and may not import the native package.
+ */
+export type CalendarAlarmMethod = 'alert';
+
 /** The payload `createEventAsync(calendarId, input)` / `updateEventAsync` takes. */
 export interface CalendarEventInput {
   title: string;
@@ -244,7 +252,7 @@ export interface CalendarEventInput {
   endDate: Date;
   allDay: false;
   recurrenceRule: { frequency: 'daily' };
-  alarms: { relativeOffset: number; method: string }[];
+  alarms: { relativeOffset: number; method: CalendarAlarmMethod }[];
   notes: string;
   /** The device's own zone when the caller knows it; omitted when it does not. */
   timeZone?: string;
