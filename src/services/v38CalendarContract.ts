@@ -242,12 +242,18 @@ export function calendarDisableDeletesBeforeClearingState(settingsSource: string
   if (handler < 0) return false;
   const body = src.slice(handler, handler + 1600);
   const remove = body.indexOf('await removeReminderEvent(');
-  const clear = body.indexOf('setCalendarEventId(null)');
-  if (remove < 0 || clear < 0) return false;
-  if (remove > clear) return false;
+  // BOTH forgetters are checked, and each must come AFTER the delete: the React
+  // state clear (`setCalendarEventId`) and — the one that actually outlives the
+  // session — the persisted id (`setCalendarReminderEventId`). A swap of either
+  // with the delete is the "I turned it off and it still reminds me" bug, so
+  // reading only one of the two leaves the bug reachable through the other.
+  const clearState = body.indexOf('setCalendarEventId(null)');
+  const clearStored = body.indexOf('setCalendarReminderEventId(null)');
+  if (remove < 0 || clearState < 0 || clearStored < 0) return false;
+  if (remove > clearState || remove > clearStored) return false;
   // The channel is also persisted back to the in-app notification…
   if (body.indexOf('persistReminderChannel(') < 0) return false;
-  // …and the stored id is cleared after the delete, not before it.
+  // …and both clears are in the handler that owns the delete.
   return body.indexOf('setCalendarReminderEventId(null)') >= 0;
 }
 
@@ -255,14 +261,37 @@ export function calendarDisableDeletesBeforeClearingState(settingsSource: string
 // GUARD 7 — one event, one seam
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The two PURE modules name the write verbs inside their own scan lists
+ * (`calendarReminder.ts` exports `calendarDeviceSeamOnly`, which looks for
+ * `createEventAsync(` / `updateEventAsync(` / `deleteEventAsync(` in the source it
+ * is handed, and this guard module writes the same three patterns in guard 7).
+ * Their text therefore matches the BARE-verb scan while writing nothing at all —
+ * a self-match, not a writer — and neither can reach the native module anyway
+ * (guard 1 proves they import nothing native). They are excluded from the
+ * bare-verb rule and NOT from the qualified rule below, so a real
+ * `Calendar.createEventAsync(...)` pasted into either of them is still caught.
+ */
+const EVENT_VERB_NAMING_PURE_PATHS: string[] = [
+  CALENDAR_FEATURE_PATHS[0],
+  CALENDAR_FEATURE_PATHS[1],
+];
+
 /** Every file that writes or deletes an event, other than the seam. */
 export function calendarEventWriters(files: { path: string; source: string }[]): string[] {
   const offenders: string[] = [];
   for (const file of files) {
     if (!file || file.path === undefined) continue;
-    if (file.path === 'src/services/calendarReminderDevice.ts') continue;
+    if (file.path === CALENDAR_FEATURE_PATHS[2]) continue; // the seam
     const src = maskComments(file.source ?? '');
-    if (/createEventAsync\s*\(|updateEventAsync\s*\(|deleteEventAsync\s*\(/.test(src)) {
+    // A qualified native write is a write wherever it appears — including inside a
+    // pure module (which is why the qualified rule runs before the exclusion).
+    if (/Calendar\s*\.\s*(?:createEventAsync|updateEventAsync|deleteEventAsync)\s*\(/.test(src)) {
+      offenders.push(file.path);
+      continue;
+    }
+    if (EVENT_VERB_NAMING_PURE_PATHS.indexOf(file.path) >= 0) continue;
+    if (/(?:createEventAsync|updateEventAsync|deleteEventAsync)\s*\(/.test(src)) {
       offenders.push(file.path);
     }
   }
@@ -311,6 +340,33 @@ export function calendarUninstallTruthOnScreen(settingsSource: string): boolean 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// THE SOURCES THE COPY SWEEP IS ABOUT
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The user-facing sources of the feature: the pure model's COPY PLANE, the device
+ * seam's own wording, the picker sheet, and the Settings calendar section.
+ *
+ * THIS GUARD MODULE IS DELIBERATELY NOT ONE OF THEM. The ban list of guard 9 and
+ * the paywall/URL/network patterns of guard 13 are written HERE as regex literals,
+ * so sweeping this file would match it against its own pattern text — a self-match
+ * that says nothing about what the user can read. Excluding it by PATH (rather
+ * than hoping the caller passes the right array) is what makes those two guards
+ * mean "the calendar surface" instead of "the calendar surface plus the checker".
+ */
+export function calendarUserFacingSources(
+  files: { path: string; source: string }[],
+): string[] {
+  const out: string[] = [];
+  for (const file of Array.isArray(files) ? files : []) {
+    if (!file || file.path === undefined) continue;
+    if (file.path === CALENDAR_FEATURE_PATHS[1]) continue; // this guard module
+    out.push(file.source ?? '');
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GUARD 9 — no banned claims on the new surface
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -347,6 +403,12 @@ export function calendarDeniedIsNotADeadEnd(settingsSource: string): boolean {
   if (src.indexOf('CALENDAR_PERMISSION_DENIED_LINE') < 0) return false;
   if (src.indexOf('CALENDAR_OPEN_SETTINGS_CTA') < 0) return false;
   if (src.indexOf('Linking.openSettings()') < 0) return false;
+  // …and the CTA label is RENDERED by the very control that opens the settings
+  // page: a constant declared at the top of the file but no longer drawn in the
+  // denied branch is a way out that the user cannot take.
+  const settingsLink = src.indexOf('Linking.openSettings()');
+  const ctaRendered = src.indexOf('CALENDAR_OPEN_SETTINGS_CTA', settingsLink);
+  if (ctaRendered < 0 || ctaRendered - settingsLink > 600) return false;
   // The denial is a real state the screen holds, read from the seam on open…
   if (src.indexOf('calendarPermissionState()') < 0) return false;
   if (src.indexOf('blocked: calendarDenied') < 0) return false;

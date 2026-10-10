@@ -36,6 +36,7 @@ import {
   calendarSeamIsTheOnlyEventWriter,
   calendarStaleCalendarShowsThePicker,
   calendarUninstallTruthOnScreen,
+  calendarUserFacingSources,
   calendarUsesTheOneTimeSource,
   hygieneMatcherIsExact,
   maskedCalendarSection,
@@ -82,6 +83,18 @@ function readAppFile(rel: string): string {
   const path = require('path');
   return fs.readFileSync(path.join(repoRoot(), rel), 'utf8') as string;
 }
+/**
+ * These probes target needles that occur MORE THAN ONCE in SettingsScreen: the
+ * persisted minutes are read by the row formatter AND by both seam calls, two
+ * CTAs open the picker, `upsertReminderEvent(` is called twice, and the CTA
+ * constant is both declared and rendered. `String.replace` rewrites only the
+ * FIRST match, so a single replace can leave the exact text the guard reads still
+ * on the page — the mutation then "succeeds" while proving nothing. Every probe
+ * below that targets such a needle rewrites all of them.
+ */
+function replaceAll(source: string, needle: string, replacement: string): string {
+  return source.split(needle).join(replacement);
+}
 /** Every .ts/.tsx under src/, plus App.tsx — the scan the "one importer" rule needs. */
 function walkSources(): { path: string; source: string }[] {
   const fs = require('fs');
@@ -116,13 +129,25 @@ const settingsSource = readAppFile(SETTINGS);
 const notificationsSource = readAppFile(NOTIFICATIONS);
 const tsconfigSource = readAppFile('tsconfig.tier1.json');
 const packageSource = readAppFile('package.json');
-const featureSources = [
-  modelSource,
-  contractSource,
-  deviceSource,
-  pickerSource,
-  maskedCalendarSection(settingsSource),
+/**
+ * The user-facing sources as RECORDS, so the copy sweep can be told which file
+ * each one came from: that is what keeps the guard module (whose ban-list and
+ * paywall/URL patterns are written as regex literals in its own body) out of its
+ * own sweep. See calendarUserFacingSources in the contract module.
+ */
+const userFacingFiles = [
+  { path: MODEL, source: modelSource },
+  { path: DEVICE, source: deviceSource },
+  { path: PICKER, source: pickerSource },
+  { path: SETTINGS, source: maskedCalendarSection(settingsSource) },
 ];
+const copySources = calendarUserFacingSources(userFacingFiles);
+/** The same four sources with ONE of them mutated — the shape the probes need. */
+function userFacingWith(path: string, source: string): string[] {
+  return calendarUserFacingSources(
+    userFacingFiles.map((file) => (file.path === path ? { path, source } : file)),
+  );
+}
 
 console.log('\nv38 calendar — the live-source walk (floors first)');
 assert(modelSource.length > 20000, `read ${MODEL} (${modelSource.length} chars)`);
@@ -136,6 +161,12 @@ assert(section !== null, 'the Settings calendar section is delimited by its mark
 assert(section !== null && section.length > 2000, `the calendar section is a real block (${section === null ? 0 : section.length} chars)`);
 const walked = walkSources();
 assert(walked.length > 120, `walked ${walked.length} source files for the one-importer scan`);
+assertEq(copySources.length, 4, 'the copy sweep covers all four user-facing sources');
+assertEq(
+  calendarUserFacingSources([{ path: CONTRACT, source: contractSource }]).length,
+  0,
+  'the guard module is kept out of its own copy sweep (its ban words are its own regex literals)',
+);
 
 // ── GUARD 1 — the pure core stays pure ────────────────────────────────────────
 console.log('\nv38 guard 1 — the pure core imports nothing native');
@@ -211,7 +242,7 @@ assertEq(calendarUninstallTruthOnScreen(settingsSource), true, 'the enable confi
 
 // ── GUARD 9 — no banned claims on the new surface ────────────────────────────
 console.log('\nv38 guard 9 — no banned claims');
-assertEq(calendarCopyAvoidsBannedClaims(featureSources), true, 'the new surface makes none of the retired claims');
+assertEq(calendarCopyAvoidsBannedClaims(copySources), true, 'the new surface makes none of the retired claims');
 
 // ── GUARD 10 — a denied permission is not a dead end ─────────────────────────
 console.log('\nv38 guard 10 — denied is not a dead end');
@@ -231,7 +262,7 @@ assert(
 
 // ── GUARD 13 — free through launch, and nothing leaves the device ────────────
 console.log('\nv38 guard 13 — free through launch, nothing leaves the device');
-assertEq(calendarFeatureIsFreeAndOffline(featureSources), true, 'no paywall token, no URL, no network call in the calendar path');
+assertEq(calendarFeatureIsFreeAndOffline(copySources), true, 'no paywall token, no URL, no network call in the calendar path');
 
 // ── GUARD 14 — the feature is actually GATED ────────────────────────────────
 console.log('\nv38 guard 14 — the feature is in BOTH explicit tier1 lists');
@@ -263,6 +294,7 @@ assertEq(tier1ListsTheCalendarFeature('', ''), false, 'empty lists do not gate t
 assertEq(calendarEventWriters([]).length, 0, 'an empty walk has no offenders (and the floor above catches it)');
 assertEq(calendarSectionOf('nothing here'), null, 'a source without markers has no calendar section');
 assertEq(maskedCalendarSection('nothing here'), '', 'an unmarked source yields an empty section');
+assertEq(calendarUserFacingSources([]).length, 0, 'no sources means nothing to sweep (the floors above catch it)');
 
 // ══════════════════════════════════════════════════════════════════════════════
 // MUTATIONS — every guard must go FALSE on a mutated copy of the REAL text
@@ -322,8 +354,10 @@ probe('guard 3/12: the handler stops reading the plan verdict', ownVerdicts, set
   calendarScreenArmsThroughThePlan(ownVerdicts),
 );
 
-// 4a — the event time becomes a second literal.
-const secondTimeSource = settingsSource.replace('minutes: reminderMinutes', 'minutes: 18 * 60');
+// 4a — the event time becomes a second literal. `minutes: reminderMinutes` is read
+// by the row formatter AND by the committed seam call, so the WHOLE calendar path
+// has to lose the persisted minutes for the guard to see it.
+const secondTimeSource = replaceAll(settingsSource, 'minutes: reminderMinutes', 'minutes: 18 * 60');
 probe('guard 4: a hard-coded 18:00 replaces the persisted minutes', secondTimeSource, settingsSource, () =>
   calendarUsesTheOneTimeSource(modelSource, secondTimeSource, deviceSource),
 );
@@ -333,8 +367,10 @@ probe('guard 4: the model invents its own clock', ownClock, modelSource, () =>
   calendarUsesTheOneTimeSource(ownClock, settingsSource, deviceSource),
 );
 
-// 5a — the picker is unreachable from the row.
-const noPicker = settingsSource.replace('onPress={() => setPickerOpen(true)}', 'onPress={() => undefined}');
+// 5a — the picker is unreachable from the row. BOTH CTAs that open the picker (the
+// stale-calendar line and the row's own button) have to go: one survivor is still
+// a way in, and the guard reads the row as a whole.
+const noPicker = replaceAll(settingsSource, 'onPress={() => setPickerOpen(true)}', 'onPress={() => undefined}');
 probe('guard 5: nothing can open the calendar picker', noPicker, settingsSource, () =>
   calendarStaleCalendarShowsThePicker(noPicker),
 );
@@ -355,6 +391,16 @@ const clearThenDelete = settingsSource.replace(
 probe('guard 6: state is cleared before the event is deleted', clearThenDelete, settingsSource, () =>
   calendarDisableDeletesBeforeClearingState(clearThenDelete),
 );
+// 6b — the DOM-style state forgets the id before the delete, while the PERSISTED id
+// (the one that survives a restart) is still cleared afterwards: the other half of
+// the guard, proved separately so neither clear can regress unnoticed.
+const stateClearFirst = settingsSource.replace(
+  '    if (calendarEventId) await removeReminderEvent(calendarEventId);\n    await setCalendarReminderEventId(null);\n    setCalendarEventId(null);',
+  '    setCalendarEventId(null);\n    if (calendarEventId) await removeReminderEvent(calendarEventId);\n    await setCalendarReminderEventId(null);',
+);
+probe('guard 6b: the state forgets the id before the event is deleted', stateClearFirst, settingsSource, () =>
+  calendarDisableDeletesBeforeClearingState(stateClearFirst),
+);
 
 // 7a — a second file starts writing events.
 const secondWriter = pickerSource.replace(
@@ -364,10 +410,21 @@ const secondWriter = pickerSource.replace(
 probe('guard 7: the picker sheet grows its own event write', secondWriter, pickerSource, () =>
   calendarEventWriters([{ path: PICKER, source: secondWriter }]).length === 0,
 );
-// 7b — the screen stops calling the seam's write verb.
-const noSeamVerb = settingsSource.replace('upsertReminderEvent({', 'writeReminderNow({');
+// 7b — the screen stops calling the seam's write verb. The screen calls it TWICE
+// (the plan-preview write and the committed write), so every call has to go.
+const noSeamVerb = replaceAll(settingsSource, 'upsertReminderEvent(', 'writeReminderNow(');
 probe('guard 7: the screen bypasses the seam verb', noSeamVerb, settingsSource, () =>
   calendarSeamIsTheOnlyEventWriter(deviceSource, noSeamVerb),
+);
+// 7c — a pure module grows a REAL (Calendar.-qualified) native write. The two pure
+// modules are excluded from the BARE-verb rule because they name the verbs in their
+// own scan lists; this proves the exclusion is not a hole in the qualified rule.
+const pureModuleWriter = modelSource.replace(
+  'export function reminderChannelPlan(',
+  'async function writeNow(id: string) {\n  await Calendar.createEventAsync(id, {});\n}\nexport function reminderChannelPlan(',
+);
+probe('guard 7: a Calendar.-qualified write is caught even in a pure module', pureModuleWriter, modelSource, () =>
+  calendarEventWriters([{ path: MODEL, source: pureModuleWriter }]).length === 0,
 );
 
 // 8 — the uninstall truth leaves the surface.
@@ -385,10 +442,13 @@ const bannedClaim = modelSource.replace(
   'and nothing you do here is tracked.',
 );
 probe('guard 9: the copy starts claiming tracking', bannedClaim, modelSource, () =>
-  calendarCopyAvoidsBannedClaims([bannedClaim, contractSource, deviceSource, pickerSource, maskedCalendarSection(settingsSource)]),
+  calendarCopyAvoidsBannedClaims(userFacingWith(MODEL, bannedClaim)),
 );
 
-// 10 — the denied state loses its way out.
+// 10 — the denied state loses its way out: the CTA constant still EXISTS (declared
+// at the top of the file), but the denied branch no longer renders it, so the
+// settings-page control is a dead end. Guard 10 reads the render, not the
+// declaration.
 const noWayOut = settingsSource.replace('{CALENDAR_OPEN_SETTINGS_CTA}', "{'Settings'}");
 probe('guard 10: the denied state loses its settings action', noWayOut, settingsSource, () =>
   calendarDeniedIsNotADeadEnd(noWayOut),
@@ -415,7 +475,7 @@ const networked = deviceSource.replace(
   'async function postUsage() {\n  await fetch(endpoint);\n}\nexport async function localTimeZone(',
 );
 probe('guard 13: the calendar path grows a network call', networked, deviceSource, () =>
-  calendarFeatureIsFreeAndOffline([modelSource, contractSource, networked, pickerSource, maskedCalendarSection(settingsSource)]),
+  calendarFeatureIsFreeAndOffline(userFacingWith(DEVICE, networked)),
 );
 // 13b — a paywall token appears in the calendar path.
 const paywalled = pickerSource.replace(
@@ -423,7 +483,15 @@ const paywalled = pickerSource.replace(
   'const isPro = false;\nexport const CalendarPickerSheet',
 );
 probe('guard 13: the calendar path grows a Pro gate', paywalled, pickerSource, () =>
-  calendarFeatureIsFreeAndOffline([modelSource, contractSource, deviceSource, paywalled, maskedCalendarSection(settingsSource)]),
+  calendarFeatureIsFreeAndOffline(userFacingWith(PICKER, paywalled)),
+);
+// 13c — a URL appears in the copy plane.
+const linked = modelSource.replace(
+  'and nothing leaves your phone.',
+  'and see http' + 's://notesnap.app for more.',
+);
+probe('guard 13: the calendar path grows a URL', linked, modelSource, () =>
+  calendarFeatureIsFreeAndOffline(userFacingWith(MODEL, linked)),
 );
 
 // 14a — the suite is dropped from the gate list.
