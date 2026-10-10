@@ -8,6 +8,16 @@ import {
   normalizeReminderMinutes,
   parseStoredReminderMinutes,
 } from './reminderTime';
+// The calendar-reminder channel model owns the three key STRINGS (and every line
+// of copy for the feature); this module only persists them.
+import {
+  CALENDAR_REMINDER_CALENDAR_KEY,
+  CALENDAR_REMINDER_EVENT_KEY,
+  DEFAULT_REMINDER_CHANNEL,
+  REMINDER_CHANNEL_STORAGE_KEY,
+  parseStoredReminderChannel,
+  type ReminderChannel,
+} from './calendarReminder';
 import type {
   OnboardingAnswers,
   StreakData,
@@ -31,6 +41,13 @@ const KEYS = {
   // Absent → DEFAULT_REMINDER_MINUTES (18:00, the previous fixed behaviour).
   // See src/services/reminderTime.ts, which owns the value's shape and copy.
   REMINDER_MINUTES: '@notesnap/reminderMinutes',
+  // The calendar-reminder channel choice + the ONE event we own (owner 10-10,
+  // backlog b033ab48). Absent channel → 'notification', i.e. exactly today's
+  // behaviour for every existing user. The strings themselves are owned by
+  // src/services/calendarReminder.ts, which also owns every line of copy.
+  REMINDER_CHANNEL: REMINDER_CHANNEL_STORAGE_KEY,
+  CALENDAR_REMINDER_CALENDAR_ID: CALENDAR_REMINDER_CALENDAR_KEY,
+  CALENDAR_REMINDER_EVENT_ID: CALENDAR_REMINDER_EVENT_KEY,
   PRO_STATE: '@notesnap/proState',
 } as const;
 
@@ -308,6 +325,61 @@ export async function getReminderMinutes(): Promise<number> {
 /** Persist the chosen reminder time (normalized to a real minute of the day). */
 export async function setReminderMinutes(minutes: number): Promise<void> {
   await AsyncStorage.setItem(KEYS.REMINDER_MINUTES, String(normalizeReminderMinutes(minutes)));
+}
+
+// ─── Calendar-reminder channel + the ONE event we own (owner 10-10) ─────
+/**
+ * Which channel is armed: 'notification' (the in-app nudge — TODAY's behaviour,
+ * and what an absent, empty or corrupt value reads back as), 'calendar', or
+ * 'both'. Everything that decides what gets armed reads this through
+ * `reminderChannelPlan` (services/calendarReminder.ts).
+ */
+export async function getReminderChannel(): Promise<ReminderChannel> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.REMINDER_CHANNEL);
+    return parseStoredReminderChannel(raw);
+  } catch {
+    return DEFAULT_REMINDER_CHANNEL;
+  }
+}
+
+/** Persist the channel choice (anything unrecognized lands on the default). */
+export async function setReminderChannel(channel: ReminderChannel): Promise<void> {
+  await AsyncStorage.setItem(KEYS.REMINDER_CHANNEL, parseStoredReminderChannel(channel));
+}
+
+/** The calendar the user picked for the one event (null until they pick one). */
+export async function getCalendarReminderCalendarId(): Promise<string | null> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.CALENDAR_REMINDER_CALENDAR_ID);
+    return raw && raw.length > 0 ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setCalendarReminderCalendarId(id: string | null): Promise<void> {
+  if (id && id.length > 0) await AsyncStorage.setItem(KEYS.CALENDAR_REMINDER_CALENDAR_ID, id);
+  else await AsyncStorage.removeItem(KEYS.CALENDAR_REMINDER_CALENDAR_ID);
+}
+
+/**
+ * The id of the ONE event NoteSnap created. It is the only handle we have on it:
+ * a reinstall wipes it, which is exactly why the hygiene action
+ * (`[ Remove NoteSnap reminders ]`) exists.
+ */
+export async function getCalendarReminderEventId(): Promise<string | null> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.CALENDAR_REMINDER_EVENT_ID);
+    return raw && raw.length > 0 ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setCalendarReminderEventId(id: string | null): Promise<void> {
+  if (id && id.length > 0) await AsyncStorage.setItem(KEYS.CALENDAR_REMINDER_EVENT_ID, id);
+  else await AsyncStorage.removeItem(KEYS.CALENDAR_REMINDER_EVENT_ID);
 }
 
 // ─── Practice minutes ──────────────────────────────────────────
