@@ -43,6 +43,11 @@ import type { RecognitionMatch, RecognitionResponse } from '../types';
 import type { CaptureDiagnostics } from '../services/captureTelemetry';
 import { PieceDetailScreen } from '../screens/PieceDetailScreen';
 import { ScoreViewer } from './ScoreViewer';
+// SAVE TO LIBRARY (v37 item 4, backlog d9d458bb, owner ask 9): the PD card's own
+// hosted score goes on the device through the EXISTING library store. Rendered
+// only for a library/public-domain match WITH a hosted score (`isLibraryKind`), so
+// a modern/copyrighted match — where we host nothing — never shows a save button.
+import { SaveToLibraryButton } from './SaveToLibraryButton';
 // The ONE in-app retailer shell (bundle C, owner 10-02): the purchase CTA opens
 // the licensed retailer INSIDE NoteSnap, as a full-screen Modal this file mounts,
 // so BACK and the shell's own "← Back to NoteSnap" header land the user back on
@@ -681,6 +686,24 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
                  — and the printed-arrangement search below is the real next step
                  when the backend gave us one. */
               <Text style={styles.honestGapText}>{NO_HOSTED_SCORE_LINE}</Text>
+            ) : null}
+
+            {/* ── SAVE TO LIBRARY (v37 item 4, owner ask 9) ──
+                The FREE hosted PD score this card is already offering — the SAME
+                `inlineSheetUrl` the viewer above embeds and "View Sheet Music"
+                opens — kept on the device, so it opens offline from the Library
+                later. Gated on the library/public-domain kind AND a hosted score,
+                so a modern match (nothing hosted, money path below instead) never
+                offers a save that could only fail. The component's own gate is the
+                second half of the same rule: no score → no control at all. */}
+            {isLibraryKind(kind) && inlineSheetUrl ? (
+              <SaveToLibraryButton
+                pieceId={topMatch.piece_id}
+                title={topMatch.title}
+                composer={topMatch.composer ?? null}
+                scoreUrl={inlineSheetUrl}
+                compact
+              />
             ) : null}
 
             {/* ── THE SECONDARY OFFER ──

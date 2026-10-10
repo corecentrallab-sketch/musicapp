@@ -124,6 +124,12 @@ import {
   saveCorrectedTake,
   type TakeSaveMode,
 } from '../services/correctedTakeStore';
+import { exportCaptureMidiFromTake } from '../services/captureMidiExport';
+import {
+  MIDI_EXPORT_BUSY_LABEL,
+  MIDI_EXPORT_HINT,
+  MIDI_EXPORT_LABEL,
+} from '../services/midiExport';
 import { TAKE_STAFF_CLEANED_INK, TAKE_STAFF_PAPER } from './TakeStaffCard';
 import type { SavedCaptureTake } from '../services/midiExport';
 
@@ -201,6 +207,16 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   const [freeChord, setFreeChord] = useState('');
   const [saving, setSaving] = useState<TakeSaveMode | null>(null);
   const [saveLine, setSaveLine] = useState<string | null>(null);
+  /**
+   * SENDING THE CORRECTED TAKE OFF THE DEVICE (v37 item 6, backlog d2e9e2c5,
+   * owner v36 ask item 6). The owner needs the .mid on a desktop; this page is
+   * where the take they CORRECTED lives, so the export belongs here. `midiBusy`
+   * keeps a second tap from starting a second encode, and `midiLine` carries the
+   * export's OWN sentence back to the surface — a swallowed outcome would read as
+   * a dead button, and this repo does not ship those.
+   */
+  const [midiBusy, setMidiBusy] = useState(false);
+  const [midiLine, setMidiLine] = useState<string | null>(null);
   /** True only while a note drag owns the gesture (the drag blocks native scroll
       through its own responder — the page's scroller is never switched off). */
   const [dragging, setDragging] = useState(false);
@@ -475,6 +491,25 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
     },
     [audioUri, derived.take, onSaved, rowId, saving],
   );
+
+  /**
+   * SEND THE CORRECTED TAKE TO THE SYSTEM SHARE SHEET (v37 item 6).
+   *
+   * It uses the EXISTING export — the same encode → write → share path the result
+   * card and the History row use (`exportCaptureMidiFromTake`) — on `derived.take`,
+   * which IS the corrected take this page treats as the single source of truth.
+   * The file's structure is validated inside that path before it is shared, and
+   * the outcome's own sentence is rendered (never swallowed): 'exported',
+   * 'no-melody', 'unavailable' or 'failed' each say what happened.
+   */
+  const shareTakeAsMidi = useCallback(async () => {
+    if (midiBusy) return;
+    setMidiBusy(true);
+    setMidiLine(null);
+    const result = await exportCaptureMidiFromTake(derived.take, {});
+    setMidiBusy(false);
+    setMidiLine(result.message);
+  }, [derived.take, midiBusy]);
 
   // Android BACK closes the editor, never the app (the in-place flow rule).
   useHardwareBack(() => {
@@ -987,6 +1022,36 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
               </View>
             </>
           )}
+
+          {/* 8. SEND THE TAKE OFF THE DEVICE (v37 item 6). The owner has no MIDI
+              hardware, so the ONLY way they can open this take on a desktop is a
+              shared file — and the take they corrected is the one worth sending.
+              It is offered only when the take HAS notes (a button that can only
+              fail is not offered), shows the export's own outcome line under it,
+              and lives in the page's scroller so it is reachable from either view
+              (the save bar below still saves the same corrected take). */}
+          {derived.take && derived.take.notes.length > 0 ? (
+            <View style={styles.midiBlock}>
+              <TouchableOpacity
+                style={[styles.midiBtn, midiBusy && styles.midiBtnOff]}
+                onPress={() => void shareTakeAsMidi()}
+                disabled={midiBusy}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={MIDI_EXPORT_LABEL}
+                accessibilityHint={MIDI_EXPORT_HINT}
+              >
+                <Text style={styles.midiBtnText}>
+                  {midiBusy ? MIDI_EXPORT_BUSY_LABEL : MIDI_EXPORT_LABEL}
+                </Text>
+              </TouchableOpacity>
+              {midiLine ? (
+                <Text style={styles.midiLine}>{midiLine}</Text>
+              ) : (
+                <Text style={styles.midiHint}>{MIDI_EXPORT_HINT}</Text>
+              )}
+            </View>
+          ) : null}
         </ScrollView>
 
         {/* THE STICKY SAVE BAR — the only two writes in the flow. */}

@@ -52,6 +52,13 @@ import {
 // retailer search link — and the block below opens it in THIS page's in-app shell.
 import { externalSearchSection } from '../services/searchExternal';
 import { SearchExternalSection } from '../components/SearchExternalSection';
+// SAVE TO LIBRARY (v37 item 4, backlog d9d458bb, owner ask 9): the piece page's
+// own hosted score — `piece.sheetMusicUrl`, the SAME field "View Sheet Music"
+// opens — goes into the app's existing on-device library, so the piece the user
+// is looking at opens offline later. The component writes through the EXISTING
+// store (`importDocumentAsset`) and renders NOTHING for a piece we hold no score
+// for, so this line cannot become a button that can only fail.
+import { SaveToLibraryButton } from '../components/SaveToLibraryButton';
 // The sheet-music card for a piece with no score we may host but a licensed
 // retailer link (a modern song opened from History — owner 10-01: "pressing the
 // sheet-music card must take the user AUTOMATICALLY TO PURCHASE").
@@ -423,6 +430,18 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
             <Text style={styles.noScoreText}>{NO_HOSTED_SCORE_LINE}</Text>
           </View>
         )}
+
+        {/* ── SAVE TO LIBRARY (v37 item 4) ──
+            The free hosted score this page is offering, kept on the device. The
+            URL handed over is `piece.sheetMusicUrl` — never a re-derived or
+            guessed edition — and the component's own gate means a piece with no
+            score renders no control at all (the dead-button rule). */}
+        <SaveToLibraryButton
+          pieceId={piece.id}
+          title={piece.title}
+          composer={piece.composer ?? null}
+          scoreUrl={piece.sheetMusicUrl ?? null}
+        />
 
         <TouchableOpacity
           style={[styles.shareBtn, sharing && styles.shareBtnDisabled]}
