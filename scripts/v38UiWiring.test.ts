@@ -321,13 +321,18 @@ const impureSync = SYNC.replace(
 );
 probe('guard 1: videoTakeSync.ts imports react-native', impureSync, SYNC, () => videoCoreStaysPure(impureSync));
 
-// 2a — the camera stops recording video (it would scan instead).
-const pictureMode = SCREEN.replace('mode="video"', 'mode="picture"');
+// 2a — the camera stops recording video (it would scan instead). EVERY occurrence:
+// the component's doc-comment mentions `mode="video"` too, so a first-only replace
+// would rewrite the comment and leave the real prop in place — the mutation has to
+// remove the PROPERTY, not a sentence about it.
+const pictureMode = SCREEN.split('mode="video"').join('mode="picture"');
 probe('guard 2: the camera is in picture mode, not video', pictureMode, SCREEN, () =>
   videoRecordsBothCapturesOnOneScreen(pictureMode),
 );
 // 2b — the recorder's failure readers vanish (a silent start, the PR #115 class).
-const noStartReader = SCREEN.replace('recorder.takeStartFailure()', 'null');
+// BOTH call sites (the pair start and the separate-take retry): leaving one behind
+// means the screen still inspects a start failure and the guard should stay true.
+const noStartReader = SCREEN.split('recorder.takeStartFailure()').join('null');
 probe('guard 2: the audio start failure is never read', noStartReader, SCREEN, () =>
   videoRecordsBothCapturesOnOneScreen(noStartReader),
 );
@@ -478,8 +483,8 @@ probe('guard 13: the copy claims transcription, real time and a studio', bannedC
 
 // 14 — a paywall token appears in the video path.
 const paywalled = SCREEN.replace(
-  'const { styles } = useThemedStyles(baseStyles);',
-  'const isPro = false;\n  const { styles } = useThemedStyles(baseStyles);',
+  'const recorder = useAudioRecorder();',
+  'const isPro = false;\n  const recorder = useAudioRecorder();',
 );
 probe('guard 14: the screen grows a Pro gate', paywalled, SCREEN, () =>
   videoFeatureIsFreeAndUnpaywalled(userFacingWith(PRACTICE_VIDEO_SCREEN_PATH, paywalled)),

@@ -165,8 +165,14 @@ assertEq(set.totalCount, 4, 'the take has four notes');
 assertEq(set.inVideoCount, 3, 'the three notes inside the video are cues');
 assertEq(set.droppedCount, 1, 'the note that starts after the video ends is dropped');
 assertEq(set.droppedReason !== null, true, 'dropped notes are explained, never silent');
-assertEq(set.cues[0].startSec, 1.32, 'the first cue is the note plus the measured offset');
-assertEq(set.cues[0].endSec, 1.82, 'and it carries the note’s own length');
+assert(
+  Math.abs(set.cues[0].startSec - 1.32) < 1e-9,
+  'the first cue is the note plus the measured offset',
+);
+assert(
+  Math.abs(set.cues[0].endSec - 1.82) < 1e-9,
+  'and it carries the note’s own length',
+);
 assertEq(set.cues[0].index, 0, 'a cue addresses the note it came from');
 assertEq(set.cues[1].startSec, 2.12, 'the second cue is offset too');
 assertEq(JSON.stringify(take()), before, 'READS ONLY: the mapping never rewrites the take');

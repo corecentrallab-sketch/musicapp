@@ -87,10 +87,27 @@ function jsxNameAt(source: string, at: number): string | null {
 export function videoCoreStaysPure(source: string): boolean {
   if (typeof source !== 'string' || source.length < 1200) return false;
   const src = maskComments(source);
-  if (/from\s+['"]react(-native)?['"]/.test(src)) return false;
-  if (/from\s+['"]expo[-a-z]*['"]/.test(src)) return false;
+  /**
+   * THE BAN IS ON IMPORT STATEMENTS, NOT ON THE BARE WORDS. This module's own
+   * guards carry the module names as NEEDLES — `"from 'expo-camera'"` inside
+   * `videoRecordsBothCapturesOnOneScreen` is a string the screen is searched for,
+   * not an import — so a whole-text search flags the contract for documenting the
+   * very import it forbids. Same class as `modalBackContract`'s lookahead, which
+   * exists so the modal detector does not report itself.
+   *
+   * `\bimport\b[^;]*?\bfrom\s+'…'` still catches every real form of a native
+   * import — single-line, multi-line (`import {\n … \n} from 'react-native'`),
+   * `import type`, and the side-effect form `import 'expo-camera'` — while `[^;]`
+   * stops a match from crossing a statement boundary, so a needle in one statement
+   * can never be joined to an `import` in another.
+   */
+  if (/\bimport\b[^;]*?\bfrom\s+['"]react(-native)?['"]/.test(src)) return false;
+  if (/\bimport\b[^;]*?\bfrom\s+['"]expo[-a-z]*['"]/.test(src)) return false;
+  if (/\bimport\s+['"]react(-native)?['"]|\bimport\s+['"]expo[-a-z]*['"]/.test(src)) return false;
   if (/require\(\s*['"](react|react-native|expo[-a-z]*)['"]\s*\)/.test(src)) return false;
-  if (/from\s+['"]fs['"]|require\(\s*['"]fs['"]\s*\)|from\s+['"]node:fs['"]/.test(src)) return false;
+  if (/\bimport\b[^;]*?\bfrom\s+['"]fs['"]|\bimport\s+['"]fs['"]/.test(src)) return false;
+  if (/\bimport\b[^;]*?\bfrom\s+['"]node:fs['"]/.test(src)) return false;
+  if (/require\(\s*['"]fs['"]\s*\)/.test(src)) return false;
   return true;
 }
 
@@ -110,11 +127,22 @@ export function videoRecordsBothCapturesOnOneScreen(screenSource: string): boole
   const src = maskComments(screenSource);
   if (src.length < 6000) return false;
   if (src.indexOf("from 'expo-camera'") < 0) return false;
-  const camera = src.indexOf('<CameraView');
-  if (camera < 0) return false;
+  /**
+   * THE JSX OPENING TAG, never the TYPE argument: `useRef<CameraView>(null)` also
+   * contains `<CameraView`, and taking `indexOf('<CameraView')` slices from that
+   * type reference to the next `/>` anywhere in the file — a "tag" of tens of
+   * thousands of characters with every prop check missing (the guard then fails on
+   * a correctly wired screen). A real element always has whitespace between its
+   * name and its props; the type argument has its `>` immediately after.
+   */
+  const opened = /<CameraView\s/.exec(src);
+  if (opened === null) return false;
+  const camera = opened.index;
   const close = src.indexOf('/>', camera);
   if (close < 0) return false;
   const tag = src.slice(camera, close + 2);
+  /** An opening tag is a handful of props — a runaway slice is not one. */
+  if (tag.length > 1200) return false;
   if (tag.indexOf('mode="video"') < 0) return false;
   if (tag.indexOf('mute={false}') < 0) return false;
   if (tag.indexOf('onCameraReady=') < 0) return false;
@@ -294,8 +322,22 @@ export function videoSendSurfaceRendersThePair(sheetSource: string): boolean {
   const src = maskComments(sheetSource);
   if (src.length < 1500) return false;
   if (src.indexOf('videoSendActions(') < 0) return false;
-  if (src.indexOf('VIDEO_SEND_PAIR_LINE') < 0) return false;
-  if (src.indexOf('SEND_TO_HONESTY') < 0) return false;
+  /**
+   * THE PAIR LINE HAS TO BE RENDERED, not merely imported. `VIDEO_SEND_PAIR_LINE`
+   * alone is satisfied by the module's import list, so a `<Text>` that lost its
+   * `{VIDEO_SEND_PAIR_LINE}` still passed this guard (the mutation probe caught
+   * precisely that). The check is the JSX expression, inside a `<Text>` that is
+   * still open at that point — the sheet PRINTS the honest boundary.
+   */
+  const pairAt = src.indexOf('{VIDEO_SEND_PAIR_LINE}');
+  if (pairAt < 0) return false;
+  const textAt = src.lastIndexOf('<Text', pairAt);
+  if (textAt < 0 || src.slice(textAt, pairAt).indexOf('</Text>') >= 0) return false;
+  /** …and the v37 honesty line is PRINTED by the same test (not just imported). */
+  const honestAt = src.indexOf('{SEND_TO_HONESTY}');
+  if (honestAt < 0) return false;
+  const honestTextAt = src.lastIndexOf('<Text', honestAt);
+  if (honestTextAt < 0 || src.slice(honestTextAt, honestAt).indexOf('</Text>') >= 0) return false;
   if (src.indexOf('sendPracticeVideo(') < 0) return false;
   if (src.indexOf('exportTakePdfFromTake(') < 0) return false;
   if (src.indexOf('sendPracticeSummary(') < 0) return false;
