@@ -47,16 +47,38 @@ import {
   COVER_SCAN_CONFIRM_HINT,
   COVER_SCAN_CONFIRM_LABEL,
   COVER_SCAN_FALLBACK_LINE,
+  COVER_SCAN_GET_SONG_HINT,
+  COVER_SCAN_NO_READ_YET_NOTE,
   COVER_SCAN_OCR_AVAILABLE,
   COVER_SCAN_PERMISSION_CTA,
   COVER_SCAN_PERMISSION_LINE,
   COVER_SCAN_READING_LINE,
   COVER_SCAN_RETAKE_CTA,
+  COVER_SCAN_SAVE_CTA,
+  COVER_SCAN_SAVE_FAILED_LINE,
+  COVER_SCAN_SAVE_HINT,
+  COVER_SCAN_SAVED_LINE,
   COVER_SCAN_SEARCH_CTA,
   COVER_SCAN_TEXT_ONLY_LINE,
   COVER_SCAN_TITLE,
+  GET_THIS_SONG_CTA,
   coverQueryFromScan,
+  coverScanResultActions,
 } from '../services/coverScan';
+// v37 item 5 (backlog bce8f6f2, owner ask 10): "the read worked, the result had no
+// way forward". The two ways forward are decided by the PURE model above and:
+//   • SAVE writes the user's OWN photo into the app's EXISTING on-device library
+//     through the store's own scan path (`createScannedScore`) — the same registry
+//     the Library screen opens, never a second store;
+//   • GET THIS SONG hands the title to the HOST's handler. This modal builds no
+//     retailer URL and opens nothing itself (the guard below forbids a URL literal
+//     here): the ONE affiliate builder and the ONE in-app shell live on the host.
+import { createScannedScore } from '../services/libraryStore';
+import {
+  saveToLibraryIsBusy,
+  saveToLibraryLabel,
+  type LibrarySaveState,
+} from '../services/librarySaveModel';
 
 interface CoverScanModalProps {
   visible: boolean;
@@ -66,12 +88,20 @@ interface CoverScanModalProps {
    * goes to the search field the user typed into — the photo never does.
    */
   onConfirm: (query: string) => void;
+  /**
+   * THE MONEY PATH (v37 item 5). The title the user can see (read or typed), for
+   * a song we do not hold: the HOST resolves it through the one affiliate URL
+   * builder and opens it in the in-app shell it already owns. This modal never
+   * builds a URL and never opens one itself — an unwired host simply gets no CTA.
+   */
+  onGetThisSong?: (text: string) => void;
 }
 
 export const CoverScanModal: React.FC<CoverScanModalProps> = ({
   visible,
   onClose,
   onConfirm,
+  onGetThisSong,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   const [permission, requestPermission] = useCameraPermissions();
@@ -86,6 +116,11 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
   const [confirmText, setConfirmText] = useState('');
   const [capturing, setCapturing] = useState(false);
   const [reading, setReading] = useState(false);
+  // The save-this-scan action's OWN honest state (v37 item 5): the label and the
+  // disabled state come from the shared pure model, and `scanLine` carries the
+  // outcome — a swallowed outcome would read as a dead button.
+  const [scanSave, setScanSave] = useState<LibrarySaveState>('idle');
+  const [scanLine, setScanLine] = useState<string | null>(null);
 
   // What the photo produced. `read` is null until the recogniser answers, so this
   // is the model's honest "nothing read yet" state until a real read lands; a
@@ -96,10 +131,30 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
     ocrAvailable: COVER_SCAN_OCR_AVAILABLE,
   });
 
+  /**
+   * WHAT THIS RESULT SURFACE OFFERS (v37 item 5, backlog bce8f6f2).
+   *
+   * The owner's finding was that a read which came back with nothing usable left
+   * the user with a disabled Search button and no way out but another photo. The
+   * PURE model decides the way forward for EVERY state, and the surface renders
+   * exactly that: the photo can ALWAYS be kept (`canSave` — it does not depend on
+   * the read having worked), the ordinary search runs when there are words, and a
+   * title we do not hold reaches the money path (`canGetThisSong`) — only when the
+   * host actually wired that route, so the CTA is never a dead button.
+   */
+  const resultActions = coverScanResultActions({
+    status: scanned.status,
+    query: confirmText,
+    hasPhoto: photoUri !== null,
+    canGetThisSong: onGetThisSong !== undefined,
+  });
+
   const close = useCallback(() => {
     setPhotoUri(null);
     setRead(null);
     setConfirmText('');
+    setScanSave('idle');
+    setScanLine(null);
     onClose();
   }, [onClose]);
 
@@ -112,6 +167,8 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
         setPhotoUri(photo.uri);
         setRead(null);
         setConfirmText('');
+        setScanSave('idle');
+        setScanLine(null);
         // READ THE PHOTO (v36 fix 4): the words on the cover, on this device. The
         // call cannot throw — it returns an honest failure — so the screen always
         // lands in one of the three states above.
@@ -135,6 +192,8 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
     setPhotoUri(null);
     setRead(null);
     setConfirmText('');
+    setScanSave('idle');
+    setScanLine(null);
   }, []);
 
   const confirmed = confirmText.trim();
@@ -149,6 +208,42 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
     setConfirmText('');
     onConfirm(text);
   }, [confirmText, onConfirm]);
+
+  /**
+   * SAVE THIS SCAN (v37 item 5). The photo the user just took is their own music:
+   * it goes into the app's EXISTING on-device library through the store's own scan
+   * write path, so it appears in the Library and opens offline later. The state is
+   * honest in both directions — "Saved to your library" only after the write
+   * landed, and a real failure prints the failure line while the button stays
+   * tappable (a silent failure reads as a dead button). It is offered in every
+   * state after a capture, including a read that produced nothing usable.
+   */
+  const saveScan = useCallback(async () => {
+    if (!photoUri || saveToLibraryIsBusy(scanSave)) return;
+    setScanSave('saving');
+    setScanLine(null);
+    try {
+      await createScannedScore([{ uri: photoUri }]);
+      setScanSave('saved');
+      setScanLine(COVER_SCAN_SAVED_LINE);
+    } catch {
+      setScanSave('error');
+      setScanLine(COVER_SCAN_SAVE_FAILED_LINE);
+    }
+  }, [photoUri, scanSave]);
+
+  /**
+   * GET THIS SONG (v37 item 5). The title the user can see (read or typed) is a
+   * song we may not hold — the licensed retailers do. This modal decides nothing
+   * about the URL: it hands the text to the HOST, which resolves it through the
+   * ONE affiliate builder and opens it in the in-app shell it already owns. An
+   * empty field resolves nothing (no invented query).
+   */
+  const getThisSong = useCallback(() => {
+    const text = confirmText.trim();
+    if (!text) return;
+    if (onGetThisSong) onGetThisSong(text);
+  }, [confirmText, onGetThisSong]);
 
   return (
     <Modal
@@ -252,6 +347,51 @@ export const CoverScanModal: React.FC<CoverScanModalProps> = ({
             >
               <Text style={styles.primaryBtnText}>{COVER_SCAN_SEARCH_CTA}</Text>
             </Pressable>
+            {/* ── THE WAY FORWARD (v37 item 5, backlog bce8f6f2) ──
+                The owner's finding: with nothing readable the Search button above
+                is disabled, and that WAS the whole result surface — a dead end
+                reachable only by taking another photo. Both actions below come
+                straight from the pure model, so no state is a dead end:
+                  • the photo can ALWAYS be kept in the on-device library (it never
+                    depends on the read having worked), and its outcome is printed
+                    here — a swallowed outcome would read as a dead button;
+                  • a title the user can see (read or typed) reaches the licensed
+                    retailers for a song we do not hold, through the HOST's own
+                    affiliate route and in-app shell.
+                The scan is the user's own music: reading the cover never hosted,
+                uploaded or cached it, and saving it keeps it on this device. */}
+            {!resultActions.canSearch ? (
+              <Text style={styles.honest}>{COVER_SCAN_NO_READ_YET_NOTE}</Text>
+            ) : null}
+            {resultActions.canSave ? (
+              <Pressable
+                style={[
+                  styles.secondaryBtn,
+                  saveToLibraryIsBusy(scanSave) && styles.primaryBtnDisabled,
+                ]}
+                onPress={() => void saveScan()}
+                disabled={saveToLibraryIsBusy(scanSave)}
+                accessibilityRole="button"
+                accessibilityLabel={COVER_SCAN_SAVE_CTA}
+                accessibilityHint={COVER_SCAN_SAVE_HINT}
+              >
+                <Text style={styles.secondaryBtnText}>
+                  {saveToLibraryLabel(scanSave)}
+                </Text>
+              </Pressable>
+            ) : null}
+            {scanLine ? <Text style={styles.honest}>{scanLine}</Text> : null}
+            {resultActions.canGetThisSong ? (
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={getThisSong}
+                accessibilityRole="button"
+                accessibilityLabel={GET_THIS_SONG_CTA}
+                accessibilityHint={resultActions.moneyLine ?? COVER_SCAN_GET_SONG_HINT}
+              >
+                <Text style={styles.secondaryBtnText}>{GET_THIS_SONG_CTA}</Text>
+              </Pressable>
+            ) : null}
             <Pressable onPress={retake} accessibilityRole="button">
               <Text style={styles.link}>{COVER_SCAN_RETAKE_CTA}</Text>
             </Pressable>
@@ -367,6 +507,22 @@ const baseStyles = StyleSheet.create({
   },
   primaryBtnDisabled: {
     opacity: 0.4,
+  },
+  /* The two way-forward actions (v37 item 5): quieter than the search, but real
+     controls — neither is ever a disabled decoration. */
+  secondaryBtn: {
+    backgroundColor: '#16213e',
+    borderWidth: 1,
+    borderColor: '#4ecdc4',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  secondaryBtnText: {
+    color: '#eaeaff',
+    fontSize: 15,
+    fontWeight: '700',
   },
   primaryBtnText: {
     color: '#ffffff',

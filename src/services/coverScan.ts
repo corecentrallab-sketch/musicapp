@@ -182,3 +182,99 @@ export function coverQueryFromScan(input: {
 export function coverScanAffordanceLabel(): string {
   return COVER_SCAN_OCR_AVAILABLE ? COVER_SCAN_CTA : '📷 Photograph a cover';
 }
+
+// ─── WHAT THE SCAN'S RESULT SURFACE OFFERS (v37 item 5) ─────────
+//
+// THE OWNER'S FINDING (item 10, backlog bce8f6f2): the read works, but the
+// result had NO WAY FORWARD. When the recogniser came back with nothing usable
+// the confirm field was empty, and the only button that would have done anything
+// ("Search this title") is disabled while the field is empty — a state the user
+// could not leave except by retaking the photo. A scan is a piece of the user's
+// own music; it must always be possible to KEEP it, and a title the user can see
+// (typed or read) must always reach the money path for a song we do not hold.
+//
+// The actions are decided HERE, purely, so the surface renders exactly what the
+// model says and the tier1 gate can prove no state is a dead end:
+//   • SAVE — the captured photo goes into the app's own on-device library through
+//     the EXISTING store write path for scans (`libraryStore.createScannedScore`,
+//     the same store item 4's PD save writes to). It is offered in every state
+//     after a capture, because it never depends on the read having worked;
+//   • GET THIS SONG — the licensed-retailer route for a title we do not hold (a
+//     modern/copyrighted piece). It is offered whenever there are words to search
+//     with, and the host opens it through the EXISTING affiliate URL builder
+//     (searchExternal.sheetMusicDirectSearchUrl) in the EXISTING in-app shell. No
+//     new URL, no second checkout, no auto-redirect.
+
+/** The save action's own name (the visible label comes from librarySaveModel). */
+export const COVER_SCAN_SAVE_CTA = 'Save this scan to your library';
+/** What saving the scan really does — the user's own photo, kept on the device. */
+export const COVER_SCAN_SAVE_HINT =
+  'Keeps the photo you just took in your Library — it opens offline.';
+/** The honest line once the scan is in the library. */
+export const COVER_SCAN_SAVED_LINE =
+  'Saved to your library — it stays on this device and opens offline.';
+/** A failed save is never silent. */
+export const COVER_SCAN_SAVE_FAILED_LINE =
+  'We could not save that scan — please try again.';
+/** The money path for a title we do not hold (SMD, affiliate id 67650). */
+export const GET_THIS_SONG_CTA = 'Get this Song';
+/** What the money path does (we host nothing; their page does the selling). */
+export const COVER_SCAN_GET_SONG_HINT =
+  'Opens the licensed retailers for the title we read — inside NoteSnap.';
+/** The line under the save action while the read produced nothing usable. */
+export const COVER_SCAN_NO_READ_YET_NOTE =
+  'Nothing readable came back? You can still keep the scan, or type the title and search.';
+
+export interface CoverScanResultActions {
+  /** The captured photo can be kept in the library (any read status). */
+  canSave: boolean;
+  /** The ordinary catalog search may run (a usable read landed). */
+  canSearch: boolean;
+  /** The licensed-retailer route for this title is offered. */
+  canGetThisSong: boolean;
+  /** The money CTA's label, or null when it is not offered. */
+  getThisSongLabel: string | null;
+  /** The honest line for the money path, or null. */
+  moneyLine: string | null;
+  /**
+   * True when at least one action resolves in this state. Every state of the
+   * result surface must satisfy this (the no-dead-end rule, plan 09-28).
+   */
+  hasWayForward: boolean;
+}
+
+/**
+ * What the scan's result surface offers for this state. Null-safe on purpose:
+ * a missing/garbage input resolves to the honest "nothing read yet" shape rather
+ * than throwing, so a guard that mutates a caller cannot crash the suite.
+ */
+export function coverScanResultActions(input?: {
+  status?: CoverScanStatus;
+  query?: string | null;
+  hasPhoto?: boolean;
+  canGetThisSong?: boolean;
+} | null): CoverScanResultActions {
+  const safe = input && typeof input === 'object' ? input : {};
+  const status: CoverScanStatus =
+    safe.status === 'ready' ||
+    safe.status === 'no-text' ||
+    safe.status === 'no-ocr' ||
+    safe.status === 'ocr-failed'
+      ? safe.status
+      : 'ready';
+  const query = typeof safe.query === 'string' ? safe.query.trim() : '';
+  // The photo is the one thing the save action needs; `hasPhoto !== false` keeps
+  // the default (a captured photo) while letting a caller say there is none.
+  const canSave = safe.hasPhoto !== false;
+  const canSearch = status === 'ready' && query.length > 0;
+  const wired = safe.canGetThisSong !== false;
+  const canGetThisSong = wired && query.length > 0;
+  return {
+    canSave,
+    canSearch,
+    canGetThisSong,
+    getThisSongLabel: canGetThisSong ? GET_THIS_SONG_CTA : null,
+    moneyLine: canGetThisSong ? COVER_SCAN_GET_SONG_HINT : null,
+    hasWayForward: canSave || canSearch || canGetThisSong,
+  };
+}

@@ -76,6 +76,7 @@ import { queryVariants, rankFuzzyMatches, retryNoticeLine } from '../services/fu
 import {
   EXTERNAL_NO_MATCH_HINT,
   externalSearchSection,
+  sheetMusicDirectSearchUrl,
 } from '../services/searchExternal';
 import { SearchExternalSection } from '../components/SearchExternalSection';
 // v33 §H (owner 10-04): "Scan a cover" — photograph a score's title page and
@@ -246,6 +247,23 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
     // (internal catalog + the official sheet music money path).
     setQuery(text);
   }, []);
+
+  /**
+   * GET THIS SONG (v37 item 5, backlog bce8f6f2, owner ask 10): the scan result's
+   * money path for a title we do not hold. It resolves the host's own words with
+   * the ONE affiliate URL builder (`sheetMusicDirectSearchUrl`, SMD id 67650) and
+   * opens the result in the SAME in-app shell every other purchase path on this
+   * screen uses. No second checkout, no hand-written link, no auto-redirect — the
+   * shell opens only ever from the user's own tap.
+   */
+  const handleCoverGetThisSong = useCallback(
+    (text: string) => {
+      const url = sheetMusicDirectSearchUrl(text);
+      if (!url) return;
+      handleOpenRetailer(url);
+    },
+    [handleOpenRetailer],
+  );
 
   /**
    * The external half of the results — a licensed-retailer search for whatever
@@ -472,6 +490,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => 
         visible={showCoverScan}
         onClose={handleCloseCoverScan}
         onConfirm={handleCoverQuery}
+        onGetThisSong={handleCoverGetThisSong}
       />
 
       <PurchaseWebView

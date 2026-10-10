@@ -77,6 +77,8 @@
     "src/services/v34UiContract.ts",
     "src/services/v36UiContract.ts",
     "src/services/scoreHeight.ts",
+    "src/services/librarySaveModel.ts",
+    "src/services/midiStructure.ts",
     "src/services/v37UiContract.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",

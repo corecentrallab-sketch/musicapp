@@ -40,6 +40,7 @@ import {
   type SamplesProvider,
 } from './coachCapture';
 import { detectPitchFrames } from './pitchDetection';
+import { MIDI_STRUCTURE_INVALID_MESSAGE, validateMidiStructure } from './midiStructure';
 import {
   MIDI_FAILED_MESSAGE,
   MIDI_MIME_TYPE,
@@ -120,6 +121,21 @@ export async function exportCaptureMidiFromTake(
   });
   if (!bytes || !take) {
     return { status: 'no-melody', message: MIDI_NO_MELODY_MESSAGE };
+  }
+
+  /**
+   * THE STRUCTURE GATE (v37 item 6, backlog d2e9e2c5, owner v36 ask item 6).
+   *
+   * The owner has no MIDI hardware: the only way to check an export is to open it
+   * on a desktop, so a malformed file costs a whole round trip. The encoder is
+   * ours and pure, so the bytes it just produced are parsed HERE — the exact bytes
+   * that would be written — and a file that does not parse is NEVER handed over.
+   * This runs BEFORE the write/share seam below: a check after the share sheet
+   * would guard nothing (the user already has the file).
+   */
+  const structure = validateMidiStructure(bytes);
+  if (!structure.ok) {
+    return { status: 'failed', message: MIDI_STRUCTURE_INVALID_MESSAGE };
   }
 
   try {

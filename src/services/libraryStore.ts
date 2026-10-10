@@ -118,12 +118,23 @@ async function persistLibrary(items: LibraryItem[]): Promise<void> {
 /**
  * Copies a picked document into the library and registers it.
  * `asset` matches the shape of expo-document-picker's DocumentPickerAsset.
+ *
+ * `meta` is ADDITIVE (v37 item 4): the "Save to library" action downloads a PD
+ * piece's hosted score into a staging file and registers it through THIS path,
+ * so it needs two things a picked document does not carry — the piece's display
+ * title (the file name is a sanitised version of it) and the catalog piece id the
+ * row must remember (`sourcePieceId`) so the action can be idempotent and the
+ * surface can show its real saved state. Every existing caller passes no `meta`,
+ * which keeps the row it writes byte-for-byte what it was.
  */
-export async function importDocumentAsset(asset: {
-  name: string;
-  uri: string;
-  size?: number;
-}): Promise<LibraryItem> {
+export async function importDocumentAsset(
+  asset: {
+    name: string;
+    uri: string;
+    size?: number;
+  },
+  meta?: { title?: string; sourcePieceId?: string },
+): Promise<LibraryItem> {
   const kind = kindFromFilename(asset.name);
   if (!kind) {
     throw new Error(
@@ -146,15 +157,21 @@ export async function importDocumentAsset(asset: {
     sizeBytes = info.exists ? info.size ?? 0 : 0;
   }
 
+  const metaTitle =
+    typeof meta?.title === 'string' && meta.title.trim().length > 0
+      ? meta.title.trim()
+      : null;
+
   const item: LibraryItem = {
     id,
     kind,
-    title: titleFromFilename(asset.name),
+    title: metaTitle ?? titleFromFilename(asset.name),
     fileUri: destUri,
     // Page count for PDFs is filled in when the file is first opened.
     pageCount: kind === 'pdf' ? 0 : 1,
     sizeBytes,
     createdAt: new Date().toISOString(),
+    ...(meta?.sourcePieceId ? { sourcePieceId: meta.sourcePieceId } : {}),
   };
 
   const items = await getLibraryItems();

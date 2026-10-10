@@ -287,3 +287,231 @@ export function notationEditorCanRevertToTheOriginalScore(notationSource: string
   if (src.indexOf('const [sourceAbc, setSourceAbc] = useState(') < 0) return false;
   return src.indexOf('abc: plan.abc') >= 0;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ITEMS 4–6 OF THE SAME BATCH (owner-approved 8-item v37 batch, 10-09)
+//
+// Item 4 — PD save-to-library (d9d458bb, owner ask 9). Item 5 — cover-scan result
+// actions (bce8f6f2, owner ask 10). Item 6 — MIDI structural validation + share
+// path (d2e9e2c5, owner ask 6).
+//
+// Same discipline as items 1–3 above: every guard reads the REAL file, comments are
+// masked first, and each one is proven to BITE by an in-suite mutation (and, for
+// the three headline guards, by an on-disk mutation run captured in
+// /home/team/shared/v37b-mutation-probes.txt).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** The shared save component (item 4). */
+export const SAVE_TO_LIBRARY_COMPONENT_PATH = 'src/components/SaveToLibraryButton.tsx';
+/** The device-side save service (item 4). */
+export const PIECE_LIBRARY_SAVE_PATH = 'src/services/pieceLibrarySave.ts';
+/** The existing store both save paths write through. */
+export const LIBRARY_STORE_PATH = 'src/services/libraryStore.ts';
+
+/**
+ * 4a. THE SAVE ACTION WRITES THROUGH THE EXISTING LIBRARY STORE (v37 item 4).
+ *
+ * THE THING THIS GUARD EXISTS FOR: "Save to library" must not become a SECOND
+ * library. The on-device library already has a store (`services/libraryStore.ts`,
+ * registry in AsyncStorage + files in the app's documents) with rename, share,
+ * sync and delete built on it; a save path that wrote its own registry would
+ * produce rows the Library screen cannot open. So, on the real sources:
+ *
+ *   • `pieceLibrarySave.ts` downloads (staging only) and then calls
+ *     `importDocumentAsset(` — the PICKER's own write path — carrying the piece id
+ *     as `sourcePieceId`, so the row is idempotent and the saved state is read
+ *     back from the same registry (`findSavedPieceCopy`);
+ *   • NOR the service NOR the component touches AsyncStorage directly (no second
+ *     registry), and the component does not call `setItem`-style storage itself;
+ *   • the component renders its label from the pure model and gates on
+ *     `isSaveableScoreUrl(` (no score → no button at all).
+ */
+export function saveToLibraryWritesThroughTheExistingStore(
+  componentSource: string,
+  serviceSource: string,
+): boolean {
+  const component = maskComments(componentSource);
+  const service = maskComments(serviceSource);
+  if (component.length < 1500 || service.length < 1000) return false;
+
+  // The device half: download → the existing import path, tagged with the piece id.
+  if (service.indexOf('importDocumentAsset(') < 0) return false;
+  if (service.indexOf('downloadAsync(') < 0) return false;
+  if (service.indexOf("from './libraryStore'") < 0) return false;
+  if (service.indexOf('sourcePieceId') < 0) return false;
+  if (service.indexOf('findSavedPieceCopy(') < 0) return false;
+  if (service.indexOf('AsyncStorage') >= 0) return false;
+  // The idempotence clause: an already-saved piece returns its existing row.
+  if (service.indexOf('if (existing) return existing;') < 0) return false;
+
+  // The UI half: the shared honest labels, the pure gate, no fake success.
+  if (component.indexOf('saveToLibraryLabel(') < 0) return false;
+  if (component.indexOf('saveToLibraryIsBusy(') < 0) return false;
+  if (component.indexOf('isSaveableScoreUrl(') < 0) return false;
+  if (component.indexOf('savePieceScoreToLibrary(') < 0) return false;
+  if (component.indexOf('AsyncStorage') >= 0) return false;
+  // …and it really renders a press wired to the save, not just an import.
+  if (!/onPress=\{\(\) => void save\(\)\}/.test(component)) return false;
+  return /if \(!isSaveableScoreUrl\(scoreUrl\)\) return null;/.test(component);
+}
+
+/**
+ * 4b. THE PD RESULT CARD OFFERS THE SAVE ACTION (v37 item 4).
+ * `surfaceSource` is src/components/RecognitionResultView.tsx — the ONE shared
+ * result surface every recognition lands on.
+ *
+ * Three facts together, because any one alone can be inert: the shared component
+ * is rendered, it is handed the HOSTED PD SCORE the card is already offering
+ * (`scoreUrl={inlineSheetUrl}`), and it sits inside the library-kind gate
+ * (`isLibraryKind(kind)`) so a modern/copyrighted match — where we host nothing —
+ * shows no save button at all.
+ */
+export function pdResultCardOffersSaveToLibrary(surfaceSource: string): boolean {
+  const src = maskComments(surfaceSource);
+  if (src.length < 20000) return false;
+  const open = src.indexOf('<SaveToLibraryButton');
+  if (open < 0) return false;
+  const close = src.indexOf('/>', open);
+  if (close < 0) return false;
+  const tag = src.slice(open, close + 2);
+  if (tag.indexOf('scoreUrl={inlineSheetUrl}') < 0) return false;
+  if (tag.indexOf('pieceId={topMatch.piece_id}') < 0) return false;
+  const gate = src.lastIndexOf('isLibraryKind(kind) && inlineSheetUrl', open);
+  return gate >= 0;
+}
+
+/**
+ * 4c. THE PD PIECE PAGE OFFERS THE SAVE ACTION (v37 item 4).
+ * `pieceSource` is src/screens/PieceDetailScreen.tsx.
+ *
+ * The page's own hosted score is `piece.sheetMusicUrl` — the SAME field the
+ * "View Sheet Music" button opens — so the saved copy is the score the user was
+ * looking at, and a piece without one renders nothing.
+ */
+export function piecePageOffersSaveToLibrary(pieceSource: string): boolean {
+  const src = maskComments(pieceSource);
+  if (src.length < 8000) return false;
+  const open = src.indexOf('<SaveToLibraryButton');
+  if (open < 0) return false;
+  const close = src.indexOf('/>', open);
+  if (close < 0) return false;
+  const tag = src.slice(open, close + 2);
+  if (tag.indexOf('scoreUrl={piece.sheetMusicUrl ?? null}') < 0) return false;
+  return tag.indexOf('pieceId={piece.id}') >= 0;
+}
+
+/**
+ * 5a. THE SCAN'S RESULT SURFACE ALWAYS HAS A WAY FORWARD (v37 item 5).
+ * `modalSource` is src/components/CoverScanModal.tsx.
+ *
+ * The owner's finding (item 10): with nothing readable in the field the search
+ * button is disabled and the result was a dead end. This guard asserts the two
+ * actions that resolve it are really there:
+ *   • SAVE — the captured photo goes into the library through the EXISTING scan
+ *     write path (`createScannedScore(`), with the honest label/state from the
+ *     shared model and a failure line that can be shown;
+ *   • GET THIS SONG — the money path for a title we do not hold, decided by the
+ *     pure model (`coverScanResultActions(`) and wired to the host's own handler
+ *     (`onGetThisSong`) — this modal never builds a URL.
+ */
+export function coverScanResultOffersTheWayForward(modalSource: string): boolean {
+  const src = maskComments(modalSource);
+  if (src.length < 3000) return false;
+  // The pure decision is what the surface renders from.
+  if (src.indexOf('coverScanResultActions(') < 0) return false;
+  if (src.indexOf('resultActions.canSave') < 0) return false;
+  if (src.indexOf('resultActions.canGetThisSong') < 0) return false;
+  // SAVE: the existing store's scan write path + honest state.
+  if (src.indexOf('createScannedScore(') < 0) return false;
+  if (src.indexOf('async () => {') < 0) return false;
+  if (src.indexOf('COVER_SCAN_SAVE_CTA') < 0) return false;
+  if (src.indexOf('saveToLibraryLabel(scanSave)') < 0) return false;
+  if (src.indexOf('saveToLibraryIsBusy(scanSave)') < 0) return false;
+  if (src.indexOf('COVER_SCAN_SAVED_LINE') < 0) return false;
+  if (src.indexOf('COVER_SCAN_SAVE_FAILED_LINE') < 0) return false;
+  // GET THIS SONG: labelled from the model and wired to the host's handler.
+  if (src.indexOf('GET_THIS_SONG_CTA') < 0) return false;
+  if (src.indexOf('onPress={getThisSong}') < 0) return false;
+  if (src.indexOf('onGetThisSong(text)') < 0) return false;
+  // …and the modal itself builds no retailer URL (it cannot invent one).
+  return src.indexOf('https://') < 0;
+}
+
+/**
+ * 5b. THE "GET THIS SONG" CTA REACHES THE EXISTING MONEY PATH (v37 item 5).
+ * `searchSource` is src/screens/FindPieceScreen.tsx — the host of the camera
+ * surface, and the screen that already owns the in-app retailer shell.
+ *
+ * The CTA must resolve through the ONE affiliate URL builder
+ * (`sheetMusicDirectSearchUrl` — SMD, affiliate id 67650) and open it in the SAME
+ * shell every other purchase path on this screen uses (`handleOpenRetailer`, whose
+ * only writer is a tap), never a hand-written URL and never a second checkout. A
+ * URL literal in the handler is a failure here, on purpose.
+ */
+export function coverScanGetThisSongReachesTheMoneyPath(searchSource: string): boolean {
+  const src = maskComments(searchSource);
+  if (src.length < 8000) return false;
+  if (src.indexOf('onGetThisSong={handleCoverGetThisSong}') < 0) return false;
+  const at = src.indexOf('const handleCoverGetThisSong = useCallback(');
+  if (at < 0) return false;
+  const body = src.slice(at, at + 700);
+  if (body.indexOf('sheetMusicDirectSearchUrl(text)') < 0) return false;
+  if (body.indexOf('handleOpenRetailer(url)') < 0) return false;
+  if (/https?:\/\//.test(body)) return false;
+  // …and the shell it opens is the one already on the screen.
+  return src.indexOf('<PurchaseWebView') >= 0 && src.indexOf('setRetailerUrl(') >= 0;
+}
+
+/**
+ * 6a. THE EXPORTED .mid IS STRUCTURALLY VALIDATED BEFORE IT IS SHARED
+ * (v37 item 6). `exportSource` is src/services/captureMidiExport.ts.
+ *
+ * The owner has no MIDI hardware, so a malformed file is only discovered on a
+ * desktop. The device export therefore parses the EXACT bytes it is about to write
+ * (`validateMidiStructure(bytes)`) and refuses to share a file that does not
+ * parse — and the check has to run BEFORE the write/share call, or it guards
+ * nothing.
+ */
+export function midiExportIsValidatedBeforeSharing(exportSource: string): boolean {
+  const src = maskComments(exportSource);
+  if (src.length < 3000) return false;
+  const check = src.indexOf('validateMidiStructure(bytes)');
+  if (check < 0) return false;
+  if (src.indexOf('MIDI_STRUCTURE_INVALID_MESSAGE') < 0) return false;
+  if (src.indexOf("from './midiStructure'") < 0) return false;
+  // The check precedes the first write/share seam.
+  const write = src.indexOf('const write = opts.deps?.writeFile ?? writeMidiFile;');
+  if (write < 0) return false;
+  if (check > write) return false;
+  // The invalid branch really returns, and it returns ON THE VERDICT (`if
+  // (!structure.ok)`) — a check whose result nobody branches on would share the
+  // file anyway.
+  const after = src.slice(check, check + 400);
+  if (after.indexOf('if (!structure.ok)') < 0) return false;
+  return after.indexOf("status: 'failed'") >= 0;
+}
+
+/**
+ * 6b. THE CORRECT-YOUR-TAKE PAGE CAN SEND THE TAKE OFF THE DEVICE (v37 item 6).
+ * `editorSource` is src/components/TakeCorrectionEditor.tsx.
+ *
+ * The owner needs the file on a desktop. The page must (i) call the EXISTING
+ * export — the same encode → write → share path the result card and the History
+ * row use — on the take it has just corrected (`derived.take`), (ii) label the
+ * control from the shared model, (iii) render it only when the take has notes, and
+ * (iv) render its outcome (a swallowed outcome is a dead button).
+ */
+export function takeEditorCanSendTheTakeOffDevice(editorSource: string): boolean {
+  const src = maskComments(editorSource);
+  if (src.length < 20000) return false;
+  if (src.indexOf('exportCaptureMidiFromTake(derived.take,') < 0) return false;
+  if (!/onPress=\{\(\) => void shareTakeAsMidi\(\)\}/.test(src)) return false;
+  if (src.indexOf('MIDI_EXPORT_LABEL') < 0) return false;
+  if (src.indexOf('MIDI_EXPORT_BUSY_LABEL') < 0) return false;
+  // Rendered only for a take that can be written out…
+  if (src.indexOf('derived.take && derived.take.notes.length > 0') < 0) return false;
+  const outcome = src.indexOf('{midiLine ?');
+  if (outcome < 0) return false;
+  // …and its outcome is set from the export's own result.
+  return src.indexOf('setMidiLine(result.message)') >= 0;
+}
