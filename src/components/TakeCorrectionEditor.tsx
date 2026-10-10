@@ -1304,4 +1304,30 @@ const baseStyles = StyleSheet.create({
   saveOff: { opacity: 0.55 },
   saveLine: { color: '#ffb347', fontSize: 12, lineHeight: 17, marginBottom: 8 },
   saveHint: { color: '#7d7d99', fontSize: 11, lineHeight: 15, marginTop: 6 },
+  // ── SEND THE TAKE OFF THE DEVICE (v37 item 6) ──
+  // The export block's own styling (added with the button itself): a real
+  // control above the sticky save bar, with its outcome line under it. Kept
+  // here beside the save-bar styles because it lives at the end of the same
+  // page and obeys the same 44pt touch-target rule.
+  midiBlock: {
+    marginTop: 18,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: '#16213e',
+  },
+  midiBtn: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: '#4ecdc4',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  midiBtnOff: { opacity: 0.55 },
+  midiBtnText: { color: '#4ecdc4', fontSize: 14, fontWeight: '700' },
+  midiLine: { color: '#4ecdc4', fontSize: 12, lineHeight: 17, marginTop: 8 },
+  midiHint: { color: '#7d7d99', fontSize: 11, lineHeight: 15, marginTop: 8 },
 });
