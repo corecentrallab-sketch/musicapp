@@ -130,6 +130,21 @@ import {
   MIDI_EXPORT_HINT,
   MIDI_EXPORT_LABEL,
 } from '../services/midiExport';
+/**
+ * v37 items 7 + 8 (owner-approved, 10-09): the SEND-TO surface (the take as a
+ * PDF, to the user's email through the system share sheet, and the MIDI export
+ * that already exists) and the GUITAR TABLATURE page the "Tabs" button opens.
+ *
+ * The labels and the honest lines come from the pure models — the tab from
+ * services/guitarTab.ts, the destinations from services/takeSendTo.ts, the PDF
+ * from services/takeNotationPdf.ts — so the words on the buttons and the words on
+ * the pages can never drift apart.
+ */
+import { TAB_LABEL } from '../services/guitarTab';
+import { SEND_TO_CTA } from '../services/takeSendTo';
+import { TakeTabsView } from './TakeTabsView';
+import { TakeSendToSheet } from './TakeSendToSheet';
+import type { TakePdfChord } from '../services/takeNotationPdf';
 import { TAKE_STAFF_CLEANED_INK, TAKE_STAFF_PAPER } from './TakeStaffCard';
 import type { SavedCaptureTake } from '../services/midiExport';
 
@@ -217,6 +232,22 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
    */
   const [midiBusy, setMidiBusy] = useState(false);
   const [midiLine, setMidiLine] = useState<string | null>(null);
+  /**
+   * THE GUITAR TAB PAGE (v37 item 8, backlog ee3a6e13). The owner's placement,
+   * re-confirmed 10-09: the "Tabs" button sits UNDERNEATH the tap-a-note lane and
+   * JUST ABOVE the Chords section. The piano staff above stays exactly as it is —
+   * this opens a SECOND, additive view of the same corrected take, never a
+   * replacement for the notation.
+   */
+  const [tabsOpen, setTabsOpen] = useState(false);
+  /**
+   * THE SEND-TO SURFACE (v37 item 7, backlog baa39e66). One place from which the
+   * corrected take can leave the device: the PDF, the user's own email through the
+   * system share sheet, and the MIDI export this page already has. It is opened by
+   * a button inside the same take-gated block as the MIDI export, so it is offered
+   * exactly when there is something to send.
+   */
+  const [sendOpen, setSendOpen] = useState(false);
   /** True only while a note drag owns the gesture (the drag blocks native scroll
       through its own responder — the page's scroller is never switched off). */
   const [dragging, setDragging] = useState(false);
@@ -272,6 +303,10 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
     // "original" view would show the PREVIOUS take's baseline under the new take's
     // title, which is worse than showing nothing.
     if (opened) setView(EDITOR_VIEW_DEFAULT);
+    // A fresh open starts on the page itself: the tab page and the Send-to surface
+    // (v37 items 7 + 8) belong to the session that opened them.
+    if (opened) setTabsOpen(false);
+    if (opened) setSendOpen(false);
     const incomingIdentity = takeIdentityOf(take, rowId);
     const current = stateRef.current;
     const reload = shouldReloadEditorModel({
@@ -307,6 +342,15 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   const originalChords = useMemo(
     () => original.chords.map((chord) => chord.name),
     [original],
+  );
+  /**
+   * THE CHORDS THE PDF PRINTS (v37 item 7a): the SAME suggested chords the chord
+   * row shows, in the same state — the ones the user has re-derived after their
+   * corrections. The PDF is a view of this take, so it reads the live model.
+   */
+  const pdfChords = useMemo<TakePdfChord[]>(
+    () => derived.chords.map((chord) => ({ index: chord.index, name: chord.name })),
+    [derived],
   );
   /** The facts the top card describes: whichever take is on screen. */
   const viewFacts = editable ? derived : original;
@@ -533,6 +577,7 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   const canUpdate = !!rowId;
 
   return (
+    <>
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
         <View style={styles.header}>
@@ -823,6 +868,27 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
             </Text>
           )}
 
+          {/* 3b. TABS (v37 item 8, backlog ee3a6e13) — the owner's placement,
+              re-confirmed 10-09: UNDERNEATH the tap-a-note lane (the block above)
+              and JUST ABOVE the Chords section (the block below). It opens the
+              take laid out as guitar tablature, standard tuning.
+
+              THE PIANO NOTATION IS UNTOUCHED: the staff is still drawn at the top
+              of this page and stays there (owner: "The piano notation is correct
+              and needs to remain"). Tabs is a SECOND, additive view of the same
+              corrected take — it never replaces the notation, and it writes
+              nothing back to the take. */}
+          <TouchableOpacity
+            style={styles.tabsBtn}
+            onPress={() => setTabsOpen(true)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={`${TAB_LABEL} — your take as guitar tab`}
+            accessibilityHint="Opens your take as guitar tablature in standard tuning"
+          >
+            <Text style={styles.tabsBtnText}>{TAB_LABEL}</Text>
+          </TouchableOpacity>
+
           {/* 4. THE CHORD ROW — suggested, or the user's own ("yours"). */}
           <View style={styles.panel}>
             <Text style={styles.panelTitle}>{EDITOR_CHORD_LABEL}</Text>
@@ -1050,6 +1116,23 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
               ) : (
                 <Text style={styles.midiHint}>{MIDI_EXPORT_HINT}</Text>
               )}
+              {/* 8b. SEND TO… (v37 item 7, backlog baa39e66) — the take as a PDF,
+                  to the user's own email through the SYSTEM share sheet, and the
+                  MIDI export right above (the sheet calls THIS page's own
+                  shareTakeAsMidi, so there is one MIDI path, not two). Nothing is
+                  ever emailed from our side. It sits inside the same
+                  take-has-notes gate as the export: offered exactly when there is
+                  something to send. */}
+              <TouchableOpacity
+                style={styles.sendToBtn}
+                onPress={() => setSendOpen(true)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={SEND_TO_CTA}
+                accessibilityHint="PDF, MIDI, or your own email through the system share sheet"
+              >
+                <Text style={styles.sendToBtnText}>{SEND_TO_CTA}</Text>
+              </TouchableOpacity>
             </View>
           ) : null}
         </ScrollView>
@@ -1088,6 +1171,32 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
         </View>
       </View>
     </Modal>
+    {/* THE TWO SHEETS OF THE v37 BATCH ARE SIBLINGS OF THE EDITOR'S MODAL, not
+        children of it — each one presents its own dialog, so a sheet is never a
+        dialog stacked inside another dialog (which is where Android gets
+        unpredictable about the back button and about touch delivery).
+
+        THE TAB PAGE (item 8) is read-only and derives its layout from the take the
+        editor holds. THE SEND-TO SHEET (item 7) is handed THIS page's own MIDI
+        export (`shareTakeAsMidi`) rather than a second copy of it, so the two can
+        never diverge, and the PDF/email destinations go through the system share
+        sheet only (services/takeSendDevice.ts). Both are bound to the editor being
+        open (`visible && …`), so a closed editor can never leave one behind. */}
+    <TakeTabsView
+      visible={visible && tabsOpen}
+      take={derived.take}
+      onClose={() => setTabsOpen(false)}
+    />
+    <TakeSendToSheet
+      visible={visible && sendOpen}
+      take={derived.take}
+      chords={pdfChords}
+      onSendMidi={shareTakeAsMidi}
+      midiBusy={midiBusy}
+      midiLine={midiLine}
+      onClose={() => setSendOpen(false)}
+    />
+    </>
   );
 };
 
@@ -1329,5 +1438,35 @@ const baseStyles = StyleSheet.create({
   midiBtnOff: { opacity: 0.55 },
   midiBtnText: { color: '#4ecdc4', fontSize: 14, fontWeight: '700' },
   midiLine: { color: '#4ecdc4', fontSize: 12, lineHeight: 17, marginTop: 8 },
+  /**
+   * v37 item 8: the "Tabs" button — a first-class action on the page, sitting
+   * between the note lane and the chord row at the owner's placement.
+   */
+  tabsBtn: {
+    backgroundColor: '#1b2a4a',
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 10,
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  tabsBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
+  /**
+   * v37 item 7: the "Send to…" action, under the MIDI export inside the same
+   * take-gated block (PDF / email / MIDI in one place).
+   */
+  sendToBtn: {
+    backgroundColor: '#1b2a4a',
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 10,
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  sendToBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
   midiHint: { color: '#7d7d99', fontSize: 11, lineHeight: 15, marginTop: 8 },
 });
