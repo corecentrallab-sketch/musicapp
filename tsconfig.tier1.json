@@ -80,6 +80,9 @@
     "src/services/librarySaveModel.ts",
     "src/services/midiStructure.ts",
     "src/services/v37UiContract.ts",
+    "src/services/guitarTab.ts",
+    "src/services/takeNotationPdf.ts",
+    "src/services/takeSendTo.ts",
     "src/types/index.ts",
     "scripts/tier1.test.ts",
     "scripts/practiceCoach.test.ts",
@@ -120,6 +123,7 @@
     "scripts/v34Fixes.test.ts",
     "scripts/v34UiWiring.test.ts",
     "scripts/v34bThemeWiring.test.ts",
-    "scripts/v37UiWiring.test.ts"
+    "scripts/v37UiWiring.test.ts",
+    "scripts/v37TakeExport.test.ts"
   ]
 }

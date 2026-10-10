@@ -56,6 +56,20 @@ import {
   saveToLibraryWritesThroughTheExistingStore,
   scoreViewerReportsItsOwnHeight,
   takeEditorCanSendTheTakeOffDevice,
+  // v37 items 7–8 (the Send-to surface and the Tabs button).
+  GUITAR_TAB_SERVICE_PATH,
+  TAKE_PDF_SERVICE_PATH,
+  TAKE_SEND_DEVICE_PATH,
+  TAKE_SEND_SHEET_PATH,
+  TAKE_TABS_COMPONENT_PATH,
+  guitarTabModelKeepsNotesPlayable,
+  sendToUsesTheSystemShareSheetOnly,
+  tabsButtonSitsUnderTheLaneAndAboveTheChords,
+  tabsNeverReplaceThePianoNotation,
+  takeEditorOffersSendTo,
+  takePdfUsesTheExistingNotationEngine,
+  takeSendToSurfaceIsHonest,
+  takeTabsPageRendersTheTakeHonestly,
 } from '../src/services/v37UiContract';
 // The pure halves of items 4–6 (v37 batch, owner 10-09).
 import {
@@ -124,11 +138,23 @@ const PIECE_PAGE = 'src/screens/PieceDetailScreen.tsx';
 const SCAN_MODAL = 'src/components/CoverScanModal.tsx';
 const FIND_PIECE = 'src/screens/FindPieceScreen.tsx';
 const MIDI_DEVICE_EXPORT = 'src/services/captureMidiExport.ts';
+// Items 7–8 of the same batch read these real files.
+const TAKE_TABS_VIEW = TAKE_TABS_COMPONENT_PATH;
+const TAKE_SEND_SHEET = TAKE_SEND_SHEET_PATH;
+const TAKE_SEND_DEVICE = TAKE_SEND_DEVICE_PATH;
+const TAKE_PDF_SERVICE = TAKE_PDF_SERVICE_PATH;
+const GUITAR_TAB_SERVICE = GUITAR_TAB_SERVICE_PATH;
 
 const editorSource = readAppFile(EDITOR);
 const historySource = readAppFile(HISTORY);
 const notationSource = readAppFile(NOTATION);
 const abcViewSource = readAppFile(ABC_VIEW);
+// Items 7–8: the tab page, the Send-to surface, the device half and the two models.
+const tabsViewSource = readAppFile(TAKE_TABS_VIEW);
+const sendSheetSource = readAppFile(TAKE_SEND_SHEET);
+const sendDeviceSource = readAppFile(TAKE_SEND_DEVICE);
+const takePdfSource = readAppFile(TAKE_PDF_SERVICE);
+const guitarTabSource = readAppFile(GUITAR_TAB_SERVICE);
 
 // ── the floors: the walk saw the real files ─────────────────────
 console.log('\nv37 — the live-source walk (floors first)');
@@ -136,6 +162,11 @@ assert(editorSource.length > 20000, `read ${EDITOR} (${editorSource.length} char
 assert(historySource.length > 20000, `read ${HISTORY} (${historySource.length} chars)`);
 assert(notationSource.length > 8000, `read ${NOTATION} (${notationSource.length} chars)`);
 assert(abcViewSource.length > 3000, `read ${ABC_VIEW} (${abcViewSource.length} chars)`);
+assert(tabsViewSource.length > 3000, `read ${TAKE_TABS_VIEW} (${tabsViewSource.length} chars)`);
+assert(sendSheetSource.length > 3000, `read ${TAKE_SEND_SHEET} (${sendSheetSource.length} chars)`);
+assert(sendDeviceSource.length > 3000, `read ${TAKE_SEND_DEVICE} (${sendDeviceSource.length} chars)`);
+assert(takePdfSource.length > 5000, `read ${TAKE_PDF_SERVICE} (${takePdfSource.length} chars)`);
+assert(guitarTabSource.length > 5000, `read ${GUITAR_TAB_SERVICE} (${guitarTabSource.length} chars)`);
 
 // ── the shared helper and the guards pass on the real source ────
 console.log('\nv37 item 1 — the page can never be switched off, and every open is fresh');
@@ -1002,6 +1033,228 @@ assertEq(coverScanResultOffersTheWayForward(''), false, 'an empty scan modal off
 assertEq(coverScanGetThisSongReachesTheMoneyPath(''), false, 'an empty search screen has no money path');
 assertEq(midiExportIsValidatedBeforeSharing(''), false, 'an empty export validates nothing');
 assertEq(takeEditorCanSendTheTakeOffDevice(''), false, 'an empty editor sends nothing');
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ITEMS 7–8 (the last two of the 8-item v37 batch, owner-approved 10-09)
+//
+// ITEM 7 (backlog baa39e66) — SEND-TO on Correct-your-Take: the take as a PDF
+// (rendered by the SAME notation model the screen draws, and free through launch),
+// to the user's own email through the SYSTEM share sheet, and the MIDI export that
+// already exists. ITEM 8 (backlog ee3a6e13) — the "Tabs" button at the owner's
+// placement (under the tap-a-note lane, just above the Chords section), opening the
+// take as guitar tablature in standard tuning, with the piano notation untouched.
+//
+// Every guard below reads the REAL file, and every one of them is mutated below to
+// prove it bites. The same mutations are applied on disk in
+// /home/team/shared/v37c-mutation-probes.txt.
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log('\nv37 item 8 — the Tabs button, at the owner’s placement, over an untouched notation');
+assertEq(
+  tabsButtonSitsUnderTheLaneAndAboveTheChords(editorSource),
+  true,
+  'the Tabs button sits UNDER the tap-a-note lane and ABOVE the Chords section',
+);
+const laneAt = editorSource.indexOf('{EDITOR_LANE_LABEL}');
+const chordsAt = editorSource.indexOf('{EDITOR_CHORD_LABEL}');
+const tabsAt = editorSource.indexOf('onPress={() => setTabsOpen(true)}');
+assert(laneAt > 0 && tabsAt > laneAt && chordsAt > tabsAt, `…in source order (lane ${laneAt} < tabs ${tabsAt} < chords ${chordsAt})`);
+assertEq(
+  tabsNeverReplaceThePianoNotation(editorSource),
+  true,
+  'the piano staff is still drawn (interactive={false}, abc={staffAbc}) and the tab is its own surface',
+);
+assert(editorSource.indexOf("from '../services/guitarTab'") >= 0, 'the editor takes the button label from the tab model');
+assertEq(
+  takeTabsPageRendersTheTakeHonestly(tabsViewSource),
+  true,
+  'the tab page lays out the take, carries the honest + empty + layout lines, and re-types no tuning',
+);
+assertEq(
+  guitarTabModelKeepsNotesPlayable(guitarTabSource),
+  true,
+  'the tab model keeps the octave-folding mapper, the position chooser and no randomness',
+);
+
+console.log('\nv37 item 7 — Send-to: PDF, the user’s own email, and still ONE MIDI path');
+assertEq(
+  takeEditorOffersSendTo(editorSource),
+  true,
+  'the editor offers Send-to inside the take-has-notes gate and hands its OWN MIDI export to the sheet',
+);
+assertEq(
+  takeSendToSurfaceIsHonest(sendSheetSource),
+  true,
+  'the Send-to surface renders the model’s destinations, WIRES the given MIDI handler and shows every outcome',
+);
+assertEq(
+  sendToUsesTheSystemShareSheetOnly(sendDeviceSource),
+  true,
+  'the device half shares through the system sheet only, after parsing its own PDF bytes',
+);
+assertEq(
+  takePdfUsesTheExistingNotationEngine(takePdfSource),
+  true,
+  'the PDF is built by the existing notation model, validates itself, and carries no paywall',
+);
+
+// ── MUTATIONS 34–45: the items 7–8 guards are not vacuous ───────
+// MUTATION 34 (item 8): the Tabs button is unwired.
+const unwiredTabs = editorSource.replace(
+  'onPress={() => setTabsOpen(true)}',
+  'onPress={() => undefined}',
+);
+assert(unwiredTabs !== editorSource, 'mutation 34 changed the take editor');
+assertEq(
+  tabsButtonSitsUnderTheLaneAndAboveTheChords(unwiredTabs),
+  false,
+  'MUTATION: an unwired Tabs button FAILS tabsButtonSitsUnderTheLaneAndAboveTheChords',
+);
+
+// MUTATION 35 (item 8): the button is MOVED BELOW the Chords section — the
+// owner's placement, re-confirmed 10-09, is the whole point of this guard.
+const tabsBlockStart = editorSource.indexOf('{/* 3b. TABS');
+const tabsBlockEnd = editorSource.indexOf('{/* 4. THE CHORD ROW');
+const tabsBlock = editorSource.slice(tabsBlockStart, tabsBlockEnd);
+const movedTabs =
+  (editorSource.slice(0, tabsBlockStart) + editorSource.slice(tabsBlockEnd)).replace(
+    '<Text style={styles.panelTitle}>{EDITOR_CHORD_LABEL}</Text>',
+    `<Text style={styles.panelTitle}>{EDITOR_CHORD_LABEL}</Text>\n${tabsBlock}`,
+  );
+assert(
+  movedTabs.indexOf('onPress={() => setTabsOpen(true)}') > movedTabs.indexOf('{EDITOR_CHORD_LABEL}'),
+  'mutation 35 really moved the Tabs button below the Chords section',
+);
+assertEq(
+  tabsButtonSitsUnderTheLaneAndAboveTheChords(movedTabs),
+  false,
+  'MUTATION: a Tabs button below the Chords section FAILS tabsButtonSitsUnderTheLaneAndAboveTheChords',
+);
+
+// MUTATION 36 (item 8): the staff is replaced by something else (the piano
+// notation the owner said "is correct and needs to remain").
+const staffReplaced = editorSource.replace('abc={staffAbc}', 'abc={tabAbc}');
+assert(staffReplaced !== editorSource, 'mutation 36 changed the take editor');
+assertEq(
+  tabsNeverReplaceThePianoNotation(staffReplaced),
+  false,
+  'MUTATION: a staff fed something other than the take’s notation FAILS tabsNeverReplaceThePianoNotation',
+);
+
+// MUTATION 37 (item 8): the tab page stops being honest — it claims an official
+// edition and drops the model's honest line.
+const dishonestTab = tabsViewSource
+  .replace('{TAB_HONEST_LINE}', '{TAB_OFFICIAL_LINE}')
+  .replace('<Text style={styles.subtitle}>', '<Text style={styles.subtitle}>Official guitar tab');
+assert(dishonestTab !== tabsViewSource, 'mutation 37 changed the tab page');
+assertEq(
+  takeTabsPageRendersTheTakeHonestly(dishonestTab),
+  false,
+  'MUTATION: a tab page claiming an official edition FAILS takeTabsPageRendersTheTakeHonestly',
+);
+
+// MUTATION 38 (item 8): the tab page stops rendering the take.
+const tabOfNothing = tabsViewSource.replace('buildGuitarTab(take?.notes ?? null)', 'ownTabLayout()');
+assert(tabOfNothing !== tabsViewSource, 'mutation 38 changed the tab page');
+assertEq(
+  takeTabsPageRendersTheTakeHonestly(tabOfNothing),
+  false,
+  'MUTATION: a tab page that does not lay out the take FAILS takeTabsPageRendersTheTakeHonestly',
+);
+
+// MUTATION 39 (item 8): the model loses its in-range folding (out-of-range notes
+// would be dropped or left unplayable).
+const noFolding = guitarTabSource.replace(/tabForMidi\(/g, 'nearestFret(');
+assert(noFolding !== guitarTabSource, 'mutation 39 changed the tab model');
+assertEq(
+  guitarTabModelKeepsNotesPlayable(noFolding),
+  false,
+  'MUTATION: a tab model without the octave-folding mapper FAILS guitarTabModelKeepsNotesPlayable',
+);
+
+// MUTATION 40 (item 7): the Send-to surface re-implements the MIDI export
+// instead of calling the handler it was given.
+const sheetOwnMidi = sendSheetSource.replace(
+  'const run = useCallback(',
+  'const ownMidi = exportCaptureMidiFromTake(take, {});\n  const run = useCallback(',
+);
+assert(sheetOwnMidi !== sendSheetSource, 'mutation 40 changed the send sheet');
+assertEq(
+  takeSendToSurfaceIsHonest(sheetOwnMidi),
+  false,
+  'MUTATION: a surface with its own MIDI export FAILS takeSendToSurfaceIsHonest',
+);
+
+// MUTATION 41 (item 7): the editor grows a SECOND MIDI call site.
+const twoMidiPaths = editorSource.replace(
+  'const result = await exportCaptureMidiFromTake(derived.take, {});',
+  'const extra = await exportCaptureMidiFromTake(derived.take, {});\n    const result = await exportCaptureMidiFromTake(derived.take, {});',
+);
+assert(twoMidiPaths !== editorSource, 'mutation 41 changed the take editor');
+assertEq(
+  takeEditorOffersSendTo(twoMidiPaths),
+  false,
+  'MUTATION: a second MIDI path in the editor FAILS takeEditorOffersSendTo',
+);
+
+// MUTATION 42 (item 7): the sheet stops being bound to the editor being open.
+const orphanSheet = editorSource.replace(
+  'visible={visible && sendOpen}',
+  'visible={sendOpen}',
+);
+assert(orphanSheet !== editorSource, 'mutation 42 changed the take editor');
+assertEq(
+  takeEditorOffersSendTo(orphanSheet),
+  false,
+  'MUTATION: a Send-to sheet that can outlive the editor FAILS takeEditorOffersSendTo',
+);
+
+// MUTATION 43 (item 7c): the PDF gate ignores its own verdict (a broken file is
+// shared anyway).
+const unvalidatedPdf = sendDeviceSource.replace(/if \(!structure\.ok\) \{/g, 'if (false) {');
+assert(unvalidatedPdf !== sendDeviceSource, 'mutation 43 changed the device half');
+assertEq(
+  sendToUsesTheSystemShareSheetOnly(unvalidatedPdf),
+  false,
+  'MUTATION: an export that ignores its PDF verdict FAILS sendToUsesTheSystemShareSheetOnly',
+);
+
+// MUTATION 44 (item 7c): a SERVER email path appears (the one thing the owner
+// ruled out — "we never email anything server-side").
+const serverMail = sendDeviceSource.replace(
+  'export async function sendTakeToEmail(',
+  'async function postToServer(text: string) {\n  await fetch("https://api.notesnap.app/email", { method: "POST", body: text });\n}\nexport async function sendTakeToEmail(',
+);
+assert(serverMail !== sendDeviceSource, 'mutation 44 changed the device half');
+assertEq(
+  sendToUsesTheSystemShareSheetOnly(serverMail),
+  false,
+  'MUTATION: a server email path FAILS sendToUsesTheSystemShareSheetOnly',
+);
+
+// MUTATION 45 (item 7d): the PDF stops being drawn from the existing notation
+// model (a second, drifting notation engine).
+const ownNotation = takePdfSource.replace(/staffKeySignature\(/g, 'ownKeySignature(');
+assert(ownNotation !== takePdfSource, 'mutation 45 changed the PDF service');
+assertEq(
+  takePdfUsesTheExistingNotationEngine(ownNotation),
+  false,
+  'MUTATION: a PDF built by its own notation model FAILS takePdfUsesTheExistingNotationEngine',
+);
+
+// ── the items 7–8 guards are not vacuous ───────────────────────
+console.log('\nv37 items 7–8 — the guards are not vacuous');
+assertEq(
+  tabsButtonSitsUnderTheLaneAndAboveTheChords(''),
+  false,
+  'an empty editor has no Tabs button to place',
+);
+assertEq(tabsNeverReplaceThePianoNotation(''), false, 'an empty editor draws no staff');
+assertEq(takeTabsPageRendersTheTakeHonestly(''), false, 'an empty tab page renders nothing');
+assertEq(guitarTabModelKeepsNotesPlayable(''), false, 'an empty tab model keeps nothing playable');
+assertEq(takeEditorOffersSendTo(''), false, 'an empty editor offers no way out');
+assertEq(takeSendToSurfaceIsHonest(''), false, 'an empty surface says nothing');
+assertEq(sendToUsesTheSystemShareSheetOnly(''), false, 'an empty device half shares nothing');
+assertEq(takePdfUsesTheExistingNotationEngine(''), false, 'an empty PDF service draws nothing');
 
 if (failures > 0) {
   console.error(`\n${passes} passed, ${failures} failed`);
