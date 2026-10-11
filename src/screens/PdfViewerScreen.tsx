@@ -17,6 +17,7 @@ import {
   updateLibraryItem,
 } from '../services/libraryStore';
 import { useAutoScroll } from '../hooks/useAutoScroll';
+import { usePageTurnSpeed } from '../hooks/usePageTurnSpeed';
 import { AutoScrollControl } from '../components/AutoScrollControl';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PdfViewer'>;
@@ -60,6 +61,12 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
     toggle: toggleAutoScroll,
     stop: stopAutoScroll,
   } = autoScroll;
+
+  // SPEED PROFILES + PER-PIECE MEMORY (owner 10-10, backlog 7f64272f). Keyed on
+  // the library item id, which is this PDF's stable identity — so reopening the
+  // same piece comes back at the speed the user left it on, and a piece never
+  // read before opens at the engine's defaults.
+  const speedProfiles = usePageTurnSpeed(itemId, autoScroll);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -177,8 +184,12 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
       )}
 
-      {/* Auto-scroll control (FEATURE BUILD 2) */}
-      <AutoScrollControl autoScroll={autoScroll} disabled={pageCount < 2} />
+      {/* Auto-scroll control (FEATURE BUILD 2 + owner 10-10 speed presets) */}
+      <AutoScrollControl
+        autoScroll={autoScroll}
+        disabled={pageCount < 2}
+        speedProfiles={speedProfiles}
+      />
 
       {/* Page indicator + controls */}
       <View style={styles.footer}>

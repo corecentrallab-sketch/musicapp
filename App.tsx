@@ -24,6 +24,10 @@ import { NotationEditorScreen } from './src/screens/NotationEditorScreen';
 // surface. History mounts it in place for its own rows; this route is the
 // Practice Tools door.
 import { PracticeVideoScreen } from './src/screens/PracticeVideoScreen';
+// THE TUNER (owner APPROVED 10-10, backlog 2bbbbc8f): the Practice Tools door to
+// a free, offline guitar/piano/keyboard tuner built on the app's existing pitch
+// engine. No params — it opens on the microphone loop.
+import { TunerScreen } from './src/screens/TunerScreen';
 import { AudioUnavailableChip } from './src/components/AudioUnavailableChip';
 // The app's light/dark choice (v33 §F2, made APP-WIDE in v34b: owner FAIL item 6
 // — "Light button only works on one page, the settings page"). The provider is
@@ -220,6 +224,13 @@ function AppShell() {
             name="PracticeVideo"
             component={PracticeVideoRoute}
             options={{ title: 'Record your practice' }}
+          />
+          {/* THE TUNER (owner APPROVED 10-10): registered here like every other
+              full-screen tool, opened from the Practice Tools hub card. */}
+          <Stack.Screen
+            name="Tuner"
+            component={TunerScreen}
+            options={{ title: 'Tuner' }}
           />
         </Stack.Navigator>
       </NavigationContainer>

@@ -216,6 +216,17 @@ export function propSource(tagSource: string, name: string): string | null {
  */
 export const INLINE_APP_RENDERED_WEBVIEWS: readonly string[] = [
   'src/components/AbcScoreView.tsx',
+  /**
+   * The tuner's NOTE READER (owner APPROVED 10-10, backlog 2bbbbc8f): the same
+   * class as AbcScoreView — app-rendered inline HTML (`source={{ html:
+   * TUNER_DECODER_HTML }}`, services/tunerDecoder.ts, an inline constant with no
+   * URL, no fetch, no script src) that Android's WebView decodes the recorded take
+   * with. It is parked off-screen at 2×2, `pointerEvents="none"`, and renders no
+   * page a user can reach or navigate in, so neither thing this contract protects
+   * applies: there is nothing to return FROM, and a Modal wrapper would put a
+   * BACK-closable overlay in front of a tuner that never showed one.
+   */
+  'src/screens/TunerScreen.tsx',
 ];
 
 /** True when `path` is one of the app's own inline (non-navigable) WebView renderers. */

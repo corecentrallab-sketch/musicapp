@@ -367,6 +367,13 @@ export type RootStackParamList = {
    * a History row is named.
    */
   PracticeVideo: { rowId?: string } | undefined;
+  /**
+   * The tuner (owner APPROVED 10-10, backlog 2bbbbc8f). A practice tool with no
+   * parameters: it opens on the microphone loop, reads one note at a time from
+   * the device, and is reachable from the Practice Tools hub beside the
+   * metronome.
+   */
+  Tuner: undefined;
 };
 
 // ─── Library (Phase 4a: import + local sheet music library) ──

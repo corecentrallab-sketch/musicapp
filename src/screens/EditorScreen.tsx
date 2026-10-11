@@ -15,6 +15,7 @@ import {
   PRACTICE_VIDEO_CARD_SUBTITLE,
   PRACTICE_VIDEO_CARD_TITLE,
 } from '../services/practiceVideoRef';
+import { TUNER_CARD_SUBTITLE, TUNER_CARD_TITLE } from '../services/tuner';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -43,6 +44,27 @@ export const EditorScreen: React.FC = () => {
           <Text style={styles.cardSubtitle}>
             Keep time with tap tempo, accent patterns, and a visual pulse.
           </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
+      </Pressable>
+
+      {/* THE TUNER (owner APPROVED 10-10, backlog 2bbbbc8f). Placed with the
+          metronome — the two "play in tune / play in time" tools sit together,
+          ahead of the score-editing cards. The subtitle states the two things
+          that decide whether it is worth a tap: it is free, and it runs on the
+          device (no internet). */}
+      <Pressable
+        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+        onPress={() => navigation.navigate('Tuner')}
+        accessibilityRole="button"
+        accessibilityLabel={`${TUNER_CARD_TITLE} — tune a guitar, piano or keyboard by ear and by needle`}
+      >
+        <View style={styles.cardIcon}>
+          <Ionicons name="options" size={26} color={theme.accent} />
+        </View>
+        <View style={styles.cardBody}>
+          <Text style={styles.cardTitle}>{TUNER_CARD_TITLE}</Text>
+          <Text style={styles.cardSubtitle}>{TUNER_CARD_SUBTITLE}</Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
       </Pressable>

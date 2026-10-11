@@ -222,6 +222,34 @@ export function useAutoScroll({
     [applyBeatsPerPage]
   );
 
+  /**
+   * Apply a whole SPEED PROFILE — BPM and beats-per-page together — as ONE
+   * change (owner 10-10, backlog 7f64272f: the skill-level presets). Both refs
+   * are set before the single snapNextTurn(), so the next page turn is scheduled
+   * once, from the profile's own interval, instead of being snapped twice by two
+   * separate setter calls. Both numbers are clamped exactly like the steppers.
+   */
+  const applySpeedProfile = useCallback(
+    (profile: { bpm: number; beatsPerPage: number }) => {
+      const nextBpm = Math.min(
+        AUTO_SCROLL_BPM_MAX,
+        Math.max(AUTO_SCROLL_BPM_MIN, Math.round(profile?.bpm))
+      );
+      const nextBeatsPerPage = Math.min(
+        AUTO_SCROLL_BEATS_PER_PAGE_MAX,
+        Math.max(AUTO_SCROLL_BEATS_PER_PAGE_MIN, Math.round(profile?.beatsPerPage))
+      );
+      if (Number.isFinite(nextBpm) && Number.isFinite(nextBeatsPerPage)) {
+        setBpmState(nextBpm);
+        bpmRef.current = nextBpm;
+        setBeatsPerPageState(nextBeatsPerPage);
+        beatsPerPageRef.current = nextBeatsPerPage;
+        snapNextTurn();
+      }
+    },
+    [snapNextTurn]
+  );
+
   // Clean up the interval when the owning screen unmounts (also covers
   // navigating away while auto-scroll is running).
   useEffect(() => {
@@ -246,6 +274,7 @@ export function useAutoScroll({
     stepBpm,
     applyBeatsPerPage,
     stepBeatsPerPage,
+    applySpeedProfile,
   };
 }
 
