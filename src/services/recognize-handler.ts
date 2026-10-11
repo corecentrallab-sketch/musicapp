@@ -3,7 +3,8 @@
 // "./fpcalc" import to that binary first — which would crash startup by trying
 // to parse the ELF file as TypeScript. The explicit extension always targets
 // the module.
-import { decodeToMonoSamples } from "~/services/fpcalc.ts";
+import { decodeQueryMono } from "~/services/fpcalc.ts";
+import { describeCleanup } from "~/services/audio-cleanup";
 import { extractLandmarksRobust } from "~/services/landmark";
 import { matchLandmarks } from "~/services/landmark-matching";
 import { generatePurchaseUrls } from "~/services/generate-purchase-urls";
@@ -265,13 +266,13 @@ export async function handleRecognize(req: Request): Promise<Response> {
   // The landmark fingerprinter decodes/resamples in JS and computes spectral
   // peak-pairs — robust to compression, mic/room noise, tempo drift and
   // different performances (unlike the old exact-Chromaprint matcher).
-  let landmarks: ReturnType<typeof extractLandmarks>;
+  let landmarks: ReturnType<typeof extractLandmarksRobust>;
   let receivedAudio: { bytes: number; duration_s: number; sample_rate: number; channels: number; format: string | null } | null = null;
   try {
     const audioBuffer = Buffer.from(await audioFile.arrayBuffer());
     // Debug-gated: persist the raw upload to R2 (best-effort, never blocks/breaks).
     await persistRecognitionAudio(audioBuffer);
-    const { mono, sampleRate, channels, durationS } = await decodeToMonoSamples(audioBuffer);
+    const { mono, sampleRate, channels, durationS, cleanup } = await decodeQueryMono(audioBuffer);
     // Sniff container brand from leading bytes for the diagnostic echo.
     let format: string | null = null;
     try {
@@ -300,6 +301,13 @@ export async function handleRecognize(req: Request): Promise<Response> {
       `[recognize] received ${audioFile.size}B fmt=${String(format)} ` +
         `rate=${sampleRate}Hz ch=${channels} dur=${Math.round(durationS * 1000)}ms`,
     );
+    // Query pre-filter (audio-cleanup.ts): log what it actually did, so a real
+    // venue capture that still fails can be told apart from one that arrived as
+    // rumble/noise. Numbers only — never the audio bytes.
+    console.log(`[recognize] query cleanup ${describeCleanup(cleanup)}`);
+    // `mono` is the CLEANED signal (decodeQueryMono): the robust extractor sees
+    // a band-limited, level-normalised capture. The reference fingerprints were
+    // built from clean 16 kHz renders, so this moves the query toward them.
     landmarks = extractLandmarksRobust(mono, sampleRate);
     if (landmarks.length === 0) {
       throw new Error("no landmarks — audio may be too short or silent");

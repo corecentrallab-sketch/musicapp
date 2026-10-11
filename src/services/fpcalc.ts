@@ -5,6 +5,11 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import decode from "audio-decode";
+import {
+  cleanQueryAudio,
+  type QueryCleanupOptions,
+  type QueryCleanupReport,
+} from "~/services/audio-cleanup";
 
 const execFileAsync = promisify(execFile);
 
@@ -93,6 +98,51 @@ export async function generateFingerprint(
   return { fingerprint, duration };
 }
 
+/**
+ * Decode a QUERY upload and run it through the deterministic query pre-filter
+ * (audio-cleanup.ts: ~80 Hz high-pass, band-limited low-pass, loudness
+ * normalisation) before anything fingerprints or pitch-tracks it.
+ *
+ * This is the ONE decode entry point every recognition query path uses —
+ * /api/recognize (landmark matcher), /api/hum (melody matcher) and
+ * `fingerprintFromBuffer` (fpcalc query path) — so a noisy venue capture is
+ * cleaned identically everywhere and the fix cannot drift between engines.
+ *
+ * `rawMono` is the un-cleaned decode, kept for diagnostics only (the persisted
+ * debug capture is the ORIGINAL uploaded bytes — see recognize-handler.ts /
+ * hum-handler.ts — so nothing here changes what is stored for post-hoc tuning).
+ *
+ * WHY (owner's live venue test, 2026-10-10 — backlog d9b051ee): with background
+ * noise + intensity at a real venue BOTH engines returned no match. Cleaning the
+ * query (never the library — reference fingerprints are built from clean
+ * sources) makes the query more like the clean reference; no threshold is
+ * touched and the honest no-match gate is unchanged.
+ */
+export async function decodeQueryMono(
+  audioBuffer: Buffer,
+  opts: QueryCleanupOptions = {},
+): Promise<{
+  /** Cleaned mono samples — what extractors must consume. */
+  mono: Float32Array;
+  /** Un-cleaned decode (diagnostics only; never feed this to an extractor). */
+  rawMono: Float32Array;
+  sampleRate: number;
+  channels: number;
+  durationS: number;
+  cleanup: QueryCleanupReport;
+}> {
+  const decoded = await decodeToMonoSamples(audioBuffer);
+  const { samples, report } = cleanQueryAudio(decoded.mono, decoded.sampleRate, opts);
+  return {
+    mono: samples,
+    rawMono: decoded.mono,
+    sampleRate: decoded.sampleRate,
+    channels: decoded.channels,
+    durationS: decoded.durationS,
+    cleanup: report,
+  };
+}
+
 /** Encode interleaved signed 16-bit PCM as a canonical little-endian WAV. */
 function pcmToWav(samples: Float32Array, sampleRate: number): Buffer {
   const dataSize = samples.length * 2;
@@ -138,7 +188,14 @@ export async function fingerprintFromBuffer(
   const tmpDir = await mkdtemp(join(tmpdir(), "notesnap-fp-"));
   const outputPath = join(tmpDir, "output.wav");
   try {
-    await writeFile(outputPath, pcmToWav(mono, 16000));
+    // QUERY PATH ONLY: clean the resampled mono before fpcalc sees it (80 Hz
+    // high-pass, hiss low-pass at 45% of 16 kHz, loudness normalised so a
+    // near-field capture no longer clips the 16-bit WAV encoder). Ingest /
+    // reference rendering calls `generateFingerprint` directly on a clean
+    // render and must stay byte-for-byte unchanged — that is what keeps the
+    // reference fingerprints (and the zero-false-positive record) intact.
+    const { samples } = cleanQueryAudio(mono, 16000);
+    await writeFile(outputPath, pcmToWav(samples, 16000));
     return await generateFingerprint(outputPath);
   } finally {
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
