@@ -39,6 +39,25 @@ const NOTE_TOKEN_CHARACTER = /[A-Ga-gzZxX]/;
 const ABC_HEADER_LINE = /^[A-Za-z]:/;
 
 /**
+ * A bracketed CHORD group (`[CEG]`) — one note event however many notes it holds.
+ * The inner text may not contain a bar line, so a first/second ending (`[1 C D |`)
+ * is never mistaken for a chord that swallows the bars after it.
+ */
+const ABC_CHORD_GROUP = /\[([^\]|\n]*)\]/g;
+
+/**
+ * ABC notation that is not a pitch: barlines/repeat marks, endings, ties and slurs,
+ * grace notes, decorations, accidentals, octave marks, length numbers.
+ */
+const ABC_NOTATION_SYNTAX = /[:\[\]0-9,^_='()!.<>~{}\-]/g;
+
+/** What is left of a bar token once the notation is removed: notes, rests, spaces. */
+const ABC_NOTES_AND_RESTS_ONLY = /^[A-Ga-gzZxX\s]*$/;
+
+/** The note a bracketed chord stands in for (one event, never one bar per note). */
+const ABC_CHORD_NOTE = 'C';
+
+/**
  * The MUSIC lines of an ABC score: everything after the key field (`K:`), with
  * blank lines, comments (`%…`) and inline information fields dropped.
  *
@@ -66,23 +85,42 @@ export function abcBodyLines(abc: unknown): string[] {
 /**
  * HOW MANY BARS THE SCORE ACTUALLY HOLDS — the honest basis for the sample label.
  *
- * A bar is a run of music between two bar lines. Bracketed chords are removed
- * first (so the notes inside one bar are not counted per group), and a token counts
- * only when a note or rest survives in it — which is what keeps pickups,
- * repeat marks (`|:`, `:|`, `::`), endings (`[1`, `[2`) and the closing `|]` from
- * inflating the count. Returns 0 when there is no readable music.
+ * A bar is a run of music between two bar lines. Three things are not bars:
+ *   • annotations (`"Am"`) and inline comments (`% …`) — text over the staff;
+ *   • repeat marks (`|:`, `:|`, `::`), endings (`[1`, `[2`) and the closing `|]`;
+ *   • a bracketed CHORD, which is ONE note event: it makes the bar it sits in music,
+ *     and its inner notes never add a bar of their own (`[CEG] [DFA] | c2 z2` is two
+ *     bars, not three — the fix for the v39 mis-count).
+ * A token counts only when what survives the notation syntax is notes and rests and
+ * nothing else, so a line of prose that merely contains note letters (`#not abc`)
+ * is not music. Returns 0 when there is no readable music.
  */
 export function countAbcBars(abc: unknown): number {
   let bars = 0;
   for (const line of abcBodyLines(abc)) {
-    const withoutChords = line.replace(/\[[^\]]*\]/g, ' ');
-    for (const token of withoutChords.split('|')) {
-      // Structural punctuation and octave/length numbers are not music.
-      const music = token.replace(/[:\[\]0-9,]/g, '').trim();
-      if (NOTE_TOKEN_CHARACTER.test(music)) bars += 1;
+    const withoutText = line.replace(/"[^"]*"/g, ' ').replace(/%.*$/, ' ');
+    const withChordsAsOneNote = withoutText.replace(ABC_CHORD_GROUP, (group: string) =>
+      ABC_NOTES_AND_RESTS_ONLY.test(group.replace(ABC_NOTATION_SYNTAX, '').trim()) &&
+      NOTE_TOKEN_CHARACTER.test(group.replace(ABC_NOTATION_SYNTAX, ''))
+        ? ABC_CHORD_NOTE
+        : ' ',
+    );
+    for (const token of withChordsAsOneNote.split('|')) {
+      if (isMusicToken(token)) bars += 1;
     }
   }
   return bars;
+}
+
+/**
+ * True when a bar TOKEN carries music: with the notation syntax removed, only notes
+ * and rests (and at least one of them) may remain. `c2 z2` is music; `#not abc` and
+ * a bare `|]` are not.
+ */
+function isMusicToken(token: string): boolean {
+  const music = token.replace(ABC_NOTATION_SYNTAX, '').trim();
+  if (music.length === 0) return false;
+  return ABC_NOTES_AND_RESTS_ONLY.test(music) && NOTE_TOKEN_CHARACTER.test(music);
 }
 
 /** True when the score is a short excerpt rather than a whole work. */

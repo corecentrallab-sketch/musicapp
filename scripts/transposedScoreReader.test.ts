@@ -253,54 +253,88 @@ assertEq(readerSourceCount([]), 0, 'an empty sweep covers nothing');
 assertEq(v39HasNoNetwork([]), false, 'an empty source list proves no network block');
 
 console.log('\nv39 reader — MUTATION PROBES (each guard must bite)');
+/**
+ * The probes mutate a COPY of the real source, so nothing is written to disk.
+ * `mutate` replaces EVERY occurrence: the reader screen and the editor each carry
+ * more than one copy of the strings under test, and a probe must never pass or fail
+ * on which duplicate the FIRST `String.replace` happened to hit (the v39a bug: three
+ * probes mutated the import line and left the route mounted, so the guard was right
+ * and the probe was wrong).
+ */
+function mutate(source: string, needle: string, replacement: string): string {
+  return source.split(needle).join(replacement);
+}
 function probe(name: string, mutated: string, original: string, guard: () => boolean): void {
   assert(mutated !== original, `${name}: the mutation really changed the source`);
   assertEq(guard(), false, `MUTATION FAILS THE GUARD — ${name}`);
 }
-probe('the reader is never registered in App.tsx', APP.replace(READER_COMPONENT_NAME, 'SomeOtherScreen'), APP, () =>
-  readerRouteIsRegistered({ app: APP.replace(READER_COMPONENT_NAME, 'SomeOtherScreen'), types: TYPES }),
+
+// R1 — registration: the mutated source must UNREGISTER the route (the component the
+// Stack.Screen mounts), not just rename the symbol on the import line.
+const unregisteredApp = mutate(APP, `component={${READER_COMPONENT_NAME}}`, 'component={SomeOtherScreen}');
+probe('the reader is never registered in App.tsx', unregisteredApp, APP, () =>
+  readerRouteIsRegistered({ app: unregisteredApp, types: TYPES }),
 );
-probe('the route type loses its abc param', TYPES, TYPES, () =>
-  readerRouteIsRegistered({
-    app: APP,
-    types: TYPES.replace(`${READER_ROUTE_NAME}: {`, `${READER_ROUTE_NAME}: { unused: string;`),
-  }),
+// R1 — the typed param list: the route must LOSE its `abc`, which the param loop
+// reads from the route's own declaration onward.
+const readerRouteAt = TYPES.indexOf(`${READER_ROUTE_NAME}: {`);
+const typesWithoutTheAbcParam =
+  TYPES.slice(0, readerRouteAt) + TYPES.slice(readerRouteAt).replace(/\babc\s*:/, 'scoreText:');
+probe('the route type loses its abc param', typesWithoutTheAbcParam, TYPES, () =>
+  readerRouteIsRegistered({ app: APP, types: typesWithoutTheAbcParam }),
 );
 assertEq(
-  readerRouteIsRegistered({ app: APP, types: TYPES.replace(/\babc\s*:/, 'scoreText:') }),
+  readerRouteIsRegistered({ app: APP, types: typesWithoutTheAbcParam }),
   false,
   'MUTATION FAILS THE GUARD — the param list renames the abc it carries',
 );
-probe('the editor navigates without the transposed ABC', EDITOR, EDITOR, () =>
-  readerEntryPointExists(EDITOR.replace('abc: transposedAbc', 'abc: sourceAbc')),
+// R2 — the editor's door and the sample flag it carries.
+const editorWithoutTransposedAbc = mutate(EDITOR, 'abc: transposedAbc', 'abc: sourceAbc');
+probe('the editor navigates without the transposed ABC', editorWithoutTransposedAbc, EDITOR, () =>
+  readerEntryPointExists(editorWithoutTransposedAbc),
 );
-probe('the editor stops flagging samples', EDITOR, EDITOR, () =>
-  readerEntryPointExists(EDITOR.replace('isSample: isSampleScore(transposedAbc)', 'isSample: false')),
+const editorWithoutTheSampleFlag = mutate(EDITOR, 'isSample: isSampleScore(transposedAbc)', 'isSample: false');
+probe('the editor stops flagging samples', editorWithoutTheSampleFlag, EDITOR, () =>
+  readerEntryPointExists(editorWithoutTheSampleFlag),
 );
-probe('the reader forgets wholeWork', SCREEN, SCREEN, () =>
-  readerShowsTheWholeWork({ screen: SCREEN.replace('<AbcScoreView abc={abc} wholeWork />', '<AbcScoreView abc={abc} />'), viewer: VIEWER }),
+// R3 — the whole work: the flag the reader mounts with, the band the viewer asks for,
+// and the gesture it hands to the WebView.
+const screenWithoutWholeWork = mutate(SCREEN, '<AbcScoreView abc={abc} wholeWork />', '<AbcScoreView abc={abc} />');
+probe('the reader forgets wholeWork', screenWithoutWholeWork, SCREEN, () =>
+  readerShowsTheWholeWork({ screen: screenWithoutWholeWork, viewer: VIEWER }),
 );
-probe('the viewer stops asking which band it is in', VIEWER, VIEWER, () =>
-  readerShowsTheWholeWork({ screen: SCREEN, viewer: VIEWER.replace('scoreReaderBand(', 'clampScoreHeight(') }),
+const viewerWithoutTheBand = mutate(VIEWER, 'scoreReaderBand(', 'clampScoreHeight(');
+probe('the viewer stops asking which band it is in', viewerWithoutTheBand, VIEWER, () =>
+  readerShowsTheWholeWork({ screen: SCREEN, viewer: viewerWithoutTheBand }),
 );
-probe('the viewer stops handing the gesture to the WebView', VIEWER, VIEWER, () =>
-  readerShowsTheWholeWork({ screen: SCREEN, viewer: VIEWER.replace('scrollEnabled={viewerInteractive}', 'scrollEnabled={false}') }),
+const viewerWithoutTheHandOff = mutate(VIEWER, 'scrollEnabled={viewerInteractive}', 'scrollEnabled={false}');
+probe('the viewer stops handing the gesture to the WebView', viewerWithoutTheHandOff, VIEWER, () =>
+  readerShowsTheWholeWork({ screen: SCREEN, viewer: viewerWithoutTheHandOff }),
 );
-probe('the reader writes its own library item', SCREEN, SCREEN, () =>
-  readerSavesThroughTheLibrary({ screen: SCREEN.replace('addAbcToLibrary({', 'writeOwnItem({'), editor: EDITOR }),
+// R4 — save through the Library store, both surfaces on the shared builder.
+const screenWithItsOwnWrite = mutate(SCREEN, 'addAbcToLibrary({', 'writeOwnItem({');
+probe('the reader writes its own library item', screenWithItsOwnWrite, SCREEN, () =>
+  readerSavesThroughTheLibrary({ screen: screenWithItsOwnWrite, editor: EDITOR }),
 );
-probe('the editor stops using the shared title builder', EDITOR, EDITOR, () =>
-  readerSavesThroughTheLibrary({ screen: SCREEN, editor: EDITOR.replace('transposedCopyTitle(', 'ownTitle(') }),
+const editorWithItsOwnTitle = mutate(EDITOR, 'transposedCopyTitle(', 'ownTitle(');
+probe('the editor stops using the shared title builder', editorWithItsOwnTitle, EDITOR, () =>
+  readerSavesThroughTheLibrary({ screen: SCREEN, editor: editorWithItsOwnTitle }),
 );
-probe('the share silently does nothing when it fails', SCREEN, SCREEN, () =>
-  readerSharesThroughThePlatform({ screen: SCREEN.replace('SCORE_SHARE_FAILED_HINT', 'null'), device: SHARE_DEVICE, pure: SHARE }),
+// R5 — the platform sheet, and the honest line when it fails.
+const screenWithoutTheFailureLine = mutate(SCREEN, 'SCORE_SHARE_FAILED_HINT', 'null');
+probe('the share silently does nothing when it fails', screenWithoutTheFailureLine, SCREEN, () =>
+  readerSharesThroughThePlatform({ screen: screenWithoutTheFailureLine, device: SHARE_DEVICE, pure: SHARE }),
 );
-probe('the device share stops using the platform sheet', SHARE_DEVICE, SHARE_DEVICE, () =>
-  readerSharesThroughThePlatform({ screen: SCREEN, device: SHARE_DEVICE.replace('Share.share(', 'sendEmail('), pure: SHARE }),
+const deviceWithoutThePlatformSheet = mutate(SHARE_DEVICE, 'Share.share(', 'sendEmail(');
+probe('the device share stops using the platform sheet', deviceWithoutThePlatformSheet, SHARE_DEVICE, () =>
+  readerSharesThroughThePlatform({ screen: SCREEN, device: deviceWithoutThePlatformSheet, pure: SHARE }),
 );
-probe('the editor stops labelling samples', EDITOR, EDITOR, () =>
-  readerLabelsASample({ screen: SCREEN, editor: EDITOR.replace('sampleExcerptLabel(', 'noLabel(') }),
+// R6 — the editor must still say when a score is an excerpt.
+const editorWithoutTheSampleLabel = mutate(EDITOR, 'sampleExcerptLabel(', 'noLabel(');
+probe('the editor stops labelling samples', editorWithoutTheSampleLabel, EDITOR, () =>
+  readerLabelsASample({ screen: SCREEN, editor: editorWithoutTheSampleLabel }),
 );
+// R7 — one title builder only.
 assertEq(
   readerHasOneTitleBuilder({
     editor: EDITOR + '\nconst title = `${selected.title} (${keyLabels.to} · ${offset})`;',
@@ -309,11 +343,12 @@ assertEq(
   false,
   'MUTATION FAILS THE GUARD — an inline title template reappears in a surface',
 );
-probe('the reader becomes a modal overlay', SCREEN, SCREEN, () =>
-  readerIsARouteNotAModal(SCREEN + '\nconst x = <Modal visible={true} />;'),
-);
-probe('the reader loses its free/honest copy', SCREEN, SCREEN, () =>
-  readerCopyConstantCount(SCREEN.replace('export const READER_FREE_NOTE', 'const READER_FREE_NOTE')) === 5,
+// The route class and the copy floor.
+const modalScreen = SCREEN + '\nconst x = <Modal visible={true} />;';
+probe('the reader becomes a modal overlay', modalScreen, SCREEN, () => readerIsARouteNotAModal(modalScreen));
+const guttedCopyScreen = mutate(SCREEN, 'export const READER_FREE_NOTE', 'const READER_FREE_NOTE');
+probe('the reader loses its free/honest copy', guttedCopyScreen, SCREEN, () =>
+  readerCopyConstantCount(guttedCopyScreen) === 5,
 );
 // The BAND rule itself: shift the ceiling by a pixel and a whole work is clipped again.
 const wrongBand = (measured: unknown): string => {
