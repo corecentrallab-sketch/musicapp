@@ -32,7 +32,7 @@ export const SCAN_SAVED_AS_YOU_GO_LINE =
 /** Where an unfinished scan is picked up again (v39 fix 1a). */
 export const SCAN_SESSION_RESUMED_PREFIX = 'Unfinished scan picked up — ';
 export const SCAN_SESSION_KEPT_LINE =
-  'pages are already in your Library; carry on, or press Done to finish.';
+  'pages are already in your Library; carry on, or finish when you are ready.';
 
 /** The finish action's label, from the real page count. */
 export function scanFinishCta(pageCount: number): string {

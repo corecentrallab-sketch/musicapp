@@ -33,6 +33,16 @@ export const V39_SCAN_SECTION_PATH = 'src/components/ScanFindSection.tsx';
 export const V39_SCAN_FIND_PATH = 'src/services/scanFind.ts';
 export const V39_LIBRARY_STORE_PATH = 'src/services/libraryStore.ts';
 export const V39_FIND_PIECE_PATH = 'src/screens/FindPieceScreen.tsx';
+
+/**
+ * The mount token the scan doors must pass to the one find-a-piece search.
+ * Built by split/join so this contract file never contains the full
+ * JSX-shaped mount sequence as contiguous text: the backExit live scan reads
+ * every src file and would flag that literal itself as a mount with no onClose
+ * (it is a string, not real JSX) — the same rule that keeps code-shaped tokens
+ * out of comments.
+ */
+export const FIND_PIECE_MOUNT = ['<FindPiece', 'Screen initialQuery={findQuery}'].join('');
 export const V39_VIDEO_SCREEN_PATH = 'src/screens/PracticeVideoScreen.tsx';
 export const V39_VIDEO_REF_PATH = 'src/services/practiceVideoRef.ts';
 export const V39_HISTORY_PATH = 'src/screens/HistoryScreen.tsx';
@@ -151,8 +161,11 @@ export function scanFindOpensTheOneSearch(sources: {
   if (viewer.indexOf('<ScanFindSection') < 0) return false;
   if (viewer.indexOf('onSearch={setFindQuery}') < 0) return false;
   // …and the host is the existing search, opened with those words.
-  if (screen.indexOf('<FindPieceScreen initialQuery={findQuery}') < 0) return false;
-  if (viewer.indexOf('<FindPieceScreen initialQuery={findQuery}') < 0) return false;
+  // (Built by split/join so this contract file never contains a contiguous
+  // `<FindPieceScreen …` token — the backExit live scan reads every src file
+  // and would otherwise flag this literal itself as a mount without onClose.)
+  if (screen.indexOf(FIND_PIECE_MOUNT) < 0) return false;
+  if (viewer.indexOf(FIND_PIECE_MOUNT) < 0) return false;
   if (host.indexOf('initialQuery?: string') < 0) return false;
   if (host.indexOf('useState(initialQuery ?? ' ) < 0) return false;
   // The scan path itself never builds a retailer link (the host owns the money
@@ -266,7 +279,9 @@ export function historyPracticeVideoStartsInPlayback(
   if (initial.indexOf('watchMode') < 0) return false;
   // One mode test, and the record body (with the camera) sits after it.
   const playbackBranch = src.indexOf("if (phase === 'playback')");
-  const camera = src.indexOf('<CameraView ');
+  // The JSX mount is the multiline idiom `<CameraView\n ref=…`; the type usage
+  // `useRef<CameraView>` ends in `>` and must not count as the record body.
+  const camera = src.search(/<CameraView[^>]/);
   if (playbackBranch < 0 || camera < 0) return false;
   if (playbackBranch > camera) return false;
   if (src.indexOf('<Video') < 0) return false;
@@ -300,7 +315,8 @@ export function tier1ListsTheV39Fixes(tsconfigSource: string, packageSource: str
     if (tsconfigSource.indexOf(`"${module}"`) < 0) return false;
   }
   for (const suite of V39_TIER1_SUITES) {
-    if (packageSource.indexOf(`/tmp/tier1-test/${suite}`) < 0) return false;
+    const compiled = suite.replace(/\.ts$/, '.js');
+    if (packageSource.indexOf(`/tmp/tier1-test/${compiled}`) < 0) return false;
   }
   return true;
 }
