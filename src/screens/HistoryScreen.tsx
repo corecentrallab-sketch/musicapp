@@ -573,7 +573,10 @@ export const HistoryScreen: React.FC = () => {
           {practiceVideoIsUsable(item.practiceVideo) ? (
             <TouchableOpacity
               style={styles.playTakeBtn}
-              onPress={() => setWatchVideoId(item.id)}
+              // v37 item 1's lesson, applied here (v39 fix 3): the watch surface
+              // mounts a video player, so it is opened OUT of the press event —
+              // the gesture finishes and the list's scroll responder settles first.
+              onPress={() => requestAnimationFrame(() => setWatchVideoId(item.id))}
               activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel={`${WATCH_PRACTICE_VIDEO_CTA} for ${item.title}`}
@@ -657,6 +660,21 @@ export const HistoryScreen: React.FC = () => {
         // hands it the only real move History has: close the window.
         onSwitchToModern={() => setOpenMelody(null)}
       />
+    );
+  }
+
+  // THE PRACTICE VIDEO, AS THIS TAB'S OWN BODY (v39 fix 3, owner 10-11:
+  // "tapping a History row with a practice video opens the screen but playback
+  // never shows"). It used to be rendered AFTER the list, as a sibling inside the
+  // same flex column: the FlatList takes the full height, so the watch surface was
+  // laid out BELOW the visible area — mounted, reading its row, and invisible. Every
+  // other full-screen flow on this screen (the week view, the re-opened capture
+  // window, the piece page) returns its body instead of appending to the list, and
+  // this now does the same. The playback phase itself is the screen's own (see
+  // PracticeVideoScreen): a named row starts there and never enters the record path.
+  if (watchVideoId) {
+    return (
+      <PracticeVideoScreen rowId={watchVideoId} onClose={() => setWatchVideoId(null)} />
     );
   }
 
@@ -808,13 +826,9 @@ export const HistoryScreen: React.FC = () => {
         />
       ) : null}
 
-      {/* THE PRACTICE VIDEO, RENDERED IN PLACE (owner GO 10-10). Opened by the
-          row's own "Watch practice video" action; closing returns to this list.
-          The playback surface reads the row back by id, so it always shows the
-          take the editor last saved. */}
-      {watchVideoId ? (
-        <PracticeVideoScreen rowId={watchVideoId} onClose={() => setWatchVideoId(null)} />
-      ) : null}
+      {/* THE PRACTICE VIDEO is NOT rendered here any more (v39 fix 3): the watch
+          surface is this tab's body while a row is open (see the early return
+          above), so it can never be laid out below the list. */}
     </View>
   );
 };

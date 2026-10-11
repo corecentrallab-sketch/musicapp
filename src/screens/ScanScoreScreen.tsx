@@ -1,5 +1,5 @@
 import { useThemedStyles } from '../services/themeStore';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,7 +15,21 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { RootStackParamList } from '../types';
-import { createScannedScore } from '../services/libraryStore';
+import {
+  appendScanSessionPage,
+  endScanSession,
+  getOpenScanSession,
+  removeScanSessionPage,
+  startScanSession,
+} from '../services/libraryStore';
+import {
+  SCAN_SAVED_AS_YOU_GO_LINE,
+  scanFinishCta,
+  scanSessionResumedLine,
+  scanSessionTitle,
+} from '../services/scanFind';
+import { ScanFindSection } from '../components/ScanFindSection';
+import { FindPieceScreen } from './FindPieceScreen';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanScore'>;
 
@@ -26,8 +40,28 @@ interface CapturedPage {
 
 /**
  * Camera capture flow for scanning a paper score into the library.
- * Take one photo per page, review the thumbnail strip, then save as a
- * single "scanned score" item with pages in order.
+ * Take one photo per page, review the thumbnail strip, then finish.
+ *
+ * WHAT CHANGED IN v39 (fix 1a, owner 10-11: "after taking a photo the app
+ * minimises itself back to the menu — the photo never persists and nothing
+ * appears in Library camera scores"). The session used to live ONLY in this
+ * component's React state: pages were held in memory and the score was written
+ * once, when the user pressed Save. A capture that ended earlier than that — for
+ * any reason — left nothing at all behind.
+ *
+ * Now the score is real from the FIRST page: each capture is copied into the
+ * library's own directory and registered immediately (`startScanSession` for page
+ * one, `appendScanSessionPage` for the rest), the row is marked open while the
+ * scan runs, and this screen picks an unfinished scan back up on mount. The
+ * strip is therefore a view of what is ALREADY on disk, and the two controls are
+ * "Undo" (drop the page just taken) and "Done" (close the scan and return to the
+ * Library). Nothing here needs the screen to survive in order to keep the pages.
+ *
+ * The money path (fix 1b) is the shared `ScanFindSection`: the page's printed
+ * WORDS are read on device and handed to the app's ONE search — the same
+ * find-a-piece surface a typed title opens, where the public-domain catalog and
+ * the licensed retailers already are. No OMR, no note reading, no edition claim,
+ * no second search box, and no retailer URL is built here.
  */
 export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
@@ -35,47 +69,114 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
   const cameraRef = useRef<CameraView>(null);
   const [pages, setPages] = useState<CapturedPage[]>([]);
   const [capturing, setCapturing] = useState(false);
+  // The open scan's library id — the row every further page is appended to.
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  // The honest line from a capture that could not be written.
+  const [errorLine, setErrorLine] = useState<string | null>(null);
+  // The confirmed words a scan produced, when the user asked to find the music.
+  const [findQuery, setFindQuery] = useState<string | null>(null);
 
+  /**
+   * AN UNFINISHED SCAN IS PICKED BACK UP (v39 fix 1a). Its pages are already in
+   * the library, so the strip shows them again and the next capture continues the
+   * same score instead of starting a second one.
+   */
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const open = await getOpenScanSession();
+      if (!alive || !open) return;
+      setSessionId(open.id);
+      setPages((open.pageUris ?? []).map((uri) => ({ uri })));
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /**
+   * TAKE A PAGE, AND WRITE IT DOWN IMMEDIATELY (v39 fix 1a). The photo is copied
+   * into the library and the row updated before this resolves; the strip only ever
+   * shows pages that are truly on disk, read back from the store.
+   */
   const capturePage = useCallback(async () => {
     if (capturing || !cameraRef.current) return;
     setCapturing(true);
+    setErrorLine(null);
     try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.85,
-      });
-      if (photo) {
-        setPages((prev) => [...prev, { uri: photo.uri }]);
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.85 });
+      if (!photo?.uri) {
+        setErrorLine('The photo could not be taken. Nothing was saved — try again.');
+        return;
       }
+      const saved = sessionId
+        ? await appendScanSessionPage(sessionId, photo.uri)
+        : await startScanSession(photo.uri, scanSessionTitle(new Date().toLocaleDateString()));
+      if (!saved) {
+        setErrorLine(
+          'This scan is no longer in your Library, so the page could not be added. Take a page to start a new scan.',
+        );
+        setSessionId(null);
+        setPages([]);
+        return;
+      }
+      setSessionId(saved.id);
+      setPages((saved.pageUris ?? []).map((uri) => ({ uri })));
     } catch {
-      Alert.alert('Capture failed', 'The photo could not be taken.');
+      setErrorLine('The photo could not be saved. Nothing was added — try again.');
     } finally {
       setCapturing(false);
     }
-  }, [capturing]);
+  }, [capturing, sessionId]);
 
-  const removeLast = useCallback(() => {
-    setPages((prev) => prev.slice(0, -1));
-  }, []);
+  /**
+   * UNDO removes the LAST page from this scan's own entry. It goes through the
+   * store, so the disk and the strip never disagree; the pages before it stay
+   * exactly where they were.
+   */
+  const removeLast = useCallback(async () => {
+    if (!sessionId || pages.length === 0) return;
+    setErrorLine(null);
+    try {
+      const updated = await removeScanSessionPage(sessionId);
+      setPages((updated?.pageUris ?? []).map((uri) => ({ uri })));
+      if (!updated) {
+        // That was the only page: the empty scan's row went with it.
+        setSessionId(null);
+      }
+    } catch {
+      setErrorLine('That page could not be removed. Nothing else changed.');
+    }
+  }, [pages.length, sessionId]);
 
-  const saveScore = useCallback(async () => {
-    if (pages.length === 0) {
+  /**
+   * DONE closes the scan (the row stays in the Library, "still being scanned" is
+   * lifted) and returns to the Library, where the score is already waiting.
+   */
+  const finish = useCallback(async () => {
+    if (!sessionId || pages.length === 0) {
       Alert.alert('No pages', 'Capture at least one page first.');
       return;
     }
     try {
-      const item = await createScannedScore(pages);
-      Alert.alert(
-        'Score saved',
-        `"${item.title}" (${item.pageCount} pages) was added to your library.`,
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
-    } catch (e) {
-      Alert.alert(
-        'Save failed',
-        e instanceof Error ? e.message : 'The scanned score could not be saved.'
-      );
+      await endScanSession(sessionId);
+    } catch {
+      // The pages are already saved; a failed flag flip is not a lost scan.
     }
-  }, [pages, navigation]);
+    navigation.goBack();
+  }, [navigation, pages.length, sessionId]);
+
+  /**
+   * THE MONEY PATH (v39 fix 1b). The section read the page's words and the user
+   * confirmed them: the app's own find-a-piece surface opens IN PLACE with that
+   * query — one search surface, the same results the user would get by typing it,
+   * including the licensed retailers. Its own back returns to this scan.
+   */
+  if (findQuery !== null) {
+    return (
+      <FindPieceScreen initialQuery={findQuery} onClose={() => setFindQuery(null)} />
+    );
+  }
 
   // ─── Permission not granted yet ────────────────────────────
 
@@ -116,6 +217,8 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
 
   // ─── Capture UI ────────────────────────────────────────────
 
+  const lastPageUri = pages.length > 0 ? pages[pages.length - 1].uri : null;
+
   return (
     <View style={styles.container}>
       <CameraView
@@ -130,7 +233,7 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
         }
       />
 
-      {/* Page thumbnail strip */}
+      {/* Page thumbnail strip — the pages that are ALREADY in the Library. */}
       <ScrollView
         horizontal
         style={styles.strip}
@@ -147,11 +250,24 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
         )}
       </ScrollView>
 
+      {/* THE SCAN'S OWN HONESTY + MONEY PATH (v39 fix 1a/1b). Scrollable: the
+          camera keeps the room it needs and the notes below it are all reachable. */}
+      <ScrollView style={styles.footerScroll} contentContainerStyle={styles.footer}>
+        {scanSessionResumedLine(pages.length) ? (
+          <Text style={styles.resumedLine}>
+            {scanSessionResumedLine(pages.length)}
+          </Text>
+        ) : null}
+        <Text style={styles.savedLine}>{SCAN_SAVED_AS_YOU_GO_LINE}</Text>
+        {errorLine ? <Text style={styles.error}>{errorLine}</Text> : null}
+        <ScanFindSection pageUri={lastPageUri} onSearch={setFindQuery} />
+      </ScrollView>
+
       {/* Controls */}
       <View style={styles.controls}>
         <Pressable
           style={[styles.controlButton, pages.length === 0 && styles.controlDisabled]}
-          onPress={removeLast}
+          onPress={() => void removeLast()}
           disabled={pages.length === 0}
           accessibilityLabel="Remove last page"
         >
@@ -161,7 +277,7 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
 
         <Pressable
           style={styles.shutter}
-          onPress={capturePage}
+          onPress={() => void capturePage()}
           disabled={capturing}
           accessibilityLabel="Capture page"
         >
@@ -174,13 +290,11 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
             styles.doneButton,
             pages.length === 0 && styles.controlDisabled,
           ]}
-          onPress={saveScore}
+          onPress={() => void finish()}
           disabled={pages.length === 0}
         >
           <Ionicons name="checkmark" size={22} color="#fff" />
-          <Text style={styles.doneLabel}>
-            Save ({pages.length})
-          </Text>
+          <Text style={styles.doneLabel}>{scanFinishCta(pages.length)}</Text>
         </Pressable>
       </View>
     </View>
@@ -231,6 +345,32 @@ const baseStyles = StyleSheet.create({
     borderRadius: 4,
     paddingHorizontal: 4,
     overflow: 'hidden',
+  },
+  footerScroll: {
+    maxHeight: 320,
+    backgroundColor: '#10101c',
+  },
+  footer: {
+    backgroundColor: '#10101c',
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    paddingTop: 4,
+    gap: 6,
+  },
+  resumedLine: {
+    color: '#cfe4ff',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  savedLine: {
+    color: '#8a8ab0',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  error: {
+    color: '#ffb4b4',
+    fontSize: 12,
+    lineHeight: 17,
   },
   controls: {
     flexDirection: 'row',

@@ -59,7 +59,17 @@ export const PRACTICE_VIDEO_CARD_SUBTITLE =
 export const PRACTICE_VIDEO_SCREEN_TITLE = 'Record your practice';
 export const PRACTICE_VIDEO_STOP_CTA = '● Stop';
 export const PRACTICE_VIDEO_START_LINE = 'Getting the camera and the microphone ready…';
-export const PRACTICE_VIDEO_ARMING_LINE = 'Ready — recording starts on its own.';
+/**
+ * THE START CONTROL (v39 fix 2, owner 10-11). The surface used to film the moment
+ * the camera came up, so the user had no chance to set the phone down and turn
+ * around. Nothing records now until this button is pressed, and the copy says so.
+ */
+export const PRACTICE_VIDEO_START_CTA = '▶ Start';
+export const PRACTICE_VIDEO_START_HINT =
+  'Nothing is recorded until you press Start — set the phone down, turn around, then start.';
+export const PRACTICE_VIDEO_CAMERA_NOT_READY_LINE =
+  'The camera is still coming up — one moment, then press Start again.';
+export const PRACTICE_VIDEO_ARMING_LINE = 'Ready — filming starts when you press Start.';
 export const PRACTICE_VIDEO_RECORDING_LINE = 'Filming and listening';
 export const PRACTICE_VIDEO_KEEPING_LINE = 'Keeping your video on this device…';
 export const PRACTICE_VIDEO_PERMISSION_LINE =

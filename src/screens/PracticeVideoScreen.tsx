@@ -64,6 +64,9 @@ import {
   PRACTICE_VIDEO_SCREEN_TITLE,
   PRACTICE_VIDEO_START_FAILED_LINE,
   PRACTICE_VIDEO_START_LINE,
+  PRACTICE_VIDEO_START_CTA,
+  PRACTICE_VIDEO_START_HINT,
+  PRACTICE_VIDEO_CAMERA_NOT_READY_LINE,
   PRACTICE_VIDEO_ARMING_LINE,
   PRACTICE_VIDEO_RECORDING_LINE,
   PRACTICE_VIDEO_STOP_CTA,
@@ -122,8 +125,14 @@ import { PracticeVideoSendToSheet } from '../components/PracticeVideoSendToSheet
 import { TakeStaffCard } from '../components/TakeStaffCard';
 import { TakeCorrectionEditor } from '../components/TakeCorrectionEditor';
 
-/** Where the record flow is. */
+/**
+ * Where the screen is. ONE machine for both modes (v39 fixes 2/3, owner
+ * 10-11): `playback` is a real phase — a History row STARTS here and can never
+ * fall into the record flow — and the record flow only ever leaves `permissions`
+ * because the user pressed Start (never because the camera came up).
+ */
 export type PracticeVideoPhase =
+  | 'playback'
   | 'permissions'
   | 'recording'
   | 'keeping'
@@ -156,10 +165,19 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   const recorder = useAudioRecorder();
   const cameraRef = useRef<CameraView>(null);
 
-  // WHERE THE MODE STARTS: a History row means playback, no row means film.
+  // WHERE THE MODE STARTS (v39 fix 3): a History row means playback FROM THE
+  // FIRST PAINT — the phase itself carries the mode, so no later render can put a
+  // watch-only row through a permissions or recording path. No row means the
+  // record flow, and that flow does not start filming until the user says so
+  // (v39 fix 2).
+  const watchMode = !!requestedRowId;
   const [row, setRow] = useState<PracticeTakeRow | null>(null);
-  const [playing, setPlaying] = useState<boolean>(!!requestedRowId);
-  const [phase, setPhase] = useState<PracticeVideoPhase>('permissions');
+  const [phase, setPhase] = useState<PracticeVideoPhase>(
+    watchMode ? 'playback' : 'permissions',
+  );
+  // The camera is up and can film: the Start control's own precondition. It is
+  // NOT the trigger — only the user's press starts the recording (v39 fix 2).
+  const [cameraReady, setCameraReady] = useState(false);
   const [line, setLine] = useState<string | null>(null);
   const [errorLine, setErrorLine] = useState<string | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -211,6 +229,9 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         audioUri: stored.personalMelody?.audioUri ?? null,
       });
       setOffsetMs(Math.round(Number(ref?.audioOffsetMs) || 0));
+      // The row is in hand: this is the playback surface, stated in the phase
+      // machine rather than left to a separate flag (v39 fix 3).
+      setPhase('playback');
     })();
     return () => {
       alive = false;
@@ -270,10 +291,30 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     }
   }, [recorder]);
 
-  /** The camera is up: only then is there something to film with. */
+  /**
+   * The camera is up (v39 fix 2). Coming up is NOT a reason to film: the owner's
+   * report is exactly this — the surface recorded the moment it opened, so the
+   * user had no time to turn the phone around. This only arms the Start control.
+   */
   const handleCameraReady = useCallback(() => {
+    setCameraReady(true);
+  }, []);
+
+  /**
+   * THE START CONTROL (v39 fix 2, owner 10-11: "there needs to be a start button
+   * (there is a stop button) as it starts recording immediately — users will need
+   * to manually press start to operate and turn the phone around"). ONE press
+   * starts BOTH captures; nothing records before it, and a press while the camera
+   * is still coming up says so instead of doing nothing (never a dead button).
+   */
+  const handleStart = useCallback(() => {
+    if (!cameraReady || !cameraRef.current) {
+      setErrorLine(PRACTICE_VIDEO_CAMERA_NOT_READY_LINE);
+      return;
+    }
+    setErrorLine(null);
     void startBothCaptures();
-  }, [startBothCaptures]);
+  }, [cameraReady, startBothCaptures]);
 
   /** The running clock, the remaining time and the hard stop at the cap. */
   useEffect(() => {
@@ -425,8 +466,10 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     setElapsedSec(0);
     setLine(null);
     setErrorLine(null);
-    setPlaying(false);
     setPhase('permissions');
+    // The camera remounts with the record body, so it is not ready yet — and the
+    // new take still does not film until Start is pressed (v39 fix 2).
+    setCameraReady(false);
     setDeletedLine(null);
   }, []);
 
@@ -505,7 +548,10 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   }, []);
 
   // ── RENDER ─────────────────────────────────────────────────────────────────
-  if (playing) {
+  // ONE mode test, off the phase machine (v39 fix 3): `playback` is the phase a
+  // History row starts in, so a watch-only row can never render the record body
+  // (and never mounts a camera at all).
+  if (phase === 'playback') {
     const missing = !!row && !practiceVideoIsUsable(row.ref) && !deletedLine;
     return (
       <View style={styles.container}>
@@ -708,7 +754,22 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         ) : null}
 
         {phase === 'permissions' ? (
-          <Text style={styles.meta}>{PRACTICE_VIDEO_START_LINE}</Text>
+          <>
+            <Text style={styles.meta}>{PRACTICE_VIDEO_START_LINE}</Text>
+            <Text style={styles.honest}>{PRACTICE_VIDEO_START_HINT}</Text>
+            {/* THE START CONTROL (v39 fix 2). The camera preview is up and
+                waiting; filming and the audio take both begin on THIS press and
+                not before, so the user can set the phone down first. */}
+            <TouchableOpacity
+              style={styles.startBtn}
+              onPress={handleStart}
+              accessibilityRole="button"
+              accessibilityLabel={PRACTICE_VIDEO_START_CTA}
+              accessibilityHint={PRACTICE_VIDEO_START_HINT}
+            >
+              <Text style={styles.startBtnText}>{PRACTICE_VIDEO_START_CTA}</Text>
+            </TouchableOpacity>
+          </>
         ) : null}
         {phase === 'recording' ? (
           <>
@@ -765,8 +826,9 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
             <TouchableOpacity
               style={styles.primaryBtn}
               onPress={() => {
-                setPlaying(true);
-                setPhase('permissions');
+                // Straight into the playback phase: the take is saved, so this is
+                // the watch surface, never the record flow (v39 fix 3).
+                setPhase('playback');
               }}
               accessibilityRole="button"
               accessibilityLabel={PRACTICE_VIDEO_DONE_CTA}
@@ -909,4 +971,14 @@ const baseStyles = StyleSheet.create({
     marginTop: 16,
   },
   stopBtnText: { color: '#ffffff', fontSize: 17, fontWeight: '800' },
+  /** The Start control (v39 fix 2) — the same big, obvious shape as Stop. */
+  startBtn: {
+    backgroundColor: '#2fbf71',
+    borderRadius: 999,
+    minHeight: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  startBtnText: { color: '#06210f', fontSize: 17, fontWeight: '800' },
 });

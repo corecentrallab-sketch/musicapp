@@ -10,6 +10,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import type { LibraryItem, LibraryKind } from '../types';
+// The scan flow's page naming (v39 fix 1a) lives with the rest of the scan copy in
+// the pure module, so the store's own names and the screen's labels agree.
+import { scanPageFileLabel } from './scanFind';
 
 const KEYS = {
   LIBRARY: '@notesnap/library',
@@ -19,6 +22,161 @@ const LIBRARY_ROOT =
   FileSystem.documentDirectory != null
     ? `${FileSystem.documentDirectory}library/`
     : 'library/';
+
+// ─── Scan sessions (v39 fix 1a, owner 10-11) ─────────────────
+//
+// THE BUG: the camera scan held every page in the screen's own React state and
+// wrote the score ONCE, at the very end, when Save was pressed. Any teardown
+// before that press (the reported "the app minimises itself back to the menu")
+// lost every page: the photo never persisted and nothing appeared in the Library.
+//
+// THE FIX: the score exists from the FIRST page. Each capture is copied into the
+// library's own directory and registered immediately, so a capture that ends
+// early leaves a real, openable scanned score instead of nothing; while the scan
+// is open the row is marked, and the scan screen picks an open session back up on
+// mount so the user carries on where they were.
+
+/** A page's real size on disk, with the caller's fallback when it cannot be read. */
+async function fileSizeOf(uri: string, fallback?: number): Promise<number> {
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    return info.exists ? (info.size ?? fallback ?? 0) : (fallback ?? 0);
+  } catch {
+    return fallback ?? 0;
+  }
+}
+
+/** The scan the user left unfinished, if there is one (v39 fix 1a). */
+export async function getOpenScanSession(): Promise<LibraryItem | null> {
+  const items = await getLibraryItems();
+  return (
+    items.find(
+      (item) => item.kind === 'scanned' && item.scanSessionOpen === true,
+    ) ?? null
+  );
+}
+
+/**
+ * Begins a camera scan with its FIRST page: the photo is copied into the library
+ * directory and the score is registered (marked open) before this resolves. From
+ * here on the user has a real library item, whatever happens to the screen.
+ */
+export async function startScanSession(
+  firstPageUri: string,
+  title: string,
+): Promise<LibraryItem> {
+  const id = makeId();
+  const dir = `${LIBRARY_ROOT}${id}/`;
+  await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  const destUri = `${dir}${scanPageFileLabel(0)}`;
+  await FileSystem.copyAsync({ from: firstPageUri, to: destUri });
+
+  const item: LibraryItem = {
+    id,
+    kind: 'scanned',
+    title,
+    pageUris: [destUri],
+    pageCount: 1,
+    thumbnailUri: destUri,
+    sizeBytes: await fileSizeOf(destUri),
+    createdAt: new Date().toISOString(),
+    scanSessionOpen: true,
+  };
+
+  const items = await getLibraryItems();
+  items.unshift(item);
+  await persistLibrary(items);
+  return item;
+}
+
+/**
+ * Adds the NEXT page of an open scan. The copy happens before the registry write,
+ * so a page can never be listed in the item without its file being on disk
+ * (the cache-eviction trap the melody/video stores document). Returns null when
+ * the item is gone (a scan that was removed under the screen).
+ */
+export async function appendScanSessionPage(
+  itemId: string,
+  pageUri: string,
+): Promise<LibraryItem | null> {
+  const items = await getLibraryItems();
+  const index = items.findIndex((item) => item.id === itemId);
+  if (index < 0) return null;
+  const item = items[index];
+  const existing = item.pageUris ?? [];
+  const dir = `${LIBRARY_ROOT}${item.id}/`;
+  await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  const destUri = `${dir}${scanPageFileLabel(existing.length)}`;
+  await FileSystem.copyAsync({ from: pageUri, to: destUri });
+
+  const next: LibraryItem = {
+    ...item,
+    pageUris: [...existing, destUri],
+    pageCount: existing.length + 1,
+    thumbnailUri: item.thumbnailUri ?? destUri,
+    sizeBytes: item.sizeBytes + (await fileSizeOf(destUri)),
+    scanSessionOpen: true,
+  };
+  items[index] = next;
+  await persistLibrary(items);
+  return next;
+}
+
+/** Closes an open scan: the row stays, the "still being scanned" mark goes. */
+export async function endScanSession(itemId: string): Promise<void> {
+  const items = await getLibraryItems();
+  const index = items.findIndex((item) => item.id === itemId);
+  if (index < 0) return;
+  items[index] = { ...items[index], scanSessionOpen: undefined };
+  await persistLibrary(items);
+}
+
+/**
+ * Drops the LAST page of an open scan (the strip's Undo). Both the file and the
+ * registry entry go, so the disk and the strip can never disagree. When that was
+ * the scan's only page the row goes too — an empty "scanned score" in the Library
+ * would be a dead item — and null is returned.
+ */
+export async function removeScanSessionPage(
+  itemId: string,
+): Promise<LibraryItem | null> {
+  const items = await getLibraryItems();
+  const index = items.findIndex((item) => item.id === itemId);
+  if (index < 0) return null;
+  const item = items[index];
+  const existing = item.pageUris ?? [];
+  if (existing.length <= 1) {
+    try {
+      await FileSystem.deleteAsync(`${LIBRARY_ROOT}${item.id}/`, {
+        idempotent: true,
+      });
+    } catch {
+      // A directory that is already gone is not a failure of the undo.
+    }
+    items.splice(index, 1);
+    await persistLibrary(items);
+    return null;
+  }
+
+  const dropped = existing[existing.length - 1];
+  const kept = existing.slice(0, -1);
+  try {
+    await FileSystem.deleteAsync(dropped, { idempotent: true });
+  } catch {
+    // Keep going: the registry is the source of truth for what the scan holds.
+  }
+  const next: LibraryItem = {
+    ...item,
+    pageUris: kept,
+    pageCount: kept.length,
+    thumbnailUri: kept[0],
+    sizeBytes: Math.max(0, item.sizeBytes - (await fileSizeOf(dropped, 0))),
+    scanSessionOpen: true,
+  };
+  items[index] = next;
+  await persistLibrary(items);
+  return next;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────
 

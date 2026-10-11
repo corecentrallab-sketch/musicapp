@@ -5,6 +5,7 @@ import {
   FlatList,
   Image,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -18,6 +19,8 @@ import { getLibraryItem } from '../services/libraryStore';
 import { useAutoScroll } from '../hooks/useAutoScroll';
 import { usePageTurnSpeed } from '../hooks/usePageTurnSpeed';
 import { AutoScrollControl } from '../components/AutoScrollControl';
+import { ScanFindSection } from '../components/ScanFindSection';
+import { FindPieceScreen } from './FindPieceScreen';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScannedViewer'>;
 
@@ -34,6 +37,9 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
   const [item, setItem] = useState<LibraryItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  // The confirmed words a page's on-device read produced (v39 fix 1b). Non-null =
+  // the app's ONE search is open in place, on this score's own words.
+  const [findQuery, setFindQuery] = useState<string | null>(null);
 
   const pages = item?.pageUris ?? [];
   const listRef = useRef<FlatList<string>>(null);
@@ -83,6 +89,16 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
       cancelled = true;
     };
   }, [itemId]);
+
+  // THE SEARCH, ON THIS SCAN'S OWN WORDS (v39 fix 1b): the same find-a-piece
+  // surface a typed title opens, rendered in place so its back returns here. It
+  // replaces this screen's body while it is open — no second search surface, and
+  // the reader is exactly where the user left it when they come back.
+  if (findQuery !== null) {
+    return (
+      <FindPieceScreen initialQuery={findQuery} onClose={() => setFindQuery(null)} />
+    );
+  }
 
   if (loading) {
     return (
@@ -154,6 +170,19 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
         speedProfiles={speedProfiles}
       />
 
+      {/* THE SAVED SCAN'S WAY INTO THE MONEY PATH (v39 fix 1b, owner 10-11). The
+          page on screen is read on device for its printed WORDS — not the notes —
+          and the confirmed words open the app's ONE search in place, which is where
+          the licensed retailers already are. One surface for a typed title and a
+          scanned one, and no retailer URL is built here. It scrolls so the score
+          above it keeps its room. */}
+      <ScrollView style={styles.findBar} contentContainerStyle={styles.findBody}>
+        <ScanFindSection
+          pageUri={pages[Math.min(page, pages.length) - 1] ?? pages[0] ?? null}
+          onSearch={setFindQuery}
+        />
+      </ScrollView>
+
       <View style={styles.footer}>
         <Text style={styles.pageLabel}>
           Page {page} of {pages.length}
@@ -204,6 +233,17 @@ const baseStyles = StyleSheet.create({
     backgroundColor: '#16213e',
     borderTopWidth: 1,
     borderTopColor: '#0f3460',
+  },
+  /** The scan's way into the search (v39 fix 1b) — bounded so the score keeps room. */
+  findBar: {
+    maxHeight: 300,
+    backgroundColor: '#16213e',
+    borderTopWidth: 1,
+    borderTopColor: '#0f3460',
+  },
+  findBody: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
   },
   pageLabel: {
     color: '#a0a0b8',

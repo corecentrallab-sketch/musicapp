@@ -94,11 +94,20 @@ type Status = 'loading' | 'ready' | 'empty' | 'error';
 
 interface FindPieceScreenProps {
   onClose: () => void;
+  /**
+   * ADDITIVE (v39 fix 1b): the words a scanned page produced, when the caller is
+   * the scan flow. Optional, so every existing door is unchanged; a caller that
+   * passes nothing gets the same empty search box it always had.
+   */
+  initialQuery?: string;
 }
 
-export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose }) => {
+export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initialQuery }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
-  const [query, setQuery] = useState('');
+  // A query handed in by the caller (v39 fix 1b: a scanned page's own words). It is
+  // the SAME state a typed title lands in, so a scan produces exactly the results —
+  // and exactly the money path — a typed title does.
+  const [query, setQuery] = useState(initialQuery ?? '');
   const [pieces, setPieces] = useState<CatalogPiece[]>([]);
   const [total, setTotal] = useState(0);
   const [status, setStatus] = useState<Status>('loading');
