@@ -436,6 +436,16 @@ export interface LibraryItem {
   /** ISO date string when the item was imported. */
   createdAt: string;
   /**
+   * ADDITIVE (v39 fix 1a, owner 10-11: "after taking a photo the app minimises
+   * itself back to the menu — the photo never persists"): true while a camera
+   * scan is STILL OPEN. Each captured page is written into the library the moment
+   * it is taken, so the item is real and visible even if the capture screen goes
+   * away; this flag is what lets the scan screen offer to carry on with the scan
+   * the user started instead of leaving a half-made score looking finished.
+   * Absent (undefined) = a finished scanned score, and every pre-v39 row.
+   */
+  scanSessionOpen?: boolean;
+  /**
    * ADDITIVE (v37 item 4, backlog d9d458bb): the CATALOG PIECE this row is a copy
    * of, when the row was written by "Save to library" on a public-domain result
    * card or piece page (services/pieceLibrarySave.ts) rather than picked, scanned
