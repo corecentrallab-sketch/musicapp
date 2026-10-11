@@ -329,7 +329,7 @@ export function readerSourceCount(sources: readonly string[]): number {
   return sources.filter((source) => typeof source === 'string' && source.length > 200).length;
 }
 
-/** True when the reader is a ROUTE — no `<Modal>` of its own (the route class). */
+/** True when the reader is a ROUTE — it owns no modal element of its own (the route class). */
 export function readerIsARouteNotAModal(screenSource: string): boolean {
   const src = maskComments(screenSource ?? '');
   if (src.length < 4000) return false;
