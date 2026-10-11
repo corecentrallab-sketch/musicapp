@@ -17,12 +17,14 @@
 
 import { useThemedStyles } from '../services/themeStore';
 import React, { useMemo, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import {
   abcHeightFromMessage,
   abcHeightProbeScript,
+  abcReaderContainerHeight,
   abcScoreContainerHeight,
+  scoreReaderBand,
 } from '../services/scoreHeight';
 
 /** The ink a score is drawn in when the caller names none (near-black on paper). */
@@ -83,6 +85,26 @@ interface AbcScoreViewProps {
    * the callback is for callers that own a box AROUND it.
    */
   onDocumentHeight?: (height: number) => void;
+  /**
+   * WHETHER THIS VIEWER MUST SHOW A WHOLE WORK, EVERY BAR (v39 Part 2, owner
+   * direction 10-11, backlog 5e3dffd3). DEFAULT FALSE — every existing call site
+   * is unchanged.
+   *
+   * WHY IT EXISTS. `interactive={false}` closes the WebView's touch surface so a
+   * finger on the staff scrolls THE PAGE, which is right for a score that is
+   * decoration in a page that scrolls. It stops being right for a piece longer
+   * than the app's height ceiling: a non-interactive viewer cannot scroll itself
+   * and its box may not grow past `ABC_SCORE_MAX_HEIGHT`, so the tail of a real
+   * work is unreachable. With `wholeWork` the viewer picks its band from the
+   * height its document reports (services/scoreHeight.ts):
+   *
+   *   • the document fits the reader ceiling → the container is given the FULL
+   *     document height and stays non-interactive, so the reader's page scrolls;
+   *   • the document is taller → the container is given a screen-height box and
+   *     the WebView scrolls ITSELF (`scrollEnabled`), so the whole piece is
+   *     reachable at any length. Nothing is clipped in either band.
+   */
+  wholeWork?: boolean;
 }
 
 /**
@@ -180,8 +202,12 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   background = ABC_DEFAULT_BACKGROUND,
   interactive = true,
   onDocumentHeight,
+  wholeWork = false,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
+  /** The reader's viewport (the box a whole-work document that does not fit is
+   *  given; it then scrolls itself inside it). */
+  const window = useWindowDimensions();
   // Use the abc text (and the ink, which changes the document) as a rendering
   // key so a fresh WebView reloads whenever the score or its colour changes.
   const html = useMemo(() => generateAbcHtml(abc, ink, background), [abc, ink, background]);
@@ -194,10 +220,42 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
    * the next message arrives.
    */
   const [measured, setMeasured] = useState<{ key: string; height: number } | null>(null);
+  /**
+   * THE READER'S BAND (v39 Part 2). A whole-work viewer decides from the SAME
+   * measurement which of its two bands it is in: inline `page` (the reader sizes
+   * itself to the whole document) or `self-scroll` (the document is taller than
+   * the reader ceiling, so the WebView is given a screen-height box and scrolls
+   * itself — every bar reachable, nothing clipped). A non-whole-work viewer never
+   * takes this path at all, so every existing call site keeps today's behaviour.
+   */
+  const readerBand = wholeWork
+    ? scoreReaderBand(measured && measured.key === key ? measured.height : null)
+    : null;
   const appliedHeight =
     measured && measured.key === key
-      ? abcScoreContainerHeight({ interactive, measuredHeight: measured.height })
-      : null;
+      ? wholeWork
+        ? // THE READER'S BOX: the full document inline, or a screen-sized window
+          // the document scrolls inside (scoreHeight.ts, abcReaderContainerHeight).
+          abcReaderContainerHeight({
+            measuredHeight: measured.height,
+            viewportHeight: window.height,
+          })
+        : abcScoreContainerHeight({ interactive, measuredHeight: measured.height })
+      : wholeWork
+        ? // Not measured yet: a visible staff now, the real band on the next report.
+          abcReaderContainerHeight({
+            measuredHeight: null,
+            viewportHeight: window.height,
+          })
+        : null;
+  /**
+   * WHO RECEIVES THE GESTURE. A whole-work viewer hands scrolling to the WebView
+   * only in the `self-scroll` band — where the document does not fit its box and
+   * the WebView is the ONLY thing that can reach the tail. In the `page` band the
+   * document is fully laid out and the reader's own page scrolls it, so the touch
+   * shield stays in charge exactly as it is everywhere else.
+   */
+  const viewerInteractive = wholeWork ? readerBand === 'self-scroll' : interactive;
 
   /**
    * The document posts `{ type: 'abc-score-height', height }` (see
@@ -236,9 +294,9 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
         javaScriptEnabled
         domStorageEnabled
         mixedContentMode="always"
-        scrollEnabled={interactive}
+        scrollEnabled={viewerInteractive}
         androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
-        pointerEvents={interactive ? 'auto' : 'none'}
+        pointerEvents={viewerInteractive ? 'auto' : 'none'}
         onMessage={handleMessage}
       />
       {/* THE TOUCH SHIELD (v36 fix 1; only when the caller says the score is
@@ -252,7 +310,7 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
           scroller" — the exact combination a button inside a ScrollView has, which
           is why a page still scrolls from over a button. The tap does nothing (the
           score is not a control); the finger's MOVEMENT scrolls the page. */}
-      {!interactive && (
+      {!viewerInteractive && (
         <Pressable
           style={styles.shield}
           onPress={() => undefined}

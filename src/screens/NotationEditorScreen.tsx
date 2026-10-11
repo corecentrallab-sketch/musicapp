@@ -43,6 +43,11 @@ import {
   transposeAbc,
   transposeKeyLabel,
 } from '../services/abcTranspose';
+import {
+  isSampleScore,
+  sampleExcerptLabel,
+  transposedCopyTitle,
+} from '../services/transposedScore';
 import { abcScoreContainerHeight } from '../services/scoreHeight';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NotationEditor'>;
@@ -57,6 +62,12 @@ const MAX_OFFSET = 11;
  * scrolls it instead of the viewer clipping it.
  */
 const SCORE_STAFF_MIN_HEIGHT = 240;
+
+/**
+ * THE DOOR TO THE FULL-SCORE READER (v39 Part 2). One label, exported, so the
+ * guard over the entry point asserts the same words the user sees.
+ */
+export const READER_OPEN_LABEL = 'View full score';
 
 /** Simple AbcScore wrapper used for a library-loaded (already-transposed) copy. */
 function scoreFromAbc(abc: string, title: string): AbcScore {
@@ -218,14 +229,39 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
 
   const offsetZero = offset === 0;
   const canSave = !offsetZero && selected?.isPublicDomain === true;
+  /**
+   * THE COPY'S TITLE COMES FROM THE SHARED BUILDER (v39 Part 2). The reader window
+   * saves the SAME copy through the same function, so the two surfaces cannot name
+   * one transposed score two different ways.
+   */
+  const copyTitle = selected
+    ? transposedCopyTitle({ title: selected.title, keyLabel: keyLabels.to, offset })
+    : '';
+  /** "Sample — 4-bar excerpt" when the loaded score is a bundled excerpt. */
+  const sampleLabel = selected ? sampleExcerptLabel(selected.abc) : null;
+
+  /**
+   * OPEN THE FULL-SCORE READER (v39 Part 2, owner direction 10-11). The reader is
+   * a registered stack route and gets the CURRENT transposed ABC — the score the
+   * user is looking at right now, whatever key they have stepped it into.
+   */
+  const handleOpenReader = useCallback(() => {
+    if (!selected || transposedAbc.trim().length === 0) return;
+    navigation.navigate('TransposedScoreReader', {
+      abc: transposedAbc,
+      title: selected.title,
+      keyLabel: keyLabels.to,
+      offset,
+      isSample: isSampleScore(transposedAbc),
+    });
+  }, [keyLabels, navigation, offset, selected, transposedAbc]);
 
   const handleSave = useCallback(async () => {
     if (!selected) return;
     if (offsetZero || selected.isPublicDomain !== true) return;
     setSaving(true);
     try {
-      const sign = offset > 0 ? '+' : '';
-      const title = `${selected.title} (${keyLabels.to} · ${sign}${offset})`;
+      const title = copyTitle;
       await addAbcToLibrary({ title, abc: transposedAbc });
       Alert.alert(
         'Saved to library',
@@ -239,7 +275,7 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
     } finally {
       setSaving(false);
     }
-  }, [offsetZero, selected, keyLabels, offset, transposedAbc]);
+  }, [offsetZero, selected, copyTitle, transposedAbc]);
 
   if (loading || !selected) {
     return (
@@ -366,6 +402,17 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
             <Text style={styles.pdBadgeText}>Public domain</Text>
           </View>
         )}
+        {/* WHAT THIS SCORE ACTUALLY IS (v39 Part 2). Every bundled ABC score is a
+            3-4 bar excerpt, so a reader showing "the whole piece" shows a few bars
+            — correctly. Saying so, from the score's own bar count, is the honest
+            fix; the title is deliberately left alone because
+            services/pieceAbc.ts fuzzy-matches pieces BY TITLE. */}
+        {sampleLabel !== null && (
+          <View style={styles.sampleBadge}>
+            <Ionicons name="information-circle-outline" size={12} color={theme.accent} />
+            <Text style={styles.sampleBadgeText}>{sampleLabel}</Text>
+          </View>
+        )}
         {/* THE STAFF NEEDS A REAL BOX (v36 fix 3 — "the sheet wouldn't open").
             AbcScoreView's own container is `flex: 1` and its WebView is `flex: 1`.
             Inside a card with NO height, a `flex: 1` child lays out at ZERO — so
@@ -393,6 +440,22 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
         >
           <AbcScoreView abc={transposedAbc} interactive={false} onDocumentHeight={handleDocumentHeight} />
         </View>
+        {/* VIEW THE FULL SCORE (v39 Part 2, owner direction 10-11, backlog
+            5e3dffd3). The card above is a preview inside a scrolling editor page;
+            this opens the SAME transposed ABC in its own full-screen reader window,
+            where the whole piece can be read bar by bar, saved and shared. It is
+            offered at every offset (0 included) because the reader shows the score
+            the user is looking at — transposing is one of the ways to get there,
+            not a requirement. */}
+        <Pressable
+          style={({ pressed }) => [styles.readerBtn, pressed && styles.readerBtnPressed]}
+          onPress={handleOpenReader}
+          accessibilityRole="button"
+          accessibilityLabel={READER_OPEN_LABEL}
+        >
+          <Ionicons name="expand-outline" size={16} color={theme.accent} />
+          <Text style={styles.readerBtnText}>{READER_OPEN_LABEL}</Text>
+        </Pressable>
       </View>
 
       {/* Save transposed copy */}
@@ -623,6 +686,42 @@ const baseStyles = StyleSheet.create({
   pdBadgeText: {
     color: '#4ecdc4',
     fontSize: 11,
+    fontWeight: '700',
+  },
+  sampleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    borderColor: '#0f3460',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  sampleBadgeText: {
+    color: '#a0a0b8',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  readerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    borderColor: '#0f3460',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  readerBtnPressed: {
+    opacity: 0.8,
+  },
+  readerBtnText: {
+    color: '#e94560',
+    fontSize: 14,
     fontWeight: '700',
   },
   saveBtn: {

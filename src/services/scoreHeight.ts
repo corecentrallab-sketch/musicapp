@@ -96,3 +96,93 @@ export function abcScoreContainerHeight(input: {
   if (input.interactive) return null;
   return clampScoreHeight(input.measuredHeight);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE READER BAND — "the entire piece, every bar" (v39 Part 2, owner direction
+// 10-11, backlog 5e3dffd3)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// THE RESIDUAL CLIP. `ABC_SCORE_MAX_HEIGHT` (4000) is the right ceiling for the
+// cramped boxes the editor and the capture pages host a score in: it stops a
+// runaway document from growing a page without end. But it is a HARD CLIP for a
+// whole work: a sonata movement renders at roughly 9000px, so `clampScoreHeight`
+// hands back 4000 and everything below the fold is unreachable — "the entire
+// work" fails for exactly the pieces the reader exists for. The reader therefore
+// runs in one of two BANDS, decided by the SAME measurement the viewer already
+// reports:
+//
+//   • 'page'        — the document fits the reader's ceiling (a short piece, the
+//                     bundled excerpts). The reader self-sizes to the FULL
+//                     document and the reader's own page scrolls it, so the score
+//                     reads like every other surface in the app.
+//   • 'self-scroll' — the document is taller than the ceiling (a real work). The
+//                     reader hands the viewer a screen-height box and the WebView
+//                     scrolls ITSELF (scrollEnabled on), so every bar stays
+//                     reachable no matter how long the piece is. Nothing is
+//                     clipped; the reader page simply does not carry the scroll.
+//
+// The band is pure and is asserted by scripts/transposedScoreReader.test.ts.
+
+/**
+ * The tallest document the READER will lay out inline. Above it the reader stops
+ * growing its box and lets the viewer scroll instead (see `scoreReaderBand`), so
+ * this is a handoff point, never a clip: every bar is reachable on both sides.
+ */
+export const ABC_READER_MAX_HEIGHT = 4000;
+
+/**
+ * The box the reader falls back to when the document has not reported a height
+ * yet AND the caller's viewport is unusable (a 0-height window during
+ * orientation change, a headless render). A visible staff is always better than a
+ * collapsed one: the floor is the app's own score minimum, doubled.
+ */
+export const ABC_READER_VIEWPORT_FALLBACK = ABC_SCORE_MIN_HEIGHT * 2;
+
+/** Which of the reader's two layout bands a measured document belongs to. */
+export type ScoreReaderBand = 'page' | 'self-scroll';
+
+/**
+ * THE BAND RULE. A document AT the ceiling still lays out inline (`page`): the
+ * ceiling is inclusive, so `clampReaderScoreHeight` and this rule agree exactly
+ * and a document can never be clamped into the other band's territory. An
+ * unmeasured / junk / non-positive height is `page` — the reader lays out its
+ * fallback box and waits for the real measurement rather than guessing that the
+ * piece is long.
+ */
+export function scoreReaderBand(measuredHeight: unknown): ScoreReaderBand {
+  const value = Math.round(Number(measuredHeight));
+  if (!Number.isFinite(value) || value <= 0) return 'page';
+  return value > ABC_READER_MAX_HEIGHT ? 'self-scroll' : 'page';
+}
+
+/**
+ * Clamp a measured height into the reader's own band `[ABC_SCORE_MIN_HEIGHT,
+ * ABC_READER_MAX_HEIGHT]`, or null when there is nothing to clamp. Same shape as
+ * `clampScoreHeight` on purpose — this is the reader's ceiling, not the app's.
+ */
+export function clampReaderScoreHeight(height: unknown): number | null {
+  const value = Math.round(Number(height));
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return Math.min(ABC_READER_MAX_HEIGHT, Math.max(ABC_SCORE_MIN_HEIGHT, value));
+}
+
+/**
+ * THE BOX THE READER GIVES ITS VIEWER — a number, always, because a whole-work
+ * reader must never render a collapsed staff while it waits for a measurement.
+ *
+ *   • 'page'        → the measured document height (clamped), so the WHOLE score
+ *                     is laid out and the reader's page scrolls it.
+ *   • 'self-scroll' → the caller's viewport height (clamped), i.e. a screen-sized
+ *                     window the WebView scrolls inside. The document is taller
+ *                     than the box on purpose here: that is the whole point of the
+ *                     band, and `scrollEnabled` is on for it in AbcScoreView.
+ *   • unmeasured    → the viewport box, so the first frame already shows a staff.
+ */
+export function abcReaderContainerHeight(input: {
+  measuredHeight: unknown;
+  viewportHeight: unknown;
+}): number {
+  const viewport = clampReaderScoreHeight(input.viewportHeight) ?? ABC_READER_VIEWPORT_FALLBACK;
+  if (scoreReaderBand(input.measuredHeight) === 'self-scroll') return viewport;
+  return clampReaderScoreHeight(input.measuredHeight) ?? viewport;
+}

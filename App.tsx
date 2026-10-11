@@ -28,6 +28,7 @@ import { PracticeVideoScreen } from './src/screens/PracticeVideoScreen';
 // a free, offline guitar/piano/keyboard tuner built on the app's existing pitch
 // engine. No params — it opens on the microphone loop.
 import { TunerScreen } from './src/screens/TunerScreen';
+import { TransposedScoreReaderScreen } from './src/screens/TransposedScoreReaderScreen';
 import { AudioUnavailableChip } from './src/components/AudioUnavailableChip';
 // The app's light/dark choice (v33 §F2, made APP-WIDE in v34b: owner FAIL item 6
 // — "Light button only works on one page, the settings page"). The provider is
@@ -231,6 +232,16 @@ function AppShell() {
             name="Tuner"
             component={TunerScreen}
             options={{ title: 'Tuner' }}
+          />
+          {/* THE FULL-SCORE READER (v39 Part 2, owner direction 10-11, backlog
+              5e3dffd3): registered like every other full-screen tool, opened from
+              the notation editor's transposed view. React Navigation pops it
+              itself, so it needs no hardware-back handler (backExitContract's
+              first class of surface). */}
+          <Stack.Screen
+            name="TransposedScoreReader"
+            component={TransposedScoreReaderScreen}
+            options={{ title: 'Full score' }}
           />
         </Stack.Navigator>
       </NavigationContainer>
