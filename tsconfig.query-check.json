@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": { "~/*": ["./src/*"] },
+    "esModuleInterop": true
+  },
+  "include": [
+    "src/db.ts",
+    "src/services/audio-cleanup.ts",
+    "src/services/audio-cleanup.test.ts",
+    "src/services/fpcalc.ts",
+    "src/services/recognize-handler.ts",
+    "src/services/hum/hum-handler.ts",
+    "src/services/catalog-search-terms.ts",
+    "src/services/catalog-handler.ts",
+    "src/services/catalog-handler.test.ts"
+  ]
+}

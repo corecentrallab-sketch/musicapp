@@ -12,7 +12,8 @@
 //         honoring the "no confident-wrong" gate (empty matches = honest
 //         no-match, never a wrong title).
 // ---------------------------------------------------------------------------
-import { decodeToMonoSamples } from "~/services/fpcalc.ts";
+import { decodeQueryMono } from "~/services/fpcalc.ts";
+import { HUM_QUERY_LOWPASS_HZ, describeCleanup } from "~/services/audio-cleanup";
 import { extractF0Track, hzToMidi, smoothMidiTrack } from "./f0";
 import { f0TrackToContour } from "./contour";
 import { matchMelody, applyHumMatchPolicy } from "./matcher";
@@ -93,13 +94,19 @@ export async function handleHum(req: Request): Promise<Response> {
   // BEFORE decoding, so the original bytes are preserved for offline tuning.
   await persistHumAudio(audioBuffer);
 
-  // --- Decode to mono PCM ---
+  // --- Decode to mono PCM, then pre-filter the QUERY capture ---
+  // Same deterministic stage as the landmark path (see audio-cleanup.ts), with
+  // the hum-specific low-pass corner: this engine's YIN pitch search only looks
+  // at 55-1000 Hz (f0.ts), so everything above ~4 kHz is noise that can only
+  // degrade the periodicity estimate. Venue rumble (below ~80 Hz) is removed
+  // too, which is what was burying the owner's live venue take.
   let mono: Float32Array;
   let sampleRate: number;
   try {
-    const decoded = await decodeToMonoSamples(audioBuffer);
+    const decoded = await decodeQueryMono(audioBuffer, { lowpassHz: HUM_QUERY_LOWPASS_HZ });
     mono = decoded.mono;
     sampleRate = decoded.sampleRate;
+    console.log(`[hum] query cleanup ${describeCleanup(decoded.cleanup)}`);
   } catch {
     return corsResponse(
       { success: false, error: "Could not decode audio — ensure it contains an audible melody" },

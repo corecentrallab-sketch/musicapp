@@ -1,11 +1,23 @@
 /**
  * Public catalog API — GET /api/pieces (search) and GET /api/pieces/:id (detail).
  *
- * Search: ?q=<title-or-composer substring> (case-insensitive AND
+ * Search: ?q=<title-or-composer-substring> (case-insensitive AND
  * diacritic-insensitive, matches title OR composer), ?composer=<composer
  * substring> (same folding, narrows the search), ?limit=<1-50> (default 20,
  * capped at 50), ?offset=<non-negative> (default 0). All filters combine with
  * AND.
+ *
+ * Catalog numbers and nicknames (owner GO 2026-10-10, backlog 69688f6a): `q`
+ * ALSO matches the `catalog` column, including separator-free forms
+ * ("BWV 1068" ≡ "bwv1068" ≡ "Op. 27 No. 2" ≡ "op.27 no.2" — the query and the
+ * column are both squashed to bare alphanumerics before comparison), and a
+ * small curated alias table resolves real-world nicknames the rows do not
+ * contain ("Well-Tempered Clavier" → the rows titled "(WTC Book 1)"). Before
+ * this, `?q=BWV 1068` returned total 0 while `?q=Air` found the piece: a dead
+ * end for the user who knows the piece by number, which the 09-28 no-dead-end
+ * rule forbids. Both mechanisms live in `catalog-search-terms.ts`; the predicate
+ * they feed is the pure, unit-tested `buildCatalogWhere` below. No schema
+ * change, no migration, no fabricated catalog numbers.
  *
  * Diacritic tolerance (owner-reported discovery gap, 2026-09-18): a musician
  * types "fur elise" and "prelude", not "Fur Elise" and "Prelude" with accents,
@@ -37,6 +49,7 @@
 import { sql } from "~/db";
 import { difficultyLabel } from "./daily-challenge-handler";
 import { pieceAffiliateUrl } from "./piece-affiliate";
+import { lookupCatalogAlias, squashCatalogTerm } from "./catalog-search-terms";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -168,6 +181,87 @@ function serializePiece(row: PieceRow): Record<string, unknown> {
   };
 }
 
+/**
+ * The squashed form of the catalog column: diacritics folded (only when the
+ * database has `unaccent`), case-insensitive, with every non-alphanumeric
+ * dropped — so "BWV 1068", "bwv1068" and "Op. 27 No. 2"/"op.27 no.2" all
+ * compare equal on both sides. NULL catalogs stay NULL (the branch is false,
+ * never an error).
+ */
+function squashedCatalog(fold: boolean): string {
+  return `regexp_replace(${folded("p.catalog", fold)}, '[^A-Za-z0-9]', '', 'g')`;
+}
+
+export interface CatalogWhereClause {
+  whereSql: string;
+  params: Array<string | number>;
+}
+
+/**
+ * Build the WHERE clause and its bound parameters for a catalog search.
+ *
+ * Pure and DB-free on purpose: the predicate is the part that was wrong
+ * (backlog 69688f6a — the `catalog` column was never searched, so
+ * `?q=BWV 1068` was a dead end), and being able to assert its exact shape in a
+ * unit test is the only cheap way to keep it fixed. `fold` is the caller's
+ * one-shot `unaccent` probe result, so accent handling stays byte-identical to
+ * the behaviour it replaced.
+ *
+ * `q` matches title OR composer OR catalog, in three forms: verbatim, catalog
+ * squashed (separator/case-insensitive), and — when `q` is a curated nickname —
+ * each of the alias's real title/catalog fragments. All filters combine with
+ * AND, every value is a bound parameter, and the only interpolated text is the
+ * fixed filter skeleton plus the fixed `unaccent(...)` / `regexp_replace(...)`
+ * wrappers (never user input).
+ */
+export function buildCatalogWhere({
+  q,
+  composer,
+  fold,
+}: {
+  q: string;
+  composer: string;
+  fold: boolean;
+}): CatalogWhereClause {
+  const where: string[] = ["p.is_public_domain = true"];
+  const params: Array<string | number> = [];
+
+  /** One bound pattern, matched against title, composer AND catalog. */
+  const termBranch = (term: string): string => {
+    params.push(`%${escapeLike(term)}%`);
+    const p = foldedParam(params.length, fold);
+    return (
+      `(${folded("p.title", fold)} ILIKE ${p}` +
+      ` OR ${folded("p.composer", fold)} ILIKE ${p}` +
+      ` OR ${folded("p.catalog", fold)} ILIKE ${p})`
+    );
+  };
+
+  if (q !== "") {
+    const branches: string[] = [termBranch(q)];
+    // Catalog-number form: "BWV1068" and "bwv 1068" must find the same row.
+    const squashed = squashCatalogTerm(q);
+    if (squashed !== "") {
+      params.push(`%${escapeLike(squashed)}%`);
+      branches.push(`${squashedCatalog(fold)} ILIKE ${foldedParam(params.length, fold)}`);
+    }
+    // Curated nickname (exact whole-query match only — see catalog-search-terms.ts).
+    const alias = lookupCatalogAlias(q);
+    if (alias) {
+      for (const term of alias.terms) branches.push(termBranch(term));
+    }
+    where.push(`(${branches.join(" OR ")})`);
+  }
+  if (composer !== "") {
+    params.push(`%${escapeLike(composer)}%`);
+    where.push(
+      `${folded("p.composer", fold)} ILIKE ${foldedParam(params.length, fold)}`,
+    );
+  }
+
+  return { whereSql: where.join(" AND "), params };
+}
+
 /** Map a sheet_music_sources row to JSON (timestamps coerced to strings). */
 function serializeSource(row: SheetSourceRow): Record<string, unknown> {
   return {
@@ -247,24 +341,12 @@ export async function handleCatalogList(req: Request): Promise<Response> {
 
   // WHERE is built from user input but every value is a bound parameter; the
   // only interpolated text is the fixed filter skeleton plus the `unaccent(...)`
-  // wrapper (a fixed function name, never user input).
+  // wrapper (a fixed function name, never user input). The builder is a pure
+  // exported function so its exact shape is unit-tested (see
+  // catalog-handler.test.ts) — the predicate is where the catalog-number dead
+  // end lived (backlog 69688f6a).
   const fold = await hasUnaccent();
-  const where: string[] = ["p.is_public_domain = true"];
-  const params: Array<string | number> = [];
-  if (q !== "") {
-    params.push(`%${escapeLike(q)}%`);
-    where.push(
-      `(${folded("p.title", fold)} ILIKE ${foldedParam(params.length, fold)}` +
-        ` OR ${folded("p.composer", fold)} ILIKE ${foldedParam(params.length, fold)})`,
-    );
-  }
-  if (composer !== "") {
-    params.push(`%${escapeLike(composer)}%`);
-    where.push(
-      `${folded("p.composer", fold)} ILIKE ${foldedParam(params.length, fold)}`,
-    );
-  }
-  const whereSql = where.join(" AND ");
+  const { whereSql, params } = buildCatalogWhere({ q, composer, fold });
 
   try {
     const countRows = (await sql().query(
