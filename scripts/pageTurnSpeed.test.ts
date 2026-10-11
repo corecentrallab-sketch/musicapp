@@ -312,7 +312,13 @@ const boundsWidened = CONTROL_SRC.replace('incrementDisabled={bpm >= 200}', 'inc
 probe('the BPM stepper’s ceiling moves', boundsWidened, CONTROL_SRC, () =>
   pageTurnerKeepsTheSteppers(boundsWidened),
 );
-const storeLosesKey = STORE_SRC.replace('PAGE_TURN_SPEED_KEY', 'SOME_OTHER_KEY');
+/**
+ * The key probe replaces the constant EVERYWHERE (the /g is the point): the first
+ * occurrence in the store is the IMPORT, so a single replace left the store still
+ * building its key from the shared constant and the guard could not bite — a dead
+ * probe, not a passing guard (v39 gate fix).
+ */
+const storeLosesKey = STORE_SRC.replace(/PAGE_TURN_SPEED_KEY/g, 'SOME_OTHER_KEY');
 probe('the device adapter loses the shared key', storeLosesKey, STORE_SRC, () =>
   pageTurnerRemembersPerPiece(storeLosesKey, PRESETS_SRC),
 );

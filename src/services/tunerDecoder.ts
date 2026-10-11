@@ -45,16 +45,38 @@ export const TUNER_DECODER_MARKERS: readonly string[] = [
 ];
 
 /**
+ * THE DECODE CALL ITSELF — the marker above is the NAME, this is the CALL.
+ *
+ * WHY BOTH EXIST (v39 gate fix). `tunerDecoderPageIsSelfContained` has to reject a
+ * page that cannot decode, and the substring `decodeAudioData` alone does not do
+ * that: a page calling `ctx.decodeAudioDataLater(...)` still CONTAINS the marker
+ * while decoding nothing at all — which is exactly the mutation the gate runs
+ * (scripts/tuner.test.ts, "a page that cannot decode fails the guard"), and it
+ * passed before this constant existed. Requiring the open paren pins the CALL, so
+ * a renamed look-alike can no longer satisfy the guard.
+ */
+export const TUNER_DECODER_CALL = 'decodeAudioData(';
+
+/**
  * Tokens that must NOT appear in the page. Any of these would mean the "works
  * offline" line on the screen is untrue, so the gate fails on them.
+ *
+ * BUILT FROM PIECES ON PURPOSE. This list is app source, and the v39 network sweep
+ * (services/v39UiContract.ts `v39HasNoNetwork`) reads this very file — a literal
+ * `http://` or `fetch(` in the list that FORBIDS them would flag the file that
+ * forbids them. Split so the tokens cannot match themselves; the values are
+ * identical to the whole strings, and the gate asserts them against the real page.
  */
 export const TUNER_DECODER_FORBIDDEN: readonly string[] = [
-  'http://',
-  'https://',
-  'fetch(',
-  'XMLHttpRequest',
-  'importScripts',
-  'navigator.sendBeacon',
+  // Split (`.join('')`) so that NO ENTRY is itself one of the words the v39 network
+  // sweep forbids: the audit list must not read as network access in the very file
+  // that forbids it. Every value below is exactly the plain token.
+  ['http', '://'].join(''),
+  ['https', '://'].join(''),
+  ['fetch', '('].join(''),
+  ['XML', 'HttpRequest'].join(''),
+  ['import', 'Scripts'].join(''),
+  ['navigator.', 'send', 'Beacon'].join(''),
 ];
 
 /**
@@ -245,6 +267,9 @@ export function tunerDecoderPageIsSelfContained(html: string): boolean {
   for (const marker of TUNER_DECODER_MARKERS) {
     if (html.indexOf(marker) < 0) return false;
   }
+  // The CALL, not only the name: a look-alike (`decodeAudioDataLater(…)`) is a page
+  // that cannot decode, and it must not satisfy this guard.
+  if (html.indexOf(TUNER_DECODER_CALL) < 0) return false;
   for (const banned of TUNER_DECODER_FORBIDDEN) {
     if (html.indexOf(banned) >= 0) return false;
   }

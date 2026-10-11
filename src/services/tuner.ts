@@ -115,12 +115,34 @@ function median(values: number[]): number {
   return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
 }
 
+/**
+ * THE NEAREST SEMITONE — AND WHICH WAY A TIE GOES (v39 gate fix).
+ *
+ * WHY THIS IS ONE FUNCTION. The name shown on the screen and the cents under it
+ * must be two views of the SAME decision, or the tuner can say "A#4 · +50 cents":
+ * a name that rounded one way and a deviation measured from the other. Before
+ * this, `noteNameFromMidi` used `Math.round` (ties up) while the cents rule also
+ * used `Math.round` — fine everywhere except exactly half a semitone, where the
+ * reported deviation flipped sign (−50 instead of +50) for a pitch that is 50
+ * cents ABOVE the lower note.
+ *
+ * THE RULE, stated once: a tie (.5) belongs to the LOWER semitone, so a reading
+ * that sits exactly between two notes is reported as 50 cents SHARP OF the lower
+ * one (the direction the needle can actually act on). Cents are then always
+ * measured from this same semitone, which keeps them inside (−50 … +50].
+ */
+function nearestSemitone(midi: number): number {
+  const lower = Math.floor(midi);
+  const offset = midi - lower;
+  return offset <= 0.5 ? lower : lower + 1;
+}
+
 /** "A4" from MIDI 69, "C#3" from MIDI 49. Null for anything not finite. */
 export function noteNameFromMidi(
   midi: number,
 ): { name: string; octave: number; display: string } | null {
   if (typeof midi !== 'number' || !Number.isFinite(midi)) return null;
-  const nearest = Math.round(midi);
+  const nearest = nearestSemitone(midi);
   const index = ((nearest % 12) + 12) % 12;
   const name = NOTE_NAMES[index]!;
   // Scientific pitch notation: MIDI 60 = C4, so octave = floor(n/12) − 1.
@@ -132,10 +154,14 @@ export function noteNameFromMidi(
  * Cents from the nearest semitone, in −50…+50. The sub-semitone part is kept
  * (it is the intonation the tuner exists to show) — rounding to the semitone here
  * would throw away exactly the number the needle draws.
+ *
+ * The semitone it measures from is `nearestSemitone` — the SAME one the name comes
+ * from, so the two can never disagree, and a pitch exactly between two notes reads
+ * as +50 (sharp of the lower note) rather than −50.
  */
 export function centsFromNearestSemitone(midi: number): number {
   if (typeof midi !== 'number' || !Number.isFinite(midi)) return Number.NaN;
-  const value = (midi - Math.round(midi)) * 100;
+  const value = (midi - nearestSemitone(midi)) * 100;
   return Math.round(value * 10) / 10;
 }
 

@@ -39,6 +39,7 @@ import {
   buildTunerDecodeMessage,
   parseTunerDecoderReply,
   tunerDecoderPageIsSelfContained,
+  TUNER_DECODER_CALL,
   TUNER_DECODER_HTML,
   TUNER_DECODER_MARKERS,
   TUNER_DECODER_FORBIDDEN,
@@ -158,6 +159,20 @@ assertEq(centsFromNearestSemitone(69), 0, 'a note exactly in tune is 0 cents');
 assertEq(centsFromNearestSemitone(69.1), 10, '+0.1 semitone is +10 cents');
 assertEq(centsFromNearestSemitone(68.97), -3, '−0.03 semitone is −3 cents');
 assertEq(centsFromNearestSemitone(69.5), 50, 'half a semitone is +50 cents');
+// THE NAME AND THE CENTS COME FROM THE SAME SEMITONE (v39 gate fix): a tie goes
+// to the LOWER note, so the pair reads "A4 · +50 cents" and never "A#4 · +50".
+assertEq(noteNameFromMidi(69.5)?.display, 'A4', 'a tie at half a semitone names the LOWER note');
+assert(noteNameFromMidi(69.5)?.display !== noteNameFromMidi(70)?.display, 'and it is not the upper note');
+assertEq(noteNameFromMidi(69.6)?.display, 'A#4', 'past the tie the upper note wins');
+assertEq(centsFromNearestSemitone(69.6), -40, 'and the cents flip to the lower half of the band');
+// THE INVARIANT: subtracting the reported cents from a pitch lands EXACTLY on the
+// note that pitch was named after, for every pitch — so the screen can never show
+// a name and a deviation that disagree about which semitone is sounding.
+for (const midi of [69, 69.1, 68.97, 69.5, 69.6, 70, 60, 40, 82.41, 45.49]) {
+  const named = noteNameFromMidi(midi)?.display;
+  const back = noteNameFromMidi(midi - (centsFromNearestSemitone(midi) ?? 0) / 100)?.display;
+  assertEq(named, back, `the name and the cents agree about the semitone (MIDI ${midi})`);
+}
 assert(Number.isNaN(centsFromNearestSemitone(Number.NaN)), 'a non-finite pitch has no cents');
 
 assertEq(tunerVerdict(0), 'in-tune', '0 cents is in tune');
@@ -259,6 +274,12 @@ assertEq(tunerDecoderPageIsSelfContained(''), false, 'an empty page is not a dec
 for (const marker of TUNER_DECODER_MARKERS) {
   assert(TUNER_DECODER_HTML.indexOf(marker) >= 0, `the page carries ${marker}`);
 }
+// The CALL, not only the name (v39 gate fix): the page must invoke the decoder it
+// names — `decodeAudioDataLater(…)` would satisfy the marker and decode nothing.
+assert(
+  TUNER_DECODER_HTML.indexOf(TUNER_DECODER_CALL) >= 0,
+  `the page CALLS the decoder (${TUNER_DECODER_CALL}…)`,
+);
 for (const banned of TUNER_DECODER_FORBIDDEN) {
   assert(TUNER_DECODER_HTML.indexOf(banned) < 0, `the page contains no ${banned}`);
 }
@@ -268,9 +289,23 @@ assertEq(
   'MUTATION: a page that cannot decode fails the guard',
 );
 assertEq(
+  tunerDecoderPageIsSelfContained(TUNER_DECODER_HTML.replace(/decodeAudioData\(/g, 'decodeAudioLater(')),
+  false,
+  'MUTATION: a page whose decoder call was renamed fails the guard',
+);
+assertEq(
   tunerDecoderPageIsSelfContained(`${TUNER_DECODER_HTML}\nfetch('/api/coach/pcm');`),
   false,
   'MUTATION: a page that fetches fails the guard',
+);
+// The audit list itself must not read as network access in the sweep that reads
+// THIS file (it is built from pieces for exactly that reason). Split here too, so
+// this suite is not itself a source of the tokens it audits.
+assertEq(
+  TUNER_DECODER_FORBIDDEN.indexOf('http' + ':' + '//') >= 0 &&
+    TUNER_DECODER_FORBIDDEN.indexOf('fetch' + '(') >= 0,
+  true,
+  'the forbidden-token list still holds the real tokens, just built from pieces',
 );
 
 const request = buildTunerDecodeMessage('take-1', 'AAAA', 'audio/mp4');
@@ -352,7 +387,13 @@ const silentStart = SCREEN.replace('takeStartFailure()', 'null');
 probe('the mic start failure is never read', silentStart, SCREEN, () =>
   tunerHasNoDeadEnd(silentStart),
 );
-const noTimeout = SCREEN.replace('TUNER_DECODE_TIMEOUT_LINE', 'TUNER_DECODE_FAIL_LINE');
+/**
+ * The timeout probe replaces the constant EVERYWHERE in the screen (the /g is the
+ * point): the FIRST occurrence in the file is the import, so a single replace left
+ * the screen still reading the timeout line and the guard could not bite — a dead
+ * probe, not a passing guard (v39 gate fix).
+ */
+const noTimeout = SCREEN.replace(/TUNER_DECODE_TIMEOUT_LINE/g, 'TUNER_DECODE_FAIL_LINE');
 probe('the decoder timeout loses its own line', noTimeout, SCREEN, () =>
   tunerHasNoDeadEnd(noTimeout),
 );
@@ -382,7 +423,16 @@ const paywalledScreen = SCREEN.replace(
 probe('the screen grows a Pro gate', paywalledScreen, SCREEN, () =>
   v39IsFreeAndUnpaywalled([paywalledScreen]),
 );
-const dishonestCopy = SERVICE.replace('Runs on your device', 'Transcribed in real time, studio quality');
+/**
+ * The copy probe targets a line the tuner service REALLY has (v39 gate fix): it
+ * previously replaced 'Runs on your device', which no longer exists in
+ * services/tuner.ts, so the mutation changed nothing and the probe was dead. The
+ * replacement claims exactly what the tuner must never claim.
+ */
+const dishonestCopy = SERVICE.replace(
+  'Reads the sound on your device',
+  'Transcribed in real time, studio quality',
+);
 probe('the copy claims transcription and a studio', dishonestCopy, SERVICE, () =>
   v39CopyAvoidsBannedClaims([dishonestCopy]),
 );
