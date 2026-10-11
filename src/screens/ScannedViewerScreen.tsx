@@ -16,6 +16,7 @@ import type { RootStackParamList } from '../types';
 import type { LibraryItem } from '../types';
 import { getLibraryItem } from '../services/libraryStore';
 import { useAutoScroll } from '../hooks/useAutoScroll';
+import { usePageTurnSpeed } from '../hooks/usePageTurnSpeed';
 import { AutoScrollControl } from '../components/AutoScrollControl';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScannedViewer'>;
@@ -53,6 +54,11 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
     status: autoScrollStatus,
     toggle: toggleAutoScroll,
   } = autoScroll;
+
+  // SPEED PROFILES + PER-PIECE MEMORY (owner 10-10, backlog 7f64272f) — the same
+  // hook the PDF viewer uses, keyed on the scanned score's library item id, so
+  // both readers remember a piece's speed identically.
+  const speedProfiles = usePageTurnSpeed(itemId, autoScroll);
 
   // Keep the page ref fresh for the auto-scroll page turner.
   useEffect(() => {
@@ -141,8 +147,12 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
         )}
       </View>
 
-      {/* Auto-scroll control (FEATURE BUILD 2) */}
-      <AutoScrollControl autoScroll={autoScroll} disabled={pages.length < 2} />
+      {/* Auto-scroll control (FEATURE BUILD 2 + owner 10-10 speed presets) */}
+      <AutoScrollControl
+        autoScroll={autoScroll}
+        disabled={pages.length < 2}
+        speedProfiles={speedProfiles}
+      />
 
       <View style={styles.footer}>
         <Text style={styles.pageLabel}>

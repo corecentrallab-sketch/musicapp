@@ -10,6 +10,17 @@
     "types": []
   },
   "include": [
+    "src/services/tuner.ts",
+    "src/services/tunerDecoder.ts",
+    "src/services/pageTurnPresets.ts",
+    "src/services/v39UiContract.ts",
+    "scripts/tuner.test.ts",
+    "scripts/pageTurnSpeed.test.ts",
+    "src/services/transposedScore.ts",
+    "src/services/scoreShare.ts",
+    "src/services/v39ReaderContract.ts",
+    "scripts/transposedScoreReader.test.ts",
+    "src/data/abcScores.ts",
     "src/services/tier1.ts",
     "src/services/practiceCoach.ts",
     "src/services/practiceHistory.ts",

@@ -17,6 +17,15 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { AutoScrollApi, AutoScrollStatus } from '../hooks/useAutoScroll';
 import { useThemedStyles } from '../services/themeStore';
+import {
+  PAGE_TURN_PRESETS_HINT,
+  PAGE_TURN_PRESETS_LABEL,
+  PAGE_TURN_REMEMBERED_LINE,
+  pageTurnPresetChipLabel,
+  pageTurnSecondsPerPage,
+  type PageTurnPreset,
+  type PageTurnPresetId,
+} from '../services/pageTurnPresets';
 
 const ACCENT = '#e94560';
 const MUTED_TEXT = '#a0a0b8';
@@ -108,11 +117,24 @@ interface AutoScrollControlProps {
   autoScroll: AutoScrollApi;
   /** Disable starting when there are not enough pages to scroll (e.g. < 2). */
   disabled?: boolean;
+  /**
+   * The page-turner SPEED PROFILES (owner 10-10, backlog 7f64272f): one-tap
+   * skill levels + the per-piece memory, from hooks/usePageTurnSpeed.ts. The row
+   * is only rendered when the host supplies it — the steppers below work either
+   * way, so the fine-tuning this control always had is untouched.
+   */
+  speedProfiles?: {
+    presets: readonly PageTurnPreset[];
+    activePresetId: PageTurnPresetId | null;
+    onSelectPreset: (id: PageTurnPresetId) => void;
+    remembered?: boolean;
+  };
 }
 
 export const AutoScrollControl: React.FC<AutoScrollControlProps> = ({
   autoScroll,
   disabled = false,
+  speedProfiles,
 }) => {
   const {
     status,
@@ -132,6 +154,55 @@ export const AutoScrollControl: React.FC<AutoScrollControlProps> = ({
 
   return (
     <View style={styles.bar}>
+      {/* SKILL-LEVEL SPEED PRESETS (owner 10-10, backlog 7f64272f): one tap sets
+          BOTH numbers of the turn model, so a first read-through and a
+          well-practised piece are one tap apart. The steppers below stay, for
+          fine-tuning — and the piece remembers whichever the user lands on. */}
+      {speedProfiles && speedProfiles.presets.length > 0 && (
+        <View style={styles.presetBlock}>
+          <View style={styles.presetHeaderRow}>
+            <Text style={styles.presetLabel}>{PAGE_TURN_PRESETS_LABEL}</Text>
+            {speedProfiles.remembered ? (
+              <Text style={styles.presetRemembered}>{PAGE_TURN_REMEMBERED_LINE}</Text>
+            ) : null}
+          </View>
+          <View style={styles.presetRow}>
+            {speedProfiles.presets.map((preset) => {
+              const active = speedProfiles.activePresetId === preset.id;
+              return (
+                <Pressable
+                  key={preset.id}
+                  style={({ pressed }) => [
+                    styles.presetChip,
+                    active && styles.presetChipActive,
+                    pressed && styles.pressed,
+                  ]}
+                  onPress={() => speedProfiles.onSelectPreset(preset.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={`${preset.blurb} ${pageTurnPresetChipLabel(preset)}`}
+                  hitSlop={4}
+                >
+                  <Text
+                    style={[styles.presetChipLabel, active && styles.presetChipLabelActive]}
+                    numberOfLines={1}
+                  >
+                    {preset.label}
+                  </Text>
+                  <Text
+                    style={[styles.presetChipRate, active && styles.presetChipLabelActive]}
+                    numberOfLines={1}
+                  >
+                    {formatSecondsPerPage(pageTurnSecondsPerPage(preset))}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={styles.presetHint}>{PAGE_TURN_PRESETS_HINT}</Text>
+        </View>
+      )}
+
       <View style={styles.controlsRow}>
         {/* Play / Pause / Resume toggle */}
         <Pressable
@@ -217,6 +288,66 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  // ── skill-level presets (owner 10-10) ──────────────────────────────────────
+  presetBlock: {
+    gap: 6,
+  },
+  presetHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  presetLabel: {
+    color: MUTED_TEXT,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  presetRemembered: {
+    color: MUTED_TEXT,
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  presetRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 6,
+  },
+  presetChip: {
+    flex: 1,
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#0f3460',
+  },
+  presetChipActive: {
+    backgroundColor: '#2a1a2c',
+    borderColor: ACCENT,
+  },
+  presetChipLabel: {
+    color: '#eaeaff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  presetChipLabelActive: {
+    color: '#ffffff',
+  },
+  presetChipRate: {
+    color: MUTED_TEXT,
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  presetHint: {
+    color: MUTED_TEXT,
+    fontSize: 10,
+    lineHeight: 14,
   },
   toggleButton: {
     width: 36,

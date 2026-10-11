@@ -367,6 +367,38 @@ export type RootStackParamList = {
    * a History row is named.
    */
   PracticeVideo: { rowId?: string } | undefined;
+  /**
+   * The tuner (owner APPROVED 10-10, backlog 2bbbbc8f). A practice tool with no
+   * parameters: it opens on the microphone loop, reads one note at a time from
+   * the device, and is reachable from the Practice Tools hub beside the
+   * metronome.
+   */
+  Tuner: undefined;
+  /**
+   * THE FULL-SCORE READER (v39 Part 2, owner direction 10-11, backlog
+   * 5e3dffd3): the entire transposed piece — every bar, start to finish — in its
+   * own full-screen scrollable window, opened from the notation editor's
+   * transposed view.
+   *
+   * Every param is serialisable on purpose (React Navigation requires it) and the
+   * ABC travels as TEXT rather than as a reference: the score the user is looking
+   * at in the editor is the score the reader must show, even if the library copy
+   * changes underneath it. The labels the reader shows — the sample's bar count in
+   * particular — are re-derived from `abc` itself (services/transposedScore.ts),
+   * never passed in as a string that could drift from the score.
+   */
+  TransposedScoreReader: {
+    /** The transposed ABC to render (the score itself). */
+    abc: string;
+    /** The piece's title; the saved copy's title adds the key and the shift. */
+    title: string;
+    /** The key the reader is showing (the ABC `K:` label). */
+    keyLabel: string;
+    /** Semitones from the original (0 = the piece's own key). */
+    offset: number;
+    /** Whether the caller says this score is a short bundled excerpt. */
+    isSample: boolean;
+  };
 };
 
 // ─── Library (Phase 4a: import + local sheet music library) ──
