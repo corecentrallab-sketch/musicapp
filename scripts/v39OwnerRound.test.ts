@@ -21,9 +21,28 @@
 // module-scoped `require` is declared here rather than imported: the tier1 program
 // compiles with `types: []`, so there is no `fs` module declaration to import, and
 // a module-scoped declaration cannot clash with another suite's.
-declare const require: (id: string) => { readFileSync: (path: string, encoding: string) => string };
-const readFileSync = (path: string, encoding: string): string =>
-  require('fs').readFileSync(path, encoding);
+declare const process: { cwd(): string; exit(code: number): never };
+declare const require: (name: string) => any;
+declare const console: { log(...args: unknown[]): void; error(...args: unknown[]): void };
+
+/** The repo root, found upward from the cwd (the tier1 run's own convention). */
+function repoRoot(): string {
+  const fs = require('fs');
+  const path = require('path');
+  let dir = process.cwd();
+  for (let i = 0; i < 4; i++) {
+    if (fs.existsSync(path.join(dir, 'app.json')) && fs.existsSync(path.join(dir, 'src'))) return dir;
+    dir = path.dirname(dir);
+  }
+  throw new Error('could not find the repo root from ' + process.cwd());
+}
+
+/** Read a real repo file by relative path — the house pattern (v39Fixes.test.ts). */
+function readAppFile(rel: string): string {
+  const fs = require('fs');
+  const path = require('path');
+  return fs.readFileSync(path.join(repoRoot(), rel), 'utf8') as string;
+}
 import {
   COVER_SCAN_MAX_QUERY,
   coverQueryFromScan,
@@ -181,7 +200,7 @@ assertEq(cloudImportCtaLabel('gdrive'), 'Import from Google Drive', 'the Drive c
 assertEq(cloudImportOutcomeLine({ imported: 0, skipped: 0, cancelled: true }), 'Nothing was picked — your Library is unchanged.', 'a cancelled pick is reported, never swallowed');
 assert(cloudImportOutcomeLine({ imported: 2, skipped: 1, cancelled: false }).indexOf('2 files') === 0, 'a real run reports what really landed');
 assert(cloudImportOutcomeLine({ imported: 0, skipped: 1, cancelled: false }).indexOf('not a score') > 0, 'and what was left out, with the reason');
-const cloudScreen = readFileSync('src/screens/CloudSyncScreen.tsx', 'utf8');
+const cloudScreen = readAppFile('src/screens/CloudSyncScreen.tsx');
 assert(cloudCardsAreWired(cloudScreen), 'the real screen wires both cards to the real import call and renders the honest lines');
 // MUTATION: a card rewritten to open nothing is caught.
 const deadCard = cloudScreen.replace('onPress={() => handleImport(provider)}', 'onPress={() => {}}');
@@ -207,6 +226,11 @@ assert(takeCanHoldNote({ personalMelody: { audioUri: 'file://a' } }), 'a capture
 assert(takeCanHoldNote({ practiceVideo: { uri: 'file://v' } }), 'a filmed practice take is too');
 assert(takeCanHoldNote({ capture: { notes: [{ midi: 60 }] } }), 'so is any row carrying a take’s notes');
 assert(!takeCanHoldNote({ id: 'p-1', title: 'Für Elise' }), 'a recognized piece of published music is not a take');
+// THE BITE: the guard is that DECISION, not a truthiness test — a row that is a
+// plain object with a piece's own fields is refused, so a guard weakened to
+// "any object is a take" (or `Boolean(row)`) fails these two lines.
+assertEq(takeCanHoldNote({ id: 'p-1', title: 'Für Elise' }), false, 'the refusal is the guard’s decision, not an accident of the row’s shape');
+assertEq(takeCanHoldNote({ id: 'p-2', capture: { notes: [] } }), false, 'and a capture with no notes is still not a take');
 assertEq(takeNoteSaveOutcome({ saved: true, cleared: false }), 'Saved with this take.', 'a saved note says so');
 assertEq(takeNoteSaveOutcome({ saved: true, cleared: true }), 'Note removed — the take is unchanged.', 'and clearing one says what it did');
 assert(takeNoteSaveOutcome({ saved: false, cleared: false }).trim().toLowerCase().indexOf('could not be saved') > 0, 'a failed write is never silent');
@@ -217,7 +241,7 @@ assert(sharePayloadCarriesTheNote(summary, 'Take 3 · verse'), 'the shared take 
 assertEq(takeNoteShareLine(null), null, 'and a take with no note carries no invention');
 const noNote = takeSummaryText(take, { title: 'My melody' });
 assert(!sharePayloadCarriesTheNote(noNote, 'Take 3 · verse'), 'the guard would notice a dropped note');
-const historyScreen = readFileSync('src/screens/HistoryScreen.tsx', 'utf8');
+const historyScreen = readAppFile('src/screens/HistoryScreen.tsx');
 assert(historyTakeNotesWired(historyScreen), `the History card really renders "${TAKE_NOTE_LABEL}" and persists it`);
 // MUTATION: the box rendered but never written is caught.
 const noWrite = historyScreen.replace('updatePersonalMelodyNote(item.id, note)', 'Promise.resolve(false)');
@@ -232,7 +256,7 @@ assert(!historyTakeNotesWired(rawWrite), 'MUTATION: an un-normalised note string
 // The engineer's own guard on the fix-1 wiring: the search screen must rank a
 // substitute against the TYPED query, not the variant.
 // ─────────────────────────────────────────────────────────────────────────────
-const findScreen = readFileSync('src/screens/FindPieceScreen.tsx', 'utf8');
+const findScreen = readAppFile('src/screens/FindPieceScreen.tsx');
 assert(
   findScreen.indexOf('rankFuzzyMatches(typed, sortPiecesForDisplay(retry.pieces)') >= 0,
   'the ladder ranks the variant’s results against the user’s own words',
