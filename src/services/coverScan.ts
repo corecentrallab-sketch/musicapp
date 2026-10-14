@@ -23,10 +23,27 @@
  * pure decision (what text we got, what the user reads, whether a search may run)
  * is testable without the native module.
  *
+ * THE IDENTIFIER THIS MODULE OWNS (v39 fix 1, owner 10-11: "the scan returned the
+ * WRONG piece identifier"). Everything the money path does with a scan starts with
+ * ONE string: the query built here. It becomes (a) the catalog search the user
+ * sees, and (b) the `?query=` of the licensed-retailer links the result surface
+ * carries. V39 ROOT CAUSE, found and fixed at this layer: the prefill used to be
+ * "the first two lines that survived a tiny noise filter, glued together", so on a
+ * real title page — where the first printed line is very often the imprint, the
+ * series or the instrument line rather than the title — the string the app searched
+ * and the string the retailer received was NOT the piece's title: a cover scan
+ * could land on a different catalog row and hand that row's identifier to the
+ * purchase links. The selection is now EVIDENCE-BASED (title-shaped lines win, cover
+ * furniture is dropped, a composer is appended only when the line really looks like
+ * a person's name) and the composer-first layout is handled too. What is searched
+ * is still the user's own words, and the surface still shows the query before it
+ * runs: a reading of a photo is a QUERY, never an identification.
+ *
  * PURE (no react / react-native / fs / camera): the query normalisation, the
  * noise dropping and the honest states are asserted by
- * scripts/v33TakeEditor.test.ts.
+ * scripts/v33TakeEditor.test.ts and scripts/v39OwnerRound.test.ts.
  */
+import { SEARCH_FILLER_WORDS, normalizeSearchText } from './fuzzySearch';
 
 export const COVER_SCAN_CTA = '📷 Scan a cover';
 export const COVER_SCAN_TITLE = 'Scan the cover';
@@ -95,46 +112,187 @@ function isNoiseLine(line: string): boolean {
   return NOISE_PATTERNS.some((pattern) => pattern.test(trimmed));
 }
 
-export interface CoverQuery {
-  /** The query the search will run — '' when nothing usable was found. */
-  query: string;
-  /** The lines that made it into the query, in order. */
-  lines: string[];
-  /** How many lines were dropped as noise (for the honest counter, if wanted). */
-  dropped: number;
-  /** True when the text was longer than the field and had to be cut. */
-  truncated: boolean;
+/**
+ * WORDS THAT ARE NEVER A TITLE ON THEIR OWN (v39 fix 1). A printed cover leads
+ * with the instrument/voicing ("PIANO SOLO", "EASY PIANO"), the series or the
+ * imprint ("HAL LEONARD", "VOCAL SELECTIONS") far more often than the plan the
+ * prefill assumed, and every one of those lines used to become the front of the
+ * query — i.e. the front of the retailer link. A line is furniture only when EVERY
+ * one of its tokens is furniture (or a bare number), so real titles that merely
+ * contain one of these words survive: "Piano Sonata No. 14" is a title,
+ * "Piano Solo" is not.
+ */
+const COVER_FURNITURE_WORDS: readonly string[] = [
+  'piano', 'pianoforte', 'keyboard', 'guitar', 'guitare', 'violin', 'viola', 'cello',
+  'flute', 'clarinet', 'saxophone', 'trumpet', 'voice', 'vocal', 'vocals', 'solo',
+  'duet', 'trio', 'quartet', 'ensemble', 'band', 'orchestra', 'choir', 'chorus',
+  'easy', 'beginner', 'intermediate', 'advanced', 'grade', 'grades', 'level', 'levels',
+  'book', 'books', 'volume', 'vol', 'part', 'parts', 'series', 'collection', 'school',
+  'student', 'teacher', 'edition', 'editions', 'arrangement', 'arrangements', 'arranged',
+  'transcribed', 'transcription', 'performer', 'performed', 'recorded', 'recording',
+  'hal', 'leonard', 'alfred', 'schirmer', 'dover', 'peters', 'boosey', 'warner',
+  'music', 'publications', 'publishing', 'publishers', 'press', 'songs', 'selections',
+  'album', 'sheet', 'method', 'studies', 'exercises', 'repertoire', 'pieces',
+  'favorites', 'favourites', 'greatest', 'hits', 'includes', 'complete', 'contents',
+];
+
+/**
+ * WORDS THAT MAKE A LINE LOOK LIKE A PIECE'S TITLE (v39 fix 1). Used as ONE point
+ * of evidence, never as a decision on its own: it is what lets "Moonlight Sonata"
+ * outrank the composer line printed above it.
+ */
+const TITLE_FORM_WORDS: readonly string[] = [
+  'sonata', 'sonatina', 'fugue', 'toccata', 'prelude', 'postlude', 'air', 'aria',
+  'bagatelle', 'nocturne', 'waltz', 'valse', 'etude', 'minuet', 'menuet', 'gavotte',
+  'bourree', 'rondo', 'impromptu', 'concerto', 'symphony', 'suite', 'dance', 'march',
+  'ballad', 'variations', 'variation', 'theme', 'romance', 'elegy', 'fantasia', 'canon',
+  'invention', 'rhapsody', 'serenade', 'lullaby', 'moonlight', 'clair', 'elise', 'fur',
+  'lied', 'song', 'hymn', 'chorale', 'gigue', 'allemande', 'sarabande', 'polonaise',
+  'mazurka', 'adagio', 'andante', 'allegro', 'largo', 'scherzo', 'caprice', 'arabesque',
+  'intermezzo', 'berceuse',
+];
+
+/** Name particles that appear inside a composer's name, lower-cased as printed. */
+const NAME_PARTICLES: readonly string[] = [
+  'van', 'von', 'de', 'da', 'di', 'del', 'della', 'der', 'den', 'la', 'le', 'du',
+  'st', 'jr', 'sr', 'ii', 'iii',
+];
+
+/** A catalog number ("BWV 565", "Op. 27 No. 2") — strong title evidence. */
+const CATALOG_NUMBER_PATTERN = /\b(bwv|buxwv|opus|op|k|kv|woo|hob|hh|rv|sww|d)\b\.?\s*\d+/i;
+
+/** The words of a line that carry retrieval weight. */
+function significantWords(line: string): string[] {
+  return normalizeSearchText(line)
+    .split(' ')
+    .filter((token) => token.length >= 3 && !SEARCH_FILLER_WORDS.includes(token));
+}
+
+/** True when every word on the line is cover furniture (or a bare number). */
+export function isCoverFurnitureLine(line: string | null | undefined): boolean {
+  const tokens = normalizeSearchText(typeof line === 'string' ? line : '')
+    .split(' ')
+    .filter(Boolean);
+  if (tokens.length === 0) return true;
+  return tokens.every(
+    (token) => COVER_FURNITURE_WORDS.includes(token) || /^\d+$/.test(token),
+  );
 }
 
 /**
- * Turn whatever text we have for a cover into a search query.
+ * Does this line look like the name of the person who wrote the piece? One to five
+ * words, no digits, no title words, and every word either a capitalised word or a
+ * lower-case name particle ("Ludwig van Beethoven", "J.S. Bach", "Beethoven").
+ */
+export function isLikelyComposerLine(line: string | null | undefined): boolean {
+  const cleaned = (typeof line === 'string' ? line : '').replace(/\s+/g, ' ').trim();
+  if (cleaned.length === 0 || /\d/.test(cleaned)) return false;
+  const tokens = cleaned.split(' ');
+  if (tokens.length === 0 || tokens.length > 5) return false;
+  if (significantWords(cleaned).length === 0) return false;
+  if (isCoverFurnitureLine(cleaned)) return false;
+  if (tokens.some((token) => TITLE_FORM_WORDS.includes(normalizeSearchText(token)))) {
+    return false;
+  }
+  return tokens.every((token) => {
+    const plain = normalizeSearchText(token);
+    if (NAME_PARTICLES.includes(plain)) return true;
+    return /^[A-Z]/.test(token);
+  });
+}
+
+/**
+ * How much this line looks like a piece's TITLE. One point per word that carries
+ * retrieval weight, one for a catalog number, one for a musical form word, minus
+ * one when the line looks like a composer's name. Position is deliberately NOT
+ * part of the score: that is the v39 correction — on a real cover the title is not
+ * reliably the first line.
+ */
+export function coverTitleScore(line: string | null | undefined): number {
+  const cleaned = typeof line === 'string' ? line : '';
+  const tokens = significantWords(cleaned);
+  if (tokens.length === 0) return 0;
+  let score = tokens.length;
+  if (CATALOG_NUMBER_PATTERN.test(cleaned)) score += 1;
+  if (tokens.some((token) => TITLE_FORM_WORDS.includes(token))) score += 1;
+  if (isLikelyComposerLine(cleaned)) score -= 1;
+  return score;
+}
+
+export interface CoverQuery {
+  /** The query the search will run — '' when nothing usable was found. */
+  query: string;
+  /** The lines that made it into the query, in order (title first). */
+  lines: string[];
+  /** How many lines the query does NOT carry (noise, furniture, unused). */
+  dropped: number;
+  /** True when the text was longer than the field and had to be cut. */
+  truncated: boolean;
+  /** The line chosen as the title, or null when no line looked like one. */
+  titleLine: string | null;
+  /** The composer line appended after the title, or null. */
+  composerLine: string | null;
+}
+
+/**
+ * Turn whatever text we have for a cover into a search query — THE IDENTIFIER THE
+ * MONEY PATH USES.
  *
- * The FIRST meaningful line is the title on a title page, so it leads; a second
- * line (the composer, usually) is appended because the catalog search matches
- * both title and composer. Nothing is invented: with no usable line the query is
- * empty and the caller asks the user to type instead.
+ *   1. drop what is never a title (an ISBN/price/URL line, a publisher's imprint,
+ *      an instrument/voicing/series/edition line);
+ *   2. choose the title by EVIDENCE, not by position (`coverTitleScore`);
+ *   3. append the composer only when a remaining line really looks like a person's
+ *      name — because the catalog search matches title AND composer, and because
+ *      glued-on furniture is exactly what made the query a different piece.
+ *
+ * Nothing is invented: with no usable line the query is empty and the caller asks
+ * the user to type instead (never an auto-submitted guess).
  */
 export function coverQueryFromText(text: string | null | undefined): CoverQuery {
   const raw = typeof text === 'string' ? text : '';
-  const all = raw.split(/\r?\n/);
-  const kept: string[] = [];
   let dropped = 0;
-  for (const line of all) {
+  const candidates: { line: string; score: number; index: number }[] = [];
+  raw.split(/\r?\n/).forEach((line, index) => {
     const cleaned = line.replace(/\s+/g, ' ').trim();
-    if (isNoiseLine(cleaned)) {
+    if (isNoiseLine(cleaned) || isCoverFurnitureLine(cleaned)) {
       dropped += 1;
-      continue;
+      return;
     }
-    kept.push(cleaned);
+    candidates.push({ line: cleaned, score: coverTitleScore(cleaned), index });
+  });
+  if (candidates.length === 0) {
+    return {
+      query: '',
+      lines: [],
+      dropped,
+      truncated: false,
+      titleLine: null,
+      composerLine: null,
+    };
   }
-  const lines = kept.slice(0, 2);
+  // Best score first; a tie keeps the earlier line, so a well-formed cover behaves
+  // exactly as it always did.
+  const ranked = [...candidates].sort((a, b) =>
+    b.score === a.score ? a.index - b.index : b.score - a.score,
+  );
+  const title = ranked[0];
+  const composer = ranked.slice(1).find((entry) => isLikelyComposerLine(entry.line)) ?? null;
+  const lines = composer ? [title.line, composer.line] : [title.line];
   let query = lines.join(' ').trim();
   let truncated = false;
   if (query.length > COVER_SCAN_MAX_QUERY) {
     query = query.slice(0, COVER_SCAN_MAX_QUERY).trim();
     truncated = true;
   }
-  return { query, lines, dropped, truncated };
+  dropped += candidates.length - lines.length;
+  return {
+    query,
+    lines,
+    dropped,
+    truncated,
+    titleLine: title.line,
+    composerLine: composer ? composer.line : null,
+  };
 }
 
 export type CoverScanStatus = 'ready' | 'no-text' | 'no-ocr' | 'ocr-failed';

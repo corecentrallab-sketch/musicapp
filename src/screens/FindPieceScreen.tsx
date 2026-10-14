@@ -72,7 +72,7 @@ import {
 // Typo tolerance (v33 §F3, owner 10-04: "Toccata & Fugue does not surface, even
 // when typed as a common misspelling like 'toccatta and fugue'"). The ladder and
 // the honest notice come from the model — this screen may not invent either.
-import { queryVariants, rankFuzzyMatches, retryNoticeLine } from '../services/fuzzySearch';
+import { queryVariants, rankFuzzyMatches, retryNoticeLine, SUBSTITUTE_MIN_SCORE } from '../services/fuzzySearch';
 import {
   EXTERNAL_NO_MATCH_HINT,
   externalSearchSection,
@@ -150,12 +150,22 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
           // model's variants, in the model's order, and rank what comes back. The
           // winner is what the user sees, and the notice names the query that
           // actually matched — no silent substitution, no invented results.
+          //
+          // v39 fix 1 (owner 10-11, the money path): the ranking is against THE
+          // USER'S OWN WORDS and a substitute must clear `SUBSTITUTE_MIN_SCORE`.
+          // Ranked against the variant, the single-token rung scored every row of
+          // a common word 1.0 — so a cover scan whose read matched nothing could
+          // come back holding a DIFFERENT piece, and that row is what carries the
+          // retailer link. A substitute that answers only one of the user's words
+          // is now no result at all: the honest empty state stands.
           if (sorted.length === 0 && typed.length > 0) {
             for (const variant of queryVariants(typed)) {
               if (variant === typed) continue;
               const retry = await searchPieces(variant);
               if (token !== searchRequestRef.current) return;
-              const ranked = rankFuzzyMatches(variant, sortPiecesForDisplay(retry.pieces));
+              const ranked = rankFuzzyMatches(typed, sortPiecesForDisplay(retry.pieces), {
+                minScore: SUBSTITUTE_MIN_SCORE,
+              });
               if (ranked.length > 0) {
                 const matched = ranked.map((entry) => entry.item);
                 setPieces(matched);

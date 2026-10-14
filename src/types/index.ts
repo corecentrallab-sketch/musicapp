@@ -94,6 +94,22 @@ export interface SavedPiece {
    *     saved before this feature.
    */
   practiceVideo?: PracticeVideoRef | null;
+  /**
+   * ADDITIVE (v39 fix 3, owner 10-11): the USER'S OWN WORDS for one of their own
+   * takes — "Notes" / "Name the take" on the History card, so a stack of their
+   * recordings can be told apart later.
+   *
+   * Honesty rules, the same shape as the fields above:
+   *   • it is only ever text the user typed (nothing generates it, nothing
+   *     translates it) and it is normalised by `services/takeNotes.ts` before it is
+   *     written, so a row holds either a real note or nothing at all;
+   *   • it is present only on rows that ARE one of the user's takes (a melody row,
+   *     a filmed take, or a row carrying a take's notes) — a recognized piece of
+   *     published music has no take and gets no note;
+   *   • absent on every row saved before this change, which keeps rendering exactly
+   *     as it did.
+   */
+  takeNote?: string | null;
 }
 
 // ─── API types ─────────────────────────────────────────────────

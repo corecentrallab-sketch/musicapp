@@ -76,6 +76,23 @@ import { keyCaption } from '../services/keyDetection';
 // catalog piece, so tapping one must NOT go to the piece page (it would be an
 // honest "coming soon" with the user's own tune behind it, i.e. a dead end).
 import { personalMelodyFromRow, CORRECT_TAKE_CTA } from '../services/melodyCapture';
+// v39 fix 3 — the take's own note ("Name the take"). Labels, normalisation and the
+// outcome lines come from the pure model; the write goes through the melody store.
+import { TextInput } from 'react-native';
+import {
+  TAKE_NOTE_CANCEL_CTA,
+  TAKE_NOTE_HINT,
+  TAKE_NOTE_LABEL,
+  TAKE_NOTE_MAX_LENGTH,
+  TAKE_NOTE_PLACEHOLDER,
+  TAKE_NOTE_SAVE_CTA,
+  TAKE_NOTE_SAVING_LINE,
+  normaliseTakeNote,
+  takeCanHoldNote,
+  takeNoteLine,
+  takeNoteSaveOutcome,
+} from '../services/takeNotes';
+import { updatePersonalMelodyNote } from '../services/melodyStore';
 // RE-LISTENING TO THE SAVED TAKE (v33 §F1, owner 10-04): the row plays the clip
 // the capture window persisted (notesnap-melodies/), never a re-synthesis of the
 // note data. The copy and the availability decision are in the service; the
@@ -405,6 +422,104 @@ export const HistoryScreen: React.FC = () => {
     [reload],
   );
 
+  /**
+   * THE USER'S OWN WORDS ON A TAKE (v39 fix 3, owner 10-11). A take's row — a
+   * capture-window melody AND a filmed practice take — gets a "Name the take" box,
+   * so a stack of the user's own recordings can be told apart later. The note is
+   * the user's own text only, it is normalised by services/takeNotes.ts, it is
+   * written onto the SAME History row that carries the take
+   * (melodyStore.updatePersonalMelodyNote → storage.updateRecognitionNote) so it
+   * survives a restart, and it travels with the take's summary when the take is
+   * shared (services/takeSendTo.ts). Editing happens inline on the card: tapping
+   * the label opens a small field, Save writes it, Cancel closes without a write.
+   */
+  const [noteDraft, setNoteDraft] = useState<{ id: string; text: string } | null>(null);
+  const [noteSavingId, setNoteSavingId] = useState<string | null>(null);
+  const [noteNote, setNoteNote] = useState<{ id: string; text: string } | null>(null);
+
+  const handleSaveNote = useCallback(
+    async (item: SavedPiece) => {
+      const draft = noteDraft?.id === item.id ? noteDraft.text : '';
+      const note = normaliseTakeNote(draft);
+      const cleared = note === null;
+      setNoteSavingId(item.id);
+      let saved = false;
+      try {
+        saved = await updatePersonalMelodyNote(item.id, note);
+      } catch {
+        saved = false;
+      }
+      setNoteSavingId(null);
+      setNoteDraft(null);
+      setNoteNote({ id: item.id, text: takeNoteSaveOutcome({ saved, cleared }) });
+      if (saved) reload();
+    },
+    [noteDraft, reload],
+  );
+
+  /** The card's notes box, or nothing when the row is not one of the user's takes. */
+  const renderTakeNote = (item: SavedPiece) => {
+    if (!takeCanHoldNote(item)) return null;
+    const editing = noteDraft?.id === item.id;
+    if (editing) {
+      return (
+        <View>
+          <TextInput
+            style={styles.itemTakeKey}
+            value={noteDraft.text}
+            onChangeText={(text) => setNoteDraft({ id: item.id, text })}
+            placeholder={TAKE_NOTE_PLACEHOLDER}
+            placeholderTextColor="#8a8ab0"
+            maxLength={TAKE_NOTE_MAX_LENGTH}
+            autoFocus
+            accessibilityLabel={`${TAKE_NOTE_LABEL} for ${item.title}`}
+          />
+          <TouchableOpacity
+            style={styles.editTakeBtn}
+            onPress={() => handleSaveNote(item)}
+            disabled={noteSavingId === item.id}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={`${TAKE_NOTE_SAVE_CTA} for ${item.title}`}
+          >
+            <Text style={styles.editTakeBtnText}>
+              {noteSavingId === item.id ? TAKE_NOTE_SAVING_LINE : TAKE_NOTE_SAVE_CTA}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.editTakeBtn}
+            onPress={() => setNoteDraft(null)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={`${TAKE_NOTE_CANCEL_CTA} for ${item.title}`}
+          >
+            <Text style={styles.editTakeBtnText}>{TAKE_NOTE_CANCEL_CTA}</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    const line = takeNoteLine(item);
+    return (
+      <View>
+        <TouchableOpacity
+          style={styles.editTakeBtn}
+          onPress={() =>
+            requestAnimationFrame(() => setNoteDraft({ id: item.id, text: item.takeNote ?? '' }))
+          }
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={line ? `Edit the note on ${item.title}` : `${TAKE_NOTE_LABEL} for ${item.title}`}
+          accessibilityHint={TAKE_NOTE_HINT}
+        >
+          <Text style={styles.editTakeBtnText}>{line ?? TAKE_NOTE_LABEL}</Text>
+        </TouchableOpacity>
+        {noteNote?.id === item.id ? (
+          <Text style={styles.midiNote}>{noteNote.text}</Text>
+        ) : null}
+      </View>
+    );
+  };
+
   const renderItem = ({ item }: { item: SavedPiece }) => {
     /**
      * The row's ONE purchase action (bundle C / D7, owner 10-02): the licensed
@@ -599,6 +714,11 @@ export const HistoryScreen: React.FC = () => {
               <Text style={styles.playTakeBtnText}>{DELETE_PRACTICE_VIDEO_CTA}</Text>
             </TouchableOpacity>
           ) : null}
+          {/* THE USER'S OWN WORDS ON THE TAKE (v39 fix 3, owner 10-11). One box,
+              rendered once per row, for BOTH kinds of take: a capture-window melody
+              and a filmed practice take (the pure model decides which rows are the
+              user's own takes). */}
+          {renderTakeNote(item)}
           {videoNote?.id === item.id ? (
             <Text style={styles.midiNote}>{videoNote.text}</Text>
           ) : null}

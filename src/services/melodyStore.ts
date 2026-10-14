@@ -26,7 +26,7 @@
  * row lives in src/services/melodyCapture.ts, which IS tier1-compiled.
  */
 import * as FileSystem from 'expo-file-system';
-import { saveRecognition, updateRecognitionCapture } from './storage';
+import { saveRecognition, updateRecognitionCapture, updateRecognitionNote } from './storage';
 import { MELODY_ROW_COMPOSER, MELODY_ROW_TITLE, isMelodyRowId } from './melodyCapture';
 import type { SavedCaptureTake } from './midiExport';
 import type { SavedPiece } from '../types';
@@ -124,6 +124,30 @@ export async function updatePersonalMelodyTake(
   if (!isMelodyRowId(rowId) || !take) return false;
   try {
     return await updateRecognitionCapture(rowId, take);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * KEEP THE USER'S OWN WORDS ON A TAKE (v39 fix 3, owner 10-11). The History card's
+ * "Name the take" box writes here: the note rides the SAME row that carries the
+ * take, so it survives closing the app, it does not depend on the audio or the
+ * video still being on the device, and the share/email path can read it back.
+ *
+ * `note` must already be normalised (`services/takeNotes.ts`). A melody row, a
+ * filmed take's row and a row carrying a take's notes are all plain History rows,
+ * so this accepts any of them by id; a null note CLEARS it and leaves everything
+ * else on the row untouched. Returns false when the row is gone — "nothing to
+ * store", never a failure of the take.
+ */
+export async function updatePersonalMelodyNote(
+  rowId: string,
+  note: string | null,
+): Promise<boolean> {
+  if (typeof rowId !== 'string' || rowId.length === 0) return false;
+  try {
+    return await updateRecognitionNote(rowId, note);
   } catch {
     return false;
   }
