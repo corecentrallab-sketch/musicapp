@@ -19,6 +19,9 @@
  */
 import { MIDI_EXPORT_LABEL, type SavedCaptureTake } from './midiExport';
 import { TAKE_PDF_HINT, TAKE_PDF_LABEL } from './takeNotationPdf';
+// The user's own note on the take (v39 fix 3) rides the summary through this one
+// function, so a shared take cannot drift from what the card shows.
+import { takeNoteShareLine } from './takeNotes';
 
 /** The button on the editor that opens the surface. */
 export const SEND_TO_CTA = 'Send to…';
@@ -106,7 +109,7 @@ export function takeKeyLabel(take: SavedCaptureTake | null | undefined): string 
  */
 export function takeSummaryText(
   take: SavedCaptureTake | null | undefined,
-  opts: { title?: string | null; maxNotes?: number } = {},
+  opts: { title?: string | null; maxNotes?: number; note?: string | null } = {},
 ): string {
   const title = (opts.title ?? '').trim() || 'Your take';
   const notes = Array.isArray(take?.notes) ? take.notes : [];
@@ -116,9 +119,13 @@ export function takeSummaryText(
     .slice(0, max)
     .map((note) => midiName(Number(note.midi)));
   const more = notes.length > shown.length ? `, … (${notes.length - shown.length} more)` : '';
+  // The user's own note for this take (v39 fix 3) travels WITH it, on its own line
+  // and only when there is one: a shared take never invents a label.
+  const noteLine = takeNoteShareLine(opts.note);
   return [
     `${title} — sent from NoteSnap`,
     takeSummaryHeadline(take),
+    ...(noteLine ? [noteLine] : []),
     shown.length > 0 ? `Notes: ${shown.join(', ')}${more}` : 'No notes in this take.',
     'This is my own hummed take as NoteSnap heard it — not a published score.',
   ].join('\n');

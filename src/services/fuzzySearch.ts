@@ -214,3 +214,57 @@ export function retryNoticeLine(typed: string, matched: string): string | null {
   if (!matchedNormalized || matchedNormalized === typedNormalized) return null;
   return `No exact match for “${typed.trim()}” — showing what “${matched}” found in our library.`;
 }
+
+// ────────── A SUBSTITUTE MUST ANSWER THE USER'S OWN WORDS (v39 fix 1) ──────────
+//
+// OWNER-REPORTED (10-11): a cover scan "returned the WRONG piece identifier", which
+// then feeds the licensed-retailer links. The second half of that bug lived here —
+// in what the ladder does with the results of a variant. `rankFuzzyMatches(variant,
+// …)` ranks candidates against the VARIANT, so the single-token rung could never
+// score badly: the query "piano solo bagatelle in a minor" (a photographed cover
+// read) finds nothing, the ladder then searches "piano", the catalog answers with
+// 102 pieces whose FIRST row is another piece entirely, and ranking against the
+// variant "piano" scores that row 1.0 — so the app showed a piece that answers ONE
+// word of what was read, on the surface the user then buys from.
+//
+// THE RULE: a result the user did not ask for may only be shown when it answers
+// MORE THAN HALF of the words the user's own query carries. The variant still does
+// the RETRIEVAL (the server needs a query it can match, and a corrected spelling is
+// the point of the ladder); the ACCEPTANCE is measured against the typed query, so
+// a substitute can never be a different piece. Filler words are ignored by
+// `fuzzyScore`, so "toccatta and fugue" → "toccata and fugue" still scores 1.0 and
+// the typo ladder keeps working exactly as the owner asked for.
+
+/**
+ * The floor a SUBSTITUTED result must clear, measured against the query the user
+ * actually typed: 0.6 means "more than half of your words, with the title weighted"
+ * (the ranking's own 0.5 floor is what allowed the one-word match).
+ */
+export const SUBSTITUTE_MIN_SCORE = 0.6;
+
+/**
+ * Rank a variant's results against THE USER'S OWN WORDS (never against the
+ * variant), keeping only the ones that clear `SUBSTITUTE_MIN_SCORE`. An empty
+ * answer is the honest one: the caller's empty state says nothing matched, which is
+ * true — nothing matched what the user asked for.
+ */
+export function rankSubstituteMatches<T extends FuzzyCandidate>(
+  typed: string,
+  candidates: ReadonlyArray<T> | null | undefined,
+  opts: { limit?: number } = {},
+): { item: T; score: number }[] {
+  return rankFuzzyMatches(typed, candidates, {
+    limit: opts.limit,
+    minScore: SUBSTITUTE_MIN_SCORE,
+  });
+}
+
+/** How well one candidate answers the user's own words (the guarded number). */
+export function substituteEvidence(typed: string, candidate: FuzzyCandidate): number {
+  return fuzzyScore(typed, candidate);
+}
+
+/** True when a substituted result is allowed to stand for this query. */
+export function substituteAccepted(typed: string, candidate: FuzzyCandidate): boolean {
+  return substituteEvidence(typed, candidate) >= SUBSTITUTE_MIN_SCORE;
+}

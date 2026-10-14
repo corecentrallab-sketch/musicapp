@@ -313,6 +313,34 @@ export async function updateRecognitionPracticeVideo(
   return true;
 }
 
+/**
+ * Attach (or, with null, clear) the USER'S OWN NOTE on an existing History row
+ * (v39 fix 3, owner 10-11: "a notes box … to identify the take's contents").
+ *
+ * Additive and optional exactly like `updateRecognitionCapture` /
+ * `updateRecognitionPracticeVideo`: a later write replaces the note only for the
+ * row named here, clearing it removes the note and touches nothing else, and a row
+ * that is not in History returns false — callers treat that as "nothing to store",
+ * never as a failure of the take.
+ *
+ * The VALUE must already be normalised by `services/takeNotes.ts`
+ * (`normaliseTakeNote`): this layer stores either a real note or null, so "no note"
+ * and "an empty note" can never drift apart.
+ */
+export async function updateRecognitionNote(
+  pieceId: string,
+  note: string | null,
+): Promise<boolean> {
+  if (typeof pieceId !== 'string' || pieceId.length === 0) return false;
+  const history = await getRecognitionHistory();
+  const index = history.findIndex((p) => p.id === pieceId);
+  if (index < 0) return false;
+  const next: SavedPiece = { ...history[index], takeNote: note };
+  history[index] = next;
+  await AsyncStorage.setItem(KEYS.RECOGNITION_HISTORY, JSON.stringify(history));
+  return true;
+}
+
 /** Remove a single saved recognition by piece id (History tab). */
 export async function removeRecognition(pieceId: string): Promise<void> {
   const history = await getRecognitionHistory();
