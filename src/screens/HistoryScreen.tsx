@@ -78,7 +78,6 @@ import { keyCaption } from '../services/keyDetection';
 import { personalMelodyFromRow, CORRECT_TAKE_CTA } from '../services/melodyCapture';
 // v39 fix 3 — the take's own note ("Name the take"). Labels, normalisation and the
 // outcome lines come from the pure model; the write goes through the melody store.
-import { TextInput } from 'react-native';
 import {
   TAKE_NOTE_CANCEL_CTA,
   TAKE_NOTE_HINT,
