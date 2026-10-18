@@ -159,6 +159,9 @@
     "scripts/v38VideoPractice.test.ts",
     "scripts/v38UiWiring.test.ts",
     "scripts/sampleBadge.test.ts",
-    "scripts/takeGroupRestructure.test.ts"
+    "scripts/takeGroupRestructure.test.ts",
+    "src/services/scanViewport.ts",
+    "src/services/uxr2ScanViewportContract.ts",
+    "scripts/uxr2-scan-viewport.test.ts"
   ]
 }
