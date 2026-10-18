@@ -306,8 +306,19 @@ const baseStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#10101c',
   },
+  /* v40 fix C — THE FOOTER BAR CANNOT EAT THE CAMERA OR THE CONTROLS ANY MORE.
+     The column used to be: camera (flex: 1, no floor) + a 96pt strip + a scroll
+     panel allowed to grow to 320pt + the controls. Nothing shrank, so on a short
+     viewport (this screen is not portrait-locked) the panel pushed the Undo/Done
+     row off the bottom edge and crushed the preview to a sliver — the owner's
+     "the footer bar obscures the camera preview AND the Done/undo controls".
+     Now the camera has a floor, the panel is BOUNDED and may shrink, and the
+     controls are a fixed row that is never the last thing to be laid out past the
+     bottom. The panel is also a themed surface with its own top edge, so it reads
+     as part of the screen in both palettes instead of a blank white bar. */
   camera: {
     flex: 1,
+    minHeight: 140,
   },
   strip: {
     maxHeight: 96,
@@ -347,18 +358,21 @@ const baseStyles = StyleSheet.create({
     overflow: 'hidden',
   },
   footerScroll: {
-    maxHeight: 320,
-    backgroundColor: '#10101c',
+    maxHeight: 200,
+    flexShrink: 1,
+    backgroundColor: '#12122b',
+    borderTopWidth: 1,
+    borderTopColor: '#0f3460',
   },
   footer: {
-    backgroundColor: '#10101c',
+    backgroundColor: '#12122b',
     paddingHorizontal: 16,
     paddingBottom: 10,
     paddingTop: 4,
     gap: 6,
   },
   resumedLine: {
-    color: '#cfe4ff',
+    color: '#eaeaff',
     fontSize: 12,
     lineHeight: 17,
   },
@@ -368,7 +382,7 @@ const baseStyles = StyleSheet.create({
     lineHeight: 17,
   },
   error: {
-    color: '#ffb4b4',
+    color: '#ff6b6b',
     fontSize: 12,
     lineHeight: 17,
   },
@@ -376,11 +390,14 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingVertical: 14,
+    paddingTop: 14,
+    paddingBottom: 18,
     paddingHorizontal: 24,
     backgroundColor: '#16213e',
     borderTopWidth: 1,
     borderTopColor: '#0f3460',
+    flexShrink: 0,
+    zIndex: 2,
   },
   controlButton: {
     alignItems: 'center',
