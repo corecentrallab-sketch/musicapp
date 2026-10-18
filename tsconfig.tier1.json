@@ -156,6 +156,7 @@
     "scripts/v38CalendarWiring.test.ts",
     "scripts/v38VideoPractice.test.ts",
     "scripts/v38UiWiring.test.ts",
-    "scripts/sampleBadge.test.ts"
+    "scripts/sampleBadge.test.ts",
+    "scripts/takeGroupRestructure.test.ts"
   ]
 }

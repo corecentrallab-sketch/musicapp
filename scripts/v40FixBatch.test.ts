@@ -543,7 +543,7 @@ assertEq(
 assertEq(
   takeEditorMountsTheOneListenRow(EDITOR),
   true,
-  'H: the editor mounts ONE listen row, above the view branch (both views)',
+  'H: the editor mounts ONE listen row, outside the view branch (both views)',
 );
 assertEq(
   practiceVideoAppliesItsSessionBeforePlayback(VIDEO),

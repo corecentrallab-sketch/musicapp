@@ -177,6 +177,28 @@ export const EDITOR_DONE_CTA = '← Back to my take';
 export const EDITOR_NO_CHORDS_LINE = 'No chords to change on this take yet.';
 export const EDITOR_SAVING_LABEL = 'Saving…';
 
+/**
+ * THE PAGE'S TWO GROUPS (UX round 1, step 2 — the owner's "Corrections" ask,
+ * spec ux-round-1/correct-your-take-spec.md §2).
+ *
+ * The words are the OWNER'S, confirmed 10-18, and they win over the spec's own
+ * draft headers ("YOUR NOTES" / "HEAR IT & SEND IT") — the spec said its naming
+ * was an assumption. They live here, exported, so the surface and the tier1
+ * guard (scripts/takeGroupRestructure.test.ts) read the SAME strings and a
+ * retyped literal in the JSX cannot drift away from the confirmed wording:
+ *
+ *   1 · Fix Notes / Adjust Pitch      — the notes, the harmony, the batch fixes
+ *   2 · Listen & Send / Confirm Take  — the two listen rows, the Hum-Along
+ *                                       preview, the MIDI/PDF export
+ *
+ * LAYOUT ONLY: this regroup adds no control, removes none, and changes no
+ * existing control's copy or behaviour.
+ */
+export const EDITOR_GROUP_FIX_LABEL = 'Fix Notes';
+export const EDITOR_GROUP_FIX_SUB = 'Adjust Pitch';
+export const EDITOR_GROUP_SEND_LABEL = 'Listen & Send';
+export const EDITOR_GROUP_SEND_SUB = 'Confirm Take';
+
 /** How wide one second of the take is drawn (the drag → seconds mapping). */
 export const LANE_PX_PER_SEC = 84;
 /** How far a vertical drag must travel to mean one semitone. */
@@ -207,6 +229,34 @@ export interface TakeCorrectionEditorProps {
   onChanged?: (take: SavedCaptureTake) => void;
   onClose: () => void;
 }
+
+/**
+ * ONE GROUP HEADER (UX round 1, step 2). A full-width micro-label with the group's
+ * numeral and its sub-label under it, and a hairline rule across the content width
+ * — the only visual separation between the two groups (spec §2). The words are
+ * always handed in from the exported constants above, never typed here.
+ */
+interface EditorGroupHeaderProps {
+  /** The numeral the spec puts in front of the label ("1", "2"). */
+  num: string;
+  /** The group's own header, from the editor's exported constant. */
+  label: string;
+  /** The sub-label under it, from the editor's exported constant. */
+  sub: string;
+}
+
+const EditorGroupHeader: React.FC<EditorGroupHeaderProps> = ({ num, label, sub }) => {
+  const { styles } = useThemedStyles(baseStyles);
+  return (
+    <View style={styles.groupHeader}>
+      <Text style={styles.groupLabel}>
+        {num} · {label}
+      </Text>
+      <Text style={styles.groupSub}>{sub}</Text>
+      <View style={styles.groupRule} />
+    </View>
+  );
+};
 
 export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   visible,
@@ -303,8 +353,10 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
    *
    * ONE THING IS AUDIBLE AT A TIME: starting either control stops the other, which
    * is why the two handlers below pause/stop their counterpart first. The row is
-   * rendered near the TOP of the page, OUTSIDE the editable/original branch, so it
-   * exists in both views; the tab page is handed the very same mounted row.
+   * rendered in GROUP 2, "Listen & Send", OUTSIDE the editable/original branch, so
+   * it exists in both views (UX round 1 step 2 moved it down from above the staff,
+   * into the group it belongs to — its own markup did not change); the tab page is
+   * handed the very same mounted row.
    */
   const clip = useTakeClipPlayer();
   const { toggle: toggleClip, stop: stopClip, playingId: clipPlayingId, busyId: clipBusyId, note: clipNote } = clip;
@@ -741,16 +793,30 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
             )}
           </View>
 
-          {/* 0b. LISTEN TO BOTH VERSIONS (v40 fix H) — the owner's verbatim ask,
-              placed HERE, above the staff and OUTSIDE the editable/original branch
-              below, so it is on the page in BOTH views (the view switch directly
-              above can hide the lane, the chords and the batch fixes; it must not
-              be able to hide the two playback controls). The tab page is handed
-              this very row, so the take can be heard from there too (v40 fix L). */}
-          {listenRow}
+          {/* ═══════════ 1 · FIX NOTES — GROUP 1 (UX round 1, step 2) ═══════════
+              Everything that can change the NOTES or the HARMONY, in the order a
+              musician works: the staff, the touch layer, the selected note, the
+              chords, the whole-take batch fixes, and the tags legend that explains
+              the two colours just above it.
 
+              THE LISTEN ROWS ARE NO LONGER HERE (v40 fix H used to sit them at
+              this point, above the staff). The restructure moved them down into
+              GROUP 2, "Listen & Send", because listening is the verification of a
+              finished pass — while you are editing, the thing above the staff
+              should be the thing you edit. Their labels, their two rows and their
+              behaviour are UNCHANGED, and they are still rendered OUTSIDE the
+              editable/original branch below, so they are on the page in BOTH views
+              (the view switch directly above can hide the lane, the chords and the
+              batch fixes; it must not be able to hide the two playback controls).
+              The tab page is still handed this very row, so the take can be heard
+              from there too (v40 fix L). */}
           {editable ? (
             <>
+          <EditorGroupHeader
+            num="1"
+            label={EDITOR_GROUP_FIX_LABEL}
+            sub={EDITOR_GROUP_FIX_SUB}
+          />
           {/* 1. THE STAFF — the take as notation, redrawn from the CURRENT notes.
               DECORATIVE: it is drawn in a WebView, and a WebView swallows the
               page's scroll gestures (it is not part of RN's responder system).
@@ -1125,17 +1191,12 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
             </View>
           </View>
 
-          {/* 6. THE TAGS LEGEND — the user can always tell what is theirs. */}
+          {/* 6. THE TAGS LEGEND — the user can always tell what is theirs. It is
+              the last line of GROUP 1, directly under the two colours it explains
+              (spec §2). */}
           <Text style={styles.legend}>
             {NOTE_TAG_DETECTED} · {NOTE_TAG_CORRECTED} · {NOTE_TAG_ADDED}
           </Text>
-
-          {/* 7. THE DOCKED PREVIEW (v33 slice G) — owner-ratified option 4: ONE
-              control row INSIDE this editor, above the sticky save bar. It plays
-              the corrected take (this screen's own notes), never a separate
-              screen and never a second player. It belongs to the EDITABLE view:
-              it plays the take the user is editing. */}
-              <TakePreviewSection preview={preview} />
             </>
           ) : (
             /* THE ORIGINAL VIEW (v36 fix 2, backlog #43) — the take exactly as it
@@ -1166,6 +1227,33 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
               </View>
             </>
           )}
+
+          {/* ═════════ 2 · LISTEN & SEND — GROUP 2 (UX round 1, step 2) ═════════
+              Verify the pass, then use it. This group holds the two listen rows
+              (moved down here from above the staff — see the note in group 1), the
+              docked Hum-Along preview, and the export block. It sits OUTSIDE the
+              editable/original branch, exactly where the listen rows and the export
+              block already were, so BOTH views still show it: the read-only original
+              take can be heard and sent just as before. NOTHING inside it changed —
+              the labels, the take-gate on the export block and the preview's own
+              honest line are the ones that shipped in v33/v37/v40. */}
+          <EditorGroupHeader
+            num="2"
+            label={EDITOR_GROUP_SEND_LABEL}
+            sub={EDITOR_GROUP_SEND_SUB}
+          />
+
+          {/* 0b. LISTEN TO BOTH VERSIONS (v40 fix H — moved into group 2 by the
+              UX round 1 restructure). ONE mounted row, handed to the tab page too. */}
+          {listenRow}
+
+          {/* 7. THE DOCKED PREVIEW (v33 slice G) — owner-ratified option 4: ONE
+              control row INSIDE this editor. It plays the corrected take (this
+              screen's own notes), never a separate screen and never a second
+              player. It still belongs to the EDITABLE view only: it plays the take
+              the user is editing, and the read-only original take has its own two
+              listen rows above. */}
+          {editable ? <TakePreviewSection preview={preview} /> : null}
 
           {/* 8. SEND THE TAKE OFF THE DEVICE (v37 item 6). The owner has no MIDI
               hardware, so the ONLY way they can open this take on a desktop is a
@@ -1548,4 +1636,20 @@ const baseStyles = StyleSheet.create({
   },
   sendToBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
   midiHint: { color: '#7d7d99', fontSize: 11, lineHeight: 15, marginTop: 8 },
+  // ── THE TWO GROUPS OF THE PAGE (UX round 1, step 2) ──
+  // The spec's own header style: a full-width micro-label row with ~32 dp of air
+  // above it (so a group reads as a new section, not as another card), the
+  // sub-label under it, and a 1 px hairline across the content width as the only
+  // divider. Colours come from the same tokens the page already uses (`subtext`,
+  // `border`), so both themes repaint from ONE StyleSheet (services/themeApply).
+  groupHeader: { marginTop: 32, marginBottom: 12 },
+  groupLabel: {
+    color: '#7d7d99',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  groupSub: { color: '#4ecdc4', fontSize: 11, fontWeight: '700', letterSpacing: 0.4, marginTop: 4 },
+  groupRule: { height: 1, backgroundColor: '#0f3460', marginTop: 10 },
 });
