@@ -24,7 +24,13 @@ import {
   cloudImportOutcomeLine,
   cloudImportReasonLine,
 } from '../src/services/cloudImport';
-import { coverQueryFromText, isGarbageOcrLine } from '../src/services/coverScan';
+import {
+  COVER_SCAN_GARBLED_LINE,
+  coverQueryFromScan,
+  coverQueryFromText,
+  hasGluedInnerPunctuation,
+  isGarbageOcrLine,
+} from '../src/services/coverScan';
 import {
   TAB_CELLS_PER_WINDOW,
   TAB_WINDOWS_CAPTION,
@@ -75,6 +81,7 @@ import {
   V40_VIDEO_PATH,
   cloudRefusalReachesTheCard,
   coverScanDropsGarbageBeforeChoosing,
+  coverScanWritesOffGluedPunctuationOnItsOwn,
   historyShareIsGatedOnTheModel,
   practiceVideoAppliesItsSessionBeforePlayback,
   takeEditorMountsTheOneListenRow,
@@ -180,26 +187,95 @@ assert(
 );
 
 /**
- * THE KNOWN BOUNDARY, PINNED SO IT CANNOT CHANGE BY ACCIDENT. The owner's on-device
- * read ("thy,Be- I'm Freddie Mercurycause") carries ONE glued fragment among four
- * tokens, and the shipped rule writes a line off only when TWO tokens are affected
- * (coverScan.ts, MIN_GARBLE_TOKENS — deliberately, so one odd signal cannot throw
- * away a real printed line). On a multi-line read that costs nothing (the fixture
- * above): the broken line is dropped and the clean title still reaches the money
- * path. On a read that returns ONLY that line, the nonsense string is still the
- * query. FLAGGED FOR THE LEAD, NOT SILENTLY TIGHTENED in a release batch: the
- * one-line candidate fix is to treat a token with punctuation glued between two
- * word-like runs as severe on its own (1 affected token enough).
+ * THE BOUNDARY THAT WAS STILL LEAKING — CLOSED (v40 fix A, round 4). The owner's
+ * on-device read carries ONE glued fragment among four tokens ("thy,Be-" — a comma
+ * glued between two letters), which is below MIN_GARBLE_TOKENS, so the line used to
+ * be searched as the query with `garbled: 0`: the exact bug the owner reported, and
+ * the reason item A could not be called done in round 3.
+ *
+ * A mark from GARBLE_INNER_PUNCTUATION glued BETWEEN TWO LETTERS is now severe on its
+ * own: no printed word carries a comma, a bracket, a slash or a star inside it, so
+ * that one signal writes the line off without a second one. The two sides must be
+ * LETTERS, so a printed catalogue number ("Op.27") is untouched.
  */
+const OWNERS_ON_DEVICE_READ = "thy,Be- I'm Freddie Mercurycause";
 assertEq(
-  isGarbageOcrLine("thy,Be- I'm Freddie Mercurycause"),
-  false,
-  'BOUNDARY (documented): a single glued fragment in a four-token line is not written off',
+  isGarbageOcrLine(OWNERS_ON_DEVICE_READ),
+  true,
+  "BOUNDARY CLOSED: the owner's on-device read is written off on its own",
 );
 assertEq(
-  coverQueryFromText("thy,Be- I'm Freddie Mercurycause").garbled,
-  0,
-  'BOUNDARY (documented): a read of ONLY that line still yields that string as the query',
+  hasGluedInnerPunctuation('thy,Be-'),
+  true,
+  'one punctuation mark glued between two letters is severe on its own',
+);
+assertEq(
+  hasGluedInnerPunctuation('Rha,psody'),
+  true,
+  '…and the same glue in the longer fixture is severe too',
+);
+assertEq(
+  hasGluedInnerPunctuation('Op.27'),
+  false,
+  'a catalogue number (a dot between a letter and a digit) is NOT severe',
+);
+assertEq(hasGluedInnerPunctuation('Elise'), false, 'a plain word is not severe');
+assertEq(hasGluedInnerPunctuation("I'm"), false, "an apostrophe inside a word is not severe");
+assertEq(hasGluedInnerPunctuation('thy,'), false, 'a trailing mark is not glue');
+
+const ownersReadAlone = coverQueryFromText(OWNERS_ON_DEVICE_READ);
+assertEq(ownersReadAlone.garbled, 1, 'the read of ONLY that line counts its line as garbled');
+assertEq(ownersReadAlone.query, '', '…and yields NO query for the money path');
+assertEq(ownersReadAlone.lines.length, 0, '…and never promotes the broken line to a title');
+assertEq(ownersReadAlone.titleLine, null, '…and names no title');
+assertEq(ownersReadAlone.composerLine, null, '…and names no composer either');
+
+/** The screen's own path for that read: the honest garbled sentence, never a search. */
+const ownersReadOutcome = coverQueryFromScan({ ocrText: OWNERS_ON_DEVICE_READ });
+assertEq(ownersReadOutcome.status, 'no-text', 'the scan screens it as "nothing to search"');
+assertEq(ownersReadOutcome.query, '', 'the scan runs NO search on a one-line broken read');
+assertEq(
+  ownersReadOutcome.line,
+  COVER_SCAN_GARBLED_LINE,
+  'the scan says it read something garbled — its own honest sentence, not "no title"',
+);
+
+/** Legit single-line reads are untouched — the guard must not eat a real cover. */
+assertEq(isGarbageOcrLine('Für Elise'), false, 'a legit single-line read survives: Für Elise');
+assertEq(
+  isGarbageOcrLine('Air on the G String'),
+  false,
+  'a legit single-line read survives: Air on the G String',
+);
+assertEq(
+  isGarbageOcrLine('Moonlight Sonata'),
+  false,
+  'a legit single-line read survives: Moonlight Sonata',
+);
+assertEq(
+  isGarbageOcrLine('Piano Sonata No. 14'),
+  false,
+  'a printed catalogue number in a real title survives',
+);
+assertEq(
+  isGarbageOcrLine("Guns N' Roses"),
+  false,
+  'an apostrophe inside a real word survives',
+);
+
+/**
+ * AND A PAGE THAT CARRIES ONE BROKEN LINE STILL RESOLVES: the same owner's read on a
+ * multi-line page is dropped as a line and the clean title still reaches the query.
+ */
+const ownersPage = coverQueryFromText(`Bohemian Rhapsody\n${OWNERS_ON_DEVICE_READ}\nQUEEN`);
+assert(ownersPage.garbled >= 1, 'the page counts the broken line it dropped');
+assert(
+  ownersPage.query.indexOf('Thy') < 0 && ownersPage.query.indexOf('Freddie') < 0,
+  `the broken read never reaches the query: "${ownersPage.query}"`,
+);
+assert(
+  ownersPage.query.toLowerCase().indexOf('bohemian') >= 0,
+  'the clean title is still the query the money path uses',
 );
 
 console.log('\nv40 fix D — the tuner’s cents readout');
@@ -445,6 +521,11 @@ assertEq(
   'A: the cover scan writes off a broken read BEFORE choosing a title',
 );
 assertEq(
+  coverScanWritesOffGluedPunctuationOnItsOwn(COVER_SCAN),
+  true,
+  'A: the glued-punctuation carve-out exists and answers BEFORE the token threshold',
+);
+assertEq(
   tunerUnitHangsOffItsValue(TUNER_METER),
   true,
   'D: the tuner renders the unit only next to a real value',
@@ -503,6 +584,31 @@ function probe(label: string, mutated: string, original: string, guard: () => bo
 const scanBeforeTheGuard = mutate(COVER_SCAN, 'const broken = isGarbageOcrLine(cleaned);', 'const broken = false;');
 probe('the cover scan stops judging the read (the owner’s bug)', scanBeforeTheGuard, COVER_SCAN, () =>
   coverScanDropsGarbageBeforeChoosing(scanBeforeTheGuard),
+);
+
+/** The round-3 state, exactly: the carve-out is simply not there any more. */
+const SEVERE_LINE = 'if (tokens.some((token) => hasGluedInnerPunctuation(token))) return true;';
+const scanBackToTheCountOnly = mutate(COVER_SCAN, SEVERE_LINE, 'const gluedIsSevere = false;');
+probe(
+  'the glued punctuation is left to the two-token count again (the owner’s case)',
+  scanBackToTheCountOnly,
+  COVER_SCAN,
+  () => coverScanWritesOffGluedPunctuationOnItsOwn(scanBackToTheCountOnly),
+);
+/**
+ * …and the same rule placed BELOW the threshold — the state where the two-token count
+ * would answer for a one-token line again — must fail the guard too.
+ */
+const severeMovedBelowTheCount = mutate(
+  mutate(COVER_SCAN, `${SEVERE_LINE}\n  `, ''),
+  'return affected > 0 && affected === tokens.length;',
+  `return affected > 0 && affected === tokens.length;\n  ${SEVERE_LINE}`,
+);
+probe(
+  'the carve-out is moved below the two-token threshold',
+  severeMovedBelowTheCount,
+  COVER_SCAN,
+  () => coverScanWritesOffGluedPunctuationOnItsOwn(severeMovedBelowTheCount),
 );
 
 const meterWithoutTheCondition = mutate(

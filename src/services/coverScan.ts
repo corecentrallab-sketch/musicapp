@@ -264,13 +264,19 @@ export interface CoverQuery {
 //   • the same non-word character twice in a row ("--", "..", "||") — the
 //     recogniser repeating itself;
 //   • a token with PUNCTUATION INSIDE it ("thy,Be-" — a comma glued between two
-//     words): the recogniser failed to put a space where two words meet;
+//     words): the recogniser failed to put a space where two words meet. When that
+//     mark sits BETWEEN TWO LETTERS ("thy,Be", "Rha,psody") it is severe on its own
+//     — see `hasGluedInnerPunctuation` — because no printed word carries a comma,
+//     bracket, slash or star inside it;
 //   • a token with a lower-case run followed by a capital INSIDE it
 //     ("Mercurycause" = "Mercury" + "cause") — the same failure seen from the
 //     other side. A short allow-list of real name joins (Mc/Mac/O') is exempt;
 //   • a long consonant run with no vowel.
 // ONE such signal can still be a real printed line, so a line is only written off
-// when TWO of its tokens are affected, or when EVERY token is. Anything dropped
+// when TWO of its tokens are affected, or when EVERY token is. The one exception is
+// the punctuation glued between two letters (v40 fix A, round 4): that is proof by
+// itself, and the owner's on-device read is exactly it — four tokens, one of them
+// "thy,Be-", which used to be searched as the query anyway. Anything dropped
 // here is dropped HARD: it can never reach the query, the search, or a retailer
 // link — and a page where nothing clean survives keeps its honest "no title" state
 // instead of promoting noise into the money path.
@@ -329,6 +335,27 @@ export function isGarbledOcrToken(token: string | null | undefined): boolean {
 }
 
 /**
+ * THE SEVERE CASE (v40 fix A, round 4). A mark from GARBLE_INNER_PUNCTUATION glued
+ * BETWEEN two letters — "thy,Be", "Rha,psody" — is proof on its own: no printed word
+ * carries a comma, a bracket, a slash or a star inside it, so a line holding one is
+ * debris whatever else that line contains. This is the owner's on-device read, which
+ * held ONE such token among four ("thy,Be- I'm Freddie Mercurycause") and was still
+ * searched as the query; the count threshold below is meant for the softer signals
+ * (a repeated mark, a consonant run, a glued capital) and not for this one.
+ *
+ * The two sides must be LETTERS: "Op.27" is how a catalogue number is printed, and
+ * a dot between a letter and a digit is left alone.
+ */
+export function hasGluedInnerPunctuation(token: string | null | undefined): boolean {
+  const core = coreOfToken((typeof token === 'string' ? token : '').trim());
+  for (let at = 1; at < core.length - 1; at += 1) {
+    if (!GARBLE_INNER_PUNCTUATION.test(core[at]!)) continue;
+    if (/\p{L}/u.test(core[at - 1]!) && /\p{L}/u.test(core[at + 1]!)) return true;
+  }
+  return false;
+}
+
+/**
  * THE GUARD ITSELF: is this line from a recogniser, or debris? True is the safe
  * answer in one direction only — a line answering true is NEVER searched and never
  * reaches a retailer link, so a false positive costs the user a typed word while a
@@ -345,6 +372,10 @@ export function isGarbageOcrLine(line: string | null | undefined): boolean {
   if (tokens.length >= 3 && tokens.every((token) => coreOfToken(token).length < 3)) {
     return true;
   }
+  // ONE severe token is enough on its own (v40 fix A, round 4): a mark glued between
+  // two letters cannot survive inside a real printed word, so the rare-signal
+  // threshold below does not apply to it. The owner's on-device read is this case.
+  if (tokens.some((token) => hasGluedInnerPunctuation(token))) return true;
   const affected = tokens.filter((token) => isGarbledOcrToken(token)).length;
   if (affected >= MIN_GARBLE_TOKENS) return true;
   return affected > 0 && affected === tokens.length;

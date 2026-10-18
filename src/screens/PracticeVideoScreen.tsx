@@ -45,7 +45,7 @@ import {
   View,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Video } from 'expo-av';
+import { Video, ResizeMode } from 'expo-av';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { ensurePlaybackAudioMode, restorePlaybackAudioMode } from '../services/audioSession';
 import { reportAudioFailure, usableDetail } from '../services/audioDiagnostics';
@@ -83,10 +83,10 @@ import {
   practiceVideoTakeLine,
   practiceVideoIsManuallyAligned,
   practiceVideoIsUsable,
+  PRACTICE_VIDEO_KEEPING_LINE,
   type PracticeVideoRef,
 } from '../services/practiceVideoRef';
 import {
-  PRACTICE_VIDEO_KEEPING_LINE,
   PRACTICE_VIDEO_NOT_KEPT_LINE,
   attachPracticeVideo,
   deletePracticeVideo,
@@ -667,7 +667,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 useNativeControls
                 volume={1}
                 isMuted={false}
-                resizeMode="contain"
+                resizeMode={ResizeMode.CONTAIN}
                 progressUpdateIntervalMillis={200}
                 onError={(message) => {
                   // A video that cannot be decoded SAYS SO (v40 fix J): never a

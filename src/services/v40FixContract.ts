@@ -96,6 +96,29 @@ export function coverScanDropsGarbageBeforeChoosing(scanSource: string): boolean
   return src.indexOf(marker('garbled += 1;')) >= 0;
 }
 
+/**
+ * A, THE HALF THAT WAS STILL LEAKING (round 4). A read carrying ONE glued token — the
+ * owner's on-device "thy,Be- I'm Freddie Mercurycause" — used to pass this guard,
+ * because a line was written off only when TWO of its tokens were affected, so the
+ * nonsense string became the query with `garbled: 0`. The punctuation glued between
+ * two LETTERS is now a rule of its own, and it is consulted BEFORE that threshold, so
+ * the count can never answer for it again.
+ */
+export function coverScanWritesOffGluedPunctuationOnItsOwn(scanSource: string): boolean {
+  const src = maskComments(scanSource);
+  if (src.length < 8000) return false;
+  if (src.indexOf(marker('export function hasGluedInner', 'Punctuation(')) < 0) return false;
+  const severe = src.indexOf(
+    marker('if (tokens.some((token) => hasGluedInner', 'Punctuation(token))) return true;'),
+  );
+  if (severe < 0) return false;
+  const threshold = src.indexOf(marker('const affected = tokens.filter('));
+  if (threshold < 0) return false;
+  // The carve-out answers FIRST: below the threshold the two-token count would own
+  // this case again, which is the bug the owner's device found.
+  return severe < threshold;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // D — THE TUNER'S UNIT HANGS OFF A VALUE
 // ─────────────────────────────────────────────────────────────────────────────
