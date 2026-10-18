@@ -911,3 +911,101 @@ export function exportedTakePdfMessage(take: SavedCaptureTake | null | undefined
   const count = Array.isArray(take?.notes) ? take!.notes.length : 0;
   return `Saved your take (${count} note${count === 1 ? '' : 's'}) as a PDF and opened the share sheet.`;
 }
+
+// ───────── THE FILE WE HAND OVER IS THE FILE WE WROTE (v40 fix K) ─────────
+//
+// THE OWNER'S FINDING (10-14): a take shared from Correct your Take "arrived in
+// Gmail but won't open". The BYTES this writer produces were proven sound off
+// device (round 2: 1–400 notes → 1–5 pages, 3.2KB–154KB, every content stream's
+// byte count exact, every xref offset pointing at a real `N 0 obj`, 0 non-ASCII
+// bytes, NaN/Infinity inputs all sanitised), so the one seam left is the DEVICE
+// write — which this box cannot reproduce. That seam is therefore GUARDED instead
+// of trusted: after the platform writes the file, the bytes are READ BACK OFF DISK
+// and must (a) still begin with the PDF header at byte 0 and (b) still be exactly
+// as long as what we wrote. A file that fails either check is never handed to the
+// share sheet; the user gets one plain sentence instead.
+//
+// This is VALIDATION, not repair: nothing is rewritten, padded or guessed at, and
+// no claim is made about why the write failed (we do not know that from here).
+
+/** What the user is told when the file on disk is not the file we wrote. */
+export const TAKE_PDF_READBACK_FAILED_MESSAGE =
+  "The sheet music file didn't save correctly — please try again.";
+
+/** The four bytes every PDF starts with. */
+export const PDF_HEADER_BYTES = '%PDF';
+
+/** True when these bytes really begin with the PDF header at byte 0. */
+export function hasPdfHeaderAtByteZero(bytes: Uint8Array | null | undefined): boolean {
+  if (!bytes || typeof bytes.length !== 'number') return false;
+  if (bytes.length < PDF_HEADER_BYTES.length) return false;
+  for (let i = 0; i < PDF_HEADER_BYTES.length; i += 1) {
+    if (bytes[i] !== PDF_HEADER_BYTES.charCodeAt(i)) return false;
+  }
+  return true;
+}
+
+/**
+ * BASE64 → BYTES: the exact inverse of `midiBytesToBase64`, the encoder the write
+ * path already uses. Hand-rolled for the same reason the encoder is (Node's test
+ * run has no `atob`), and a device read-back IS text, not a buffer. Anything that
+ * is not base64 at all returns null, so a mangled read is a refusal rather than a
+ * silently empty file that looks harmless.
+ */
+export function pdfBase64ToBytes(base64: string | null | undefined): Uint8Array | null {
+  if (typeof base64 !== 'string') return null;
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let body = base64.replace(/\s+/g, '');
+  if (body.length === 0) return null;
+  let padding = 0;
+  while (body.length > 0 && body.charAt(body.length - 1) === '=') {
+    body = body.slice(0, body.length - 1);
+    padding += 1;
+  }
+  if (padding > 2) return null;
+  if (body.length % 4 === 1) return null;
+  const out: number[] = [];
+  let buffer = 0;
+  let bits = 0;
+  for (let i = 0; i < body.length; i += 1) {
+    const value = alphabet.indexOf(body.charAt(i));
+    if (value < 0) return null;
+    buffer = (buffer << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push((buffer >> bits) & 0xff);
+      buffer = buffer & ((1 << bits) - 1);
+    }
+  }
+  return Uint8Array.from(out);
+}
+
+/**
+ * THE READ-BACK VERDICT. `null` means the file on disk IS the file we wrote;
+ * anything else is the one honest sentence to show instead of sharing. The checks
+ * run in order — nothing read back, a different length, a file that no longer
+ * starts with a PDF header, and a byte that changed are four distinct facts, and
+ * any one of them is enough to refuse.
+ */
+export function takePdfReadBackProblem(
+  readBack: string | Uint8Array | null | undefined,
+  written: Uint8Array | null | undefined,
+): string | null {
+  if (!written || typeof written.length !== 'number' || written.length === 0) {
+    return TAKE_PDF_READBACK_FAILED_MESSAGE;
+  }
+  const bytes =
+    typeof readBack === 'string'
+      ? pdfBase64ToBytes(readBack)
+      : readBack instanceof Uint8Array
+        ? readBack
+        : null;
+  if (!bytes || bytes.length === 0) return TAKE_PDF_READBACK_FAILED_MESSAGE;
+  if (bytes.length !== written.length) return TAKE_PDF_READBACK_FAILED_MESSAGE;
+  if (!hasPdfHeaderAtByteZero(bytes)) return TAKE_PDF_READBACK_FAILED_MESSAGE;
+  for (let i = 0; i < written.length; i += 1) {
+    if (bytes[i] !== written[i]) return TAKE_PDF_READBACK_FAILED_MESSAGE;
+  }
+  return null;
+}
