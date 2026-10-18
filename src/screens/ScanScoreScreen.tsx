@@ -1,5 +1,5 @@
 import { useThemedStyles } from '../services/themeStore';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -9,11 +9,13 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../types';
 import {
   appendScanSessionPage,
@@ -23,11 +25,33 @@ import {
   startScanSession,
 } from '../services/libraryStore';
 import {
+  SCAN_FIND_CTA,
   SCAN_SAVED_AS_YOU_GO_LINE,
   scanFinishCta,
   scanSessionResumedLine,
   scanSessionTitle,
 } from '../services/scanFind';
+import {
+  DEFAULT_SCAN_FLASH_MODE,
+  SCAN_CHIP_TRANSLUCENT,
+  SCAN_CONTROL_GAP,
+  SCAN_EMPTY_HINT,
+  SCAN_FILMSTRIP_HEIGHT,
+  SCAN_PILL_RADIUS,
+  SCAN_SHUTTER_SIZE,
+  SCAN_SURFACE_TRANSLUCENT,
+  SCAN_TOUCH_MIN,
+  nextScanFlashMode,
+  scanControlState,
+  scanDockBottomInset,
+  scanFindPanel,
+  scanFindSheetMaxHeight,
+  scanFlashControlLabel,
+  scanFlashIcon,
+  scanFlashShortLabel,
+  scanPageCountLabel,
+  scanTopChipInset,
+} from '../services/scanViewport';
 import { ScanFindSection } from '../components/ScanFindSection';
 import { FindPieceScreen } from './FindPieceScreen';
 
@@ -60,11 +84,45 @@ interface CapturedPage {
  * The money path (fix 1b) is the shared `ScanFindSection`: the page's printed
  * WORDS are read on device and handed to the app's ONE search — the same
  * find-a-piece surface a typed title opens, where the public-domain catalog and
- * the licensed retailers already are. No OMR, no note reading, no edition claim,
- * no second search box, and no retailer URL is built here.
+ * the licensed retailers already are. No note reading, no edition claim, no second
+ * search box, and no retailer URL is built here.
+ *
+ * WHAT CHANGED IN UX ROUND 2 STEP 1 (owner green-lit 10-18, owner item C). The
+ * owner's on-device report: "the heavy bottom white bar STILL obscures the
+ * camera/Done/Bin controls" — and their spec for the redesign: "Edge-to-Edge
+ * Camera: let the camera view take up the entire screen. Floating Minimalist Bar:
+ * replace the heavy bottom container with a semi-transparent floating pill hosting
+ * only the essential controls: a crisp shutter button, a flash toggle, and a clear
+ * Done / Finish action. Ensure no UI elements block or overlap critical controls."
+ *
+ * THIS IS A RELAYOUT AND NOTHING ELSE. The column of camera + strip + help panel +
+ * control row is gone; in its place are three floating layers over a full-bleed
+ * preview:
+ *
+ *   • the PREVIEW is pinned to all four edges (`camera` fills the window) and this
+ *     screen hides the navigator's own header, so nothing letterboxes it;
+ *   • the BOTTOM DOCK is a transparent, bottom-anchored column of floating pieces:
+ *     an error banner when a capture failed, the filmstrip of pages already saved,
+ *     the collapsible find-this-music panel, and — last, so nothing can sit on top
+ *     of it — the semi-transparent PILL holding the shutter, the flash toggle,
+ *     Undo and Done;
+ *   • the TOP CHIP says how many pages this scan has, and carries the way out.
+ *
+ * Every handler, every state, every navigation call and every line of user-facing
+ * copy below is the v39/v40 one, unchanged: the same `capturePage`, `removeLast`,
+ * `finish`, the same immediate library writes, the same shared reader and the same
+ * ONE find-a-piece surface. The dense helper text the owner called out is not
+ * deleted — it moved into the collapsible panel, one tap away.
+ *
+ * The numbers and decisions this layout needs (where the dock sits, the pill's
+ * radius, the flash cycle, WHICH control is enabled) live in the pure
+ * `services/scanViewport` module so they can be proved before a build, and the
+ * structure itself is pinned by `services/uxr2ScanViewportContract`.
  */
 export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const [pages, setPages] = useState<CapturedPage[]>([]);
@@ -75,6 +133,22 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
   const [errorLine, setErrorLine] = useState<string | null>(null);
   // The confirmed words a scan produced, when the user asked to find the music.
   const [findQuery, setFindQuery] = useState<string | null>(null);
+  // UX round 2, layout only: the camera's flash setting, and whether the
+  // find-this-music panel is open (it starts collapsed — see services/scanViewport).
+  const [flash, setFlash] = useState(DEFAULT_SCAN_FLASH_MODE);
+  const [findOpen, setFindOpen] = useState(false);
+
+  /**
+   * THE PREVIEW OWNS THE WHOLE WINDOW. The route is registered with the stack's
+   * standard header ("Scan score"), and an opaque header is exactly the kind of
+   * shell that stops a camera screen being edge to edge — so this screen turns it
+   * off for itself and offers the same way out as a floating chip (the system BACK
+   * gesture still works, and leaving an unfinished scan is safe by design: its
+   * pages are already in the Library and this screen picks the scan back up).
+   */
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
 
   /**
    * AN UNFINISHED SCAN IS PICKED BACK UP (v39 fix 1a). Its pages are already in
@@ -215,16 +289,24 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
     );
   }
 
-  // ─── Capture UI ────────────────────────────────────────────
+  // ─── Capture UI: a full-bleed preview with floating layers over it ─────
 
   const lastPageUri = pages.length > 0 ? pages[pages.length - 1].uri : null;
+  // WHICH CONTROL IS ENABLED is the pre-existing capture flow's own rule,
+  // moved into the pure model so a relayout cannot change what a tap does.
+  const controls = scanControlState({ capturing, pageCount: pages.length });
+  // The detail panel's state comes from the pure rule as well: it opens closed.
+  const findPanel = scanFindPanel(findOpen);
 
   return (
     <View style={styles.container}>
+      {/* EDGE TO EDGE: the preview is pinned to all four edges of the window
+          (services/scanViewport owns every offset used below). */}
       <CameraView
         ref={cameraRef}
         style={styles.camera}
         facing="back"
+        flash={flash}
         onMountError={() =>
           Alert.alert(
             'Camera unavailable',
@@ -233,69 +315,147 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
         }
       />
 
-      {/* Page thumbnail strip — the pages that are ALREADY in the Library. */}
-      <ScrollView
-        horizontal
-        style={styles.strip}
-        contentContainerStyle={styles.stripContent}
+      {/* THE FLOATING TOP LAYER: how many pages this scan has, and the way out.
+          It is a chip, not a bar — it carries no fill of its own, so the preview
+          is visible right up to the status bar. */}
+      <View
+        style={[styles.topFloat, { top: scanTopChipInset(insets.top) }]}
+        pointerEvents="box-none"
       >
-        {pages.map((p, index) => (
-          <View key={`${index}-${p.uri}`} style={styles.thumbWrap}>
-            <Image source={{ uri: p.uri }} style={styles.thumb} />
-            <Text style={styles.thumbIndex}>{index + 1}</Text>
-          </View>
-        ))}
-        {pages.length === 0 && (
-          <Text style={styles.stripHint}>No pages captured yet</Text>
-        )}
-      </ScrollView>
-
-      {/* THE SCAN'S OWN HONESTY + MONEY PATH (v39 fix 1a/1b). Scrollable: the
-          camera keeps the room it needs and the notes below it are all reachable. */}
-      <ScrollView style={styles.footerScroll} contentContainerStyle={styles.footer}>
-        {scanSessionResumedLine(pages.length) ? (
-          <Text style={styles.resumedLine}>
-            {scanSessionResumedLine(pages.length)}
+        <Pressable
+          style={styles.backChip}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Leave this scan"
+        >
+          <Ionicons name="chevron-back" size={22} color={theme.text} />
+        </Pressable>
+        <View style={styles.statusChip}>
+          <Text style={styles.statusCount}>
+            {pages.length > 0 ? scanPageCountLabel(pages.length) : SCAN_EMPTY_HINT}
           </Text>
+        </View>
+      </View>
+
+      {/* THE FLOATING BOTTOM DOCK: transparent, bottom-anchored, and stacking its
+          layers in render order so the pill is the LAST — nothing can cover it. */}
+      <View
+        style={[styles.dock, { paddingBottom: scanDockBottomInset(insets.bottom) }]}
+        pointerEvents="box-none"
+      >
+        {errorLine ? (
+          <View style={styles.errorFloat}>
+            <Text style={styles.error}>{errorLine}</Text>
+          </View>
         ) : null}
-        <Text style={styles.savedLine}>{SCAN_SAVED_AS_YOU_GO_LINE}</Text>
-        {errorLine ? <Text style={styles.error}>{errorLine}</Text> : null}
-        <ScanFindSection pageUri={lastPageUri} onSearch={setFindQuery} />
-      </ScrollView>
 
-      {/* Controls */}
-      <View style={styles.controls}>
-        <Pressable
-          style={[styles.controlButton, pages.length === 0 && styles.controlDisabled]}
-          onPress={() => void removeLast()}
-          disabled={pages.length === 0}
-          accessibilityLabel="Remove last page"
-        >
-          <Ionicons name="trash-outline" size={22} color={theme.text} />
-          <Text style={styles.controlLabel}>Undo</Text>
-        </Pressable>
+        {pages.length > 0 ? (
+          <View style={styles.filmstrip}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filmstripBody}
+            >
+              {pages.map((p, index) => (
+                <View key={`${index}-${p.uri}`} style={styles.thumbWrap}>
+                  <Image source={{ uri: p.uri }} style={styles.thumb} />
+                  <Text style={styles.thumbIndex}>{index + 1}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
 
-        <Pressable
-          style={styles.shutter}
-          onPress={() => void capturePage()}
-          disabled={capturing}
-          accessibilityLabel="Capture page"
-        >
-          <View style={[styles.shutterInner, capturing && styles.shutterBusy]} />
-        </Pressable>
+        {findPanel.open ? (
+          <View
+            style={[styles.findSheet, { maxHeight: scanFindSheetMaxHeight(windowHeight) }]}
+          >
+            <View style={styles.findSheetHeader}>
+              <Text style={styles.findSheetTitle}>{SCAN_FIND_CTA}</Text>
+              <Pressable
+                style={styles.findSheetClose}
+                onPress={() => setFindOpen(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Hide this panel"
+              >
+                <Ionicons name="chevron-down" size={22} color={theme.text} />
+              </Pressable>
+            </View>
+            {/* The dense lines the owner called out live HERE, one tap away, in a
+                bounded and scrollable panel — the same two lines as before. */}
+            <ScrollView
+              style={styles.findSheetScroll}
+              contentContainerStyle={styles.findSheetBody}
+            >
+              {scanSessionResumedLine(pages.length) ? (
+                <Text style={styles.resumedLine}>
+                  {scanSessionResumedLine(pages.length)}
+                </Text>
+              ) : null}
+              <Text style={styles.savedLine}>{SCAN_SAVED_AS_YOU_GO_LINE}</Text>
+              <ScanFindSection pageUri={lastPageUri} onSearch={setFindQuery} />
+            </ScrollView>
+          </View>
+        ) : (
+          <Pressable
+            style={styles.findChip}
+            onPress={() => setFindOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={SCAN_FIND_CTA}
+          >
+            <Ionicons name="search-outline" size={16} color={theme.text} />
+            <Text style={styles.findChipLabel}>{SCAN_FIND_CTA}</Text>
+          </Pressable>
+        )}
 
-        <Pressable
-          style={[
-            styles.controlButton,
-            styles.doneButton,
-            pages.length === 0 && styles.controlDisabled,
-          ]}
-          onPress={() => void finish()}
-          disabled={pages.length === 0}
-        >
-          <Ionicons name="checkmark" size={22} color="#fff" />
-          <Text style={styles.doneLabel}>{scanFinishCta(pages.length)}</Text>
-        </Pressable>
+        <View style={styles.controlPill}>
+          <Pressable
+            style={[styles.pillControl, !controls.undo && styles.controlDisabled]}
+            onPress={() => void removeLast()}
+            disabled={!controls.undo}
+            accessibilityRole="button"
+            accessibilityLabel="Remove last page"
+          >
+            <Ionicons name="trash-outline" size={22} color={theme.text} />
+            <Text style={styles.controlLabel}>Undo</Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.pillControl, !controls.flash && styles.controlDisabled]}
+            onPress={() => setFlash(nextScanFlashMode(flash))}
+            disabled={!controls.flash}
+            accessibilityRole="button"
+            accessibilityLabel={scanFlashControlLabel(flash)}
+          >
+            <Ionicons name={scanFlashIcon(flash)} size={22} color={theme.text} />
+            <Text style={styles.controlLabel}>{scanFlashShortLabel(flash)}</Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.shutter}
+            onPress={() => void capturePage()}
+            disabled={!controls.shoot}
+            accessibilityRole="button"
+            accessibilityLabel="Capture page"
+          >
+            <View style={[styles.shutterInner, capturing && styles.shutterBusy]} />
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.pillControl,
+              styles.doneButton,
+              !controls.finish && styles.controlDisabled,
+            ]}
+            onPress={() => void finish()}
+            disabled={!controls.finish}
+            accessibilityRole="button"
+            accessibilityLabel={scanFinishCta(pages.length)}
+          >
+            <Ionicons name="checkmark" size={22} color="#fff" />
+            <Text style={styles.doneLabel}>{scanFinishCta(pages.length)}</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -306,69 +466,148 @@ const baseStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#10101c',
   },
-  /* v40 fix C — THE FOOTER BAR CANNOT EAT THE CAMERA OR THE CONTROLS ANY MORE.
-     The column used to be: camera (flex: 1, no floor) + a 96pt strip + a scroll
-     panel allowed to grow to 320pt + the controls. Nothing shrank, so on a short
-     viewport (this screen is not portrait-locked) the panel pushed the Undo/Done
-     row off the bottom edge and crushed the preview to a sliver — the owner's
-     "the footer bar obscures the camera preview AND the Done/undo controls".
-     Now the camera has a floor, the panel is BOUNDED and may shrink, and the
-     controls are a fixed row that is never the last thing to be laid out past the
-     bottom. The panel is also a themed surface with its own top edge, so it reads
-     as part of the screen in both palettes instead of a blank white bar. */
+  /* UX ROUND 2 STEP 1 — THE PREVIEW IS THE WHOLE WINDOW. A camera with a floor in
+     a column is what letterboxed this screen: on a short viewport the panel below
+     it still won, and the owner saw a sliver of camera with controls pushed off
+     the bottom edge. Pinned to all four edges instead, with no height of its own,
+     the preview cannot be squeezed by anything — the layers above it float. */
   camera: {
-    flex: 1,
-    minHeight: 140,
+    ...StyleSheet.absoluteFillObject,
   },
-  strip: {
-    maxHeight: 96,
-    backgroundColor: '#10101c',
+  /* THE TOP LAYER: a chip and a way out. No fill of its own, so it never reads as
+     a bar across the picture. */
+  topFloat: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
   },
-  stripContent: {
+  backChip: {
+    width: SCAN_TOUCH_MIN,
+    height: SCAN_TOUCH_MIN,
+    borderRadius: SCAN_TOUCH_MIN / 2,
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: SCAN_CHIP_TRANSLUCENT,
+  },
+  statusChip: {
+    flexShrink: 1,
+    borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    gap: 8,
+    backgroundColor: SCAN_CHIP_TRANSLUCENT,
   },
-  stripHint: {
-    color: '#8a8ab0',
-    fontSize: 13,
-    paddingVertical: 24,
+  statusCount: {
+    color: '#eaeaff',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
+  },
+  /* THE BOTTOM LAYER: transparent by construction — it exists only to stack the
+     floating pieces. Its only colour is the translucent pill at the end of it. */
+  dock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    paddingTop: 10,
+    gap: SCAN_CONTROL_GAP,
+  },
+  /* The honest line from a failed capture: floating, so it can never sit on the
+     shutter or the Done button. */
+  errorFloat: {
+    maxWidth: '92%',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(70,14,22,0.86)',
+  },
+  error: {
+    color: '#ffb3b3',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  /* The pages that are ALREADY in the Library: a rounded row of thumbnails, not
+     the old opaque 96pt strip. */
+  filmstrip: {
+    height: SCAN_FILMSTRIP_HEIGHT,
+    maxWidth: '92%',
+    borderRadius: 18,
+    backgroundColor: SCAN_CHIP_TRANSLUCENT,
+    paddingHorizontal: 8,
+    overflow: 'hidden',
+  },
+  filmstripBody: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
   },
   thumbWrap: {
-    position: 'relative',
+    alignItems: 'center',
   },
   thumb: {
-    width: 60,
-    height: 80,
+    width: 40,
+    height: 48,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#0f3460',
   },
   thumbIndex: {
-    position: 'absolute',
-    top: 2,
-    left: 4,
-    color: '#fff',
-    fontSize: 11,
+    color: '#c8c8e0',
+    fontSize: 10,
     fontWeight: '700',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 4,
-    paddingHorizontal: 4,
+  },
+  /* THE COLLAPSED FACE OF THE DETAIL PANEL: one chip, the shared label. */
+  findChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: SCAN_TOUCH_MIN,
+    paddingHorizontal: 16,
+    borderRadius: SCAN_TOUCH_MIN / 2,
+    backgroundColor: SCAN_CHIP_TRANSLUCENT,
+  },
+  findChipLabel: {
+    color: '#eaeaff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  /* THE OPEN PANEL: bounded by services/scanViewport from the window's own height,
+     so it cannot grow over the controls the way the v40 footer did. */
+  findSheet: {
+    width: '92%',
+    borderRadius: 20,
+    backgroundColor: SCAN_SURFACE_TRANSLUCENT,
     overflow: 'hidden',
   },
-  footerScroll: {
-    maxHeight: 200,
-    flexShrink: 1,
-    backgroundColor: '#12122b',
-    borderTopWidth: 1,
-    borderTopColor: '#0f3460',
+  findSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 14,
+    paddingRight: 4,
+    paddingVertical: 6,
   },
-  footer: {
-    backgroundColor: '#12122b',
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-    paddingTop: 4,
+  findSheetTitle: {
+    color: '#eaeaff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  findSheetClose: {
+    width: SCAN_TOUCH_MIN,
+    height: SCAN_TOUCH_MIN,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  findSheetScroll: {
+    flexGrow: 0,
+  },
+  findSheetBody: {
+    paddingHorizontal: 14,
+    paddingBottom: 14,
     gap: 6,
   },
   resumedLine: {
@@ -377,44 +616,42 @@ const baseStyles = StyleSheet.create({
     lineHeight: 17,
   },
   savedLine: {
-    color: '#8a8ab0',
+    color: '#c8c8e0',
     fontSize: 12,
     lineHeight: 17,
   },
-  error: {
-    color: '#ff6b6b',
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  controls: {
+  /* THE PILL: semi-transparent, rounded well past its own height, centred at its
+     own width, holding the shutter, the flash toggle, Undo and Done — and nothing
+     else. It is the LAST piece in the dock, so no other layer can cover it. */
+  controlPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingTop: 14,
-    paddingBottom: 18,
-    paddingHorizontal: 24,
-    backgroundColor: '#16213e',
-    borderTopWidth: 1,
-    borderTopColor: '#0f3460',
-    flexShrink: 0,
-    zIndex: 2,
+    justifyContent: 'center',
+    gap: SCAN_CONTROL_GAP,
+    borderRadius: SCAN_PILL_RADIUS,
+    backgroundColor: SCAN_SURFACE_TRANSLUCENT,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    maxWidth: '96%',
   },
-  controlButton: {
+  pillControl: {
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 2,
-    minWidth: 72,
+    minWidth: SCAN_TOUCH_MIN,
+    minHeight: SCAN_TOUCH_MIN,
   },
   controlDisabled: {
     opacity: 0.35,
   },
   controlLabel: {
-    color: '#a0a0b8',
-    fontSize: 12,
+    color: '#c8c8e0',
+    fontSize: 11,
   },
   shutter: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: SCAN_SHUTTER_SIZE,
+    height: SCAN_SHUTTER_SIZE,
+    borderRadius: SCAN_SHUTTER_SIZE / 2,
     borderWidth: 4,
     borderColor: '#e94560',
     alignItems: 'center',
@@ -432,7 +669,7 @@ const baseStyles = StyleSheet.create({
   },
   doneButton: {
     backgroundColor: '#e94560',
-    borderRadius: 10,
+    borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 8,
     flexDirection: 'row',
