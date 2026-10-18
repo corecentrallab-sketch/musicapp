@@ -299,7 +299,11 @@ probe('the editor stops flagging samples', editorWithoutTheSampleFlag, EDITOR, (
 );
 // R3 — the whole work: the flag the reader mounts with, the band the viewer asks for,
 // and the gesture it hands to the WebView.
-const screenWithoutWholeWork = mutate(SCREEN, '<AbcScoreView abc={abc} wholeWork />', '<AbcScoreView abc={abc} />');
+// UX round 1 step 3 added a second prop to this mount (`viewportHeight`, the reader's
+// own measured score area), so the probe now drops `wholeWork` ITSELF instead of a tag
+// literal that the next prop would silently invalidate — the guard reads the opening
+// tag, so removing the prop is exactly the mutation it must catch.
+const screenWithoutWholeWork = mutate(SCREEN, 'wholeWork', 'inlineOnly');
 probe('the reader forgets wholeWork', screenWithoutWholeWork, SCREEN, () =>
   readerShowsTheWholeWork({ screen: screenWithoutWholeWork, viewer: VIEWER }),
 );
