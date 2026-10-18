@@ -207,9 +207,24 @@ export function historyShareIsGatedOnTheModel(historySource: string): boolean {
  *
  * THE PROPERTY. The editor builds exactly ONE listen row (a second row would be a
  * second pair of players that can drift), from the editor's own two engines, and
- * mounts it ABOVE the editable/original branch — so the view switch can hide the
+ * mounts it OUTSIDE the editable/original branch — so the view switch can hide the
  * lane, the chords and the batch fixes, and must never be able to hide the two
  * playback controls. The tab page is handed that very same node.
+ *
+ * WHERE "OUTSIDE" IS — REVISED BY UX ROUND 1 STEP 2 (owner's "Corrections" ask,
+ * 10-18). Fix H put the row ABOVE the branch; the restructure moved the same row
+ * BELOW it, into the new "Listen & Send" group, because listening is the
+ * verification of a finished pass (spec ux-round-1/correct-your-take-spec.md §3).
+ * The property is unchanged and so is the row's markup — the row is still mounted
+ * once, still outside the branch, still on the page in BOTH views. This check now
+ * asserts that placement: the node is still built before the branch, and the mount
+ * is past the read-only arm (never inside the EDITABLE arm, which is the arm the
+ * view switch can hide) and above the sticky save bar.
+ *
+ * The one thing this form cannot see is a mount wedged into the few lines that
+ * close the read-only arm; that case is covered by the round-1 group guard
+ * (scripts/takeGroupRestructure.test.ts), which requires the row to render inside
+ * the "Listen & Send" group, between the two group headers.
  */
 export function takeEditorMountsTheOneListenRow(editorSource: string): boolean {
   const src = maskComments(editorSource);
@@ -221,13 +236,19 @@ export function takeEditorMountsTheOneListenRow(editorSource: string): boolean {
   const mount = src.indexOf(marker('{', 'listenRow', '}'));
   const prop = src.indexOf(marker('listenRow', '={listenRow}'));
   const tabs = src.indexOf(marker('<TakeTabsView'));
+  const readOnlyArm = src.indexOf(marker(') : ('));
+  const switchBack = src.indexOf(marker('Switch to ${EDITOR_VIEW_CORRECTED_CTA}'));
+  const saveBar = src.indexOf(marker('styles.', 'saveBar'));
   if (node < 0 || row < 0 || player < 0 || branch < 0) return false;
   if (mount < 0 || prop < 0 || tabs < 0) return false;
+  if (readOnlyArm < 0 || switchBack < 0 || saveBar < 0) return false;
   // ONE row.
   if (countOf(src, marker('<TakeListenRow')) !== 1) return false;
-  // Built before the branch, mounted before the branch: on the page in BOTH views.
+  // Built before the branch, mounted OUTSIDE it: on the page in BOTH views.
   if (node > branch) return false;
-  if (mount > branch) return false;
+  if (mount < readOnlyArm) return false;
+  if (mount < switchBack) return false;
+  if (mount > saveBar) return false;
   // The mount is the row's own node, not only the prop handed to the tab page.
   if (mount > prop) return false;
   // …and that prop really belongs to the tab page's own mount.
