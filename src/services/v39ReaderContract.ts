@@ -228,14 +228,21 @@ export function readerSharesThroughThePlatform(value: {
  * bundled ABC score is a 3-4 bar excerpt. The label is derived from the score's own
  * bar count at both surfaces (never from an edited title, which services/pieceAbc
  * uses as a key), so neither surface can present an excerpt as a whole work.
+ *
+ * UX round 1 step 1 (owner 10-18 item 5) moved the RENDERING into ONE shared
+ * component (`src/components/SampleBadge`), so the guard now asks for the surface
+ * that carries the score — a badge with no `abc` prop could not derive its words.
+ * The derivation itself (and the "never pass a label in" rule) is guarded where
+ * the words are built: `src/services/sampleBadge.ts` +
+ * `scripts/sampleBadge.test.ts`, which reads the component's real source.
  */
 export function readerLabelsASample(value: { screen: string; editor: string }): boolean {
   const screen = maskComments(value?.screen ?? '');
   const editor = maskComments(value?.editor ?? '');
   if (screen.length < 4000 || editor.length < 8000) return false;
-  if (screen.indexOf('readerSampleLabel(') < 0) return false;
+  if (screen.indexOf('<SampleBadge') < 0) return false;
   if (screen.indexOf('isSample') < 0) return false;
-  return editor.indexOf('sampleExcerptLabel(') >= 0;
+  return editor.indexOf('<SampleBadge') >= 0;
 }
 
 /**

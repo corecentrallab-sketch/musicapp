@@ -40,9 +40,9 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import { AbcScoreView } from '../components/AbcScoreView';
+import { SampleBadge } from '../components/SampleBadge';
 import { addAbcToLibrary } from '../services/libraryStore';
 import {
-  readerSampleLabel,
   transposedCopyTitle,
   transposedReaderSubtitle,
 } from '../services/transposedScore';
@@ -81,7 +81,6 @@ export const TransposedScoreReaderScreen: React.FC<Props> = ({ route }) => {
 
   const copyTitle = transposedCopyTitle({ title, keyLabel, offset });
   const subtitle = transposedReaderSubtitle({ keyLabel, offset });
-  const sampleLabel = readerSampleLabel({ isSample, abc });
 
   /**
    * SAVE THE TRANSPOSED COPY. The same library write the editor uses
@@ -135,12 +134,13 @@ export const TransposedScoreReaderScreen: React.FC<Props> = ({ route }) => {
           {title}
         </Text>
         <Text style={styles.subtitle}>{subtitle}</Text>
-        {sampleLabel !== null && (
-          <View style={styles.sampleBadge}>
-            <Ionicons name="information-circle-outline" size={13} color={theme.accent} />
-            <Text style={styles.sampleBadgeText}>{sampleLabel}</Text>
-          </View>
-        )}
+        {/* WHAT THIS SCORE ACTUALLY IS (UX round 1 step 1, owner 10-18 item 5).
+            Every bundled ABC score is a 3-4 bar excerpt, so a reader showing "the
+            whole piece" shows a few bars — correctly. The shared badge says so,
+            from the score's own bar count. The reader may not reach the network
+            (v39's no-network contract), so it passes no `libraryState` and the
+            badge makes no claim about what the free library holds beyond this. */}
+        <SampleBadge abc={abc} isSample={isSample} style={styles.sampleBadge} />
         <Text style={styles.wholeWorkNote}>{READER_WHOLE_WORK_NOTE}</Text>
       </View>
 
@@ -218,22 +218,7 @@ const baseStyles = StyleSheet.create({
     fontSize: 13,
   },
   sampleBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
     marginTop: 4,
-    alignSelf: 'flex-start',
-    backgroundColor: '#16213e',
-    borderColor: '#0f3460',
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  sampleBadgeText: {
-    color: '#a0a0b8',
-    fontSize: 12,
-    fontWeight: '600',
   },
   wholeWorkNote: {
     color: '#8a8ab0',
