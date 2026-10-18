@@ -11,6 +11,8 @@
   },
   "include": [
     "src/services/scanFind.ts",
+    "src/services/v40FixContract.ts",
+    "scripts/v40FixBatch.test.ts",
     "src/services/v39FixContract.ts",
     "scripts/v39Fixes.test.ts",
     "src/services/cloudImport.ts",

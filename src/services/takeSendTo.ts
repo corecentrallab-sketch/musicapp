@@ -44,6 +44,30 @@ export const SEND_TO_TEXT_HINT =
 /** What each destination does — the surface renders exactly this list. */
 export type SendToKind = 'pdf' | 'midi' | 'email';
 
+/**
+ * THE SHARE ACTION ON A HISTORY TAKE CARD (v40 fix G).
+ *
+ * THE OWNER'S FINDING (v39 pass): sharing a take from History already WORKED —
+ * the send-to surface, the PDF builder and the MIDI export are all live — but
+ * there was no button on the card to reach any of it, so the feature may as well
+ * not have existed. The wording here is deliberately the plain word "Share": the
+ * user is looking for the action, not for the internal name of the sheet.
+ */
+export const SHARE_TAKE_CTA = 'Share this take';
+export const SHARE_TAKE_HINT =
+  'A PDF of your take, the MIDI file, or send it to your own email — through your device’s own share sheet.';
+
+/**
+ * Is the Share action offered on this row? Only for a take that really holds notes
+ * we can write out: a take with nothing in it would open a surface whose every
+ * entry can only fail, which is exactly the dead area the release gate forbids
+ * (owner 09-28). The rule is the SAME one the sheet's own destinations use, so the
+ * button and what it opens can never disagree.
+ */
+export function shareTakeOffered(take: SavedCaptureTake | null | undefined): boolean {
+  return takeHasSomethingToSend(take);
+}
+
 export interface SendToAction {
   kind: SendToKind;
   label: string;

@@ -33,6 +33,11 @@ import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { Audio } from 'expo-av';
 import type { AVPlaybackSource } from 'expo-av';
+// v40 fix E: the app's ONE playback audio session (v34's fix for expo-av's
+// focus-gated volume) and the diagnostics sink that stops a load failure from
+// being swallowed.
+import { ensurePlaybackAudioMode } from '../services/audioSession';
+import { reportAudioFailure, usableDetail } from '../services/audioDiagnostics';
 
 // ─── Constants ─────────────────────────────────────────────────
 
@@ -78,6 +83,56 @@ const clamp = (value: number, min: number, max: number) =>
 const ACCENT_SOUND_SOURCE = require('../../assets/sounds/click-accent.wav') as AVPlaybackSource;
 const BEAT_SOUND_SOURCE = require('../../assets/sounds/click-beat.wav') as AVPlaybackSource;
 
+/**
+ * v40 fix E — WHY THE METRONOME WAS SILENT (owner: "the metronome produces no
+ * audible beat"), and what this screen does about it.
+ *
+ * TWO CODE-LEVEL CAUSES, both found in this screen and both fixed here. The WAV
+ * assets themselves are fine — they are valid 44.1 kHz 16-bit PCM clicks (40 ms
+ * accent, 24 ms beat) with real amplitude in them, so no asset is regenerated.
+ *
+ *   1. NO PLAYBACK SESSION. This screen called
+ *      `Audio.setAudioModeAsync({ playsInSilentModeIOS: true })` — a PARTIAL mode,
+ *      whose omitted keys expo-av fills in from whatever mode was already current.
+ *      That is the exact v33→v34 defect services/audioSession.ts was written to
+ *      close (see its header): on Android expo-av's player computes its volume from
+ *      the audio focus it holds, so a play on a session that was never established
+ *      can SUCCEED and be completely inaudible with no error at all. The metronome
+ *      was the last surface still doing it its own way; it now goes through the
+ *      app's ONE playback session (`ensurePlaybackAudioMode`), applied before every
+ *      click.
+ *   2. ONE AWAIT COULD KILL BOTH LOADS. Both click sounds were created inside a
+ *      single `try`, so anything that failed early — the audio-mode call, the first
+ *      `loadAsync` — aborted the second one too, and the whole failure was
+ *      swallowed by an empty `catch`. The result was a metronome that flashed the
+ *      beat and played nothing, with nothing on the screen to say why. Each step is
+ *      now independent, and a sound that genuinely cannot load says so on screen.
+ *
+ * Replaying a click now uses the API that is documented for it (`replayAsync`,
+ * which sets the position back to the start and plays) — NOT `playFromPositionAsync`
+ * on a sound that has already finished.
+ */
+export const CLICK_SOUND_FAILED_LINE =
+  'The click sound could not load on this device — the beat still flashes, but it will be silent. Check the app’s audio hasn’t been muted in Settings.';
+
+/** Replay one loaded click from its start. Never throws out of the scheduler. */
+async function replayClick(sound: Audio.Sound | null): Promise<void> {
+  if (!sound) return;
+  try {
+    await sound.replayAsync();
+  } catch {
+    // A sound that cannot replay from the start position still gets one more
+    // chance through the explicit seek-then-play pair before we give up on it.
+    try {
+      await sound.setPositionAsync(0);
+      await sound.playAsync();
+    } catch {
+      // Reported by the surface's own state; a thrown error here would land in the
+      // scheduler's setTimeout and be unhandled.
+    }
+  }
+}
+
 export const MetronomeScreen: React.FC = () => {
   const { styles, theme } = useThemedStyles(baseStyles);
   // ── UI state ────────────────────────────────────────────────
@@ -90,6 +145,8 @@ export const MetronomeScreen: React.FC = () => {
   const [tapBpm, setTapBpm] = useState<number | null>(null);
   /** True once both click sounds finished loading. */
   const [soundsReady, setSoundsReady] = useState(false);
+  /** True when at least one click sound could not be loaded (v40 fix E). */
+  const [soundFailed, setSoundFailed] = useState(false);
 
   // ── Audio clock refs (never read stale values from the scheduler) ──
   const bpmRef = useRef(DEFAULT_BPM);
@@ -119,28 +176,46 @@ export const MetronomeScreen: React.FC = () => {
     outputRange: [1, 1.14],
   });
 
-  // ── Sound loading ───────────────────────────────────────────
+  // ── Sound loading (v40 fix E) ───────────────────────────────
   useEffect(() => {
     let mounted = true;
     (async () => {
-      try {
-        // Clicks should sound even with the iOS ringer switch off.
-        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-        const accent = new Audio.Sound();
-        const beat = new Audio.Sound();
-        await accent.loadAsync(ACCENT_SOUND_SOURCE);
-        await beat.loadAsync(BEAT_SOUND_SOURCE);
-        if (!mounted) {
-          await accent.unloadAsync().catch(() => {});
-          await beat.unloadAsync().catch(() => {});
-          return;
+      // THE PLAYBACK SESSION FIRST, and on its own: this is the app's ONE playback
+      // mode (services/audioSession.ts), which is what makes a click actually
+      // audible on Android. It is awaited but never fatal — a session that could
+      // not be set must not stop the sounds from loading.
+      await ensurePlaybackAudioMode();
+      const load = async (
+        source: AVPlaybackSource,
+      ): Promise<Audio.Sound | null> => {
+        try {
+          const sound = new Audio.Sound();
+          await sound.loadAsync(source);
+          return sound;
+        } catch (err) {
+          // Never swallowed (v34 rule): the reason reaches the surface and the
+          // app-wide diagnostics chip.
+          reportAudioFailure({
+            source: 'tone-preview',
+            reason: 'tone-load',
+            detail: usableDetail(err),
+          });
+          return null;
         }
-        accentSoundRef.current = accent;
-        beatSoundRef.current = beat;
-        setSoundsReady(true);
-      } catch {
-        // Audio unavailable (rare) — the metronome still runs visually.
+      };
+      // INDEPENDENT loads: a click that cannot load never takes the other with it.
+      const accent = await load(ACCENT_SOUND_SOURCE);
+      const beat = await load(BEAT_SOUND_SOURCE);
+      if (!mounted) {
+        await accent?.unloadAsync().catch(() => {});
+        await beat?.unloadAsync().catch(() => {});
+        return;
       }
+      accentSoundRef.current = accent;
+      beatSoundRef.current = beat;
+      const ready = !!accent || !!beat;
+      setSoundsReady(ready);
+      setSoundFailed(!ready);
     })();
     return () => {
       mounted = false;
@@ -167,10 +242,14 @@ export const MetronomeScreen: React.FC = () => {
       const timer = setTimeout(() => {
         pendingTimersRef.current.delete(timer);
         const sound = beatIndex === 0 ? accentSoundRef.current : beatSoundRef.current;
-        if (sound) {
-          // Seek to 0 and play — replays the click from its start.
-          sound.playFromPositionAsync(0).catch(() => {});
-        }
+        // v40 fix E: the session is (re)applied on the way into every click — the
+        // v34 rule — and the click itself replays from its start. `replayAsync` is
+        // the expo-av API for exactly this; a sound that has already finished does
+        // not play again under a bare play call.
+        void (async () => {
+          await ensurePlaybackAudioMode();
+          await replayClick(sound);
+        })();
         // Visual pulse synced to the click.
         pulseAnim.stopAnimation();
         Animated.sequence([
@@ -480,9 +559,13 @@ export const MetronomeScreen: React.FC = () => {
         </Text>
       </Pressable>
 
-      {!soundsReady && (
+      {!soundsReady && !soundFailed && (
         <Text style={styles.loadingHint}>Loading click sounds…</Text>
       )}
+      {/* v40 fix E: a click that could not load is SAID, not swallowed — the beat
+          still pulses, so without this line the metronome would look like it was
+          working while playing nothing (exactly what the owner reported). */}
+      {soundFailed && <Text style={styles.soundFailedHint}>{CLICK_SOUND_FAILED_LINE}</Text>}
     </View>
   );
 };
@@ -647,6 +730,12 @@ const baseStyles = StyleSheet.create({
   loadingHint: {
     color: MUTED_TEXT,
     fontSize: 12,
+    marginTop: 12,
+  },
+  soundFailedHint: {
+    color: '#ffd166',
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 12,
   },
 });

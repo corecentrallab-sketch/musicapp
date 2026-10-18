@@ -26,12 +26,14 @@ import {
   TAB_NOTES_CAPTION,
   TAB_TITLE,
   TAB_TUNING_LINE,
+  TAB_WINDOWS_CAPTION,
   buildGuitarTab,
   tabHasNotes,
   tabHonestyLine,
-  tabLines,
   tabNoteReadout,
   tabPitchSummary,
+  tabWindowCount,
+  tabWindows,
 } from '../services/guitarTab';
 import type { SavedCaptureTake } from '../services/midiExport';
 
@@ -47,6 +49,15 @@ export interface TakeTabsViewProps {
   take: SavedCaptureTake | null | undefined;
   /** A title for the share/print caption (optional). */
   title?: string | null;
+  /**
+   * THE LISTEN ROW (v40 fix L), handed IN by the take-correction editor: the tab
+   * page is where the whole take is laid out, so it is also where the user asks to
+   * HEAR it ("Tabs … does not show the whole song played"). The editor owns the
+   * two players (its recording player and its Hum-Along preview), so the SAME
+   * mounted row is rendered here rather than a second pair of players that could
+   * drift from the editor's — one row, one audio path, two pages.
+   */
+  listenRow?: React.ReactNode;
   onClose: () => void;
 }
 
@@ -54,6 +65,7 @@ export const TakeTabsView: React.FC<TakeTabsViewProps> = ({
   visible,
   take,
   title,
+  listenRow,
   onClose,
 }) => {
   const { styles } = useThemedStyles(baseStyles);
@@ -62,7 +74,15 @@ export const TakeTabsView: React.FC<TakeTabsViewProps> = ({
    * holds, so a correction the user makes and this page can never disagree.
    */
   const layout = useMemo(() => buildGuitarTab(take?.notes ?? null), [take]);
-  const lines = useMemo(() => (tabHasNotes(layout) ? tabLines(layout) : []), [layout]);
+  /**
+   * THE WHOLE TAKE, IN BLOCKS (v40 fix L). The windowed form replaced the single
+   * horizontal strip: every note is in exactly one block, in order, and the user
+   * reaches the rest of the song by scrolling DOWN rather than by discovering a
+   * horizontal drag. `tabWindowCount` exists so the page can say how many blocks
+   * the take really is.
+   */
+  const windows = useMemo(() => tabWindows(layout), [layout]);
+  const windowCount = useMemo(() => tabWindowCount(layout), [layout]);
 
   return (
     <Modal
@@ -88,23 +108,36 @@ export const TakeTabsView: React.FC<TakeTabsViewProps> = ({
         <ScrollView style={styles.page} contentContainerStyle={styles.body}>
           <Text style={styles.honest}>{TAB_HONEST_LINE}</Text>
 
+          {/* BOTH VERSIONS, HEARD FROM HERE (v40 fix L): the editor's own listen
+              row, at the TOP of the tab page — the whole take is written out just
+              below it, so playing and reading it are the same page. */}
+          {listenRow}
+
           {tabHasNotes(layout) ? (
             <>
               <Text style={styles.caption}>{TAKE_TABS_GRID_CAPTION}</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator
-                style={styles.gridBox}
-                accessibilityLabel="Guitar tablature of your take"
-              >
-                <View style={styles.grid}>
-                  {lines.map((line, index) => (
-                    <Text key={`tab-line-${index}`} style={styles.gridLine}>
-                      {line}
-                    </Text>
-                  ))}
+              <Text style={styles.caption}>{TAB_WINDOWS_CAPTION}</Text>
+              {windows.map((window) => (
+                <View key={`tab-window-${window.index}`} style={styles.windowBlock}>
+                  <Text style={styles.windowLabel}>
+                    {`${window.label}${windowCount > 1 ? ` · block ${window.index + 1} of ${windowCount}` : ''}`}
+                  </Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator
+                    style={styles.gridBox}
+                    accessibilityLabel={`Guitar tablature of your take, ${window.label}`}
+                  >
+                    <View style={styles.grid}>
+                      {window.lines.map((line, lineIndex) => (
+                        <Text key={`tab-line-${window.index}-${lineIndex}`} style={styles.gridLine}>
+                          {line}
+                        </Text>
+                      ))}
+                    </View>
+                  </ScrollView>
                 </View>
-              </ScrollView>
+              ))}
 
               <Text style={styles.tuning}>{TAB_TUNING_LINE}</Text>
               <Text style={styles.honest}>{tabHonestyLine(layout)}</Text>
@@ -137,6 +170,13 @@ const baseStyles = StyleSheet.create({
     marginTop: 10,
   },
   caption: { color: '#4ecdc4', fontSize: 12, fontWeight: '700', marginTop: 14 },
+  /**
+   * v40 fix L: one printed BLOCK of the take. A card per window is what makes the
+   * whole song reachable by vertical scrolling, and the label above each block says
+   * exactly which notes the block holds.
+   */
+  windowBlock: { marginTop: 12 },
+  windowLabel: { color: '#9aa0b5', fontSize: 11, fontWeight: '700' },
   gridBox: {
     backgroundColor: '#0b0b1c',
     borderRadius: 10,

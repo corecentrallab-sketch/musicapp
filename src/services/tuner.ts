@@ -303,6 +303,23 @@ export function tunerVerdictLabel(reading: TunerReading | null | undefined): str
   return reading.verdict === 'flat' ? 'Flat — tune up' : 'Sharp — tune down';
 }
 
+/**
+ * THE CENTS READOUT (v40 fix D). "cents" is the correct musical unit (100 cents =
+ * one semitone) and is NOT renamed — but it is a unit of a MEASUREMENT, and before a
+ * note has been named there is no measurement to put it next to. The screen used to
+ * render a placeholder value and the unit together, so the idle tuner read
+ * "--cents": a unit hanging off nothing, which reads like a broken dial. The unit is
+ * therefore part of the VALUE, not of the row: with no note named there is no value
+ * and no unit, and the idle screen shows only the note's own placeholder.
+ */
+export function tunerCentsReadout(
+  reading: TunerReading | null | undefined,
+): { value: string; unit: string | null } {
+  if (!reading || reading.kind !== 'note') return { value: TUNER_NO_CENTS_PLACEHOLDER, unit: null };
+  const sign = reading.cents > 0 ? '+' : '';
+  return { value: `${sign}${reading.cents}`, unit: TUNER_CENTS_SUFFIX };
+}
+
 // ───────────────────────────── user-facing copy ─────────────────────────────
 // Every string a tuner surface shows is named here, so the screen and the gate
 // read the same words (the repo's convention — see services/humBridge.ts).
@@ -348,6 +365,8 @@ export const TUNER_INSTRUMENT_LINE =
   'Works for guitar, bass, piano, keyboard, strings and voice — one note at a time.';
 export const TUNER_CENTS_SUFFIX = 'cents';
 export const TUNER_HZ_SUFFIX = 'Hz';
+/** What the cents value shows before a note has been named (v40 fix D). */
+export const TUNER_NO_CENTS_PLACEHOLDER = '--';
 /** The row labels on the scale under the needle. */
 export const TUNER_FLAT_LABEL = 'flat';
 export const TUNER_SHARP_LABEL = 'sharp';

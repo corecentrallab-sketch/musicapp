@@ -68,6 +68,15 @@ export const COVER_SCAN_NO_OCR_LINE =
 export const COVER_SCAN_NO_TEXT_LINE =
   'We could not find a title in that photo — type it instead, or try again in better light.';
 /**
+ * The honest line when the reader DID return text but every line of it was a
+ * broken read (v40 fix A). Its own sentence: "we read something and it came back
+ * garbled" is a different thing to tell a user than "there was no title on that
+ * page", and the way out is the one that always exists — type the title, or
+ * retake the photo.
+ */
+export const COVER_SCAN_GARBLED_LINE =
+  'We could not make a title out of what we read on that photo — type the title you see, or retake it with the cover flat and well lit.';
+/**
  * The honest line when the reader itself failed (module unavailable on this
  * device, or the read threw). Its own state: a broken read is not the same claim
  * as "your page has no title on it", and it is never a fabricated query.
@@ -226,6 +235,8 @@ export interface CoverQuery {
   lines: string[];
   /** How many lines the query does NOT carry (noise, furniture, unused). */
   dropped: number;
+  /** How many of those were dropped as a BROKEN READ (v40 fix A). */
+  garbled: number;
   /** True when the text was longer than the field and had to be cut. */
   truncated: boolean;
   /** The line chosen as the title, or null when no line looked like one. */
@@ -233,6 +244,143 @@ export interface CoverQuery {
   /** The composer line appended after the title, or null. */
   composerLine: string | null;
 }
+
+// ─── THE GARBAGE GUARD (v40 fix A) ───────────────────────────────────────────
+//
+// THE OWNER'S CASE (on-device, v39-era; all of it verified against the app): the
+// cover of a stylised sleeve was photographed and the recogniser came back with
+// "thy,Be- I'm Freddie Mercurycause…" — a run of fragments. EVERY token in that
+// line survives the older noise filter (three letters or more, no ISBN, no URL, no
+// furniture word), so the line was picked as the title and became the QUERY the
+// search ran AND the `?query=` the licensed-retailer links carried: a nonsense
+// string, so the scan ended in no money path at all. Clean covers still read
+// exactly as before (the v39 fixtures are asserted unchanged below), so this was
+// never a regression — it is a guard that was missing.
+//
+// WHAT IS WRITTEN OFF, deterministically. A line is dropped when the READ is
+// visibly broken, never because it is merely unusual:
+//   • too few letters, or letters are under 40% of its non-space characters — it
+//     is punctuation/symbol debris rather than words;
+//   • the same non-word character twice in a row ("--", "..", "||") — the
+//     recogniser repeating itself;
+//   • a token with PUNCTUATION INSIDE it ("thy,Be-" — a comma glued between two
+//     words): the recogniser failed to put a space where two words meet. When that
+//     mark sits BETWEEN TWO LETTERS ("thy,Be", "Rha,psody") it is severe on its own
+//     — see `hasGluedInnerPunctuation` — because no printed word carries a comma,
+//     bracket, slash or star inside it;
+//   • a token with a lower-case run followed by a capital INSIDE it
+//     ("Mercurycause" = "Mercury" + "cause") — the same failure seen from the
+//     other side. A short allow-list of real name joins (Mc/Mac/O') is exempt;
+//   • a long consonant run with no vowel.
+// ONE such signal can still be a real printed line, so a line is only written off
+// when TWO of its tokens are affected, or when EVERY token is. The one exception is
+// the punctuation glued between two letters (v40 fix A, round 4): that is proof by
+// itself, and the owner's on-device read is exactly it — four tokens, one of them
+// "thy,Be-", which used to be searched as the query anyway. Anything dropped
+// here is dropped HARD: it can never reach the query, the search, or a retailer
+// link — and a page where nothing clean survives keeps its honest "no title" state
+// instead of promoting noise into the money path.
+
+/** Punctuation that must never sit INSIDE a single printed word. */
+const GARBLE_INNER_PUNCTUATION = /[,;:!?"()[\]{}<>|\\/*+=~^`]/;
+/** The same non-word character twice in a row — the recogniser repeating itself. */
+const REPEATED_NON_WORD = /([^\p{L}\p{N}\s])\1/u;
+/** Six consonants with no vowel is not a word in any language we print. */
+const LONG_CONSONANT_RUN = /[bcdfghjklmnpqrstvwxz]{6,}/i;
+/** Real name joins that legitimately carry a capital inside a printed word. */
+const NAME_JOIN_PREFIXES: readonly string[] = ['mc', 'mac', "o'"];
+/** Fewer letters than this, or a lower share than this, is debris. */
+const MIN_OCR_LETTERS = 2;
+const MIN_OCR_LETTER_SHARE = 0.4;
+/** How many tokens of a line must be affected before the line is written off. */
+const MIN_GARBLE_TOKENS = 2;
+
+/** The share of a line's non-space characters that are actually letters (0…1). */
+export function ocrLetterShare(line: string | null | undefined): number {
+  const dense = (typeof line === 'string' ? line : '').replace(/\s+/g, '');
+  if (dense.length === 0) return 0;
+  return dense.replace(/[^\p{L}]/gu, '').length / dense.length;
+}
+
+/** A token without its leading/trailing punctuation ("thy," → "thy"). */
+function coreOfToken(token: string): string {
+  return token.replace(/^[^\p{L}\p{N}]+/u, '').replace(/[^\p{L}\p{N}]+$/u, '');
+}
+
+/** True when a capital sits inside a printed word after a lower-case run. */
+function hasGluedWordCapital(core: string): boolean {
+  for (let at = 1; at < core.length; at += 1) {
+    const before = core[at - 1]!;
+    const here = core[at]!;
+    if (!/[a-z\u00df-\u00ff]/.test(before)) continue;
+    if (!/[A-Z\u00c0-\u00de]/.test(here)) continue;
+    const head = core.slice(0, at).toLowerCase();
+    if (NAME_JOIN_PREFIXES.some((prefix) => head.endsWith(prefix))) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Is this ONE token a broken-read fragment? Pure punctuation is not judged here —
+ * the line's own letter share owns that case — and neither is a trailing/leading
+ * mark (a period after "Op" is how it is printed).
+ */
+export function isGarbledOcrToken(token: string | null | undefined): boolean {
+  const core = coreOfToken((typeof token === 'string' ? token : '').trim());
+  if (core.length === 0) return false;
+  if (GARBLE_INNER_PUNCTUATION.test(core)) return true;
+  if (LONG_CONSONANT_RUN.test(core)) return true;
+  return hasGluedWordCapital(core);
+}
+
+/**
+ * THE SEVERE CASE (v40 fix A, round 4). A mark from GARBLE_INNER_PUNCTUATION glued
+ * BETWEEN two letters — "thy,Be", "Rha,psody" — is proof on its own: no printed word
+ * carries a comma, a bracket, a slash or a star inside it, so a line holding one is
+ * debris whatever else that line contains. This is the owner's on-device read, which
+ * held ONE such token among four ("thy,Be- I'm Freddie Mercurycause") and was still
+ * searched as the query; the count threshold below is meant for the softer signals
+ * (a repeated mark, a consonant run, a glued capital) and not for this one.
+ *
+ * The two sides must be LETTERS: "Op.27" is how a catalogue number is printed, and
+ * a dot between a letter and a digit is left alone.
+ */
+export function hasGluedInnerPunctuation(token: string | null | undefined): boolean {
+  const core = coreOfToken((typeof token === 'string' ? token : '').trim());
+  for (let at = 1; at < core.length - 1; at += 1) {
+    if (!GARBLE_INNER_PUNCTUATION.test(core[at]!)) continue;
+    if (/\p{L}/u.test(core[at - 1]!) && /\p{L}/u.test(core[at + 1]!)) return true;
+  }
+  return false;
+}
+
+/**
+ * THE GUARD ITSELF: is this line from a recogniser, or debris? True is the safe
+ * answer in one direction only — a line answering true is NEVER searched and never
+ * reaches a retailer link, so a false positive costs the user a typed word while a
+ * false negative costs the money path (see the section note above).
+ */
+export function isGarbageOcrLine(line: string | null | undefined): boolean {
+  const text = (typeof line === 'string' ? line : '').replace(/\s+/g, ' ').trim();
+  if (text.length === 0) return true;
+  if (text.replace(/[^\p{L}]/gu, '').length < MIN_OCR_LETTERS) return true;
+  if (ocrLetterShare(text) < MIN_OCR_LETTER_SHARE) return true;
+  if (REPEATED_NON_WORD.test(text)) return true;
+  const tokens = text.split(' ').filter((token) => token.length > 0);
+  // A line of nothing but one- and two-letter fragments is debris, not a title.
+  if (tokens.length >= 3 && tokens.every((token) => coreOfToken(token).length < 3)) {
+    return true;
+  }
+  // ONE severe token is enough on its own (v40 fix A, round 4): a mark glued between
+  // two letters cannot survive inside a real printed word, so the rare-signal
+  // threshold below does not apply to it. The owner's on-device read is this case.
+  if (tokens.some((token) => hasGluedInnerPunctuation(token))) return true;
+  const affected = tokens.filter((token) => isGarbledOcrToken(token)).length;
+  if (affected >= MIN_GARBLE_TOKENS) return true;
+  return affected > 0 && affected === tokens.length;
+}
+
 
 /**
  * Turn whatever text we have for a cover into a search query — THE IDENTIFIER THE
@@ -251,10 +399,15 @@ export interface CoverQuery {
 export function coverQueryFromText(text: string | null | undefined): CoverQuery {
   const raw = typeof text === 'string' ? text : '';
   let dropped = 0;
+  let garbled = 0;
   const candidates: { line: string; score: number; index: number }[] = [];
   raw.split(/\r?\n/).forEach((line, index) => {
     const cleaned = line.replace(/\s+/g, ' ').trim();
-    if (isNoiseLine(cleaned) || isCoverFurnitureLine(cleaned)) {
+    // THE GARBAGE GUARD (v40 fix A) is applied BEFORE anything is chosen, so a
+    // broken read can never become the title, the query, or a retailer link.
+    const broken = isGarbageOcrLine(cleaned);
+    if (broken) garbled += 1;
+    if (isNoiseLine(cleaned) || isCoverFurnitureLine(cleaned) || broken) {
       dropped += 1;
       return;
     }
@@ -265,6 +418,7 @@ export function coverQueryFromText(text: string | null | undefined): CoverQuery 
       query: '',
       lines: [],
       dropped,
+      garbled,
       truncated: false,
       titleLine: null,
       composerLine: null,
@@ -289,6 +443,7 @@ export function coverQueryFromText(text: string | null | undefined): CoverQuery 
     query,
     lines,
     dropped,
+    garbled,
     truncated,
     titleLine: title.line,
     composerLine: composer ? composer.line : null,
@@ -331,7 +486,17 @@ export function coverQueryFromScan(input: {
   }
   const result = coverQueryFromText(input.ocrText ?? '');
   if (!result.query) {
-    return { status: 'no-text', query: '', line: COVER_SCAN_NO_TEXT_LINE };
+    // v40 fix A: the read returned TEXT and every line of it was a broken read —
+    // say that, rather than the "no title on that photo" sentence, so the user
+    // knows the difference between a blank page and a garbled one. The status is
+    // the same (nothing to search) and the way out is the same: type, or retake.
+    const readSomething = (input.ocrText ?? '').trim().length > 0;
+    const garbledRead = readSomething && result.garbled > 0;
+    return {
+      status: 'no-text',
+      query: '',
+      line: garbledRead ? COVER_SCAN_GARBLED_LINE : COVER_SCAN_NO_TEXT_LINE,
+    };
   }
   return { status: 'ready', query: result.query, line: COVER_SCAN_CONFIRM_HINT };
 }

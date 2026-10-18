@@ -45,9 +45,10 @@ import {
   View,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Video } from 'expo-av';
+import { Video, ResizeMode } from 'expo-av';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
-import { restorePlaybackAudioMode } from '../services/audioSession';
+import { ensurePlaybackAudioMode, restorePlaybackAudioMode } from '../services/audioSession';
+import { reportAudioFailure, usableDetail } from '../services/audioDiagnostics';
 import { deriveCaptureTakeFromRecording } from '../services/captureMidiExport';
 import { exportCaptureMidiFromTake } from '../services/captureMidiExport';
 import {
@@ -82,10 +83,10 @@ import {
   practiceVideoTakeLine,
   practiceVideoIsManuallyAligned,
   practiceVideoIsUsable,
+  PRACTICE_VIDEO_KEEPING_LINE,
   type PracticeVideoRef,
 } from '../services/practiceVideoRef';
 import {
-  PRACTICE_VIDEO_KEEPING_LINE,
   PRACTICE_VIDEO_NOT_KEPT_LINE,
   attachPracticeVideo,
   deletePracticeVideo,
@@ -156,6 +157,36 @@ interface PracticeTakeRow {
   audioUri: string | null;
 }
 
+/**
+ * ── THE VIDEO'S OWN TRANSPORT (v40 fix J, owner 10-14) ──────────────────────
+ *
+ * THE OWNER'S FINDING: "Watch your Practice video won't play in either viewing
+ * screen + no audio + slow processing."
+ *
+ * WHAT THE CODE SHOWED. The only place the screen ever re-applied the PLAYBACK
+ * audio session was the player's `onReadyForDisplay` — and this screen is entered
+ * straight from (or straight after) a filming session, where the app's recorder
+ * left it in its RECORDING session. expo-av's Android player takes its volume
+ * from audio focus, so under a recording session a play reports success at
+ * volume 0: "it plays, with no sound". `onReadyForDisplay` only fires once a
+ * frame is rendered, which is NOT guaranteed before the user presses play (and
+ * never fires at all when the file cannot be decoded) — so the one restore this
+ * screen had could simply never run. services/audioSession.ts documents the same
+ * class of failure for every other surface in the app.
+ *
+ * WHAT THIS ADDS. The session is applied as soon as the screen is in its playback
+ * phase (before the player mounts), our own Play/Pause control re-applies it on
+ * every press, and the player's own error is rendered instead of leaving the user
+ * a black rectangle with a control that does nothing.
+ */
+export const VIDEO_PLAY_CTA = '▶ Play the video';
+export const VIDEO_PAUSE_CTA = '⏸ Pause';
+export const VIDEO_PREPARING_LABEL = 'Preparing…';
+export const VIDEO_PLAY_HINT =
+  'Sound comes from the speaker. The notes below follow this video’s own clock — nudge them if they sit early or late.';
+export const VIDEO_PLAYBACK_FAILED_LINE =
+  'This video would not play on this device — the file could not be opened. Your take, its notation and its exports are untouched.';
+
 export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   rowId: requestedRowId = null,
   onClose,
@@ -205,6 +236,76 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   const videoPromiseRef = useRef<Promise<void> | null>(null);
   const armedRef = useRef(false);
   const elapsedRef = useRef(0);
+
+  /**
+   * THE VIDEO PLAYER (v40 fix J). `videoPlaying` mirrors the player's OWN status
+   * (so the button can never claim a state the player is not in), `videoBusy` is
+   * the honest "Preparing…" while the session is applied and the file loads, and
+   * `videoLine` is the player's failure sentence on the surface.
+   */
+  const videoRef = useRef<Video>(null);
+  const [videoPlaying, setVideoPlaying] = useState(false);
+  const [videoBusy, setVideoBusy] = useState(false);
+  const [videoLine, setVideoLine] = useState<string | null>(null);
+
+  /**
+   * THE PLAYBACK SESSION, APPLIED BEFORE THE PLAYER MOUNTS (v40 fix J — see the
+   * note over VIDEO_PLAY_CTA above). The recorder put the app in its RECORDING
+   * session; restoring it here means the video is never loaded under a session
+   * that silences it. `row?.ref?.uri` is in the deps so a row that arrives late
+   * (History reads it asynchronously) still gets the session applied.
+   */
+  useEffect(() => {
+    if (phase !== 'playback') return undefined;
+    void restorePlaybackAudioMode();
+    return undefined;
+  }, [phase, row?.ref?.uri]);
+
+  /**
+   * OUR OWN PLAY/PAUSE. Re-applies the playback session on EVERY press (the
+   * recorder may have run since the last one), loads the file when the player is
+   * not loaded yet, and puts every failure into `videoLine` plus the app-wide
+   * diagnostics chip. Never throws: the button always leaves a sentence.
+   */
+  const toggleVideo = useCallback(async () => {
+    const player = videoRef.current;
+    if (!player || videoBusy) return;
+    setVideoBusy(true);
+    setVideoLine(null);
+    try {
+      await ensurePlaybackAudioMode();
+      const status = await player.getStatusAsync();
+      const loaded = (status as { isLoaded?: boolean }).isLoaded === true;
+      if (videoPlaying && loaded) {
+        await player.pauseAsync();
+        return;
+      }
+      if (!loaded) {
+        const uri = row?.ref?.uri ?? null;
+        if (!uri) {
+          setVideoLine(VIDEO_PLAYBACK_FAILED_LINE);
+          return;
+        }
+        await player.loadAsync({ uri }, { shouldPlay: true, volume: 1 });
+        return;
+      }
+      const at = (status as { positionMillis?: number; durationMillis?: number });
+      const position = Number.isFinite(at.positionMillis) ? Number(at.positionMillis) : 0;
+      const duration = Number.isFinite(at.durationMillis) ? Number(at.durationMillis) : 0;
+      // A finished video starts again rather than appearing to do nothing.
+      if (duration > 0 && position >= duration - 250) await player.setPositionAsync(0);
+      await player.playAsync();
+    } catch (err) {
+      setVideoLine(VIDEO_PLAYBACK_FAILED_LINE);
+      reportAudioFailure({
+        source: 'take-playback',
+        reason: 'clip-load',
+        detail: usableDetail(err),
+      });
+    } finally {
+      setVideoBusy(false);
+    }
+  }, [row, videoBusy, videoPlaying]);
 
   // ── PLAYBACK: read the row we were opened for ────────────────────────────────
   useEffect(() => {
@@ -558,20 +659,60 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         <ScrollView contentContainerStyle={styles.body}>
           <Text style={styles.title}>Watch your practice</Text>
           {ref && practiceVideoIsUsable(ref) ? (
-            <Video
-              style={styles.video}
-              source={{ uri: ref.uri }}
-              useNativeControls
-              resizeMode="contain"
-              progressUpdateIntervalMillis={200}
-              onPlaybackStatusUpdate={(status) => {
-                const position = (status as { positionMillis?: number }).positionMillis;
-                if (typeof position === 'number' && Number.isFinite(position)) setClockMs(position);
-              }}
-              onReadyForDisplay={() => {
-                void restorePlaybackAudioMode();
-              }}
-            />
+            <>
+              <Video
+                ref={videoRef}
+                style={styles.video}
+                source={{ uri: ref.uri }}
+                useNativeControls
+                volume={1}
+                isMuted={false}
+                resizeMode={ResizeMode.CONTAIN}
+                progressUpdateIntervalMillis={200}
+                onError={(message) => {
+                  // A video that cannot be decoded SAYS SO (v40 fix J): never a
+                  // black rectangle with a control that does nothing.
+                  setVideoLine(VIDEO_PLAYBACK_FAILED_LINE);
+                  reportAudioFailure({
+                    source: 'take-playback',
+                    reason: 'clip-load',
+                    detail: usableDetail(message),
+                  });
+                }}
+                onPlaybackStatusUpdate={(status) => {
+                  const position = (status as { positionMillis?: number }).positionMillis;
+                  if (typeof position === 'number' && Number.isFinite(position)) setClockMs(position);
+                  // The button mirrors the PLAYER's own state, never our hope.
+                  const playing = (status as { isPlaying?: boolean }).isPlaying === true;
+                  setVideoPlaying((current) => (current === playing ? current : playing));
+                }}
+                onReadyForDisplay={() => {
+                  void restorePlaybackAudioMode();
+                }}
+              />
+              {/* OUR OWN TRANSPORT (v40 fix J): the session is re-applied on every
+                  press and the outcome is a sentence, not silence. The native
+                  controls above still scrub. */}
+              <View style={styles.syncRow}>
+                <TouchableOpacity
+                  style={styles.syncBtn}
+                  onPress={() => void toggleVideo()}
+                  disabled={videoBusy}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={videoPlaying ? VIDEO_PAUSE_CTA : VIDEO_PLAY_CTA}
+                >
+                  <Text style={styles.syncBtnText}>
+                    {videoBusy ? VIDEO_PREPARING_LABEL : videoPlaying ? VIDEO_PAUSE_CTA : VIDEO_PLAY_CTA}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {videoLine ? (
+                <Text style={styles.honest}>{videoLine}</Text>
+              ) : (
+                <Text style={styles.meta}>{VIDEO_PLAY_HINT}</Text>
+              )}
+            </>
           ) : (
             <View style={styles.missingCard}>
               <Text style={styles.missingText}>{deletedLine ?? VIDEO_MISSING_LINE}</Text>

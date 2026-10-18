@@ -20,6 +20,13 @@
  * the write/share seam — exactly the rule item 6 applied to the .mid — so a file
  * that does not parse is never handed to the user.
  *
+ * THE READ-BACK GATE (v40 fix K, owner 10-14: the shared PDF "arrived in Gmail but
+ * won't open"). The bytes were proven sound off device, so the remaining seam is
+ * the device write itself: every PDF write is now followed by a READ BACK off disk
+ * (`readTakeFileBase64` → `takePdfReadBackProblem`) that must still find the PDF
+ * header at byte 0, the same byte length and the same bytes. A mismatch returns the
+ * honest `TAKE_PDF_READBACK_FAILED_MESSAGE` and the share sheet is never opened.
+ *
  * NOT tier1-compiled on purpose (it imports expo-file-system / expo-sharing /
  * react-native): the logic that must be testable lives in takeNotationPdf.ts,
  * guitarTab.ts and takeSendTo.ts. Same convention as captureMidiExport.ts.
@@ -36,6 +43,7 @@ import {
   buildTakeNotationPdf,
   exportedTakePdfMessage,
   takePdfFileName,
+  takePdfReadBackProblem,
   validateTakePdf,
   type TakePdfChord,
 } from './takeNotationPdf';
@@ -71,6 +79,8 @@ export interface TakeSendDeps {
   shareText?: (title: string, text: string) => Promise<SendToStatus | void>;
   /** Whether this device has a share sheet at all (default: expo-sharing). */
   shareSheetAvailable?: () => Promise<boolean>;
+  /** Read a written file back as base64 (default: expo-file-system). */
+  readFile?: (fileUri: string) => Promise<string | null>;
 }
 
 export interface TakeSendOptions {
@@ -91,6 +101,46 @@ export async function writeTakeFile(name: string, bytes: Uint8Array): Promise<st
     encoding: FileSystem.EncodingType.Base64,
   });
   return uri;
+}
+
+/**
+ * READ THE WRITTEN FILE BACK OFF THE DEVICE, as base64 (v40 fix K). This is the
+ * inverse of the write above and nothing more: it reports what is on disk, and a
+ * read that throws reports nothing rather than pretending the file is fine.
+ */
+export async function readTakeFileBase64(fileUri: string): Promise<string | null> {
+  try {
+    return await FileSystem.readAsStringAsync(fileUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * THE WRITE IS PROVEN ON THE DEVICE BEFORE ANYTHING IS SHARED (v40 fix K).
+ *
+ * The owner's take "arrived in Gmail but won't open", and the bytes this app builds
+ * were proven sound off device — so the file is read back off disk here and must
+ * still be the file we wrote (`takePdfReadBackProblem`: PDF header at byte 0, same
+ * byte length, same bytes). `null` = verified; anything else is the user-facing
+ * sentence, and the caller refuses to share. Nothing is retried, repaired or
+ * rewritten: the user is told, in plain words, to try again.
+ */
+async function verifyWrittenTakePdf(
+  fileUri: string,
+  bytes: Uint8Array,
+  deps: TakeSendDeps,
+): Promise<string | null> {
+  const read = deps.readFile ?? readTakeFileBase64;
+  let raw: string | Uint8Array | null = null;
+  try {
+    raw = await read(fileUri);
+  } catch {
+    raw = null;
+  }
+  return takePdfReadBackProblem(raw, bytes);
 }
 
 /** Hand the PDF to the OS share sheet (this is the ONLY way it leaves the app). */
@@ -160,6 +210,14 @@ export async function exportTakePdfFromTake(
     const write = deps.writeFile ?? writeTakeFile;
     const share = deps.shareFile ?? shareTakePdf;
     const fileUri = await write(name, bytes);
+    /**
+     * THE READ-BACK GATE (v40 fix K) — the file on disk is proven to still be the
+     * PDF we validated, or the share sheet never sees it.
+     */
+    const problem = await verifyWrittenTakePdf(fileUri, bytes, deps);
+    if (problem) {
+      return { status: 'failed', kind: 'pdf', message: problem };
+    }
     const status = (await share(fileUri, opts.title ?? name)) ?? 'shared';
     return {
       status: status === 'dismissed' ? 'dismissed' : 'shared',
@@ -217,6 +275,15 @@ export async function sendTakeToEmail(
       const write = deps.writeFile ?? writeTakeFile;
       const share = deps.shareFile ?? shareTakePdf;
       const fileUri = await write(name, bytes);
+      /**
+       * THE SAME READ-BACK GATE ON THE EMAIL PATH (v40 fix K): an unopenable
+       * attachment is the bug the owner reported, so the file is proven on disk
+       * before the mail app is handed it.
+       */
+      const problem = await verifyWrittenTakePdf(fileUri, bytes, deps);
+      if (problem) {
+        return { status: 'failed', kind: 'email', message: problem };
+      }
       const status = (await share(fileUri, opts.title ?? name)) ?? 'shared';
       return {
         status: status === 'dismissed' ? 'dismissed' : 'shared',

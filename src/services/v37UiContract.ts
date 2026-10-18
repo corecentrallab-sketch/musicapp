@@ -605,12 +605,21 @@ export function tabsNeverReplaceThePianoNotation(editorSource: string): boolean 
  * (`tabHonestyLine`) and the note readout — and it must not claim officialness in
  * its own words, re-type the tuning instead of reading the model, or talk to a
  * network (it is a view of a take that is already on the device).
+ *
+ * v40 fix L (owner 10-14: "Tabs … does not show the whole song played"): the grid
+ * is no longer ONE strip per string — the take is cut into fixed-width WINDOWS, one
+ * printed block per window, so the whole song is reachable by vertical scrolling.
+ * The strip form still exists in the model (`tabLines`) and the blocks are built by
+ * the SAME line builder (`tabLinesFor`), so this guard now accepts either renderer
+ * and still refuses a page that draws no grid at all.
  */
 export function takeTabsPageRendersTheTakeHonestly(tabsSource: string): boolean {
   const src = maskComments(tabsSource);
   if (src.length < 1500) return false;
   if (src.indexOf('buildGuitarTab(') < 0) return false;
-  if (src.indexOf('tabLines(') < 0) return false;
+  // The grid: the v37 single strip, or the v40 whole-take blocks (same builder).
+  const drawsTheGrid = src.indexOf('tabLines(') >= 0 || src.indexOf('tabWindows(') >= 0;
+  if (!drawsTheGrid) return false;
   if (src.indexOf('TAB_HONEST_LINE') < 0) return false;
   if (src.indexOf('TAB_EMPTY_LINE') < 0) return false;
   if (src.indexOf('tabHonestyLine(') < 0) return false;

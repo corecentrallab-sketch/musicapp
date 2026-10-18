@@ -12,10 +12,10 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useThemedStyles } from '../services/themeStore';
 import {
   TUNER_CENTS_FULL_SCALE,
-  TUNER_CENTS_SUFFIX,
   TUNER_FLAT_LABEL,
   TUNER_HZ_SUFFIX,
   TUNER_SHARP_LABEL,
+  tunerCentsReadout,
   tunerVerdictLabel,
   type TunerReading,
 } from '../services/tuner';
@@ -37,9 +37,15 @@ export const TunerMeter: React.FC<TunerMeterProps> = ({ reading, busy }) => {
   const note = reading && reading.kind === 'note' ? reading : null;
   const needle = note ? note.needlePercent : 50;
   const accent = note ? (note.inTune ? IN_TUNE : '#e94560') : MUTED;
-  const centsText = note
-    ? `${note.cents > 0 ? '+' : ''}${note.cents}`
-    : '--';
+  /**
+   * v40 fix D — THE UNIT BELONGS TO THE VALUE. `cents` is the correct unit (100
+   * cents to the semitone) and is still spelled exactly that way; what used to be
+   * wrong is that it was rendered on its own row, so the idle tuner read
+   * "--cents". With no note named there is nothing to measure, so there is no
+   * unit either: the row shows the placeholder alone (`unit === null`), and the
+   * unit appears the moment a note is named.
+   */
+  const readout = tunerCentsReadout(reading);
 
   return (
     <View style={styles.wrap}>
@@ -57,8 +63,8 @@ export const TunerMeter: React.FC<TunerMeterProps> = ({ reading, busy }) => {
       </Text>
 
       <View style={styles.readoutRow}>
-        <Text style={[styles.cents, { color: accent }]}>{centsText}</Text>
-        <Text style={styles.centsUnit}>{TUNER_CENTS_SUFFIX}</Text>
+        <Text style={[styles.cents, { color: accent }]}>{readout.value}</Text>
+        {readout.unit ? <Text style={styles.centsUnit}>{readout.unit}</Text> : null}
         {note ? (
           <Text style={styles.hz}>
             {note.frequencyHz} {TUNER_HZ_SUFFIX}

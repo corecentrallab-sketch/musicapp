@@ -152,10 +152,19 @@ const baseStyles = StyleSheet.create({
   section: { marginTop: 14, gap: 6 },
   rawNote: { color: '#8a8ab0', fontSize: 12, lineHeight: 17 },
   hint: { color: '#a0a0b8', fontSize: 12, lineHeight: 17 },
-  line: { color: '#cfe4ff', fontSize: 13, lineHeight: 19 },
+  /* v40 fix B — THE "SEARCH FOR" FIELD'S CONTRAST. Every colour on this card is a
+     PALETTE literal now, on purpose: the field used to sit on `#0f1630`, which the
+     light palette does not know, so in light mode the field kept its dark fill
+     while its own text colour was re-mapped to the dark ink token — the owner's
+     "dark-on-dark" reading. `#16213e` is the palette's `surface` (dark navy in dark
+     mode, paper-white in light) and `#eaeaff` its `text`, so the field is legible in
+     BOTH modes by construction rather than by luck. The same rule removed the two
+     stray light-blue literals (`#cfe4ff`) that would have gone almost invisible on
+     a light card. */
+  line: { color: '#eaeaff', fontSize: 13, lineHeight: 19 },
   fieldLabel: { color: '#eaeaff', fontSize: 13, fontWeight: '700', marginTop: 6 },
   field: {
-    backgroundColor: '#0f1630',
+    backgroundColor: '#16213e',
     borderColor: '#0f3460',
     borderWidth: 1,
     borderRadius: 8,
@@ -166,7 +175,7 @@ const baseStyles = StyleSheet.create({
   },
   readingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
   findBtn: {
-    backgroundColor: '#1b2a4a',
+    backgroundColor: '#16213e',
     borderColor: '#0f3460',
     borderWidth: 1,
     borderRadius: 10,
@@ -176,7 +185,7 @@ const baseStyles = StyleSheet.create({
     marginTop: 4,
     paddingHorizontal: 16,
   },
-  findBtnText: { color: '#cfe4ff', fontSize: 14, fontWeight: '700' },
+  findBtnText: { color: '#eaeaff', fontSize: 14, fontWeight: '700' },
   searchBtn: {
     backgroundColor: '#e94560',
     borderRadius: 10,
