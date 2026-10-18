@@ -127,6 +127,13 @@ import {
   practiceVideoIsUsable,
 } from '../services/practiceVideoRef';
 import { deletePracticeVideo } from '../services/practiceVideoStore';
+// THE SHARE ACTION ON A TAKE (v40 fix G, owner 10-14): the share surface existed
+// and worked, but a History row had no button to reach it. The CTA copy and the
+// "is there anything to send" decision are the pure model's
+// (services/takeSendTo), so the button and the sheet's own destinations can never
+// disagree about whether this take can be sent at all.
+import { SHARE_TAKE_CTA, shareTakeOffered } from '../services/takeSendTo';
+import { TakeSendToSheet } from '../components/TakeSendToSheet';
 import type { DailyChallengePiece, SavedPiece } from '../types';
 
 /** Zeroed streak (engine-derived) used until the first read resolves. */
@@ -206,6 +213,13 @@ export const HistoryScreen: React.FC = () => {
    * take is ever audible and the button that says ⏸ Stop is the row playing.
    */
   const takePlayer = useTakeClipPlayer();
+  /**
+   * THE SHARE SURFACE FOR A SAVED TAKE (v40 fix G, owner 10-14). One row at a
+   * time owns it — the PDF, the .mid and the user's own email all leave from
+   * inside it, through the system share sheet — so the state is the ROW, not a
+   * boolean: the sheet is always handed the take it was opened for.
+   */
+  const [sendTake, setSendTake] = useState<SavedPiece | null>(null);
   /**
    * The row's purchase action opens the licensed retailer in the app's ONE
    * in-app shell, mounted at THIS screen's root (bundle C, owner 10-02), so the
@@ -643,6 +657,26 @@ export const HistoryScreen: React.FC = () => {
                   {exportingId === item.id ? MIDI_EXPORT_BUSY_LABEL : MIDI_EXPORT_LABEL}
                 </Text>
               </TouchableOpacity>
+              {/* SHARE THIS TAKE (v40 fix G, owner 10-14). The send-to surface,
+                  the PDF builder and the MIDI export were all live, but the row
+                  offered no way in — so the feature may as well not have existed.
+                  This button opens the SAME sheet the editor's "Send to…" opens,
+                  gated by the model's one rule (`shareTakeOffered`): a take with
+                  no notes is offered nothing, because every destination in the
+                  sheet could only fail. It is opened OUT of the press event
+                  (requestAnimationFrame) for the same reason the editor is: the
+                  sheet mounts a full-screen Modal inside the row's own touchable. */}
+              {shareTakeOffered(item.capture) ? (
+                <TouchableOpacity
+                  style={styles.sendTakeBtn}
+                  onPress={() => requestAnimationFrame(() => setSendTake(item))}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${SHARE_TAKE_CTA} for ${item.title}`}
+                >
+                  <Text style={styles.sendTakeBtnText}>{SHARE_TAKE_CTA}</Text>
+                </TouchableOpacity>
+              ) : null}
               {exportNote?.id === item.id && (
                 <Text style={styles.midiNote}>{exportNote.text}</Text>
               )}
@@ -945,6 +979,21 @@ export const HistoryScreen: React.FC = () => {
         />
       ) : null}
 
+      {/* THE SHARE SURFACE FOR A SAVED TAKE (v40 fix G), mounted at the screen's
+          root beside the editor. It is handed THIS page's own MIDI export
+          (`handleExportTake`) rather than a second copy of it, so the row's
+          export button and the sheet's MIDI entry are one path; its own outcome
+          sentence is what the sheet renders under that entry. */}
+      <TakeSendToSheet
+        visible={!!sendTake}
+        take={sendTake?.capture ?? null}
+        title={sendTake?.title ?? null}
+        onSendMidi={() => (sendTake ? handleExportTake(sendTake) : undefined)}
+        midiBusy={!!sendTake && exportingId === sendTake.id}
+        midiLine={sendTake && exportNote?.id === sendTake.id ? exportNote.text : null}
+        onClose={() => setSendTake(null)}
+      />
+
       {/* THE PRACTICE VIDEO is NOT rendered here any more (v39 fix 3): the watch
           surface is this tab's body while a row is open (see the early return
           above), so it can never be laid out below the list. */}
@@ -1192,6 +1241,26 @@ const baseStyles = StyleSheet.create({
     color: '#a0a0b8',
     lineHeight: 17,
     marginTop: 6,
+  },
+  /**
+   * v40 fix G: the row's SHARE action — the same shape as the MIDI export beside
+   * it (it is the same kind of "take off the device" action), with the accent
+   * colour reserved for the label so the row still reads in one glance.
+   */
+  sendTakeBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#0f3460',
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    marginTop: 8,
+  },
+  sendTakeBtnText: {
+    color: '#4ecdc4',
+    fontSize: 13,
+    fontWeight: '700',
   },
   /**
    * The melody row's "correct the take" action (v33 §D) — the editor's second

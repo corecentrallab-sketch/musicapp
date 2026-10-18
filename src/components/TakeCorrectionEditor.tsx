@@ -49,6 +49,8 @@ import {
 } from 'react-native';
 import { useHardwareBack } from '../hooks/useHardwareBack';
 import { useNotePreview } from '../hooks/useNotePreview';
+import { useTakeClipPlayer } from '../hooks/useTakeClipPlayer';
+import { takePlaybackAvailable } from '../services/takePlayback';
 import {
   CHORD_TAG_SUGGESTED,
   CHORD_TAG_YOURS,
@@ -143,6 +145,7 @@ import {
 import { TAB_LABEL } from '../services/guitarTab';
 import { SEND_TO_CTA } from '../services/takeSendTo';
 import { TakeTabsView } from './TakeTabsView';
+import { TakeListenRow } from './TakeListenRow';
 import { TakeSendToSheet } from './TakeSendToSheet';
 import type { TakePdfChord } from '../services/takeNotationPdf';
 import { TAKE_STAFF_CLEANED_INK, TAKE_STAFF_PAPER } from './TakeStaffCard';
@@ -277,6 +280,73 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   const loadedIdentityRef = useRef<string | null>(null);
   const wasVisibleRef = useRef(false);
   const preview = useNotePreview(state.notes, { enabled: visible });
+
+  /**
+   * ─────────── BOTH VERSIONS OF THIS TAKE, ON THIS PAGE (v40 fix H) ───────────
+   *
+   * THE OWNER'S ASK, verbatim (10-14): "From here [Correct your Take] there needs
+   * to be a Play your Take button to listen to what was recorded. There is not one.
+   * There is also a 'Play this Version' button needed for the quantized version.
+   * Both versions need to be heard."
+   *
+   * He was right: the page was handed the recording's own uri (the take-end audio
+   * the capture window persisted) and NEVER played it. The corrected take could
+   * only be heard through the docked Hum-Along preview (a "▶ Play" that belongs to
+   * the preview clock). So the page now mounts ONE listen row with both controls:
+   *
+   *   • PLAY YOUR TAKE — the recording itself, through the SAME player History
+   *     uses (`useTakeClipPlayer`, keyed by this row's id, so a second press stops
+   *     it). What the user hears is exactly what they recorded.
+   *   • PLAY THIS VERSION — the corrected/quantized take, through this page's own
+   *     Hum-Along engine (`preview`, the tone bank). Its caption says on the
+   *     surface that it is a re-synthesis, never a recording.
+   *
+   * ONE THING IS AUDIBLE AT A TIME: starting either control stops the other, which
+   * is why the two handlers below pause/stop their counterpart first. The row is
+   * rendered near the TOP of the page, OUTSIDE the editable/original branch, so it
+   * exists in both views; the tab page is handed the very same mounted row.
+   */
+  const clip = useTakeClipPlayer();
+  const { toggle: toggleClip, stop: stopClip, playingId: clipPlayingId, busyId: clipBusyId, note: clipNote } = clip;
+  const editorTakeId = rowId ?? 'editor-take';
+  const listenTakeAvailable = takePlaybackAvailable({
+    personalMelody: { audioUri: audioUri ?? null },
+  });
+  const toggleYourTake = useCallback(() => {
+    // Starting the recording silences the synthesized preview (one source at a time).
+    if (clipPlayingId !== editorTakeId) preview.pause();
+    toggleClip({
+      id: editorTakeId,
+      personalMelody: { audioUri: audioUri ?? null },
+    });
+  }, [audioUri, clipPlayingId, editorTakeId, preview, toggleClip]);
+  const toggleThisVersion = useCallback(() => {
+    // …and starting the corrected take silences the recording.
+    if (!preview.playing) stopClip();
+    preview.toggle();
+  }, [preview, stopClip]);
+  /**
+   * The version the listen row offers is the take this page currently holds — the
+   * SAME note list the Hum-Along preview plays (`useNotePreview(state.notes)`), so
+   * "Play this Version" can never claim notes the preview does not have.
+   */
+  const listenVersionAvailable = useMemo(() => state.notes.length > 0, [state.notes]);
+  const listenRow = (
+    <TakeListenRow
+      takeAvailable={listenTakeAvailable}
+      takePlaying={clipPlayingId === editorTakeId}
+      takeBusy={clipBusyId === editorTakeId}
+      onToggleTake={toggleYourTake}
+      versionAvailable={listenVersionAvailable}
+      versionPlaying={preview.playing}
+      onToggleVersion={toggleThisVersion}
+      note={clipNote && clipNote.id === editorTakeId ? clipNote.text : null}
+    />
+  );
+  /** A closed editor is never left playing the recording (no background audio). */
+  useEffect(() => {
+    if (!visible) stopClip();
+  }, [stopClip, visible]);
 
   /**
    * THE MODEL RELOADS FROM THE TAKE THE HOST HOLDS (v34 fix 2).
@@ -670,6 +740,14 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
               </Text>
             )}
           </View>
+
+          {/* 0b. LISTEN TO BOTH VERSIONS (v40 fix H) — the owner's verbatim ask,
+              placed HERE, above the staff and OUTSIDE the editable/original branch
+              below, so it is on the page in BOTH views (the view switch directly
+              above can hide the lane, the chords and the batch fixes; it must not
+              be able to hide the two playback controls). The tab page is handed
+              this very row, so the take can be heard from there too (v40 fix L). */}
+          {listenRow}
 
           {editable ? (
             <>
@@ -1185,6 +1263,7 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
     <TakeTabsView
       visible={visible && tabsOpen}
       take={derived.take}
+      listenRow={listenRow}
       onClose={() => setTabsOpen(false)}
     />
     <TakeSendToSheet

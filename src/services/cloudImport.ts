@@ -77,6 +77,39 @@ export const CLOUD_IMPORT_EMPTY_LINE = 'Nothing was picked — your Library is u
 export const CLOUD_IMPORT_FAILED_LINE =
   'Those files could not be imported. Your Library is unchanged — please try again.';
 
+/**
+ * WHAT THIS APP CAN ACTUALLY OPEN (v40 fix F, owner 10-14: a `.jpg` was refused
+ * and the card said nothing at all about why).
+ *
+ * The list is the Library's own `SUPPORTED_EXTENSIONS`
+ * (services/libraryStore.ts: pdf, musicxml, mxl, xml, mid, midi, gp3, gp4, gp5,
+ * gpx, gp, abc) written out in the words a user reads. It is spelled out here so
+ * a refusal can carry it: "not a score this app can open" is only honest if the
+ * surface also says which scores it CAN open. No promise of anything beyond that
+ * list — no images, no audio, no video.
+ */
+export const CLOUD_IMPORT_SUPPORTED_TYPES_LINE =
+  'NoteSnap opens scores: PDF, MusicXML (.musicxml, .mxl, .xml), MIDI (.mid, .midi), Guitar Pro (.gp, .gp3, .gp4, .gp5, .gpx) and ABC. Photos and other file types cannot be imported.';
+
+/** The longest reason we will echo from the file layer (a message, not a stack). */
+export const CLOUD_IMPORT_REASON_MAX_CHARS = 180;
+
+/**
+ * THE REASON, IN ONE LINE (v40 fix F). The Library's own refusal message
+ * ("Unsupported file type. Supported formats: …", "… is not a supported score
+ * format (… or an image).") is the truth about the file the user picked, so it is
+ * carried to the card instead of being dropped. It is trimmed to one line and
+ * bounded, and an empty/absent reason yields nothing rather than an empty bracket.
+ */
+export function cloudImportReasonLine(firstError?: string | null): string | null {
+  if (typeof firstError !== 'string') return null;
+  const oneLine = firstError.replace(/\s+/g, ' ').trim();
+  if (oneLine.length === 0) return null;
+  return oneLine.length > CLOUD_IMPORT_REASON_MAX_CHARS
+    ? `${oneLine.slice(0, CLOUD_IMPORT_REASON_MAX_CHARS - 1)}…`
+    : oneLine;
+}
+
 /** What one picker run produced (the device half fills this in). */
 export interface CloudImportOutcome {
   /** How many files landed in the Library. */
@@ -97,17 +130,41 @@ export function cloudImportOutcomeLine(outcome: CloudImportOutcome): string {
   const skipped = Math.max(0, Math.round(outcome.skipped || 0));
   if (outcome.cancelled) return CLOUD_IMPORT_EMPTY_LINE;
   const imported = Math.max(0, Math.round(outcome.imported || 0));
+  const reason = cloudImportReasonLine(outcome.firstError);
   if (imported === 0 && skipped === 0) {
-    return outcome.firstError ? CLOUD_IMPORT_FAILED_LINE : CLOUD_IMPORT_EMPTY_LINE;
+    /**
+     * NOTHING LANDED AND NOTHING WAS REFUSED (v40 fix F). The old line said
+     * "your Library is unchanged" and dropped `firstError`, which is the only
+     * place the real cause (an unreadable file, a storage error) was written.
+     */
+    return reason ? `${CLOUD_IMPORT_FAILED_LINE} ${reason}` : CLOUD_IMPORT_EMPTY_LINE;
+  }
+  /**
+   * THE ZERO-IMPORT BRANCH (v40 fix F). It used to fall through to the "N files
+   * are in your Library" wording with N = 0 — "0 files are in your Library" —
+   * and never said why. Every refusal now names the reason AND what this app can
+   * open, so a `.jpg` pick is explained instead of silently doing nothing.
+   */
+  if (imported === 0) {
+    const refused =
+      skipped === 1
+        ? 'That file was not a score this app can open, so it was left out.'
+        : `${skipped} files were not scores this app can open, so they were left out.`;
+    return [refused, CLOUD_IMPORT_SUPPORTED_TYPES_LINE, reason]
+      .filter((part): part is string => typeof part === 'string' && part.length > 0)
+      .join(' ');
   }
   const head =
     imported === 1
       ? '1 file is in your Library — it opens offline.'
       : `${imported} files are in your Library — they open offline.`;
   if (skipped === 0) return head;
-  return `${head} ${skipped} file${skipped === 1 ? ' was' : 's were'} not a score this app can open, so ${
+  const refused = `${skipped} file${skipped === 1 ? ' was' : 's were'} not a score this app can open, so ${
     skipped === 1 ? 'it was' : 'they were'
   } left out.`;
+  return [head, refused, CLOUD_IMPORT_SUPPORTED_TYPES_LINE, reason]
+    .filter((part): part is string => typeof part === 'string' && part.length > 0)
+    .join(' ');
 }
 
 // ────────── THE HONESTY GUARDS (the copy cannot drift back) ──────────
@@ -146,6 +203,9 @@ export function cloudCardCopy(provider: 'dropbox' | 'gdrive'): string[] {
     CLOUD_MERGE_SCOPE_NOTE,
     CLOUD_IMPORT_EMPTY_LINE,
     CLOUD_IMPORT_FAILED_LINE,
+    // v40 fix F: the refusal's own explanation is copy this module owns, so the
+    // honesty sweep judges it too.
+    CLOUD_IMPORT_SUPPORTED_TYPES_LINE,
   ];
 }
 

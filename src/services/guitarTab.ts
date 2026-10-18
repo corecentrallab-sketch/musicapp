@@ -319,17 +319,8 @@ export function tabEmptyCell(): string {
  * a second legend.
  */
 export function tabLines(layout: TabLayout): string[] {
-  const lines: string[] = [];
-  for (let string = 1; string <= TAB_STRING_COUNT; string += 1) {
-    const cells: string[] = [];
-    layout.notes.forEach((note, index) => {
-      if (index > 0 && index % TAB_CELLS_PER_BAR === 0) cells.push('|');
-      cells.push(note.string === string ? tabCell(note) : tabEmptyCell());
-    });
-    const label = STANDARD_TUNING_LABELS[string - 1];
-    lines.push(`${label}|${cells.join('')}${layout.notes.length > 0 ? '|' : ''}`);
-  }
-  return lines;
+  // The SAME line builder the windowed blocks use (v40 fix L) — one cell rule.
+  return tabLinesFor(layout.notes);
 }
 
 /** The pitches the tab actually asks for, in order — the readout under the grid. */
@@ -373,4 +364,108 @@ export function tabHonestyLine(layout: TabLayout): string {
 /** True when the take has anything to draw as tab at all. */
 export function tabHasNotes(layout: TabLayout | null | undefined): boolean {
   return !!layout && layout.notes.length > 0;
+}
+
+// ───────────────── THE WHOLE TAKE, IN BLOCKS (v40 fix L) ─────────────────
+//
+// THE OWNER'S FINDING (10-14): "Tabs … does not show the whole song played."
+// A hummed take is a few dozen notes and the grid was ONE text line per string,
+// as wide as the take: on a phone that is a single horizontal strip the user has
+// to discover and drag, and every note after the first screenful reads as
+// "missing". The block below is the same tab, cut into fixed-width WINDOWS of
+// TAB_CELLS_PER_WINDOW notes, one printed block per window down the page — so the
+// whole take is reachable by ordinary vertical scrolling, nothing is dropped, and
+// the block label says exactly which notes are in it.
+//
+// The windows are a VIEW of the same `layout`: no note is added, dropped,
+// re-spelled or re-fretted here, and `tabLines` (the single-strip form) is built
+// by the SAME helper so the two can never disagree about a cell.
+
+/** How many note cells one printed block carries. A multiple of TAB_CELLS_PER_BAR,
+ *  so every block starts on a bar line and the bars of consecutive blocks line up. */
+export const TAB_CELLS_PER_WINDOW = 16;
+
+/** The caption over the blocks — what the blocks are, in one honest line. */
+export const TAB_WINDOWS_CAPTION =
+  'Your take in blocks of 16 notes — scroll down for the next block. Every note you played is here, in order.';
+
+/** One printed block of tab (a fixed-width window of the take's notes). */
+export interface TabWindow {
+  /** 0-based block index. */
+  index: number;
+  /** "Notes 1–16 of 30" — absolute note numbers, so no block can be mistaken. */
+  label: string;
+  /** 0-based inclusive bounds into the take's note order. */
+  fromNote: number;
+  toNote: number;
+  /** The six string lines for just these notes (string 1 first). */
+  lines: string[];
+}
+
+/**
+ * SIX LINES FOR A RUN OF NOTES: the one place a tab line is ever built. `tabLines`
+ * (the whole take as one strip) and `tabWindows` (the take cut into blocks) both
+ * come through here, so a cell, a bar mark and the string mapping are identical in
+ * both — the gate asserts that a window's lines are exactly `tabLines`' lines for
+ * the same run.
+ */
+export function tabLinesFor(notes: ReadonlyArray<TabNote>): string[] {
+  const lines: string[] = [];
+  for (let string = 1; string <= TAB_STRING_COUNT; string += 1) {
+    const cells: string[] = [];
+    notes.forEach((note, index) => {
+      if (index > 0 && index % TAB_CELLS_PER_BAR === 0) cells.push('|');
+      cells.push(note.string === string ? tabCell(note) : tabEmptyCell());
+    });
+    const label = STANDARD_TUNING_LABELS[string - 1];
+    lines.push(`${label}|${cells.join('')}${notes.length > 0 ? '|' : ''}`);
+  }
+  return lines;
+}
+
+/** "Notes 1–16 of 30" — 1-based, in the user's counting, never a block number alone. */
+export function tabWindowLabel(fromNote: number, toNote: number, total: number): string {
+  return `Notes ${fromNote + 1}–${toNote + 1} of ${total}`;
+}
+
+/** How many blocks this take is printed in (0 for a take with no notes). */
+export function tabWindowCount(
+  layout: TabLayout | null | undefined,
+  cellsPerWindow: number = TAB_CELLS_PER_WINDOW,
+): number {
+  const size = tabWindowSize(cellsPerWindow);
+  if (!tabHasNotes(layout)) return 0;
+  return Math.ceil((layout as TabLayout).notes.length / size);
+}
+
+function tabWindowSize(cellsPerWindow: number): number {
+  return Number.isFinite(cellsPerWindow) && cellsPerWindow > 0
+    ? Math.max(1, Math.floor(cellsPerWindow))
+    : TAB_CELLS_PER_WINDOW;
+}
+
+/**
+ * THE TAKE CUT INTO BLOCKS. Every note appears in exactly one block, in order; a
+ * take that fits in one window yields one block (so the surface is never empty and
+ * never says "no tab" for a real take).
+ */
+export function tabWindows(
+  layout: TabLayout | null | undefined,
+  opts: { cellsPerWindow?: number } = {},
+): TabWindow[] {
+  if (!tabHasNotes(layout)) return [];
+  const notes = (layout as TabLayout).notes;
+  const size = tabWindowSize(opts.cellsPerWindow ?? TAB_CELLS_PER_WINDOW);
+  const out: TabWindow[] = [];
+  for (let start = 0; start < notes.length; start += size) {
+    const end = Math.min(notes.length, start + size) - 1;
+    out.push({
+      index: out.length,
+      label: tabWindowLabel(start, end, notes.length),
+      fromNote: start,
+      toNote: end,
+      lines: tabLinesFor(notes.slice(start, end + 1)),
+    });
+  }
+  return out;
 }
