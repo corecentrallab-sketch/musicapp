@@ -47,10 +47,20 @@ export const READER_TIER1_MODULES: readonly string[] = [
   'src/services/transposedScore.ts',
   'src/services/scoreShare.ts',
   'src/services/v39ReaderContract.ts',
+  'src/services/readerKeyControl.ts',
   'scripts/transposedScoreReader.test.ts',
+  'scripts/uxr1-step3-reader.test.ts',
 ];
 
-export const READER_TIER1_SUITES: readonly string[] = ['scripts/transposedScoreReader.test.ts'];
+export const READER_TIER1_SUITES: readonly string[] = [
+  'scripts/transposedScoreReader.test.ts',
+  'scripts/uxr1-step3-reader.test.ts',
+];
+
+/** The pure module behind the in-place key control (UX round 1 step 3). */
+export const READER_KEY_CONTROL_MODULE_PATH = 'src/services/readerKeyControl.ts';
+/** This batch's suite (the key control, the unsaved state, the back-out guard). */
+export const READER_KEY_CONTROL_SUITE_PATH = 'scripts/uxr1-step3-reader.test.ts';
 
 /** The route name the reader is registered under (App.tsx + the param list). */
 export const READER_ROUTE_NAME = 'TransposedScoreReader';
@@ -357,4 +367,217 @@ export function readerCopyConstantCount(screenSource: string): number {
     if (countOf(src, `export const ${constant}`) === 1) count += 1;
   }
   return count;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UX ROUND 1 STEP 3 — the render fix, the in-place key control and the back-out
+// guard (owner 10-18 item 1.1/1.2/1.3). The owner's item 1 has three halves, and
+// each one has a way of being "in the code" while doing nothing:
+//
+//   1.1 THE RENDER. The reader could ask for its band (`readerShowsTheWholeWork`
+//       above passes) while the MESSAGE the band is computed from was already
+//       clamped to the app's box ceiling — so the band could never be
+//       `self-scroll` and every bar below 4000px stayed unreachable. That is a
+//       chain across two modules (services/scoreHeight.ts → AbcScoreView), so it
+//       is guarded as a chain, on the real functions — not by grepping for a
+//       constant's name.
+//   1.2 THE KEY CONTROL. A chip with no stepper, a stepper with no re-key, a
+//       re-key that does not use the pure plan (and so loses every bar), or a
+//       change with no unsaved state — each an inert half of the feature.
+//   1.3 THE BACK-OUT GUARD. The prompt must be raised by the ROUTE's own
+//       `beforeRemove` (never a hardware-BACK handler — the route class), it must
+//       ask exactly once, and the leave must be the decided one.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * GUARD S1 — THE REPORTED HEIGHT REACHES THE BAND (the v36/v37 residual clip).
+ *
+ * THE CHAIN, on the real functions: a document reports its height → the parser
+ * reads it → the band decides whether the VIEWER must scroll itself → the box is
+ * built. A whole work (9000px is the size the clip was measured on) must come out
+ * the other side as a `self-scroll` band with the VIEWPORT as its box. If any link
+ * pre-clamps the measurement to the app's box ceiling, the work reads as `page`,
+ * the viewer stays non-interactive and the score is clipped — silently, with the
+ * screen looking correct. The last assertion keeps the v37 rule itself alive: the
+ * app ceiling must STILL bite where it belongs, on a BOX (`clamp`), so this can
+ * never be "fixed" by deleting the clamp.
+ */
+export function readerHeightReportReachesTheBand(value: {
+  parse: (data: unknown) => number | null;
+  band: (measured: unknown) => string;
+  height: (input: { measuredHeight: unknown; viewportHeight: unknown }) => number;
+  clamp: (measured: unknown) => number | null;
+  message: (height: number) => string;
+  appCeiling: number;
+  readerCeiling: number;
+}): boolean {
+  if (
+    typeof value?.parse !== 'function' ||
+    typeof value?.band !== 'function' ||
+    typeof value?.height !== 'function' ||
+    typeof value?.clamp !== 'function' ||
+    typeof value?.message !== 'function'
+  ) {
+    return false;
+  }
+  if (!Number.isFinite(value.appCeiling) || !Number.isFinite(value.readerCeiling)) return false;
+  if (value.appCeiling <= 0 || value.readerCeiling < value.appCeiling) return false;
+
+  // THE SIZE THE CLIP WAS MEASURED ON — a real work, taller than the app ceiling.
+  const wholeWork = value.appCeiling * 2 + 1000;
+  const reported = value.parse(value.message(wholeWork));
+  if (reported !== wholeWork) return false;
+
+  // THE BAND HANDS OFF INSTEAD OF CLIPPING, and the box is the viewport.
+  if (value.band(reported) !== 'self-scroll') return false;
+  if (value.height({ measuredHeight: reported, viewportHeight: 620 }) !== 620) return false;
+
+  // A DOCUMENT THAT FITS IS UNCHANGED: still laid out inline at its own height.
+  if (value.band(1800) !== 'page') return false;
+  if (value.height({ measuredHeight: 1800, viewportHeight: 620 }) !== 1800) return false;
+
+  // THE APP CEILING STILL CLAMPS A BOX, and a junk report is still refused.
+  if (value.clamp(wholeWork) !== value.appCeiling) return false;
+  if (value.parse(value.message(0)) !== null) return false;
+  return value.parse('not a height report') === null;
+}
+
+/**
+ * GUARD S2 — THE KEY CONTROL RE-KEYS IN PLACE (owner item 1.2).
+ *
+ * Both steppers, the chip, the PURE plan (so the re-key is an absolute derivation
+ * from the reader's own ABC and cannot drop bars), the one pulse per change, and
+ * the chip's words derived from the score's key rather than hard-coded.
+ */
+export function readerKeyControlIsWired(screenSource: string): boolean {
+  const src = maskComments(screenSource ?? '');
+  if (src.length < 4000) return false;
+  const chip = src.indexOf('<Animated.View');
+  if (chip < 0) return false;
+  // The chip pulses: a scale animation on the chip itself, not a decorative spinner.
+  const chipBlock = src.slice(chip, chip + 700);
+  if (chipBlock.indexOf('transform: [{ scale:') < 0) return false;
+  if (src.indexOf('readerKeyChipLabel(') < 0) return false;
+  if (src.indexOf('READER_KEY_CHIP_LABEL') < 0) return false;
+  // Both steppers, in both directions, through the pure plan.
+  if (src.indexOf('readerKeyPlan(') < 0) return false;
+  if (src.indexOf('applyKeyStep(-1)') < 0) return false;
+  if (src.indexOf('applyKeyStep(1)') < 0) return false;
+  if (src.indexOf('READER_KEY_DECREASE_LABEL') < 0) return false;
+  if (src.indexOf('READER_KEY_INCREASE_LABEL') < 0) return false;
+  // … and each stepper is really MOUNTED on the control that carries its label
+  // (a label on a dead Pressable is the same as no stepper at all).
+  if (src.indexOf('onPress={handleKeyDown}') < 0) return false;
+  if (src.indexOf('onPress={handleKeyUp}') < 0) return false;
+  // The re-key writes the score, the key AND the offset together — a step that
+  // moved the key without moving the score is the "wrong score in the chip" class.
+  if (src.indexOf('setAbc(plan.abc)') < 0) return false;
+  if (src.indexOf('setKeyLabel(plan.keyLabel)') < 0) return false;
+  if (src.indexOf('setOffset(plan.offset)') < 0) return false;
+  if (src.indexOf('if (!plan.changed) return;') < 0) return false;
+  if (src.indexOf('pulseKeyChip()') < 0) return false;
+  // A spent stepper is disabled AND explained: no dead area on a control.
+  if (src.indexOf('disabled={keyPlan.atFloor}') < 0) return false;
+  if (src.indexOf('disabled={keyPlan.atCeiling}') < 0) return false;
+  return src.indexOf('READER_KEY_LIMIT_LINE') >= 0;
+}
+
+/**
+ * GUARD S3 — THE UNSAVED STATE IS VISIBLE AND THE SAVE PERSISTS THE CHOSEN KEY
+ * (owner item 1.2, second half).
+ *
+ * Three facts: the owner's one-line warning is RENDERED (in the footer, which is
+ * outside the scroller — the action that loses work must never hide), the save
+ * writes what the user is LOOKING AT through the pure plan (`readerSavePlan`), and
+ * the save records the offset it wrote, which is what quiets the back-out guard
+ * after a save and lets it speak again after the next change.
+ */
+export function readerUnsavedStateIsVisible(screenSource: string): boolean {
+  const src = maskComments(screenSource ?? '');
+  if (src.length < 4000) return false;
+  const scrollerEnd = src.indexOf('</ScrollView>');
+  const footer = src.indexOf('style={styles.footer}');
+  const unsaved = src.indexOf('{READER_UNSAVED_LINE}');
+  if (scrollerEnd < 0 || footer < 0 || unsaved < 0) return false;
+  // THE FOOTER COMES AFTER THE SCROLLER (it is a sibling, not content of it) …
+  if (footer < scrollerEnd) return false;
+  // … and the warning lives inside that footer, beside the control it is about.
+  if (unsaved < footer) return false;
+  // THE WRITE IS THE PLAN'S ABC AND THE PLAN'S TITLE — the current score, never params.
+  if (src.indexOf('readerSavePlan(') < 0) return false;
+  if (src.indexOf('addAbcToLibrary({ title: plan.title, abc: plan.abc })') < 0) return false;
+  // THE SAVED BASELINE, without which the guard either nags after a save or
+  // forgets the next change.
+  if (src.indexOf('readerIsDirty({') < 0) return false;
+  return src.indexOf('setSavedOffset(plan.offset)') >= 0;
+}
+
+/**
+ * GUARD S4 — THE BACK-OUT GUARD (owner item 1.3).
+ *
+ * The prompt is raised by React Navigation's `beforeRemove` (the ROUTE's own
+ * event, so the screen stays a route and the back-exit contract keeps being true),
+ * the decision is pure (`readerLeaveOutcome`), the leave is the decided one
+ * (`allowLeaveRef` + `navigation.goBack()`), the prompt offers both the owner's
+ * actions, and the modal-overlay-style surface is NOT an RN Modal ELEMENT — it is
+ * an absolute-fill overlay INSIDE this route (asserted separately by
+ * `readerIsARouteNotAModal`). The word is spelled out here on purpose: this module
+ * is one of the files the app-wide modal-BACK scan reads, and a literal tag name in
+ * a comment is exactly the aliasing that scan exists to catch.
+ */
+export function readerGuardsTheBackOut(screenSource: string): boolean {
+  const src = maskComments(screenSource ?? '');
+  if (src.length < 4000) return false;
+  if (src.indexOf("addListener('beforeRemove'") < 0) return false;
+  if (src.indexOf('readerLeaveOutcome({ dirty, promptOpen: keepPromptOpen })') < 0) return false;
+  if (src.indexOf('event.preventDefault()') < 0) return false;
+  if (src.indexOf('setKeepPromptOpen(outcome === ') < 0) return false;
+  if (src.indexOf('allowLeaveRef.current = true') < 0) return false;
+  if (src.indexOf('navigation.goBack()') < 0) return false;
+  if (src.indexOf('handlePromptSave') < 0 || src.indexOf('handlePromptLeave') < 0) return false;
+  if (src.indexOf('READER_KEEP_PROMPT_TITLE') < 0) return false;
+  if (src.indexOf('READER_KEEP_PROMPT_SAVE') < 0) return false;
+  return src.indexOf('READER_KEEP_PROMPT_LEAVE') >= 0;
+}
+
+/**
+ * GUARD S5 — THE STICKY FOOTER IS STILL A SIBLING OF THE SCROLLER (owner item 1:
+ * "keep the sticky footer… scrolling to bar 40 must not hide the action that loses
+ * work"), and it still carries every control and line it shipped with.
+ */
+export function readerKeepsTheStickyFooter(screenSource: string): boolean {
+  const src = maskComments(screenSource ?? '');
+  if (src.length < 4000) return false;
+  const scrollerEnd = src.indexOf('</ScrollView>');
+  const footer = src.indexOf('style={styles.footer}');
+  if (scrollerEnd < 0 || footer < 0 || footer < scrollerEnd) return false;
+  const footerBlock = src.slice(footer, footer + 2200);
+  if (footerBlock.indexOf('<ScrollView') >= 0) return false;
+  if (footerBlock.indexOf('onPress={handleSave}') < 0) return false;
+  if (footerBlock.indexOf('onPress={handleShare}') < 0) return false;
+  if (footerBlock.indexOf('READER_SAVE_CTA') < 0) return false;
+  if (footerBlock.indexOf('READER_SHARE_CTA') < 0) return false;
+  return footerBlock.indexOf('READER_FREE_NOTE') >= 0;
+}
+
+/**
+ * GUARD S6 — THE VIEWER RENDERS THE WHOLE ABC IT IS GIVEN (owner item 1.1, the
+ * "all bars present" half).
+ *
+ * The document must carry the score VERBATIM (`JSON.stringify(abc)` — the whole
+ * string, escaping intact) and hand that same string to ABCjs; a viewer that
+ * rendered a slice, a first line, or a re-built fragment would show a short score
+ * that still looked like a score. This guards the renderer, not the caller, so a
+ * future call site cannot inherit a truncating document.
+ */
+export function viewerRendersTheWholeAbc(viewerSource: string): boolean {
+  const src = maskComments(viewerSource ?? '');
+  if (src.length < 4000) return false;
+  if (src.indexOf('const abcJson = JSON.stringify(abc);') < 0) return false;
+  if (src.indexOf('var abc = ${abcJson};') < 0) return false;
+  if (src.indexOf("renderAbc('paper', abc,") < 0) return false;
+  // No truncation of the score anywhere in the viewer (a slice of an ABC string is
+  // never a score: it loses bars, and often the `K:` line with them).
+  if (/\babc\.(?:slice|substring|substr|split|replace)\s*\(/.test(src)) return false;
+  return src.indexOf('abcHeightProbeScript()') >= 0;
 }

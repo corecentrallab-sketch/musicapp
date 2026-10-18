@@ -30,6 +30,33 @@ export const ABC_SCORE_MIN_HEIGHT = 120;
 /** The upper clamp: a runaway/hostile document may not grow the page without end. */
 export const ABC_SCORE_MAX_HEIGHT = 4000;
 
+/**
+ * THE SANITY CEILING FOR WHAT A DOCUMENT MAY *REPORT* ABOUT ITS OWN HEIGHT
+ * (UX round 1 step 3, owner 10-18 item 1 — the still-open "transposed full-score
+ * render FAIL" from the v36 on-device re-test).
+ *
+ * WHY THE APP CEILING CANNOT BE THE REPORT CEILING. `abcHeightFromMessage` used to
+ * run the measured height through `clampScoreHeight`, i.e. through
+ * ABC_SCORE_MAX_HEIGHT (4000). That is the right rule for a BOX — the cramped card
+ * the editor hosts a score in may not grow without end — but it is the wrong rule
+ * for a MEASUREMENT. The report is the ONLY thing that tells the reader how tall
+ * its document really is, and `scoreReaderBand` needs the true number to decide
+ * whether to hand the scroll to the WebView. Pre-clamped at 4000, a 9000px sonata
+ * movement read as `page`, the reader laid it out in a 4000px box, the viewer
+ * stayed non-interactive (no shield, no self-scroll) and the ~5000px below the
+ * fold — every bar under it — was unreachable. The reader's `self-scroll` handoff
+ * (v39 Part 2) was correct code that could never run: the residual clip the v37 fix
+ * left, and exactly the failure the owner kept hitting on device.
+ *
+ * So the two ceilings are now separate: THIS one bounds only what a document may
+ * claim (a runaway or hostile report still cannot grow the page without end), and
+ * every BOX rule keeps clamping to ABC_SCORE_MAX_HEIGHT exactly as it did
+ * (`abcScoreContainerHeight`; the reader's own ceiling is
+ * `clampReaderScoreHeight`). A report at or below 4000 behaves identically to
+ * before, so the editor, the capture pages and the take editor are unchanged.
+ */
+export const ABC_HEIGHT_REPORT_MAX = 100000;
+
 /** The message type the viewer document posts with its rendered height. */
 export const ABC_HEIGHT_MESSAGE_TYPE = 'abc-score-height';
 
@@ -68,7 +95,28 @@ export function clampScoreHeight(height: unknown): number | null {
   return Math.min(ABC_SCORE_MAX_HEIGHT, Math.max(ABC_SCORE_MIN_HEIGHT, value));
 }
 
-/** The height a height message carries, or null when it is not one (or is junk). */
+/**
+ * Clamp a height a DOCUMENT REPORTED about itself, for use as a measurement rather
+ * than as a box: the score floor, and the report sanity ceiling
+ * (`ABC_HEIGHT_REPORT_MAX`, NOT the app's box ceiling — see the constant's note).
+ * A report that is not a positive finite number is null, exactly as before.
+ */
+export function clampReportedScoreHeight(height: unknown): number | null {
+  const value = Math.round(Number(height));
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return Math.min(ABC_HEIGHT_REPORT_MAX, Math.max(ABC_SCORE_MIN_HEIGHT, value));
+}
+
+/**
+ * The height a height message carries, or null when it is not one (or is junk).
+ *
+ * THE REPORT IS A MEASUREMENT, NOT A BOX, so it is clamped by
+ * `clampReportedScoreHeight` — the app's 4000px box ceiling must NOT be applied
+ * here, or the reader can never learn that a real work is longer than its box and
+ * every bar below the fold becomes unreachable (see ABC_HEIGHT_REPORT_MAX). The
+ * callers that DO own a box still clamp: `abcScoreContainerHeight` for the
+ * decorative case, `abcReaderContainerHeight` for the reader.
+ */
 export function abcHeightFromMessage(data: unknown): number | null {
   if (typeof data !== 'string' || data.length === 0 || data.length > 400) return null;
   let parsed: unknown;
@@ -80,7 +128,7 @@ export function abcHeightFromMessage(data: unknown): number | null {
   if (!parsed || typeof parsed !== 'object') return null;
   const record = parsed as { type?: unknown; height?: unknown };
   if (record.type !== ABC_HEIGHT_MESSAGE_TYPE) return null;
-  return clampScoreHeight(record.height);
+  return clampReportedScoreHeight(record.height);
 }
 
 /**
@@ -122,6 +170,14 @@ export function abcScoreContainerHeight(input: {
 //                     clipped; the reader page simply does not carry the scroll.
 //
 // The band is pure and is asserted by scripts/transposedScoreReader.test.ts.
+//
+// AND IT ONLY RUNS IF THE MEASUREMENT SURVIVES THE MESSAGE (UX round 1 step 3):
+// while `abcHeightFromMessage` clamped every report to the app's 4000px box
+// ceiling, this whole handoff was unreachable code — nothing could ever measure
+// taller than the ceiling that decided the band. The report ceiling
+// (`ABC_HEIGHT_REPORT_MAX`) is what puts a real work back in the `self-scroll`
+// band, and `scripts/uxr1-step3-reader.test.ts` pins the parse→band→box chain end
+// to end so the two ceilings can never be merged again.
 
 /**
  * The tallest document the READER will lay out inline. Above it the reader stops
