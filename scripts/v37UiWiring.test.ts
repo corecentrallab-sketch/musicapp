@@ -25,6 +25,7 @@
  */
 import {
   ABC_HEIGHT_MESSAGE_TYPE,
+  ABC_HEIGHT_REPORT_MAX,
   ABC_SCORE_MAX_HEIGHT,
   ABC_SCORE_MIN_HEIGHT,
   abcHeightFromMessage,
@@ -264,8 +265,18 @@ assertEq(
 );
 assertEq(
   abcHeightFromMessage(JSON.stringify({ type: ABC_HEIGHT_MESSAGE_TYPE, height: 99999 })),
+  99999,
+  'a real (very tall) measurement is handed on unclamped — this is the number the reader’s band rule needs to stop clipping long works',
+);
+assertEq(
+  abcHeightFromMessage(JSON.stringify({ type: ABC_HEIGHT_MESSAGE_TYPE, height: ABC_HEIGHT_REPORT_MAX + 5 })),
+  ABC_HEIGHT_REPORT_MAX,
+  'while a runaway reported height is clamped to the REPORT ceiling, not to the app’s 4000px BOX ceiling (UX round 1 step 3: pre-clamping the report at 4000 is what kept a long transposed score clipped)',
+);
+assertEq(
+  clampScoreHeight(99999),
   ABC_SCORE_MAX_HEIGHT,
-  'a runaway reported height is clamped before it can grow the page',
+  '…while every BOX rule keeps the app ceiling it always had',
 );
 assertEq(
   abcHeightFromMessage('x'.repeat(401)),

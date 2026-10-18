@@ -105,6 +105,22 @@ interface AbcScoreViewProps {
    *     reachable at any length. Nothing is clipped in either band.
    */
   wholeWork?: boolean;
+  /**
+   * THE SCREEN AREA THE READER CAN ACTUALLY SHOW (UX round 1 step 3, owner 10-18
+   * item 1). Optional; every other call site keeps using the window height.
+   *
+   * WHY IT EXISTS. In the whole-work `self-scroll` band the viewer's box IS the
+   * window the document scrolls inside, so it must be the area that is really
+   * visible — and a full-screen reader is not a full screen: its sticky header and
+   * its sticky footer sit above and below the score. Sized on `useWindowDimensions`
+   * alone the box is taller than the area the user can see, the reader's own page
+   * ends up with a scroll it cannot be given (the WebView owns the gesture over the
+   * staff), and the last bars live below the fold — reachable only by dragging the
+   * 12px margins. The reader measures its score area (`onLayout`) and hands it in
+   * here, so the WebView's window IS the visible window: every bar is reachable by
+   * scrolling the score itself, and the sticky footer never has to move.
+   */
+  viewportHeight?: number;
 }
 
 /**
@@ -203,11 +219,17 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   interactive = true,
   onDocumentHeight,
   wholeWork = false,
+  viewportHeight,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   /** The reader's viewport (the box a whole-work document that does not fit is
-   *  given; it then scrolls itself inside it). */
+   *  given; it then scrolls itself inside it). The caller's own measured area wins
+   *  when it has one (see `viewportHeight`); otherwise the window is the best
+   *  available answer. */
   const window = useWindowDimensions();
+  const measuredViewport = Math.round(Number(viewportHeight));
+  const viewport =
+    Number.isFinite(measuredViewport) && measuredViewport > 0 ? measuredViewport : window.height;
   // Use the abc text (and the ink, which changes the document) as a rendering
   // key so a fresh WebView reloads whenever the score or its colour changes.
   const html = useMemo(() => generateAbcHtml(abc, ink, background), [abc, ink, background]);
@@ -238,14 +260,14 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
           // the document scrolls inside (scoreHeight.ts, abcReaderContainerHeight).
           abcReaderContainerHeight({
             measuredHeight: measured.height,
-            viewportHeight: window.height,
+            viewportHeight: viewport,
           })
         : abcScoreContainerHeight({ interactive, measuredHeight: measured.height })
       : wholeWork
         ? // Not measured yet: a visible staff now, the real band on the next report.
           abcReaderContainerHeight({
             measuredHeight: null,
-            viewportHeight: window.height,
+            viewportHeight: viewport,
           })
         : null;
   /**
