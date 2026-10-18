@@ -9,7 +9,7 @@
  * 3. Results shown in RecognitionResultView modal
  */
 import { useThemedStyles } from '../services/themeStore';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -29,6 +29,7 @@ import {
 } from '../components/RecognitionResultView';
 import { ModernSongInterstitial } from '../components/ModernSongInterstitial';
 import { ScoreViewer } from '../components/ScoreViewer';
+import { SampleBadge } from '../components/SampleBadge';
 import { PieceDetailScreen } from './PieceDetailScreen';
 import { HumSearchScreen } from './HumSearchScreen';
 import { ModernSearchScreen } from './ModernSearchScreen';
@@ -175,6 +176,8 @@ import { checkAndAwardMedals } from '../services/medalStore';
 // through modernGenreLabel() — the provider's real genre, else "Modern song".
 import { modernGenreLabel, resultGenreLabel } from '../services/resultGenre';
 import { getTodayChallenge } from '../services/dailyChallenge';
+import { featuredPieceLibraryState } from '../services/sampleBadge';
+import { resolvePieceAbc } from '../services/pieceAbc';
 import type {
   WeeklyGoal,
   DailyChallengePiece,
@@ -213,6 +216,22 @@ export const HomeScreen: React.FC = () => {
   });
   const [dailyChallenge, setDailyChallenge] =
     useState<DailyChallengePiece | null>(null);
+  /**
+   * THE NOTATION SCORE THE APP HOLDS FOR TODAY'S PIECE (UX round 1 step 1, owner
+   * 10-18 item 5). The catalog's own abc when it carries one, else the bundled
+   * public-domain practice phrase — the SAME resolver the coach card uses
+   * (services/pieceAbc.ts). '' when we hold none, which renders no badge.
+   */
+  const featuredExcerptAbc = useMemo(
+    () =>
+      resolvePieceAbc({
+        abc: dailyChallenge?.abc,
+        title: dailyChallenge?.title,
+        composer: dailyChallenge?.composer,
+        pieceId: dailyChallenge?.id,
+      }).abc,
+    [dailyChallenge]
+  );
   const [onboarding, setOnboarding] = useState<OnboardingAnswers | null>(null);
   const [badgeToast, setBadgeToast] = useState<Badge | null>(null);
   const [showDetail, setShowDetail] = useState(false);
@@ -1585,6 +1604,13 @@ export const HomeScreen: React.FC = () => {
               ))}
             </View>
 
+            {/* The excerpt the app can actually show for today's piece, said out
+                loud. The honest state comes from the card's OWN tap mapping
+                (featuredPieceLibraryState → practiceTodayDestination), so the
+                "tap for the full piece" half appears exactly when tapping this
+                card opens the curated full score. */}
+            <SampleBadge abc={featuredExcerptAbc} libraryState={featuredPieceLibraryState(dailyChallenge)} style={styles.todayCardBadge} />
+
             <Text style={styles.cardCta}>{todayCardCta(dailyChallenge)}</Text>
           </TouchableOpacity>
         </View>
@@ -2068,6 +2094,9 @@ const baseStyles = StyleSheet.create({
     padding: 18,
     borderWidth: 1,
     borderColor: '#0f3460',
+  },
+  todayCardBadge: {
+    marginTop: 10,
   },
   todayCardTitle: {
     fontSize: 16,

@@ -30,7 +30,7 @@ export const TRANSPOSED_COPY_UNTITLED = 'Untitled score';
 export const SAMPLE_EXCERPT_MAX_BARS = 8;
 
 /** Shown when the caller says a score is a sample but its bar count cannot be read. */
-export const SAMPLE_EXCERPT_FALLBACK_LABEL = 'Sample — short excerpt';
+export const SAMPLE_EXCERPT_FALLBACK_LABEL = 'Sample · short excerpt';
 
 /** The character a bar token must contain to count as music (a note or a rest). */
 const NOTE_TOKEN_CHARACTER = /[A-Ga-gzZxX]/;
@@ -130,14 +130,19 @@ export function isSampleScore(abc: unknown): boolean {
 }
 
 /**
- * "Sample — 4-bar excerpt" for an excerpt, null for anything longer (or empty).
+ * "Sample · 4-bar excerpt" for an excerpt, null for anything longer (or empty).
  * The bar count is the score's own, so the label can never claim a length the
  * reader is not showing.
+ *
+ * The separator is the OWNER'S (10-18, UX round 1 item 5: "Sample · 4-bar
+ * excerpt"), adopted here so the badge, the editor and the reader all say the
+ * same thing in the same shape — this module is the one place those words are
+ * built.
  */
 export function sampleExcerptLabel(abc: unknown): string | null {
   const bars = countAbcBars(abc);
   if (bars <= 0 || bars > SAMPLE_EXCERPT_MAX_BARS) return null;
-  return `Sample — ${bars}-bar excerpt`;
+  return `Sample · ${bars}-bar excerpt`;
 }
 
 /**

@@ -98,6 +98,7 @@
     "src/services/v34UiContract.ts",
     "src/services/v36UiContract.ts",
     "src/services/scoreHeight.ts",
+    "src/services/sampleBadge.ts",
     "src/services/librarySaveModel.ts",
     "src/services/midiStructure.ts",
     "src/services/v37UiContract.ts",
@@ -154,6 +155,7 @@
     "scripts/v38Calendar.test.ts",
     "scripts/v38CalendarWiring.test.ts",
     "scripts/v38VideoPractice.test.ts",
-    "scripts/v38UiWiring.test.ts"
+    "scripts/v38UiWiring.test.ts",
+    "scripts/sampleBadge.test.ts"
   ]
 }

@@ -21,9 +21,11 @@ import {
   getLibraryItems,
   importDocumentAsset,
   kindLabel,
+  readAbcText,
   removeLibraryItem,
   renameLibraryItem,
 } from '../services/libraryStore';
+import { SampleBadge } from '../components/SampleBadge';
 import {
   friendlyCloudError,
   sendItemToCloud,
@@ -79,10 +81,29 @@ export const LibraryScreen: React.FC = () => {
   // Rename modal state
   const [renameTarget, setRenameTarget] = useState<LibraryItem | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  /**
+   * THE SCORE TEXT of every saved ABC item, by id (UX round 1 step 1, owner 10-18
+   * item 5). A row can only say "Sample · 4-bar excerpt" if it has read the score
+   * — the label is derived from the score itself, so there is nothing to show
+   * before the file has been read. A file that cannot be read simply shows no
+   * badge (never a wrong one), which is also the honest state for a scanned page:
+   * an image has no bar count to state.
+   */
+  const [abcTexts, setAbcTexts] = useState<Record<string, string>>({});
 
   const reload = useCallback(async () => {
     const list = await getLibraryItems();
     setItems(list);
+    const texts: Record<string, string> = {};
+    for (const item of list) {
+      if (item.kind !== 'abc' || !item.fileUri) continue;
+      try {
+        texts[item.id] = await readAbcText(item);
+      } catch {
+        // Unreadable or empty: no badge for this row, and no claim about it.
+      }
+    }
+    setAbcTexts(texts);
     setLoading(false);
   }, []);
 
@@ -269,6 +290,10 @@ export const LibraryScreen: React.FC = () => {
               ? ` · ${formatBytes(item.sizeBytes)}`
               : ''}
           </Text>
+          {/* A saved ABC score that is really a short excerpt says so on its row.
+              The Library cannot check the catalog, so the badge passes no
+              `libraryState` and makes no claim about what else we hold. */}
+          <SampleBadge abc={abcTexts[item.id]} style={styles.rowBadge} />
         </View>
         <Text style={styles.rowDate}>{formatDate(item.createdAt)}</Text>
         {isOpenableKind(item.kind) ? (
@@ -278,7 +303,7 @@ export const LibraryScreen: React.FC = () => {
         )}
       </Pressable>
     ),
-    [openItem, showItemMenu]
+    [abcTexts, openItem, showItemMenu]
   );
 
   if (loading) {
@@ -464,6 +489,9 @@ const baseStyles = StyleSheet.create({
     color: '#8a8ab0',
     fontSize: 13,
     marginTop: 2,
+  },
+  rowBadge: {
+    marginTop: 6,
   },
   rowDate: {
     color: '#5a5a80',

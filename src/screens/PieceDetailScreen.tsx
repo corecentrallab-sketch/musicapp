@@ -6,7 +6,7 @@
  * their progress via the ShareCard component.
  */
 import { useThemedStyles } from '../services/themeStore';
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,9 @@ import {
 } from 'react-native';
 import type { DailyChallengePiece } from '../types';
 import { ScoreViewer } from '../components/ScoreViewer';
+import { SampleBadge } from '../components/SampleBadge';
+import { piecePageLibraryState } from '../services/sampleBadge';
+import { resolvePieceAbc } from '../services/pieceAbc';
 import { ShareCard } from '../components/ShareCard';
 import { CoachPracticeCard } from '../components/CoachPracticeCard';
 import { StreakNudgeCard } from '../components/StreakNudgeCard';
@@ -147,6 +150,24 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
    * never describe different states.
    */
   const showsHonestNoScoreState = !piece.sheetMusicUrl && !sheetCard;
+  /**
+   * THE NOTATION SCORE THIS PAGE ACTUALLY HOLDS (UX round 1 step 1, owner 10-18
+   * item 5). The catalog's own abc when it carries one, else the bundled
+   * public-domain practice phrase the coach scores against — resolved through the
+   * SAME resolver the coach card uses (services/pieceAbc.ts), so the page cannot
+   * describe a score the app does not have. '' when there is none (a modern song),
+   * which renders no badge at all.
+   */
+  const pieceExcerptAbc = useMemo(
+    () =>
+      resolvePieceAbc({
+        abc: piece.abc,
+        title: piece.title,
+        composer: piece.composer,
+        pieceId: piece.id,
+      }).abc,
+    [piece]
+  );
   /**
    * The licensed-retailer SEARCH for this work's printed edition (owner Q2; §E.5
    * — the money path this bundle UNBLOCKS). Built by searchExternal.ts; the `1`
@@ -375,6 +396,15 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
             onPress={handleViewSheetMusic}
           >
             <Text style={styles.viewSheetText}>🎵 View Sheet Music</Text>
+            {/* The badge sits INSIDE this control on purpose: tapping it really
+                opens the full curated score, which is what earns the
+                "tap for the full piece" half of the copy (services/sampleBadge.ts
+                owns that rule). */}
+            <SampleBadge
+              abc={pieceExcerptAbc}
+              libraryState={piecePageLibraryState(piece)}
+              style={styles.sheetBadge}
+            />
           </TouchableOpacity>
         ) : sheetCard ? (
           /* THE sheet-music card (owner 10-01, messages a/b/c). This piece has
@@ -428,6 +458,14 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
               🎼 No hosted score for this one
             </Text>
             <Text style={styles.noScoreText}>{NO_HOSTED_SCORE_LINE}</Text>
+            {/* No hosted score for this piece, and this page HAS the catalog
+                payload that proves it — so the badge may say the excerpt is the
+                whole of it, and claims no tap. */}
+            <SampleBadge
+              abc={pieceExcerptAbc}
+              libraryState={piecePageLibraryState(piece)}
+              style={styles.sheetBadge}
+            />
           </View>
         )}
 
@@ -681,6 +719,10 @@ const baseStyles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  sheetBadge: {
+    marginTop: 8,
+    alignSelf: 'center',
   },
   noScoreCard: {
     borderRadius: 14,

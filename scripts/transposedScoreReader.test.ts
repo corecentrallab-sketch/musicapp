@@ -181,13 +181,13 @@ assertEq(countAbcBars(''), 0, 'no score, no bars');
 assertEq(countAbcBars('X:1\nT:x\nK:C'), 0, 'a header with no music has no bars');
 assertEq(countAbcBars(null), 0, 'a null score has no bars');
 assertEq(countAbcBars('#not abc'), 0, 'a line with no note letter is not music');
-assertEq(sampleExcerptLabel('K:C\nE E F G | G F E D | C C D E | E2 D2 |]'), 'Sample — 4-bar excerpt', 'a four-bar excerpt says so, with its own count');
-assertEq(sampleExcerptLabel('K:C\nC D | E F | G A | B c | d e | f g | a b | c d |]'), 'Sample — 8-bar excerpt', 'a document at the excerpt limit is still an excerpt');
+assertEq(sampleExcerptLabel('K:C\nE E F G | G F E D | C C D E | E2 D2 |]'), 'Sample · 4-bar excerpt', 'a four-bar excerpt says so, with its own count');
+assertEq(sampleExcerptLabel('K:C\nC D | E F | G A | B c | d e | f g | a b | c d |]'), 'Sample · 8-bar excerpt', 'a document at the excerpt limit is still an excerpt');
 assertEq(sampleExcerptLabel('K:C\n' + 'C D | '.repeat(SAMPLE_EXCERPT_MAX_BARS + 1)), null, 'one bar past the limit is not called a sample');
 assertEq(sampleExcerptLabel(''), null, 'an empty score has no sample label');
 assertEq(isSampleScore(''), false, 'an empty score is not a sample by omission');
 assertEq(readerSampleLabel({ isSample: false, abc: 'K:C\nC D | E F |]' }), null, 'a whole work shows no sample label');
-assertEq(readerSampleLabel({ isSample: true, abc: 'K:C\nC D | E F |]' }), 'Sample — 2-bar excerpt', 'a flagged sample shows its own bar count');
+assertEq(readerSampleLabel({ isSample: true, abc: 'K:C\nC D | E F |]' }), 'Sample · 2-bar excerpt', 'a flagged sample shows its own bar count');
 assertEq(readerSampleLabel({ isSample: true, abc: 'K:C\nC D | E F |]' }) !== SAMPLE_EXCERPT_FALLBACK_LABEL, true, 'the fallback is only for an unreadable count');
 assertEq(readerSampleLabel({ isSample: true, abc: '' }), SAMPLE_EXCERPT_FALLBACK_LABEL, 'a flagged sample with no readable music still says it is a sample');
 for (const score of PUBLIC_DOMAIN_ABC_SCORES) {
@@ -330,7 +330,7 @@ probe('the device share stops using the platform sheet', deviceWithoutThePlatfor
   readerSharesThroughThePlatform({ screen: SCREEN, device: deviceWithoutThePlatformSheet, pure: SHARE }),
 );
 // R6 — the editor must still say when a score is an excerpt.
-const editorWithoutTheSampleLabel = mutate(EDITOR, 'sampleExcerptLabel(', 'noLabel(');
+const editorWithoutTheSampleLabel = mutate(EDITOR, '<SampleBadge', '<SamplePill');
 probe('the editor stops labelling samples', editorWithoutTheSampleLabel, EDITOR, () =>
   readerLabelsASample({ screen: SCREEN, editor: editorWithoutTheSampleLabel }),
 );

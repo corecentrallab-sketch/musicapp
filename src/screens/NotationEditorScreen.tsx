@@ -26,6 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import { AbcScoreView } from '../components/AbcScoreView';
+import { SampleBadge } from '../components/SampleBadge';
 import {
   PUBLIC_DOMAIN_ABC_SCORES,
   type AbcScore,
@@ -45,7 +46,6 @@ import {
 } from '../services/abcTranspose';
 import {
   isSampleScore,
-  sampleExcerptLabel,
   transposedCopyTitle,
 } from '../services/transposedScore';
 import { abcScoreContainerHeight } from '../services/scoreHeight';
@@ -237,8 +237,7 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
   const copyTitle = selected
     ? transposedCopyTitle({ title: selected.title, keyLabel: keyLabels.to, offset })
     : '';
-  /** "Sample — 4-bar excerpt" when the loaded score is a bundled excerpt. */
-  const sampleLabel = selected ? sampleExcerptLabel(selected.abc) : null;
+  /** The badge below reads the score itself — see components/SampleBadge. */
 
   /**
    * OPEN THE FULL-SCORE READER (v39 Part 2, owner direction 10-11). The reader is
@@ -402,17 +401,14 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
             <Text style={styles.pdBadgeText}>Public domain</Text>
           </View>
         )}
-        {/* WHAT THIS SCORE ACTUALLY IS (v39 Part 2). Every bundled ABC score is a
-            3-4 bar excerpt, so a reader showing "the whole piece" shows a few bars
-            — correctly. Saying so, from the score's own bar count, is the honest
+        {/* WHAT THIS SCORE ACTUALLY IS (v39 Part 2; shared badge from UX round 1
+            step 1, owner 10-18 item 5). Every bundled ABC score is a 3-4 bar
+            excerpt, so a reader showing "the whole piece" shows a few bars —
+            correctly. Saying so, from the score's own bar count, is the honest
             fix; the title is deliberately left alone because
-            services/pieceAbc.ts fuzzy-matches pieces BY TITLE. */}
-        {sampleLabel !== null && (
-          <View style={styles.sampleBadge}>
-            <Ionicons name="information-circle-outline" size={12} color={theme.accent} />
-            <Text style={styles.sampleBadgeText}>{sampleLabel}</Text>
-          </View>
-        )}
+            services/pieceAbc.ts fuzzy-matches pieces BY TITLE. The editor cannot
+            check the catalog, so the badge makes no claim about the free library. */}
+        <SampleBadge abc={selected?.abc} style={styles.sampleBadge} />
         {/* THE STAFF NEEDS A REAL BOX (v36 fix 3 — "the sheet wouldn't open").
             AbcScoreView's own container is `flex: 1` and its WebView is `flex: 1`.
             Inside a card with NO height, a `flex: 1` child lays out at ZERO — so
@@ -689,21 +685,7 @@ const baseStyles = StyleSheet.create({
     fontWeight: '700',
   },
   sampleBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
     marginTop: 8,
-    borderColor: '#0f3460',
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  sampleBadgeText: {
-    color: '#a0a0b8',
-    fontSize: 11,
-    fontWeight: '600',
   },
   readerBtn: {
     flexDirection: 'row',
