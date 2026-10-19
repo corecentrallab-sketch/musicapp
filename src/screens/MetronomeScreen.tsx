@@ -36,7 +36,11 @@ import type { AVPlaybackSource } from 'expo-av';
 // v40 fix E: the app's ONE playback audio session (v34's fix for expo-av's
 // focus-gated volume) and the diagnostics sink that stops a load failure from
 // being swallowed.
-import { ensurePlaybackAudioMode } from '../services/audioSession';
+import {
+  ensurePlaybackAudioMode,
+  playWithAudioFocus,
+  registerAudioPauseHandler,
+} from '../services/audioSession';
 import { reportAudioFailure, usableDetail } from '../services/audioDiagnostics';
 
 // ─── Constants ─────────────────────────────────────────────────
@@ -115,23 +119,8 @@ const BEAT_SOUND_SOURCE = require('../../assets/sounds/click-beat.wav') as AVPla
 export const CLICK_SOUND_FAILED_LINE =
   'The click sound could not load on this device — the beat still flashes, but it will be silent. Check the app’s audio hasn’t been muted in Settings.';
 
-/** Replay one loaded click from its start. Never throws out of the scheduler. */
-async function replayClick(sound: Audio.Sound | null): Promise<void> {
-  if (!sound) return;
-  try {
-    await sound.replayAsync();
-  } catch {
-    // A sound that cannot replay from the start position still gets one more
-    // chance through the explicit seek-then-play pair before we give up on it.
-    try {
-      await sound.setPositionAsync(0);
-      await sound.playAsync();
-    } catch {
-      // Reported by the surface's own state; a thrown error here would land in the
-      // scheduler's setTimeout and be unhandled.
-    }
-  }
-}
+/** How one click is played (the body lives INSIDE the guarded play call below). */
+const CLICK_REPLAY_FAILED = 'click-replay-failed';
 
 export const MetronomeScreen: React.FC = () => {
   const { styles, theme } = useThemedStyles(baseStyles);
@@ -217,7 +206,16 @@ export const MetronomeScreen: React.FC = () => {
       setSoundsReady(ready);
       setSoundFailed(!ready);
     })();
+    // The session stays active in the background (v41), so the app stops the beat
+    // when the user leaves — a metronome ticking in their pocket is not practice.
+    const unregisterPause = registerAudioPauseHandler(() => {
+      isRunningRef.current = false;
+      setIsRunning(false);
+      stopScheduler();
+      cancelPendingTimers();
+    });
     return () => {
+      unregisterPause();
       mounted = false;
       stopScheduler();
       cancelPendingTimers();
@@ -242,13 +240,38 @@ export const MetronomeScreen: React.FC = () => {
       const timer = setTimeout(() => {
         pendingTimersRef.current.delete(timer);
         const sound = beatIndex === 0 ? accentSoundRef.current : beatSoundRef.current;
-        // v40 fix E: the session is (re)applied on the way into every click — the
-        // v34 rule — and the click itself replays from its start. `replayAsync` is
-        // the expo-av API for exactly this; a sound that has already finished does
-        // not play again under a bare play call.
+        // v41 item 1: EVERY click goes through the ONE guarded play path
+        // (playWithAudioFocus) — the session is re-applied and a refused audio
+        // focus request is retried once. This is the metronome the owner re-flagged
+        // twice ("makes no sound output still"): the clicks ARE expo-av Sounds, so
+        // the shared focus failure silenced them exactly like the video and the
+        // listen rows, and a bare replayAsync could not recover. `replayAsync` is
+        // still what makes a finished click sound again.
         void (async () => {
-          await ensurePlaybackAudioMode();
-          await replayClick(sound);
+          try {
+            await playWithAudioFocus(
+              async () => {
+                if (!sound) return;
+                try {
+                  await sound.replayAsync();
+                } catch {
+                  // A sound that cannot replay from the start position still gets
+                  // one more chance through the explicit seek-then-play pair before
+                  // we give up on it.
+                  try {
+                    await sound.setPositionAsync(0);
+                    await sound.playAsync();
+                  } catch {
+                    throw new Error(CLICK_REPLAY_FAILED);
+                  }
+                }
+              },
+              { source: 'tone-preview', reason: 'clip-load' },
+            );
+          } catch {
+            // playWithAudioFocus already reported the reason to the chip; a beat
+            // must never throw out of the scheduler.
+          }
         })();
         // Visual pulse synced to the click.
         pulseAnim.stopAnimation();

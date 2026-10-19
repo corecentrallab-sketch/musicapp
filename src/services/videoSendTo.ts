@@ -25,6 +25,7 @@
  */
 import { MIDI_EXPORT_LABEL, type SavedCaptureTake } from './midiExport';
 import { TAKE_PDF_HINT, TAKE_PDF_LABEL } from './takeNotationPdf';
+import { takePdfVerdict } from './takePdfGuard';
 import {
   SEND_TO_HONESTY,
   takeHasSomethingToSend,
@@ -97,7 +98,11 @@ export function videoSendActions(rec: VideoSendRecord | null | undefined): Video
       hint: VIDEO_SEND_VIDEO_HINT,
     });
   }
-  if (hasTake) {
+  // THE "NOTHING RECORDED" RULE (v41 item 2): a take with no usable note offers no
+  // PDF and no MIDI — those two would either fail or hand over the empty page the
+  // owner was sent. The video is still the user's own filming, so it stays offered.
+  const takeUsable = hasTake && !takePdfVerdict(rec?.take ?? null).refused;
+  if (takeUsable) {
     actions.push({ kind: 'pdf', label: TAKE_PDF_LABEL, hint: TAKE_PDF_HINT });
     actions.push({ kind: 'midi', label: MIDI_EXPORT_LABEL, hint: VIDEO_SEND_MIDI_HINT });
     actions.push({ kind: 'summary', label: VIDEO_SEND_SUMMARY_LABEL, hint: VIDEO_SEND_SUMMARY_HINT });

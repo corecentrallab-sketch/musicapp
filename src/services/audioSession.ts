@@ -36,9 +36,19 @@
  * are toneSourceLadder.ts and audioDiagnostics.ts, both pure and both asserted by
  * the gate.
  */
+import { AppState, type AppStateStatus } from 'react-native';
 import { Audio } from 'expo-av';
 import Constants from 'expo-constants';
 import { reportAudioFailure, usableDetail } from './audioDiagnostics';
+import type { AudioFailureReason, AudioFailureSource } from './audioDiagnostics';
+import {
+  AUDIO_FOCUS_FAILED_LINE,
+  AUDIO_FOCUS_RETRY_DELAY_MS,
+  AUDIO_FOCUS_RETRY_LIMIT,
+  PLAYBACK_SESSION_SPEC,
+  RECORDING_SESSION_SPEC,
+  isAudioFocusError,
+} from './audioFocusContract';
 import { toneSourceFor } from './toneBank';
 import {
   describeToneSourceRung,
@@ -60,26 +70,28 @@ export const ANDROID_PACKAGE_FALLBACK = 'com.notesnap.sheetmusic';
 export const AUDIO_MODE_TIMEOUT_MS = 2000;
 
 /**
- * THE PLAYBACK SESSION. `playsInSilentModeIOS` is what makes the app audible with
- * the ringer off; `allowsRecordingIOS: false` releases the record session the
- * capture flow opens; `playThroughEarpieceAndroid: false` keeps output on the
- * speaker; `staysActiveInBackground: false` hands focus back when the app pauses.
- * The interruption modes are deliberately left at expo-av's own defaults (expo-av
- * validates whatever we pass and keeps the current values for omitted keys).
+ * THE PLAYBACK SESSION — now defined in ONE pure place, `audioFocusContract`
+ * (v41 item 1), so the tier1 gate can assert its keys and the surface can never
+ * restate a partial mode of its own.
+ *
+ * WHY IT CHANGED (owner v40 device pass 10-18: every player silent, the chip
+ * carrying expo-av's `AudioFocusNotAcquiredException`): expo-av raises that
+ * exception from AVManager.acquireAudioFocus() when the host is paused and the
+ * session says `staysActiveInBackground: false` — a camera / in-app browser /
+ * fullscreen-video transition pauses the host, and every play after it throws.
+ * The session now stays active in the background (so that throw path is closed)
+ * and requests full AUDIOFOCUS_GAIN (`interruptionModeAndroid: DoNotMix`) instead
+ * of the ducking transient hint. Leaving the app pauses the players through
+ * `pauseAllAudioPlayers` below, so nothing plays on behind the user.
  */
 export const PLAYBACK_AUDIO_MODE: Partial<Audio.AudioMode> = {
-  playsInSilentModeIOS: true,
-  allowsRecordingIOS: false,
-  playThroughEarpieceAndroid: false,
-  shouldDuckAndroid: true,
-  staysActiveInBackground: false,
-};
+  ...PLAYBACK_SESSION_SPEC,
+} as Partial<Audio.AudioMode>;
 
 /** THE RECORDING SESSION: the playback session plus the mic. */
 export const RECORDING_AUDIO_MODE: Partial<Audio.AudioMode> = {
-  ...PLAYBACK_AUDIO_MODE,
-  allowsRecordingIOS: true,
-};
+  ...RECORDING_SESSION_SPEC,
+} as Partial<Audio.AudioMode>;
 
 /** Which session the app believes it is in. */
 export type AudioModeName = 'playback' | 'recording' | 'unknown';
@@ -144,9 +156,18 @@ async function applyAudioMode(
   return ok;
 }
 
-/** Put the app in its PLAYBACK session (idempotent; safe to call on every play). */
+/**
+ * Put the app in its PLAYBACK session. Safe to call on every play — and it now
+ * FORCE-re-applies the native mode every time (v41 item 1). The v34 shape
+ * returned early whenever it believed the session was already 'playback', so
+ * after the recorder ran (or an apply timed out) the native session was never
+ * re-established: the app said "playback", the device was still in whatever the
+ * recorder left behind, and the play either threw or was inaudible. A forced
+ * apply is one cheap native call and removes that whole class of silence.
+ */
 export function ensurePlaybackAudioMode(): Promise<boolean> {
-  return applyAudioMode(PLAYBACK_AUDIO_MODE, 'playback', false);
+  installAudioSessionGuards();
+  return applyAudioMode(PLAYBACK_AUDIO_MODE, 'playback', true);
 }
 
 /**
@@ -169,6 +190,130 @@ export function restorePlaybackAudioMode(): Promise<boolean> {
 /** The session the app last applied (diagnostics only). */
 export function currentAudioModeName(): AudioModeName {
   return appliedMode;
+}
+
+// ───────────────────────── the ONE guarded play path (v41) ─────────────────────
+
+/** Where a failed play is reported to the diagnostics chip. */
+export interface AudioPlayReport {
+  source: AudioFailureSource;
+  reason: AudioFailureReason;
+}
+
+/** Await `ms` (a refused focus request is a race, not a state). */
+function delay(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    // Never keep a timer alive on a platform without a real event loop timer.
+    if (timer && typeof (timer as { unref?: () => void }).unref === 'function') {
+      (timer as { unref?: () => void }).unref?.();
+    }
+  });
+}
+
+/**
+ * THE ONE PLAY PATH. Every player in the app starts sound through this: it
+ * (1) re-applies the playback session first, (2) runs the play, and (3) on
+ * expo-av's audio-focus refusal — the exception the owner's v40 pass showed on
+ * screen — re-establishes the session and retries ONCE. Only if the retry also
+ * fails is the failure reported and rethrown, so the surface keeps its own
+ * sentence and the chip names the honest reason.
+ *
+ * The retry is what makes pause/stop/play-again work: the second request is made
+ * after the session was applied again, so it is granted.
+ */
+export async function playWithAudioFocus<T>(
+  run: () => Promise<T>,
+  report?: AudioPlayReport,
+): Promise<T> {
+  await ensurePlaybackAudioMode();
+  try {
+    return await run();
+  } catch (err) {
+    if (!isAudioFocusError(err) || AUDIO_FOCUS_RETRY_LIMIT < 1) {
+      reportPlayFailure(report, err);
+      throw err;
+    }
+    // The retry: session again, then the same play.
+    await ensurePlaybackAudioMode();
+    await delay(AUDIO_FOCUS_RETRY_DELAY_MS);
+    try {
+      return await run();
+    } catch (second) {
+      reportPlayFailure(report, second ?? AUDIO_FOCUS_FAILED_LINE);
+      throw second;
+    }
+  }
+}
+
+function reportPlayFailure(report: AudioPlayReport | undefined, err: unknown): void {
+  if (!report) return;
+  reportAudioFailure({
+    source: report.source,
+    reason: report.reason,
+    detail: usableDetail(err) || AUDIO_FOCUS_FAILED_LINE,
+  });
+}
+
+// ───────────────────── the app-state guard (v41 item 1) ────────────────────────
+
+/**
+ * Players that can be silenced when the app leaves the foreground. The session
+ * stays active in the background (that is what closes expo-av's focus throw), so
+ * the APP — not expo-av — is responsible for stopping sound on the way out.
+ */
+const pauseHandlers = new Set<() => void>();
+
+/** Register a player's own pause. Returns the unsubscribe (React effects call it). */
+export function registerAudioPauseHandler(handler: () => void): () => void {
+  pauseHandlers.add(handler);
+  return () => {
+    pauseHandlers.delete(handler);
+  };
+}
+
+/** Pause every registered player. Returns how many were asked. */
+export function pauseAllAudioPlayers(): number {
+  const handlers = Array.from(pauseHandlers);
+  for (const handler of handlers) {
+    try {
+      handler();
+    } catch {
+      // A broken player must never take the app-state path down with it.
+    }
+  }
+  return handlers.length;
+}
+
+/** How many players are registered (diagnostics + the gate's wiring check). */
+export function audioPauseHandlerCount(): number {
+  return pauseHandlers.size;
+}
+
+let guardsInstalled = false;
+
+/**
+ * Install the app-state guard ONCE. On the way back into the app the playback
+ * session is re-applied (a microphone-app or a call may have taken the session
+ * while we were away); on the way out every registered player is paused.
+ * Called from `ensurePlaybackAudioMode`, so the first play of any surface installs
+ * it — no App.tsx edit and no screen that can forget it.
+ */
+export function installAudioSessionGuards(): void {
+  if (guardsInstalled) return;
+  guardsInstalled = true;
+  try {
+    AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') {
+        void ensurePlaybackAudioMode();
+        return;
+      }
+      pauseAllAudioPlayers();
+    });
+  } catch {
+    // A host without AppState still plays; the guard is an improvement, not a
+    // precondition for sound.
+  }
 }
 
 /** The rung that already worked for a pitch — so the ladder is paid once. */

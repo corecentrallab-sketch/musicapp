@@ -102,15 +102,17 @@ import {
   FIND_ANY_SONG_CHIP_LABEL,
   FRONT_DOOR_BETA_NOTE,
   FRONT_DOOR_FACET_FLAGS,
-  TODAY_CARD_TITLE,
-  TODAY_CARD_UNAVAILABLE_BODY,
   WEEK_CHIP_ACCESSIBILITY_LABEL,
   WEEK_CHIP_LABEL,
   bandFacets,
   retentionChips,
   todayCardAccessibilityLabel,
-  todayCardCta,
 } from '../services/frontDoorBands';
+import {
+  TODAYS_PIECE_EYEBROW,
+  TODAYS_PIECE_NO_PIECE_LINE,
+  TODAYS_PIECE_NO_PIECE_TITLE,
+} from '../services/uxrV41Contract';
 // The categories a result is allowed to claim — never a hardcoded genre.
 import { PUBLIC_DOMAIN_GENRE } from '../services/resultGenre';
 // The PD-library cross-check on the modern route (owner 09-25, build #3): a
@@ -1543,6 +1545,18 @@ export const HomeScreen: React.FC = () => {
             search: band B is never empty and never a dead end. */}
         <View style={styles.band} testID={BAND_TEST_IDS.today}>
           <Text style={styles.bandTitle}>{BAND_TITLES.today}</Text>
+          {/* ── TODAY'S PIECE, AS ONE CARD (v41 item 4 · designer spec §1) ──
+              The band used to be a full-width block of stacked text that read as
+              a DIVIDER, not as something you can open (owner 10-18). It is now one
+              card — 358 × 92 dp at 16 dp side margins, radius 18, CARD fill and a
+              1 dp CARD_LINE border — holding a 56 dp paper score tile, three type
+              levels (eyebrow / title / composer) and ONE SUB chevron. The WHOLE
+              CARD is the tap target: the chevron is the only affordance mark and is
+              not its own hit region, so there is no "open" button to hunt for.
+              Geometry and copy are asserted by services/uxrV41Contract
+              .todayCardMatchesSpec, and every colour is an existing palette literal
+              (dark #16213E on the gradient field, light #FFFFFF + hairline — the
+              theme remap does that, no new tokens). */}
           <TouchableOpacity
             style={styles.todayCard}
             onPress={handleDailyChallengeTap}
@@ -1550,68 +1564,31 @@ export const HomeScreen: React.FC = () => {
             accessibilityRole="button"
             accessibilityLabel={todayCardAccessibilityLabel(dailyChallenge)}
           >
-            <Text style={styles.todayCardTitle}>{TODAY_CARD_TITLE}</Text>
-            {dailyChallenge ? (
-              <>
-                <Text style={styles.todayCardPiece}>{dailyChallenge.title}</Text>
-                <Text style={styles.todayCardComposer}>
-                  {dailyChallenge.composer}
-                </Text>
-                <View style={styles.challengeMeta}>
-                  {dailyChallenge.genre ? (
-                    <View style={styles.challengeTag}>
-                      <Text style={styles.challengeTagText}>
-                        {dailyChallenge.genre}
-                      </Text>
-                    </View>
-                  ) : null}
-                  {dailyChallenge.catalog ? (
-                    <View style={styles.challengeTag}>
-                      <Text style={styles.challengeTagText}>
-                        {dailyChallenge.catalog}
-                      </Text>
-                    </View>
-                  ) : null}
-                  <View style={styles.challengeTag}>
-                    <Text style={styles.challengeTagText}>
-                      {dailyChallenge.difficulty === 'Beginner'
-                        ? '🌱'
-                        : dailyChallenge.difficulty === 'Intermediate'
-                          ? '🌿'
-                          : '🌳'}{' '}
-                      {dailyChallenge.difficulty}
-                    </Text>
-                  </View>
-                </View>
-                {dailyChallenge.description ? (
-                  <Text style={styles.challengeDesc} numberOfLines={2}>
-                    {dailyChallenge.description}
-                  </Text>
-                ) : null}
-              </>
-            ) : (
-              <Text style={styles.todayCardBody}>
-                {TODAY_CARD_UNAVAILABLE_BODY}
-              </Text>
-            )}
-
-            {/* Retention as STATE, not as rival cards. */}
-            <View style={styles.bandChipRow}>
-              {todayCardChips.map((chip) => (
-                <View key={chip.id} style={styles.bandChip}>
-                  <Text style={styles.bandChipText}>{chip.label}</Text>
-                </View>
-              ))}
+            {/* The 56 dp score tile — the same "this is sheet music" idiom as the
+                Library and History rows, paper-white in BOTH themes. */}
+            <View style={styles.todayCardTile}>
+              <View style={styles.todayCardStaffLine} />
+              <View style={styles.todayCardStaffLine} />
+              <View style={styles.todayCardStaffLine} />
+              <View style={styles.todayCardStaffLine} />
+              <View style={styles.todayCardStaffLine} />
+              <View style={styles.todayCardNote} />
+              <View style={[styles.todayCardNote, styles.todayCardNoteTwo]} />
             </View>
-
-            {/* The excerpt the app can actually show for today's piece, said out
-                loud. The honest state comes from the card's OWN tap mapping
-                (featuredPieceLibraryState → practiceTodayDestination), so the
-                "tap for the full piece" half appears exactly when tapping this
-                card opens the curated full score. */}
-            <SampleBadge abc={featuredExcerptAbc} libraryState={featuredPieceLibraryState(dailyChallenge)} style={styles.todayCardBadge} />
-
-            <Text style={styles.cardCta}>{todayCardCta(dailyChallenge)}</Text>
+            <View style={styles.todayCardText}>
+              <Text style={styles.todayCardEyebrow}>{TODAYS_PIECE_EYEBROW}</Text>
+              <Text style={styles.todayCardPiece} numberOfLines={1}>
+                {dailyChallenge ? dailyChallenge.title : TODAYS_PIECE_NO_PIECE_TITLE}
+              </Text>
+              <Text style={styles.todayCardComposer} numberOfLines={1}>
+                {dailyChallenge
+                  ? [dailyChallenge.composer, dailyChallenge.catalog]
+                      .filter((part) => !!part && String(part).length > 0)
+                      .join(' · ')
+                  : TODAYS_PIECE_NO_PIECE_LINE}
+              </Text>
+            </View>
+            <Text style={styles.todayCardChevron}>›</Text>
           </TouchableOpacity>
         </View>
           {/* The streak nudge (slice 2) is part of THIS band (owner 10-04 §F4):
@@ -2088,12 +2065,62 @@ const baseStyles = StyleSheet.create({
     fontWeight: '600',
   },
   // Band B — ONE card, one destination (owner 10-02).
+  // ── Today's piece — ONE CARD (v41 item 4 · designer spec §1) ──────────────
+  // 358 × 92 dp at 16 dp side margins (it never touches the screen edge), radius
+  // 18, CARD fill + 1 dp CARD_LINE. Same numbers in both themes: the literals below
+  // are the existing palette roles, so the light mode remap (services/themeApply)
+  // repaints them and nothing new is invented.
   todayCard: {
     backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 18,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: '#0f3460',
+    marginHorizontal: 16,
+    minHeight: 92,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  // The 56 dp paper score tile — paper-white in BOTH themes (the theme remap
+  // treats #ffffff as a surface, not as ink).
+  todayCardTile: {
+    width: 56,
+    height: 56,
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    marginRight: 14,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    overflow: 'hidden',
+  },
+  todayCardStaffLine: {
+    height: 1,
+    backgroundColor: '#c9cddb',
+    marginVertical: 2,
+  },
+  todayCardNote: {
+    position: 'absolute',
+    width: 6,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#16213e',
+    left: 15,
+    top: 19,
+  },
+  todayCardNoteTwo: {
+    left: 31,
+    top: 29,
+  },
+  todayCardText: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  todayCardEyebrow: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: '#4ecdc4',
+    marginBottom: 2,
   },
   todayCardBadge: {
     marginTop: 10,
@@ -2104,15 +2131,20 @@ const baseStyles = StyleSheet.create({
     color: '#ffffff',
   },
   todayCardPiece: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '700',
     color: '#ffffff',
-    marginTop: 10,
   },
   todayCardComposer: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#a0a0b8',
     marginTop: 2,
+  },
+  // The only affordance mark — decoration, never its own hit region.
+  todayCardChevron: {
+    fontSize: 14,
+    color: '#a0a0b8',
+    marginLeft: 10,
   },
   todayCardBody: {
     fontSize: 14,
