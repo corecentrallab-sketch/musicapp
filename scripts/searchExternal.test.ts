@@ -351,7 +351,7 @@ function mutationProbes(): void {
   // (b) THE dead-end regression: the section gated behind internal results.
   const statusGated = screen.replace(
     '{external.visible ? (\n        <ScrollView',
-    "{status === 'ready' ? (\n        <ScrollView",
+    "{external.visible ? (\n          <View style={styles.externalBlock}>",
   );
   assert(statusGated !== screen, 'the status-gate mutation changed FindPieceScreen');
   assertEq(
@@ -361,7 +361,7 @@ function mutationProbes(): void {
   );
   const subtlyGated = screen.replace(
     '{external.visible ? (\n        <ScrollView',
-    "{status !== 'empty' && external.visible ? (\n        <ScrollView",
+    "{status !== 'empty' && external.visible ? (\n          <View style={styles.externalBlock}>",
   );
   assert(subtlyGated !== screen, 'the subtle status-gate mutation changed FindPieceScreen');
   assertEq(
