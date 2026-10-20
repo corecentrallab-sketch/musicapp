@@ -24,6 +24,13 @@ import {
   DEFAULT_PAGE_TURN_PROFILE,
 } from './pageTurnPresets';
 import { TUNER_DECODER_HTML, tunerDecoderPageIsSelfContained } from './tunerDecoder';
+// v42 fix C re-pointed the page-turner preset guard below: the scanned surface
+// lost a control that could never work there, and the PDF reader kept it.
+import {
+  pdfViewerKeepsAutoScroll,
+  scannedViewerExplainsNoAutoScroll,
+  scannedViewerHasDeadControls,
+} from './uxrV42Contract';
 
 // ───────────────────────────── the paths the walk reads ─────────────────────
 
@@ -302,13 +309,22 @@ export function tunerSaysWhatItDoes(screenSource: string, serviceSource: string)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * GUARD P1 — BOTH readers get the presets, from ONE implementation.
+ * GUARD P1 — THE PDF READER GETS THE PRESETS, AND THE SCANNED SURFACE NO LONGER
+ * OFFERS A CONTROL THAT CANNOT WORK THERE. RE-POINTED by v42 fix C (owner, v41
+ * device pass 10-20: "the Play button does nothing and the BPM Autoscroll control
+ * does not work off the scanned score").
  *
  * The PDF viewer and the scanned viewer are separate screens with separate
- * navigation params; if only one of them grew the presets, half the library would
- * keep the old behaviour. Both must key the memory on their own `itemId` (the
- * library item id — the piece's stable identity), and the hook must be the one
- * that reads and writes the stored profile.
+ * navigation params. The PDF viewer must key the memory on its own `itemId` and
+ * the hook must be the one that reads and writes the stored profile.
+ *
+ * The scanned surface is a PHOTO. There is no OMR and no score following, so BPM
+ * auto-scroll there could only turn pages on a timer blind to the music — it read
+ * as broken because it WAS broken. v42 removed it from that surface (not
+ * disabled: a greyed-out control is still a promise) and the surface now says why
+ * (`SCANNED_NO_AUTOSCROLL_LINE`). This is a per-surface decision, not the
+ * feature's removal, so the PDF half is asserted positively — if it ever goes
+ * false, fix C deleted the feature instead of moving it.
  */
 export function pageTurnerViewersShareThePresets(
   pdfSource: string,
@@ -319,11 +335,13 @@ export function pageTurnerViewersShareThePresets(
   const scanned = maskComments(scannedSource);
   const hook = maskComments(hookSource);
   if (pdf.length < 4000 || scanned.length < 4000 || hook.length < 1500) return false;
-  for (const viewer of [pdf, scanned]) {
-    if (!/from\s+'\.\.\/hooks\/usePageTurnSpeed'/.test(viewer)) return false;
-    if (viewer.indexOf('usePageTurnSpeed(itemId, autoScroll)') < 0) return false;
-    if (viewer.indexOf('speedProfiles={speedProfiles}') < 0) return false;
-  }
+  if (!pdfViewerKeepsAutoScroll(pdfSource)) return false;
+  if (!/from\s+'\.\.\/hooks\/usePageTurnSpeed'/.test(pdf)) return false;
+  if (pdf.indexOf('usePageTurnSpeed(itemId, autoScroll)') < 0) return false;
+  if (pdf.indexOf('speedProfiles={speedProfiles}') < 0) return false;
+  // The scanned surface must carry NONE of it, and must say why.
+  if (scannedViewerHasDeadControls(scannedSource)) return false;
+  if (!scannedViewerExplainsNoAutoScroll(scannedSource)) return false;
   if (hook.indexOf('readPageTurnSpeedMap(') < 0) return false;
   if (hook.indexOf('writePageTurnSpeedMap(') < 0) return false;
   if (hook.indexOf('pageTurnSpeedForPiece(map, itemId') < 0) return false;

@@ -166,6 +166,11 @@
     "src/services/audioFocusContract.ts",
     "src/services/takePdfGuard.ts",
     "src/services/uxrV41Contract.ts",
-    "scripts/uxr-v41-fixes.test.ts"
+    "scripts/uxr-v41-fixes.test.ts",
+    "src/services/inkContrast.ts",
+    "src/services/takeStaffPalette.ts",
+    "src/services/ocrPrefill.ts",
+    "src/services/uxrV42Contract.ts",
+    "scripts/uxr-v42-fixes.test.ts"
   ]
 }

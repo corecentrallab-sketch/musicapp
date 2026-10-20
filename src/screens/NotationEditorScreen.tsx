@@ -48,18 +48,16 @@ import {
   isSampleScore,
   transposedCopyTitle,
 } from '../services/transposedScore';
-import { abcScoreContainerHeight } from '../services/scoreHeight';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NotationEditor'>;
 
 const MIN_OFFSET = -11;
 const MAX_OFFSET = 11;
 /**
- * THE SCORE'S BOX MAY NOT COLLAPSE (v36 fix 3) — but it is only a FLOOR. v37 item
- * 2 (backlog 9e71e467, owner 10-09: "the transposed copy re-opens showing ~4
- * bars") adds the missing half: the score's document reports its own height, and
- * this box grows to it, so a longer score is laid out in full and the PAGE
- * scrolls it instead of the viewer clipping it.
+ * THE SCORE'S BOX MAY NOT COLLAPSE (v36 fix 3) — a FLOOR, and since v42 the only
+ * height rule this screen applies. See `scoreStaffBox` in the render body: the
+ * viewer owns its own height now (the whole-work band), so this card no longer
+ * grows a `minHeight` from a clamped measurement.
  */
 const SCORE_STAFF_MIN_HEIGHT = 240;
 
@@ -95,15 +93,6 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
    * requested public-domain piece, and the bundled default.
    */
   const [sourceAbc, setSourceAbc] = useState('');
-  /**
-   * THE HEIGHT THE SCORE'S DOCUMENT REPORTED (v37 item 2). null until the
-   * document says; it grows the box below so a long score lays out in FULL
-   * instead of being clipped to the box (the owner's "~4 bars"). It is cleared
-   * whenever a different score is loaded, because a height that belonged to the
-   * previous score says nothing about this one.
-   */
-  const [scoreHeight, setScoreHeight] = useState<number | null>(null);
-
   const sourcePieceId = route.params?.sourcePieceId;
   const itemId = route.params?.itemId;
 
@@ -121,7 +110,6 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
           const abc = await readAbcText(item);
           if (cancelled) return;
           setSourceAbc(abc);
-          setScoreHeight(null);
           setSelected(scoreFromAbc(abc, item.title));
           setOffset(0);
         } catch {
@@ -143,7 +131,6 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
         );
         if (!cancelled && found) {
           setSourceAbc(found.abc);
-          setScoreHeight(null);
           setSelected(found);
           setOffset(0);
           return;
@@ -157,7 +144,6 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
         const first = PUBLIC_DOMAIN_ABC_SCORES[0];
         if (first) {
           setSourceAbc(first.abc);
-          setScoreHeight(null);
           setSelected(first);
           setOffset(0);
         }
@@ -190,15 +176,6 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
   const resetOffset = useCallback(() => setOffset(0), []);
 
   /**
-   * The score's document measured itself (v37 item 2). The height is clamped by
-   * the same pure rule the viewer uses, so a runaway document cannot grow the
-   * page without end.
-   */
-  const handleDocumentHeight = useCallback((height: number) => {
-    setScoreHeight(abcScoreContainerHeight({ interactive: false, measuredHeight: height }));
-  }, []);
-
-  /**
    * WHAT "REVERT TO ORIGINAL" WOULD DO, as data (v37 item 2, backlog a3a6da0c).
    */
   const revertPlan = useMemo(
@@ -216,13 +193,11 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
   const handleRevertToOriginal = useCallback(() => {
     const plan = originalScorePlan(sourceAbc, selected?.abc ?? '', offset);
     setOffset(plan.offset);
-    setScoreHeight(null);
     setSelected((current) => (current ? { ...current, abc: plan.abc } : current));
   }, [sourceAbc, selected, offset]);
 
   const pick = useCallback((p: AbcScore) => {
     setSourceAbc(p.abc);
-    setScoreHeight(null);
     setSelected(p);
     setOffset(0);
   }, []);
@@ -409,32 +384,42 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
             services/pieceAbc.ts fuzzy-matches pieces BY TITLE. The editor cannot
             check the catalog, so the badge makes no claim about the free library. */}
         <SampleBadge abc={selected?.abc} style={styles.sampleBadge} />
-        {/* THE STAFF NEEDS A REAL BOX (v36 fix 3 — "the sheet wouldn't open").
-            AbcScoreView's own container is `flex: 1` and its WebView is `flex: 1`.
-            Inside a card with NO height, a `flex: 1` child lays out at ZERO — so
-            this card opened with a title, a composer line and NO SCORE, on every
-            score, and the owner could not check that a transposed copy had saved.
-            The box below gives the renderer a definite height, and the viewer's own
-            min-height floor (ABC_MIN_HEIGHT) means no future call site can silently
-            collapse it again. `interactive={false}` closes the WebView's touch
-            surface so a finger on the staff scrolls THIS page instead. */}
-        {/* THE BOX GROWS TO THE SCORE (v37 item 2, backlog 9e71e467). The box is
-            a FLOOR (SCORE_STAFF_MIN_HEIGHT); the score's own document reports how
-            tall it really is and the box is given that as a min-height, so a long
-            score lays out in full and THIS page scrolls it. Without it the viewer
-            (non-interactive, so it cannot scroll itself) showed only as much as
-            the box was tall — the owner's "~4 bars". `interactive={false}` keeps
-            the WebView's touch surface closed so a finger on the staff scrolls
-            this page (v36 fix 1). */}
-        <View
-          style={[
-            styles.scoreStaffBox,
-            scoreHeight !== null && {
-              minHeight: Math.max(SCORE_STAFF_MIN_HEIGHT, scoreHeight),
-            },
-          ]}
-        >
-          <AbcScoreView abc={transposedAbc} interactive={false} onDocumentHeight={handleDocumentHeight} />
+        {/* THE STAFF NEEDS A REAL BOX (v36 fix 3 — "the sheet wouldn't open"), AND
+            IT IS A FLOOR, NEVER A CEILING (v42 fix A — the owner's "only 4 bars
+            again", v41 device pass 10-20).
+
+            WHY A FLOOR. AbcScoreView's own container is `flex: 1` and its WebView
+            is `flex: 1`; inside a card with NO height a `flex: 1` child lays out at
+            ZERO, so this card used to open with a title, a composer line and no
+            score. The box below gives the renderer a definite floor, and the
+            viewer's own min-height (ABC_MIN_HEIGHT) makes a silent collapse
+            structurally impossible.
+
+            WHY NOT A CEILING. This card used to grow to a measured height that had
+            already been run through the app's BOX ceiling
+            (`abcScoreContainerHeight` → `clampScoreHeight` →
+            ABC_SCORE_MAX_HEIGHT, 4000px). A MEASUREMENT IS NOT A BOX: pre-clamped
+            at 4000, a work taller than the ceiling was laid out in a 4000px box
+            while the viewer stayed non-interactive (it cannot scroll itself), so
+            everything below the ceiling was unreachable — the same clip the reader
+            was fixed for in UX round 1, still live on THIS surface because the
+            editor kept its own capped rule.
+
+            WHAT IT DOES NOW. The editor hands the viewer `wholeWork`, the SAME band
+            contract the full-score reader uses (services/scoreHeight.ts): a score
+            that fits is laid out in full and this page scrolls it; a score taller
+            than the reader ceiling gets a window-height box the WebView scrolls
+            ITSELF, so every bar stays reachable and nothing is clipped. The editor
+            applies no height of its own, so it cannot pre-cap the score again.
+
+            WHY NO `viewportHeight` HERE. In the self-scroll band the box must be the
+            window the document scrolls inside. This card sits in an AUTO-HEIGHT
+            page, so measuring the card would measure the very box the viewer is
+            sizing — a feedback loop that lands back on the floor, i.e. back on the
+            owner's four bars. The window height the viewer already defaults to is
+            the stable number this surface needs. */}
+        <View style={styles.scoreStaffBox}>
+          <AbcScoreView abc={transposedAbc} wholeWork />
         </View>
         {/* VIEW THE FULL SCORE (v39 Part 2, owner direction 10-11, backlog
             5e3dffd3). The card above is a preview inside a scrolling editor page;
@@ -645,7 +630,10 @@ const baseStyles = StyleSheet.create({
    * multi-system score can still grow.
    */
   scoreStaffBox: {
-    minHeight: 240,
+    // THE FLOOR, and the ONLY height this screen applies (v42 fix A): the viewer
+    // owns its own height through the whole-work band, so this card can never
+    // pre-cap a score again.
+    minHeight: SCORE_STAFF_MIN_HEIGHT,
     marginTop: 8,
     marginHorizontal: 12,
     marginBottom: 14,
