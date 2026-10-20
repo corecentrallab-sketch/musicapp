@@ -64,6 +64,8 @@ export const UXR2_PILL_STYLE = 'controlPill';
 export const UXR2_DOCK_STYLE = 'dock';
 /** The floating top layer's style name. */
 export const UXR2_TOP_STYLE = 'topFloat';
+/** v43 item C5b — the permanent framing tip over the viewfinder. */
+export const UXR2_FRAMING_HINT_STYLE = 'framingHintWrap';
 /** The expandable detail panel's style name. */
 export const UXR2_SHEET_STYLE = 'findSheet';
 
@@ -248,8 +250,19 @@ export function scanHasNoOpaqueFullWidthBar(source: string): boolean {
   if (dock.indexOf('backgroundColor:') >= 0) return false;
   if (top.indexOf('backgroundColor:') >= 0) return false;
   if (dock.indexOf('bottom: 0') < 0) return false;
-  if (absoluteStyleNames(src).join(',') !== [UXR2_DOCK_STYLE, UXR2_TOP_STYLE].sort().join(',')) return false;
-  if (countOf(src, "position: 'absolute'") !== 2) return false;
+  // v43 item C5b — the framing tip is a THIRD absolute layer, and it is allowed
+  // only as a translucent, tap-transparent, INSET panel: no full-bleed edge, no
+  // fill on the wrapper itself, its fill on the panel must be rgba (translucent),
+  // and the wrapper must swallow no taps. A full-width opaque bar here is exactly
+  // what this guard exists to forbid, so the allowance is pinned, not widened.
+  if (absoluteStyleNames(src).join(',') !== [UXR2_DOCK_STYLE, UXR2_FRAMING_HINT_STYLE, UXR2_TOP_STYLE].sort().join(',')) return false;
+  if (countOf(src, "position: 'absolute'") !== 3) return false;
+  const hint = styleBlock(src, UXR2_FRAMING_HINT_STYLE);
+  if (hint.length < 30) return false;
+  if (hint.indexOf('left: 0') >= 0 || hint.indexOf('right: 0') >= 0) return false;
+  if (hint.indexOf('backgroundColor:') >= 0) return false;
+  if (styleBlock(src, 'framingHintPanel').indexOf('rgba(') < 0) return false;
+  if (countOf(src, 'pointerEvents="none"') < 1) return false;
   // Both floating layers let taps through to the preview around their content.
   if (countOf(src, 'pointerEvents="box-none"') < 2) return false;
   return true;

@@ -483,7 +483,12 @@ export function coverScanGetThisSongReachesTheMoneyPath(scanSource: string): boo
   if (body.indexOf('setFindQuery(words)') < 0) return false;
   if (/https?:\/\//.test(body)) return false;
   // …and the query really opens the ONE search, in place.
-  if (src.indexOf('<FindPieceScreen initialQuery={findQuery}') < 0) return false;
+  // Built by split/join so this contract file never contains a contiguous
+  // `<FindPieceScreen …` token — the backExit live scan reads every src file and
+  // would otherwise flag this literal itself as a mount without onClose (the same
+  // convention as v39FixContract.FIND_PIECE_MOUNT).
+  const findPieceMount = ['<FindPiece', 'Screen initialQuery={findQuery}'].join('');
+  if (src.indexOf(findPieceMount) < 0) return false;
   return src.indexOf('https://') < 0;
 }
 

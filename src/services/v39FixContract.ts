@@ -157,6 +157,13 @@ export function scanFindOpensTheOneSearch(sources: {
   if (section.indexOf('readCoverText(') < 0) return false;
   if (section.indexOf('scanFindView(') < 0) return false;
   if (section.indexOf('onSearch(') < 0) return false;
+  // RE-POINTED by v43 item C: the one resolve page has SEVERAL `onSearch(`
+  // call sites (a candidate's own title, the typed title, the read words), so a
+  // bare `onSearch(` check no longer proves the READ reaches the search — it
+  // stayed true with the read's own hand-off deleted, and the v39 mutation probe
+  // ("the read never reaches the search") caught exactly that. The confirmed read
+  // must be one of those call sites.
+  if (section.indexOf('onSearch(confirmed)') < 0) return false;
   if (section.indexOf('fetch(') >= 0) return false;
   if (/https?:\/\//.test(section)) return false;
   // Both doors render it and hand the query on.

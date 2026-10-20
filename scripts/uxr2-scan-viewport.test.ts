@@ -304,8 +304,8 @@ assertEq(
 );
 assertEq(
   absoluteStyleNames(SCREEN).join(','),
-  'dock,topFloat',
-  'only two things are absolutely placed: the top chip and the bottom dock',
+  'dock,framingHintWrap,topFloat',
+  'only three things are absolutely placed: the top chip, the bottom dock, and the v43 framing tip',
 );
 assertEq(
   SCREEN.indexOf('styles.topFloat') >= 0 && SCREEN.indexOf('styles.dock') >= 0,
