@@ -285,7 +285,8 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
     setRetailerUrl(null);
   }, []);
 
- — a licensed-retailer search for whatever
+  /**
+   * The external half of the results — a licensed-retailer search for whatever
    * the user typed. SIMPLE dependency on the query (and the internal match count,
    * which only changes the honest subtitle): no request, no debounce, nothing
    * that can fail, so it is present even when our own catalog timed out or
@@ -293,7 +294,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
    */
   const external = externalSearchSection(query, pieces.length);
 
-{ item }: { item: CatalogPiece }) => {
+  const renderItem = ({ item }: { item: CatalogPiece }) => {
     const meta = [item.composer, item.catalog].filter(
       (part): part is string => !!part && part.length > 0,
     );
