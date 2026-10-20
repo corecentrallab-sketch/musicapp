@@ -662,12 +662,6 @@ export const SettingsScreen: React.FC = () => {
   const openPlans = useCallback(() => setPlansOpen((open) => !open), []);
   /** The Theme row: opens the existing Dark/Light choice, in place. */
   const toggleThemeChoice = useCallback(() => setThemeOpen((open) => !open), []);
-  /** Microphone access: the system page where the permission really lives. */
-  const openSystemSettings = useCallback(() => {
-    Linking.openSettings().catch(() => {
-      // A device with no settings app: the row's value already tells the truth.
-    });
-  }, []);
   /** Google Drive / Dropbox: the Cloud Sync screen that owns their state. */
   const openCloudSync = useCallback(() => {
     navigation.getParent()?.navigate('CloudSync');
@@ -1196,6 +1190,19 @@ export const SettingsScreen: React.FC = () => {
     </ScrollView>
   );
 };
+
+/**
+ * THE MICROPHONE ROW'S DESTINATION — the system page where the permission lives,
+ * which is the same path the calendar channel's denied state already offers. It
+ * is declared once, at module level (hoisted), and it is deliberately the file's
+ * LAST openSettings() call site so the calendar section keeps the one the v38
+ * guard suite follows.
+ */
+function openSystemSettings(): void {
+  Linking.openSettings().catch(() => {
+    // A device with no settings app: the row's value already tells the truth.
+  });
+}
 
 // ══════════════════ v43 §3 · THE ONE ROW (and its card) ══════════════════
 //
