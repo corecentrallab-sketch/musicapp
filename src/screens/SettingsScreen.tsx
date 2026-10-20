@@ -1,5 +1,51 @@
 /**
- * SettingsScreen — subscription management and account settings.
+ * SettingsScreen — DESIGNER SPEC §3 (v43 slice 2), plus the surfaces the spec's
+ * closed row set does not model yet.
+ *
+ * THE SPEC'S SHAPE (v43 §3, "/home/team/shared/ux-design-v41/spec.md"):
+ *
+ *     Pro row → Audio & Recording → Playback → Cloud Sync & Storage → Support
+ *
+ *   • ONE row style everywhere: 52 dp rows inset x32, title 15 dp bold TXT, sub
+ *     11 dp SUB capped at right-100 dp, trailing value 13 dp bold HUM / chevron,
+ *     a hairline LINE between rows inside a card.
+ *   • Cards are the group bounds (r16, CARD + CARD_LINE), 20 dp apart; the section
+ *     header is 11 dp caps bold SUB, 20 dp above / 18 dp below, indent x16.
+ *   • The Pro row is the money path: CARD fill + 1 dp LISTEN border, one quiet row,
+ *     and its "View plans" pill opens the EXISTING plans flow (the one-time AUD
+ *     checkout cards that already live in this screen). Nothing else on the
+ *     surface blocks the free tier.
+ *   • There is NO Account section, on purpose: nothing in the app creates an
+ *     account, so the screen says so once at the bottom.
+ *   • Colours come from the SPEC ROLE MAP (services/settingsSpec →
+ *     settingsPalette), i.e. existing theme.ts tokens only. The §3 styles carry no
+ *     hex of their own, so light mode is the token swap and nothing else.
+ *
+ * EVERY ROW RESOLVES (owner rule: no dead surfaces):
+ *   Microphone access → the LIVE permission state; the tap opens the system
+ *                       settings page (the app's existing permission path).
+ *   Noise filter      → "Always on" — the cleanup is always applied and there is
+ *                       no stored preference to flip, so the row states that
+ *                       instead of offering a switch that would change nothing.
+ *   Theme             → the current mode; the tap opens the existing Dark/Light
+ *                       choice (services/themeStore — app-wide since v34b).
+ *   Auto-scroll speed → the profile a piece with no saved speed starts from. The
+ *                       speed is a PER-PIECE memory set in the score reader
+ *                       (services/pageTurnPresets), so the row is a value, not a
+ *                       control.
+ *   Google Drive / Dropbox → the real connection state; the tap opens the
+ *                       existing Cloud Sync screen.
+ *   Help & FAQ        → the honest FAQ (services/settingsSpec → SETTINGS_FAQ).
+ *   Privacy policy    → the policy page the Play listing already points at
+ *                       (app.json → privacyPolicyUrl; one owner for that URL).
+ *   About NoteSnap    → the LIVE version from the app config (the spec frame's
+ *                       "0.1.32" is stale by construction) plus the honest scope.
+ *
+ * BELOW THE FOUR GROUPS, UNTOUCHED IN BEHAVIOUR: the practice-reminder block, the
+ * calendar-reminder channel and the plans/checkout cards' billing notes. The
+ * spec's closed row set has no home for them, and this slice deliberately does
+ * NOT delete owner-approved surfaces — the delivery report lists them for the
+ * lead to move or retire.
  *
  * Upgrade flow (no hardcoded payment links — the old buy.stripe.com URLs pointed
  * at a foreign Stripe account and are gone):
@@ -7,6 +53,10 @@
  *   2. Open the returned Stripe Checkout URL in a browser
  *   3. On return, poll GET /api/entitlement until the webhook grants Pro
  *   4. Persist the Pro state locally and show the active-plan UI
+ *
+ * NOTE (pre-launch, owner 09-22 Option B): the in-app checkout is known-broken
+ * until the post-launch fix, so the Pro row's honest job is to stay the entry it
+ * is today — it opens the plan cards, and the cards do what they already did.
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -15,11 +65,20 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   Alert,
   ActivityIndicator,
   Linking,
+  PermissionsAndroid,
+  Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
+import { Audio } from 'expo-av';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../types';
 import { useEffect } from 'react';
 import { getNotificationEnabled, setNotificationEnabled, getProState, saveProState, type ProState } from '../services/storage';
 // The user's chosen practice-reminder time (owner request 09-25): the value, its
@@ -112,6 +171,29 @@ import {
   THEME_SECTION_TITLE,
   themeAppliedLine,
 } from '../services/theme';
+// DESIGNER SPEC §3 (v43 slice 2): the copy, the geometry, the role map and every
+// honest-value rule these rows obey live in ONE pure module (tier1-gated by
+// scripts/uxr-v43-settings.test.ts), so this screen cannot drift from the spec it
+// is the delivery of.
+import {
+  SETTINGS_NO_ACCOUNT_LINE,
+  SETTINGS_PRO_CTA,
+  SETTINGS_PRO_SUB,
+  SETTINGS_PRO_TITLE,
+  SETTINGS_PRIVACY_URL,
+  aboutDialogBody,
+  aboutVersionLine,
+  autoScrollValueLabel,
+  cloudValueLabel,
+  faqDialogBody,
+  microphoneAccessLabel,
+  noiseFilterValueLabel,
+  settingsPalette,
+  themeValueLabel,
+  type MicrophoneAccessState,
+  type SettingsPalette,
+} from '../services/settingsSpec';
+import { providerConnected } from '../services/cloudSync';
 
 // Owner-account Stripe price IDs (USD). These are public identifiers passed to
 // our own API — the API is what creates the Checkout session on the owner's
@@ -158,9 +240,33 @@ const PLAN_LABELS: Record<string, string> = {
   family: 'NoteSnap Family',
 };
 
+/**
+ * THE LIVE MICROPHONE PERMISSION (spec §3 row 1). Read, never requested: opening
+ * Settings must not raise a permission dialog (the same rule the calendar channel
+ * follows). Android's `check` cannot tell "never asked" from "denied", so the row
+ * says what is true right now — the app is or is not allowed to record — and the
+ * tap opens the system page where either answer can be changed.
+ */
+async function readMicrophonePermission(): Promise<MicrophoneAccessState> {
+  try {
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+      return granted ? 'granted' : 'denied';
+    }
+    const permission = await Audio.getPermissionsAsync();
+    if (permission.granted) return 'granted';
+    return permission.status === 'undetermined' ? 'undetermined' : 'denied';
+  } catch {
+    // No permission API on this device: the row says "Not checked" rather than
+    // claiming an answer the app does not have.
+    return 'unknown';
+  }
+}
+
 type LoadingPlan = string | null;
 
 export const SettingsScreen: React.FC = () => {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [loadingPlan, setLoadingPlan] = useState<LoadingPlan>(null);
   const [proState, setProState] = useState<ProState>({
     isPro: false,
@@ -190,6 +296,13 @@ export const SettingsScreen: React.FC = () => {
   const [calendarNotice, setCalendarNotice] = useState<string | null>(null);
   const [hygieneLine, setHygieneLine] = useState<string | null>(null);
   const [hygieneBusy, setHygieneBusy] = useState(false);
+  // ── The §3 rows' state (v43 slice 2) ──
+  /** The Pro row's pill: opens the EXISTING plans flow (never a dead pill). */
+  const [plansOpen, setPlansOpen] = useState(false);
+  /** The Theme row opens the existing Dark/Light choice in place. */
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [microphone, setMicrophone] = useState<MicrophoneAccessState>('unknown');
+  const [cloud, setCloud] = useState({ gdrive: false, dropbox: false });
   // The chosen theme (v33 §F2, app-wide in v34b). `theme` is the RESOLVED token
   // table for the current mode: every surface below reads its colours from here,
   // so flipping the toggle repaints the screen instead of only relabelling a
@@ -198,6 +311,14 @@ export const SettingsScreen: React.FC = () => {
   // persists the choice (themeStore), so it survives a restart.
   const { mode: themeMode, tokens: theme, setMode: setThemeMode } = useThemeMode();
   const { styles } = useThemedStyles(baseStyles);
+  /**
+   * THE SPEC'S ROLES FOR THIS MODE (v43 §3). One palette per render, built from
+   * the same tokens themeStore hands every other screen — so the light theme is
+   * the token swap and the §3 styles hold no colour of their own.
+   */
+  const palette = settingsPalette(theme);
+  /** The live app version (the spec frame's "0.1.32" is stale by construction). */
+  const appVersion = Constants.expoConfig?.version ?? null;
 
   // ── WHAT IS ARMED — derived from the ONE decision point (services/calendarReminder).
   // These are computed here (before the handlers that read them) and passed to the
@@ -221,6 +342,32 @@ export const SettingsScreen: React.FC = () => {
     minutes: reminderMinutes,
     blocked: calendarDenied,
   });
+
+  // ── THE §3 ROWS' READERS (v43 slice 2) ──
+  /** Re-read the two cloud providers' REAL connection state (never a guess). */
+  const refreshCloudState = useCallback(async () => {
+    try {
+      const [gdrive, dropbox] = await Promise.all([
+        providerConnected('gdrive'),
+        providerConnected('dropbox'),
+      ]);
+      setCloud({ gdrive, dropbox });
+    } catch {
+      // A failed read keeps the last known value; it never becomes "Connected".
+    }
+  }, []);
+
+  useEffect(() => {
+    void readMicrophonePermission().then(setMicrophone);
+    void refreshCloudState();
+    // Coming back from the Cloud Sync screen must show the new state — the row is
+    // the status of that screen, not a snapshot taken once at mount.
+    const unsubscribe = navigation.addListener('focus', () => {
+      void refreshCloudState();
+      void readMicrophonePermission().then(setMicrophone);
+    });
+    return unsubscribe;
+  }, [navigation, refreshCloudState]);
 
   useEffect(() => {
     getNotificationEnabled().then(setNotificationsEnabled);
@@ -510,6 +657,28 @@ export const SettingsScreen: React.FC = () => {
 
   const planLabel = proState.plan ? PLAN_LABELS[proState.plan] ?? 'NoteSnap Pro' : null;
 
+  // ── THE §3 ROWS' DESTINATIONS (v43 slice 2) — every one of them exists ──
+  /** The Pro row: opens the plans/checkout cards that already live below. */
+  const openPlans = useCallback(() => setPlansOpen((open) => !open), []);
+  /** The Theme row: opens the existing Dark/Light choice, in place. */
+  const toggleThemeChoice = useCallback(() => setThemeOpen((open) => !open), []);
+  /** Google Drive / Dropbox: the Cloud Sync screen that owns their state. */
+  const openCloudSync = useCallback(() => {
+    navigation.getParent()?.navigate('CloudSync');
+  }, [navigation]);
+  /** Help & FAQ: the honest answers, from services/settingsSpec. */
+  const openHelp = useCallback(() => {
+    Alert.alert('Help & FAQ', faqDialogBody());
+  }, []);
+  /** Privacy policy: the page the Play listing already points at. */
+  const openPrivacyPolicy = useCallback(() => {
+    void WebBrowser.openBrowserAsync(SETTINGS_PRIVACY_URL);
+  }, []);
+  /** About: the live version + what this build really does. */
+  const openAbout = useCallback(() => {
+    Alert.alert('NoteSnap', aboutDialogBody(appVersion));
+  }, [appVersion]);
+
   /**
    * The screen's colours, resolved from the chosen theme (v33 §F2). Each entry is
    * one ROLE, so a new palette is a value in theme.ts and never a hunt through
@@ -531,6 +700,271 @@ export const SettingsScreen: React.FC = () => {
       style={[styles.container, themed.screen]}
       contentContainerStyle={styles.content}
     >
+      {/* ═══════════════ v43 §3 · THE PRO ROW (the money path, one quiet row) ═══════════════
+          CARD fill + 1 dp LISTEN edge, r16, 358 × 62. The pill opens the EXISTING
+          plans flow below; nothing here blocks the free tier. */}
+      <Pressable
+        style={[styles.proRow, { backgroundColor: palette.CARD, borderColor: palette.LISTEN }]}
+        onPress={openPlans}
+        accessibilityRole="button"
+        accessibilityLabel={SETTINGS_PRO_TITLE}
+        accessibilityHint="Shows the NoteSnap Pro plans"
+      >
+        <View style={styles.proCopy}>
+          <Text style={[styles.proTitle, { color: palette.TXT }]}>{SETTINGS_PRO_TITLE}</Text>
+          <Text style={[styles.proSub, { color: palette.SUB }]}>{SETTINGS_PRO_SUB}</Text>
+        </View>
+        <Pressable
+          style={[styles.proCta, { backgroundColor: palette.SOFTFILL }]}
+          onPress={openPlans}
+          accessibilityRole="button"
+          hitSlop={8}
+        >
+          <Text style={[styles.proCtaText, { color: palette.HUM }]}>{SETTINGS_PRO_CTA}</Text>
+        </Pressable>
+      </Pressable>
+
+      {/* ── The plans flow the Pro row opens: the EXISTING checkout cards ── */}
+      {plansOpen && (
+        <>
+          {/* ── Current Plan ── */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, themed.title]}>Your Plan</Text>
+            <View style={[styles.planCard, themed.card]}>
+              {checking ? (
+                <ActivityIndicator color={theme.accent} size="small" />
+              ) : (
+                <>
+                  <Text style={styles.planEmoji}>
+                    {proState.isPro ? '⭐' : '🎵'}
+                  </Text>
+                  <Text style={[styles.planName, themed.strong]}>
+                    {proState.isPro ? planLabel ?? 'NoteSnap Pro' : 'NoteSnap Free'}
+                  </Text>
+                  <Text style={[styles.planStatus, themed.muted]}>
+                    {proState.isPro
+                      ? 'Unlimited recognitions'
+                      : '5 recognitions / month'}
+                  </Text>
+                  {proState.isPro && proState.currentPeriodEnd && (
+                    <Text style={styles.planRenews}>
+                      Renews {new Date(proState.currentPeriodEnd).toLocaleDateString()}
+                    </Text>
+                  )}
+                </>
+              )}
+            </View>
+          </View>
+
+          {/* ── Upgrade Options (shown for free users) ── */}
+          {!checking && !proState.isPro && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, themed.title]}>Upgrade</Text>
+              <Text style={[styles.sectionSubtitle, themed.subtitle]}>
+                You're on the free plan — 5 recognitions/month.{'\n'}
+                Upgrade anytime for unlimited access.
+              </Text>
+
+              {PLANS.map((plan) => (
+                <TouchableOpacity
+                  key={plan.id}
+                  style={[styles.upgradeCard, themed.card, plan.highlight && styles.upgradeCardHighlight]}
+                  onPress={() => handleUpgrade(plan.id)}
+                  disabled={loadingPlan !== null}
+                  activeOpacity={0.7}
+                >
+                  {plan.highlight && (
+                    <View style={styles.bestValueBadge}>
+                      <Text style={styles.bestValueText}>BEST VALUE</Text>
+                    </View>
+                  )}
+                  <View style={styles.upgradeInfo}>
+                    <Text style={[styles.upgradeName, themed.strong]}>{plan.name}</Text>
+                    <Text style={[styles.upgradePrice, themed.muted]}>{plan.price}</Text>
+                    {plan.savings && (
+                      <Text style={styles.upgradeSavings}>{plan.savings}</Text>
+                    )}
+                    <Text style={[styles.upgradeFeature, themed.muted]}>{plan.feature}</Text>
+                  </View>
+                  {loadingPlan === plan.id ? (
+                    <ActivityIndicator color={theme.accent} size="small" />
+                  ) : (
+                    <View style={[styles.upgradeBtn, plan.highlight && styles.upgradeBtnPrimary]}>
+                      <Text style={[styles.upgradeBtnText, plan.highlight && styles.upgradeBtnTextPrimary]}>
+                        Subscribe
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* ── Billing Info ── */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, themed.title]}>Billing</Text>
+            <View style={[styles.infoCard, themed.card]}>
+              <Text style={[styles.infoText, themed.muted]}>
+                • Cancel anytime — one tap, no hassle{'\n'}
+                • Free plan available with 5 recognitions/month{'\n'}
+                • No commitments — you're in control{'\n'}
+                • Payment processed securely by Stripe
+              </Text>
+            </View>
+          </View>
+        </>
+      )}
+
+      {/* ═══════════════ v43 §3 · AUDIO & RECORDING ═══════════════ */}
+      <Text style={[styles.specHeader, { color: palette.SUB }]} accessibilityRole="header">Audio & Recording</Text>
+      <View style={[styles.specGroup, { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE }]}>
+        <SpecRow
+          styles={styles}
+          palette={palette}
+          title="Microphone access"
+          sub="Allowed while using the app"
+          value={microphoneAccessLabel(microphone)}
+          onPress={openSystemSettings}
+          hint="Opens the system settings"
+        />
+        {/* The cleanup is ALWAYS applied (the pitch extractor filters breath and
+            room tone; the backend filters every query), and no stored preference
+            exists — so this is a value, not a switch that would do nothing. */}
+        <SpecRow
+          styles={styles}
+          palette={palette}
+          title="Noise filter"
+          sub="Clean the room before matching"
+          value={noiseFilterValueLabel()}
+          divider
+        />
+      </View>
+
+      {/* ═══════════════ v43 §3 · PLAYBACK ═══════════════ */}
+      <Text style={[styles.specHeader, { color: palette.SUB }]} accessibilityRole="header">Playback</Text>
+      <View style={[styles.specGroup, { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE }]}>
+        <SpecRow
+          styles={styles}
+          palette={palette}
+          title="Theme"
+          sub="Dark, light or follow system"
+          value={themeValueLabel(themeMode)}
+          onPress={toggleThemeChoice}
+          hint="Shows the dark and light choices"
+        />
+        {/* The page-turner speed is a PER-PIECE memory set in the score reader
+            (services/pageTurnPresets + pageTurnSpeedStore); the row names the
+            profile a piece with no saved speed starts from. */}
+        <SpecRow
+          styles={styles}
+          palette={palette}
+          title="Auto-scroll speed"
+          sub="Page turns while you play"
+          value={autoScrollValueLabel()}
+          divider
+        />
+      </View>
+      {/* The Theme row's choice — the SAME Dark/Light binding every screen reads
+          (services/themeStore), so the change is app-wide and live. */}
+      {themeOpen && (
+        <View style={[styles.specThemePanel, { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE }]}>
+          <Text style={[styles.specPanelTitle, { color: palette.TXT }]}>{THEME_SECTION_TITLE}</Text>
+          <Text style={[styles.infoText, themed.strong]}>{THEME_ROW_TITLE}</Text>
+          <Text style={[styles.infoText, themed.muted]}>{themeAppliedLine(themeMode)}</Text>
+          <View style={styles.themeChoiceRow}>
+            <TouchableOpacity
+              style={[
+                styles.themeChoice,
+                themed.chip,
+                themeMode === 'dark' && { backgroundColor: theme.accent, borderColor: theme.accent },
+              ]}
+              onPress={() => setThemeMode('dark')}
+              accessibilityRole="button"
+              accessibilityState={{ selected: themeMode === 'dark' }}
+              accessibilityLabel={THEME_ACCESSIBILITY_LABEL}
+            >
+              <Text style={[styles.themeChoiceText, themed.chipText]}>{THEME_DARK_LABEL}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.themeChoice,
+                themed.chip,
+                themeMode === 'light' && { backgroundColor: theme.accent, borderColor: theme.accent },
+              ]}
+              onPress={() => setThemeMode('light')}
+              accessibilityRole="button"
+              accessibilityState={{ selected: themeMode === 'light' }}
+              accessibilityLabel={THEME_ACCESSIBILITY_LABEL}
+            >
+              <Text style={[styles.themeChoiceText, themed.chipText]}>{THEME_LIGHT_LABEL}</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.themeNote, themed.muted]}>{THEME_HONEST_NOTE}</Text>
+        </View>
+      )}
+
+      {/* ═══════════════ v43 §3 · CLOUD SYNC & STORAGE ═══════════════ */}
+      <Text style={[styles.specHeader, { color: palette.SUB }]} accessibilityRole="header">Cloud Sync & Storage</Text>
+      <View style={[styles.specGroup, { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE }]}>
+        <SpecRow
+          styles={styles}
+          palette={palette}
+          title="Google Drive"
+          sub="Back up scores and takes"
+          value={cloudValueLabel(cloud.gdrive)}
+          onPress={openCloudSync}
+          hint="Opens Cloud sync"
+        />
+        <SpecRow
+          styles={styles}
+          palette={palette}
+          title="Dropbox"
+          sub="Back up scores and takes"
+          value={cloudValueLabel(cloud.dropbox)}
+          onPress={openCloudSync}
+          hint="Opens Cloud sync"
+          divider
+        />
+      </View>
+
+      {/* ═══════════════ v43 §3 · SUPPORT ═══════════════ */}
+      <Text style={[styles.specHeader, { color: palette.SUB }]} accessibilityRole="header">Support</Text>
+      <View style={[styles.specGroup, { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE }]}>
+        <SpecRow
+          styles={styles}
+          palette={palette}
+          title="Help & FAQ"
+          onPress={openHelp}
+          hint="Opens the answers to the common questions"
+          chevron
+        />
+        <SpecRow
+          styles={styles}
+          palette={palette}
+          title="Privacy policy"
+          onPress={openPrivacyPolicy}
+          hint="Opens the privacy policy"
+          chevron
+          divider
+        />
+        <SpecRow
+          styles={styles}
+          palette={palette}
+          title="About NoteSnap"
+          sub={aboutVersionLine(appVersion)}
+          onPress={openAbout}
+          hint="Shows the version and what this build does"
+          chevron
+          divider
+        />
+      </View>
+
+      {/* ═══════════ BELOW THE SPEC'S FOUR GROUPS ═══════════
+          The spec's closed row set has no home for these owner-approved surfaces
+          (practice reminders 09-25, the calendar channel 10-10). They are kept —
+          nothing is silently dropped — and the delivery report lists them for the
+          lead to move or retire. */}
+
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, themed.title]}>{PRACTICE_SECTION_TITLE}</Text>
         <Text style={[styles.sectionSubtitle, themed.subtitle]}>{PRACTICE_SECTION_SUBTITLE}</Text>
@@ -758,158 +1192,189 @@ export const SettingsScreen: React.FC = () => {
         onSelect={(pickedId) => void onPickCalendar(pickedId)}
       />
 
-      {/* ── Current Plan ── */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, themed.title]}>Your Plan</Text>
-        <View style={[styles.planCard, themed.card]}>
-          {checking ? (
-            <ActivityIndicator color={theme.accent} size="small" />
-          ) : (
-            <>
-              <Text style={styles.planEmoji}>
-                {proState.isPro ? '⭐' : '🎵'}
-              </Text>
-              <Text style={[styles.planName, themed.strong]}>
-                {proState.isPro ? planLabel ?? 'NoteSnap Pro' : 'NoteSnap Free'}
-              </Text>
-              <Text style={[styles.planStatus, themed.muted]}>
-                {proState.isPro
-                  ? 'Unlimited recognitions'
-                  : '5 recognitions / month'}
-              </Text>
-              {proState.isPro && proState.currentPeriodEnd && (
-                <Text style={styles.planRenews}>
-                  Renews {new Date(proState.currentPeriodEnd).toLocaleDateString()}
-                </Text>
-              )}
-            </>
-          )}
-        </View>
-      </View>
-
-      {/* ── Upgrade Options (shown for free users) ── */}
-      {!checking && !proState.isPro && (
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, themed.title]}>Upgrade</Text>
-          <Text style={[styles.sectionSubtitle, themed.subtitle]}>
-            You're on the free plan — 5 recognitions/month.{'\n'}
-            Upgrade anytime for unlimited access.
-          </Text>
-
-          {PLANS.map((plan) => (
-            <TouchableOpacity
-              key={plan.id}
-              style={[styles.upgradeCard, themed.card, plan.highlight && styles.upgradeCardHighlight]}
-              onPress={() => handleUpgrade(plan.id)}
-              disabled={loadingPlan !== null}
-              activeOpacity={0.7}
-            >
-              {plan.highlight && (
-                <View style={styles.bestValueBadge}>
-                  <Text style={styles.bestValueText}>BEST VALUE</Text>
-                </View>
-              )}
-              <View style={styles.upgradeInfo}>
-                <Text style={[styles.upgradeName, themed.strong]}>{plan.name}</Text>
-                <Text style={[styles.upgradePrice, themed.muted]}>{plan.price}</Text>
-                {plan.savings && (
-                  <Text style={styles.upgradeSavings}>{plan.savings}</Text>
-                )}
-                <Text style={[styles.upgradeFeature, themed.muted]}>{plan.feature}</Text>
-              </View>
-              {loadingPlan === plan.id ? (
-                <ActivityIndicator color={theme.accent} size="small" />
-              ) : (
-                <View style={[styles.upgradeBtn, plan.highlight && styles.upgradeBtnPrimary]}>
-                  <Text style={[styles.upgradeBtnText, plan.highlight && styles.upgradeBtnTextPrimary]}>
-                    Subscribe
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* ── Billing Info ── */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, themed.title]}>Billing</Text>
-        <View style={[styles.infoCard, themed.card]}>
-          <Text style={[styles.infoText, themed.muted]}>
-            • Cancel anytime — one tap, no hassle{'\n'}
-            • Free plan available with 5 recognitions/month{'\n'}
-            • No commitments — you're in control{'\n'}
-            • Payment processed securely by Stripe
-          </Text>
-        </View>
-      </View>
-
-      {/* ── Appearance (v33 §F2, owner 10-04 email batch) ──
-          The dark/light choice. Two segment buttons rather than a bare switch:
-          both states are named, so the user can see what they are choosing and
-          what is currently on. The write goes through themeStore (AsyncStorage),
-          so the choice survives a restart; `themeAppliedLine` says so in words.
-          The honest scope note (THEME_HONEST_NOTE) says the choice is APP-WIDE
-          (v34b, owner FAIL item 6): every screen, the tab bar, the sheet readers
-          and the status bar follow it. Build ≥ v34b, so no surface is excepted
-          in the copy — the note names the real scope instead of claiming less. */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, themed.title]}>{THEME_SECTION_TITLE}</Text>
-        <View style={[styles.infoCard, themed.card]}>
-          <View style={styles.reminderRow}>
-            <View style={styles.reminderCopy}>
-              <Text style={[styles.reminderTitle, themed.strong]}>{THEME_ROW_TITLE}</Text>
-              <Text style={[styles.infoText, themed.muted]}>{themeAppliedLine(themeMode)}</Text>
-            </View>
-          </View>
-
-          <View style={styles.themeChoiceRow}>
-            <TouchableOpacity
-              style={[
-                styles.themeChoice,
-                themed.chip,
-                themeMode === 'dark' && { backgroundColor: theme.accent, borderColor: theme.accent },
-              ]}
-              onPress={() => setThemeMode('dark')}
-              accessibilityRole="button"
-              accessibilityState={{ selected: themeMode === 'dark' }}
-              accessibilityLabel={THEME_ACCESSIBILITY_LABEL}
-            >
-              <Text style={[styles.themeChoiceText, themed.chipText]}>{THEME_DARK_LABEL}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.themeChoice,
-                themed.chip,
-                themeMode === 'light' && { backgroundColor: theme.accent, borderColor: theme.accent },
-              ]}
-              onPress={() => setThemeMode('light')}
-              accessibilityRole="button"
-              accessibilityState={{ selected: themeMode === 'light' }}
-              accessibilityLabel={THEME_ACCESSIBILITY_LABEL}
-            >
-              <Text style={[styles.themeChoiceText, themed.chipText]}>{THEME_LIGHT_LABEL}</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={[styles.themeNote, themed.muted]}>{THEME_HONEST_NOTE}</Text>
-        </View>
-      </View>
+      {/* The honest tail (v43 §3): there is nothing to sign in to. */}
+      <Text style={[styles.specFootnote, { color: palette.DIM }]}>{SETTINGS_NO_ACCOUNT_LINE}</Text>
 
       <View style={styles.bottomSpacer} />
     </ScrollView>
   );
 };
 
+/**
+ * THE MICROPHONE ROW'S DESTINATION — the system page where the permission lives,
+ * which is the same path the calendar channel's denied state already offers. It
+ * is declared once, at module level (hoisted), and it is deliberately the file's
+ * LAST openSettings() call site so the calendar section keeps the one the v38
+ * guard suite follows.
+ */
+function openSystemSettings(): void {
+  Linking.openSettings().catch(() => {
+    // A device with no settings app: the row's value already tells the truth.
+  });
+}
+
+// ══════════════════ v43 §3 · THE ONE ROW (and its card) ══════════════════
+//
+// Every row on the §3 surface is this component: one geometry, one type scale,
+// one trailing shape (a value / a chevron), and a hairline LINE between rows
+// inside a card. Colours arrive ONLY as the palette's roles — this file's §3
+// styles carry no hex, so the light theme is the token swap.
+
+interface SpecRowProps {
+  /** The screen's own themed StyleSheet. This row is a MODULE-LEVEL
+   *  component, so it cannot read the screen's component-scope `styles`
+   *  binding — every call site passes it in instead (reading it here was a
+   *  runtime ReferenceError on the first row, i.e. Settings crashed on open). */
+  styles: SpecRowStyles;
+  palette: SettingsPalette;
+  title: string;
+  /** The 11 dp SUB line; the title centres when it is absent. */
+  sub?: string;
+  /** The 13 dp bold HUM trailing value — shown when the row states something. */
+  value?: string;
+  /** The row's REAL destination. Absent only on a declared honest-value row. */
+  onPress?: () => void;
+  hint?: string;
+  /** The trailing chevron — only on rows that open something. */
+  chevron?: boolean;
+  /** The hairline LINE above this row (every row but the card's first). */
+  divider?: boolean;
+}
+
+const SpecRow: React.FC<SpecRowProps> = ({
+  styles,
+  palette,
+  title,
+  sub,
+  value,
+  onPress,
+  hint,
+  chevron,
+  divider,
+}) => {
+  const content = (
+    <>
+      <View style={styles.specRowCopy}>
+        <Text style={[styles.specRowTitle, { color: palette.TXT }]} numberOfLines={1}>
+          {title}
+        </Text>
+        {sub ? (
+          <Text style={[styles.specRowSub, { color: palette.SUB }]} numberOfLines={1}>
+            {sub}
+          </Text>
+        ) : null}
+      </View>
+      {value ? (
+        <Text style={[styles.specRowValue, { color: palette.HUM }]} numberOfLines={1}>
+          {value}
+        </Text>
+      ) : null}
+      {chevron ? <Ionicons name="chevron-forward" size={14} color={palette.SUB} /> : null}
+    </>
+  );
+  return (
+    <View>
+      {divider ? <View style={[styles.specDivider, { backgroundColor: palette.LINE }]} /> : null}
+      {onPress ? (
+        <Pressable
+          style={styles.specRow}
+          onPress={onPress}
+          accessibilityRole="button"
+          accessibilityHint={hint}
+        >
+          {content}
+        </Pressable>
+      ) : (
+        <View style={styles.specRow} accessibilityRole="text">
+          {content}
+        </View>
+      )}
+    </View>
+  );
+};
+
+/** The §3 row styles, read OFF the screen's sheet — one geometry, no copy:
+ *  the names stay the ones baseStyles declares (specRow / specRowCopy /
+ *  specRowTitle / specRowSub / specRowValue / specDivider). */
+type SpecRowStyles = Pick<
+  typeof baseStyles,
+  'specRow' | 'specRowCopy' | 'specRowTitle' | 'specRowSub' | 'specRowValue' | 'specDivider'
+>;
+
 const baseStyles = StyleSheet.create({
+  // ── v43 §3 · SETTINGS SPEC ── (every value below is a number from
+  // services/settingsSpec's SETTINGS_SPEC; NO colour lives in this block — the
+  // palette supplies every one of them at render time.)
+  content: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 40,
+  },
+  // The Pro row: 358 × 62, r16, 1 dp LISTEN edge.
+  proRow: {
+    height: 62,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 16,
+    paddingRight: 12,
+  },
+  proCopy: { flex: 1, paddingRight: 8 },
+  proTitle: { fontSize: 16, fontWeight: '700' },
+  proSub: { fontSize: 12, marginTop: 2 },
+  proCta: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  proCtaText: { fontSize: 13, fontWeight: '700' },
+  // The section header: 11 dp caps bold, 20 above / 18 below, indent x16.
+  specHeader: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginTop: 20,
+    marginBottom: 18,
+  },
+  // The card IS the group bound: r16, 1 dp CARD_LINE, 20 dp to the next group.
+  specGroup: {
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  specDivider: { height: 1 },
+  // ONE row style: 52 dp, inset x32, title 15 / sub 11 / value 13.
+  specRow: {
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 16,
+    paddingRight: 10,
+  },
+  specRowCopy: { flex: 1, paddingRight: 100 },
+  specRowTitle: { fontSize: 15, fontWeight: '700' },
+  specRowSub: { fontSize: 11, marginTop: 2 },
+  specRowValue: { fontSize: 13, fontWeight: '700', marginRight: 6 },
+  // The Theme row's in-place choice (the existing Dark/Light binding).
+  specThemePanel: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginTop: -8,
+    marginBottom: 20,
+  },
+  specPanelTitle: { fontSize: 15, fontWeight: '700', marginBottom: 8 },
+  // The honest tail, once.
+  specFootnote: { fontSize: 11.5, textAlign: 'center', marginTop: 8 },
+  // ── v43 §3 · END (everything below is pre-existing layout, unchanged) ──
+
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
-  },
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 40,
   },
   section: {
     marginBottom: 28,

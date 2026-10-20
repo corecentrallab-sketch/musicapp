@@ -173,6 +173,8 @@
     "src/services/uxrV42Contract.ts",
     "scripts/uxr-v42-fixes.test.ts",
     "src/services/addMusicSheet.ts",
-    "scripts/uxr-v43-add-music.test.ts"
+    "scripts/uxr-v43-add-music.test.ts",
+    "src/services/settingsSpec.ts",
+    "scripts/uxr-v43-settings.test.ts"
   ]
 }
