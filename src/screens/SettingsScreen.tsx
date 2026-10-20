@@ -819,6 +819,7 @@ export const SettingsScreen: React.FC = () => {
       <Text style={[styles.specHeader, { color: palette.SUB }]} accessibilityRole="header">Audio & Recording</Text>
       <View style={[styles.specGroup, { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE }]}>
         <SpecRow
+          styles={styles}
           palette={palette}
           title="Microphone access"
           sub="Allowed while using the app"
@@ -830,6 +831,7 @@ export const SettingsScreen: React.FC = () => {
             room tone; the backend filters every query), and no stored preference
             exists — so this is a value, not a switch that would do nothing. */}
         <SpecRow
+          styles={styles}
           palette={palette}
           title="Noise filter"
           sub="Clean the room before matching"
@@ -842,6 +844,7 @@ export const SettingsScreen: React.FC = () => {
       <Text style={[styles.specHeader, { color: palette.SUB }]} accessibilityRole="header">Playback</Text>
       <View style={[styles.specGroup, { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE }]}>
         <SpecRow
+          styles={styles}
           palette={palette}
           title="Theme"
           sub="Dark, light or follow system"
@@ -853,6 +856,7 @@ export const SettingsScreen: React.FC = () => {
             (services/pageTurnPresets + pageTurnSpeedStore); the row names the
             profile a piece with no saved speed starts from. */}
         <SpecRow
+          styles={styles}
           palette={palette}
           title="Auto-scroll speed"
           sub="Page turns while you play"
@@ -903,6 +907,7 @@ export const SettingsScreen: React.FC = () => {
       <Text style={[styles.specHeader, { color: palette.SUB }]} accessibilityRole="header">Cloud Sync & Storage</Text>
       <View style={[styles.specGroup, { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE }]}>
         <SpecRow
+          styles={styles}
           palette={palette}
           title="Google Drive"
           sub="Back up scores and takes"
@@ -911,6 +916,7 @@ export const SettingsScreen: React.FC = () => {
           hint="Opens Cloud sync"
         />
         <SpecRow
+          styles={styles}
           palette={palette}
           title="Dropbox"
           sub="Back up scores and takes"
@@ -925,6 +931,7 @@ export const SettingsScreen: React.FC = () => {
       <Text style={[styles.specHeader, { color: palette.SUB }]} accessibilityRole="header">Support</Text>
       <View style={[styles.specGroup, { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE }]}>
         <SpecRow
+          styles={styles}
           palette={palette}
           title="Help & FAQ"
           onPress={openHelp}
@@ -932,6 +939,7 @@ export const SettingsScreen: React.FC = () => {
           chevron
         />
         <SpecRow
+          styles={styles}
           palette={palette}
           title="Privacy policy"
           onPress={openPrivacyPolicy}
@@ -940,6 +948,7 @@ export const SettingsScreen: React.FC = () => {
           divider
         />
         <SpecRow
+          styles={styles}
           palette={palette}
           title="About NoteSnap"
           sub={aboutVersionLine(appVersion)}
@@ -1212,6 +1221,11 @@ function openSystemSettings(): void {
 // styles carry no hex, so the light theme is the token swap.
 
 interface SpecRowProps {
+  /** The screen's own themed StyleSheet. This row is a MODULE-LEVEL
+   *  component, so it cannot read the screen's component-scope `styles`
+   *  binding — every call site passes it in instead (reading it here was a
+   *  runtime ReferenceError on the first row, i.e. Settings crashed on open). */
+  styles: SpecRowStyles;
   palette: SettingsPalette;
   title: string;
   /** The 11 dp SUB line; the title centres when it is absent. */
@@ -1228,6 +1242,7 @@ interface SpecRowProps {
 }
 
 const SpecRow: React.FC<SpecRowProps> = ({
+  styles,
   palette,
   title,
   sub,
@@ -1277,6 +1292,14 @@ const SpecRow: React.FC<SpecRowProps> = ({
     </View>
   );
 };
+
+/** The §3 row styles, read OFF the screen's sheet — one geometry, no copy:
+ *  the names stay the ones baseStyles declares (specRow / specRowCopy /
+ *  specRowTitle / specRowSub / specRowValue / specDivider). */
+type SpecRowStyles = Pick<
+  typeof baseStyles,
+  'specRow' | 'specRowCopy' | 'specRowTitle' | 'specRowSub' | 'specRowValue' | 'specDivider'
+>;
 
 const baseStyles = StyleSheet.create({
   // ── v43 §3 · SETTINGS SPEC ── (every value below is a number from
