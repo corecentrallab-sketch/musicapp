@@ -87,9 +87,16 @@ import { PurchaseWebView } from '../components/PurchaseWebView';
 import { mergeCatalogIntoDetail } from '../services/historyPiece';
 import { PieceDetailScreen } from './PieceDetailScreen';
 import { useHardwareBack } from '../hooks/useHardwareBack';
+import {
+  OCR_PREFILL_SEARCH_CTA,
+  OCR_PREFILL_WAITING_LINE,
+  canConfirmOcrPrefill,
+  initialOcrPrefillState,
+  ocrPrefillNote,
+} from '../services/ocrPrefill';
 import type { CatalogPiece, DailyChallengePiece } from '../types';
 
-type Status = 'loading' | 'ready' | 'empty' | 'error';
+type Status = 'prefill' | 'loading' | 'ready' | 'empty' | 'error';
 
 interface FindPieceScreenProps {
   onClose: () => void;
@@ -103,10 +110,26 @@ interface FindPieceScreenProps {
 
 export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initialQuery }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
-  // A query handed in by the caller (v39 fix 1b: a scanned page's own words). It is
-  // the SAME state a typed title lands in, so a scan produces exactly the results —
-  // and exactly the money path — a typed title does.
-  const [query, setQuery] = useState(initialQuery ?? '');
+  /**
+   * A query handed in by the caller (v39 fix 1b: a scanned page's own words).
+   *
+   * IT IS A PROPOSAL, NOT A QUERY (v42 fix D — owner, v41 device pass 10-20: a
+   * photographed Bohemian Rhapsody score prefilled the box with
+   * "a-thy,Be-cause I'm Freddie Mercury" and the screen searched it immediately,
+   * landing on "No Match" for words the user never typed). `prefillPending` is
+   * TRUE while the field holds words the app read off a photo: the debounced
+   * search below refuses to run in that state, an honest line says where the
+   * words came from, and the one control (`OCR_PREFILL_SEARCH_CTA`) turns them
+   * into a search — after the user has had a chance to SEE and EDIT them.
+   *
+   * A caller that passes nothing (every other door: the Home search, the library,
+   * the cover-scan confirm on a typed flow) starts with `pending: false` and gets
+   * exactly the type-ahead screen it always had.
+   */
+  const [query, setQuery] = useState(() => initialOcrPrefillState(initialQuery).query);
+  const [prefillPending, setPrefillPending] = useState(
+    () => initialOcrPrefillState(initialQuery).pending,
+  );
   const [pieces, setPieces] = useState<CatalogPiece[]>([]);
   const [total, setTotal] = useState(0);
   const [status, setStatus] = useState<Status>('loading');
@@ -131,6 +154,14 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
 
   // Debounced catalog search: one request per settled query.
   useEffect(() => {
+    // THE OCR GATE (v42 fix D): words the app READ are never searched until the
+    // user has acted on them. This is the one place a prefilled query could have
+    // become an invisible auto-query — it returns before the request is even
+    // scheduled, so nothing leaves the device for a proposal.
+    if (prefillPending) {
+      setStatus('prefill');
+      return;
+    }
     const trimmed = normalizeQuery(query);
     const typed = trimmed;
     const token = ++searchRequestRef.current;
@@ -198,7 +229,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
     }, CATALOG_SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [query, reloadToken]);
+  }, [query, reloadToken, prefillPending]);
 
   /**
    * Open a search result on the piece page. The row already carries the
@@ -227,6 +258,20 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
 
   const handleClearQuery = useCallback(() => {
     setQuery('');
+    // Clearing the field also ends the proposal: an empty box is a normal empty
+    // search box, not a read that is waiting to be agreed to (v42 fix D).
+    setPrefillPending(false);
+  }, []);
+
+  /**
+   * THE USER AGREED TO THE READ WORDS (v42 fix D). Their tap (or the keyboard's
+   * search key) is the ONLY thing that turns a prefilled read into a query; the
+   * token bump makes it a fresh request even when the text itself did not change.
+   * From here the screen is the ordinary type-ahead search it always was.
+   */
+  const handleSubmitPrefill = useCallback(() => {
+    setPrefillPending(false);
+    setReloadToken((n) => n + 1);
   }, []);
 
   /**
@@ -382,6 +427,9 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
         <TextInput
           style={styles.searchInput}
           value={query}
+          // EDITING NEVER SEARCHES BY ITSELF WHILE A READ IS PENDING (v42 fix D):
+          // the user is correcting what the app read, and the words only become a
+          // query when they say so (the control below, or the search key here).
           onChangeText={setQuery}
           placeholder="Search by title or composer"
           placeholderTextColor={theme.subtext}
@@ -389,6 +437,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
           autoCorrect={false}
           autoCapitalize="words"
           returnKeyType="search"
+          onSubmitEditing={prefillPending ? handleSubmitPrefill : undefined}
           accessibilityLabel="Search the catalog by title or composer"
         />
         {query.length > 0 ? (
@@ -422,6 +471,28 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
         Free public-domain and classical pieces — search, then open the score.
       </Text>
 
+      {/* ── WHAT THE APP READ OFF YOUR PHOTO (v42 fix D) ───────────────────────
+          The recogniser's own words are in the field above and NOTHING has been
+          searched. This strip says so, and its one control runs the search — the
+          owner's rule from the v41 pass: the user must be able to see AND edit the
+          read text before any query leaves the device. It disappears the moment
+          the proposal is confirmed (the screen then behaves exactly as before). */}
+      {prefillPending ? (
+        <View style={styles.prefillCard}>
+          <Text style={styles.prefillNote}>{ocrPrefillNote({ query, pending: true })}</Text>
+          {canConfirmOcrPrefill({ query, pending: true }) ? (
+            <TouchableOpacity
+              style={styles.prefillCta}
+              onPress={handleSubmitPrefill}
+              accessibilityRole="button"
+              accessibilityLabel={OCR_PREFILL_SEARCH_CTA}
+            >
+              <Text style={styles.prefillCtaText}>{OCR_PREFILL_SEARCH_CTA}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
+
       {/* What actually matched (v33 §F3): shown only when the user's own words
           found nothing and a variant of them did. It sits above the results so
           the list can never look like a first-try hit for a typo'd query. */}
@@ -445,6 +516,14 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
         contentContainerStyle={styles.resultsContent}
         keyboardShouldPersistTaps="handled"
       >
+        {status === 'prefill' ? (
+          <View style={styles.stateBlock}>
+            <Text style={styles.emptyEmoji}>✍️</Text>
+            <Text style={styles.emptyTitle}>Not searched yet</Text>
+            <Text style={styles.emptyText}>{OCR_PREFILL_WAITING_LINE}</Text>
+          </View>
+        ) : null}
+
         {status === 'loading' && pieces.length === 0 ? (
           <View style={styles.stateBlock}>
             <ActivityIndicator size="large" color={theme.accent} />
@@ -559,6 +638,37 @@ const baseStyles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 18,
     fontWeight: '700',
+  },
+
+  // THE READ-FROM-A-PHOTO STRIP (v42 fix D): the words are a proposal until the
+  // user agrees, so the card is quiet — a note and ONE control, never a result.
+  prefillCard: {
+    marginHorizontal: 20,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    backgroundColor: '#16213e',
+    gap: 10,
+  },
+  prefillNote: {
+    color: '#cfe9ff',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  prefillCta: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#e94560',
+  },
+  prefillCtaText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
   },
 
   // The "Scan a cover" affordance (v33 §H): a quiet row under the search field,

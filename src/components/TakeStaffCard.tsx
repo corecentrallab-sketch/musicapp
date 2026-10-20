@@ -38,18 +38,43 @@ import {
   staffKeyFromKey,
   takeStaffRows,
 } from '../services/takeStaff';
-import { DARK_THEME } from '../services/theme';
 import type { SavedCaptureTake } from '../services/midiExport';
+/**
+ * THE PAPER AND INK OF THE TAKE'S STAFF (v42 fix B1). They live in a pure module
+ * so the GATE can assert they are readable together — the owner's v41 complaint
+ * was that the notes rendered on a black screen and were invisible, and "is this
+ * ink readable on this paper" is a fact about two colours, not a matter of taste.
+ *
+ * WHAT WAS WRONG. The paper was `DARK_THEME.surface` (#16213e) and the raw ink
+ * `DARK_THEME.staffRawInk` (#9aa0b4), both handed to the renderer as PROPS. The
+ * app-wide theme remapper (services/themeApply.ts) re-paints StyleSheets only, so
+ * in LIGHT mode the card around the staff turned white while the staff itself
+ * stayed a black block with dim grey notes on it — exactly what the owner saw.
+ *
+ * NOW: the same white notation paper the score reader draws on, and inks that
+ * clear WCAG AA on it (services/takeStaffPalette.ts + services/inkContrast.ts,
+ * asserted by scripts/uxr-v42-fixes.test.ts).
+ */
+export {
+  TAKE_STAFF_CLEANED_INK,
+  TAKE_STAFF_PAPER,
+  TAKE_STAFF_RAW_INK,
+} from '../services/takeStaffPalette';
+import {
+  TAKE_STAFF_CLEANED_INK,
+  TAKE_STAFF_PAPER,
+  TAKE_STAFF_RAW_INK,
+} from '../services/takeStaffPalette';
 
-/** The dimmed ink the RAW trace is drawn in (theme token, never a stray hex). */
-export const TAKE_STAFF_RAW_INK = DARK_THEME.staffRawInk;
-/** The crisp ink the AUTO-CLEANED line is drawn in (the app's teal accent). */
-export const TAKE_STAFF_CLEANED_INK = '#4ecdc4';
-/** The card's own paper colour (the surface it sits on). */
-export const TAKE_STAFF_PAPER = DARK_THEME.surface;
-
-/** The staff's own height on screen (a WebView needs a real box to draw in). */
-const STAFF_HEIGHT = 132;
+/**
+ * THE STAFF'S FLOOR ON SCREEN (v42 fix B2). It used to be a FIXED height of 132,
+ * which is the second half of the owner's v41 complaint: "As you hummed it" showed
+ * ONE bar. A take of any length was laid out inside a 132px box with
+ * `overflow: 'hidden'` — a fixed box clips a document no matter how tall it is, and
+ * the practice-video page (which already passed `interactive={false}`) clipped it
+ * silently. A FLOOR lets the box grow to the take.
+ */
+const STAFF_MIN_HEIGHT = 132;
 
 export interface TakeStaffCardProps {
   /** The take to draw (the flow's decoded take — the user's own, always). */
@@ -61,10 +86,15 @@ export interface TakeStaffCardProps {
   /** The take's title for the staff header ("My melody"). */
   title?: string | null;
   /**
-   * Whether the two staves may receive touches (v36). DEFAULT TRUE so the capture
-   * page — the flow the owner passed — is byte-identical. The take-correction
-   * editor hosts this card INSIDE its own page scroller and passes `false`, so the
-   * two WebViews can never take the page's scroll gesture (see AbcScoreView). */
+   * Whether the two staves may receive touches. DEFAULT FALSE since v42 fix B2:
+   * a non-interactive viewer MEASURES its own document and sizes itself to it
+   * (services/scoreHeight.ts), which is what makes the whole take visible instead
+   * of the first bar. It also closes the WebView's touch surface, so a finger on
+   * the staff scrolls the PAGE the card sits in — the behaviour every other score
+   * surface in the app has (see AbcScoreView's touch shield).
+   *
+   * A caller that genuinely wants a self-scrolling staff can still pass `true`;
+   * nothing does today. */
   interactive?: boolean;
 }
 
@@ -73,7 +103,7 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
   chordNames,
   chordHonestLine,
   title,
-  interactive = true,
+  interactive = false,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   const rows = useMemo(() => {
@@ -158,6 +188,9 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
 
 const baseStyles = StyleSheet.create({
   card: {
+    // The DARK identity literal, which services/themeApply.ts re-paints to
+    // theme.surface (#ffffff) in light mode — the card follows the app's theme;
+    // the STAFF on it is notation paper in both (v42 fix B1).
     backgroundColor: '#16213e',
     borderRadius: 18,
     borderWidth: 1,
@@ -186,7 +219,11 @@ const baseStyles = StyleSheet.create({
   rowLabel: { color: '#a0a0b8', fontSize: 12, fontWeight: '700', marginTop: 8 },
   cleanedRowLabel: { color: '#4ecdc4', fontSize: 12, fontWeight: '800', marginTop: 4 },
   staffBox: {
-    height: STAFF_HEIGHT,
+    // A FLOOR, never a fixed height (v42 fix B2): the viewer is non-interactive, so
+    // it measures its own document and applies that height to itself — the box
+    // grows and the whole take is drawn. A `height:` here clipped every take to
+    // roughly one bar (the owner's "As you hummed it shows only one bar").
+    minHeight: STAFF_MIN_HEIGHT,
     marginTop: 6,
     borderRadius: 12,
     overflow: 'hidden',

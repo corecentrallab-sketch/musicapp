@@ -1,10 +1,9 @@
 import { useThemedStyles } from '../services/themeStore';
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Image,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,19 +15,43 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import type { LibraryItem } from '../types';
 import { getLibraryItem } from '../services/libraryStore';
-import { useAutoScroll } from '../hooks/useAutoScroll';
-import { usePageTurnSpeed } from '../hooks/usePageTurnSpeed';
-import { AutoScrollControl } from '../components/AutoScrollControl';
 import { ScanFindSection } from '../components/ScanFindSection';
 import { FindPieceScreen } from './FindPieceScreen';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScannedViewer'>;
 
 /**
+ * THE LINE THAT REPLACED THE DEAD CONTROLS (v42 fix C). Exported so the gate
+ * asserts the words the user actually reads, and so the reason can never be
+ * deleted while the controls stay away.
+ */
+export const SCANNED_NO_AUTOSCROLL_LINE =
+  'Swipe to turn pages. Auto-scroll needs a score the app can read — this page is a photo.';
+
+/**
  * Simple paged viewer for scanned scores (a group of page images).
  * Swipe between pages; the page counter tracks the current one.
- * FEATURE BUILD 2 adds BPM-linked auto-scroll: a toolbar control (BPM +
- * beats/page steppers) and pause-on-tap while auto-scrolling.
+ *
+ * NO AUTO-SCROLL ON THIS SURFACE (v42 fix C — owner, v41 device pass 10-20: "the
+ * Play button does nothing and the BPM Autoscroll control does not work off the
+ * scanned score").
+ *
+ * THE HONEST-SCOPE RULE (business plan, 09-28: the app must never pretend). A
+ * scanned score is a PHOTO. The app reads printed WORDS off it on device (see
+ * ScanFindSection) but it does NOT read notes — there is no OMR, no score
+ * following, and no audio for a raw page image. BPM auto-scroll is a
+ * score-FOLLOWING control: it exists to advance a page when the music reaches the
+ * end of it. Off a photo it can only turn pages on a timer that is blind to the
+ * music, which is exactly why it read as broken to the owner, and a Play button
+ * that turns nothing (a single-page scan, a timer the user cannot hear) reads as a
+ * dead control.
+ *
+ * SO IT IS GONE FROM HERE, not disabled: a greyed-out control on a page that can
+ * never honestly use it is still a promise. The page swipe and the page counter
+ * stay, and the line below says why there is nothing to start. The PDF reader
+ * (PdfViewerScreen) KEEPS the same control: its pages are real pages of a
+ * document the app lays out itself, and the page-turn presets were built for it —
+ * this is a per-surface decision, not the feature's removal.
  */
 export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
@@ -43,33 +66,6 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const pages = item?.pageUris ?? [];
   const listRef = useRef<FlatList<string>>(null);
-  const pageRef = useRef(page);
-
-  // Auto-scroll (BPM-linked): the hook owns the timer; the page turner scrolls
-  // the FlatList to the next page. scrollToOffset is deterministic because
-  // every page is exactly `width` wide (horizontal paging).
-  const autoScroll = useAutoScroll({
-    currentPage: page,
-    pageCount: pages.length,
-    onTurnPage: useCallback(() => {
-      // `page` is 1-based; the next page's 0-based index equals `page`.
-      listRef.current?.scrollToOffset({ offset: pageRef.current * width, animated: true });
-    }, [width]),
-  });
-  const {
-    status: autoScrollStatus,
-    toggle: toggleAutoScroll,
-  } = autoScroll;
-
-  // SPEED PROFILES + PER-PIECE MEMORY (owner 10-10, backlog 7f64272f) — the same
-  // hook the PDF viewer uses, keyed on the scanned score's library item id, so
-  // both readers remember a piece's speed identically.
-  const speedProfiles = usePageTurnSpeed(itemId, autoScroll);
-
-  // Keep the page ref fresh for the auto-scroll page turner.
-  useEffect(() => {
-    pageRef.current = page;
-  }, [page]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -146,29 +142,16 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
           )}
         />
 
-        {/* Pause-on-tap: while auto-scroll is active, any tap toggles
-            pause/resume. The overlay is absent when idle, so normal swipe
-            page turning is completely untouched. */}
-        {autoScrollStatus !== 'idle' && (
-          <Pressable
-            style={styles.tapOverlay}
-            onPress={toggleAutoScroll}
-            accessibilityRole="button"
-            accessibilityLabel={
-              autoScrollStatus === 'running'
-                ? 'Pause auto-scroll'
-                : 'Resume auto-scroll'
-            }
-          />
-        )}
       </View>
 
-      {/* Auto-scroll control (FEATURE BUILD 2 + owner 10-10 speed presets) */}
-      <AutoScrollControl
-        autoScroll={autoScroll}
-        disabled={pages.length < 2}
-        speedProfiles={speedProfiles}
-      />
+      {/* WHY THERE IS NO PLAY/AUTO-SCROLL HERE (v42 fix C). Said out loud rather
+          than left as an absence: the user who looks for it gets the reason, and
+          the swipe hint that does work. See this screen's header comment for the
+          honest-scope decision (no OMR, no score following, no audio). */}
+      <View style={styles.autoScrollNoteRow}>
+        <Ionicons name="hand-left-outline" size={14} color={theme.subtext} />
+        <Text style={styles.autoScrollNote}>{SCANNED_NO_AUTOSCROLL_LINE}</Text>
+      </View>
 
       {/* THE SAVED SCAN'S WAY INTO THE MONEY PATH (v39 fix 1b, owner 10-11). The
           page on screen is read on device for its printed WORDS — not the notes —
@@ -211,9 +194,21 @@ const baseStyles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  tapOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 5,
+  autoScrollNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#16213e',
+    borderTopWidth: 1,
+    borderTopColor: '#0f3460',
+  },
+  autoScrollNote: {
+    flex: 1,
+    color: '#a0a0b8',
+    fontSize: 11,
+    lineHeight: 15,
   },
   centered: {
     flex: 1,

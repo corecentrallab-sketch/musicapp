@@ -117,7 +117,14 @@ export function staffCardDrawsBothRows(cardSource: string): boolean {
   // (the app's teal) — the whole point of the two rows.
   if (masked.indexOf('ink={TAKE_STAFF_RAW_INK}') < 0) return false;
   if (masked.indexOf('ink={TAKE_STAFF_CLEANED_INK}') < 0) return false;
-  if (!/TAKE_STAFF_CLEANED_INK\s*=\s*'#4ecdc4'/.test(masked)) return false;
+  // THE INKS ARE THE PALETTE'S (v42 fix B1). They used to be literals on this card
+  // (raw = the dark palette's dim grey, cleaned = the brand teal #4ecdc4) and were
+  // handed to the renderer as props, which the theme remapper cannot repaint — so
+  // in light mode the staff stayed a black block with dim notes on it (owner 10-20:
+  // "notes on a BLACK screen, invisible"). The card may no longer own a hex; the
+  // values live in services/takeStaffPalette.ts and their legibility is asserted
+  // against the paper in scripts/uxr-v42-fixes.test.ts.
+  if (masked.indexOf("'../services/takeStaffPalette'") < 0) return false;
   // …in that order, with the divider label BETWEEN them (and from the model,
   // never a second copy of the string in the view).
   if (
