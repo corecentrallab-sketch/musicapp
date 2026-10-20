@@ -230,7 +230,8 @@ export function scanFindView(
   }
   const outcome = coverQueryFromScan({
     ocrText: read.text ?? '',
-    ocrFailed: read.failed === true,
+    // `read.failed === true` returned above, so the read did not fail here.
+    ocrFailed: false,
     ocrAvailable: COVER_SCAN_OCR_AVAILABLE,
   });
   const query = typeof outcome.query === 'string' ? outcome.query.trim() : '';
@@ -290,9 +291,10 @@ export function scanFindActions(view: ScanFindView | null | undefined): ScanFind
   const hasQuery = typeof view.query === 'string' && view.query.trim().length > 0;
   return {
     showReadWords: hasQuery,
-    // THE STRUCTURAL RULE: a garbage read has no query, and this flag is false
-    // for it — a surface cannot offer a search of words the model refused.
-    offerReadSearch: hasQuery && view.quality !== 'garbage',
+    // THE STRUCTURAL RULE: a garbage read has no query (and returned above), and
+    // this flag is false for it — a surface cannot offer a search of words the
+    // model refused.
+    offerReadSearch: hasQuery,
     offerTypedSearch: true,
     offerRetake: true,
     offerCandidates: view.candidates.length > 0,

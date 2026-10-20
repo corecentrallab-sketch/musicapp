@@ -103,7 +103,7 @@ const PD_PIECES: ReadonlyArray<readonly [string, string, string]> = [
  * Modern songs: we hold no score and claim no edition — a suggestion for one of
  * these exists only to reach the licensed retailers (`source: 'modern'`).
  */
-const MODERN_SONGS: ReadonlyArray<readonly [string, string]> = [
+const MODERN_SONGS: ReadonlyArray<readonly [string, string, string]> = [
   ['bohemian-rhapsody', 'Bohemian Rhapsody', 'Queen'],
   ['fields-of-gold', 'Fields of Gold', 'Sting'],
   ['hallelujah-leonard', 'Hallelujah', 'Leonard Cohen'],

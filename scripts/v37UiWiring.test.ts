@@ -136,7 +136,8 @@ const ABC_VIEW = 'src/components/AbcScoreView.tsx';
 // Items 4–6 of the same batch read these real files.
 const RESULT_SURFACE = 'src/components/RecognitionResultView.tsx';
 const PIECE_PAGE = 'src/screens/PieceDetailScreen.tsx';
-const SCAN_MODAL = 'src/components/CoverScanModal.tsx';
+const SCAN_SECTION = 'src/components/ScanFindSection.tsx';
+const SCAN_SCREEN = 'src/screens/ScanScoreScreen.tsx';
 const FIND_PIECE = 'src/screens/FindPieceScreen.tsx';
 const MIDI_DEVICE_EXPORT = 'src/services/captureMidiExport.ts';
 // Items 7–8 of the same batch read these real files.
@@ -636,7 +637,8 @@ const saveServiceSource = readAppFile(PIECE_LIBRARY_SAVE_PATH);
 const libraryStoreSource = readAppFile(LIBRARY_STORE_PATH);
 const resultSurfaceSource = readAppFile(RESULT_SURFACE);
 const piecePageSource = readAppFile(PIECE_PAGE);
-const scanModalSource = readAppFile(SCAN_MODAL);
+const scanSectionSource = readAppFile(SCAN_SECTION);
+const scanScreenSource = readAppFile(SCAN_SCREEN);
 const findPieceSource = readAppFile(FIND_PIECE);
 const midiDeviceExportSource = readAppFile(MIDI_DEVICE_EXPORT);
 assert(
@@ -653,7 +655,8 @@ assert(
 );
 assert(resultSurfaceSource.length > 20000, `read ${RESULT_SURFACE}`);
 assert(piecePageSource.length > 8000, `read ${PIECE_PAGE}`);
-assert(scanModalSource.length > 3000, `read ${SCAN_MODAL}`);
+assert(scanSectionSource.length > 6000, `read ${SCAN_SECTION} (${scanSectionSource.length} chars)`);
+assert(scanScreenSource.length > 8000, `read ${SCAN_SCREEN} (${scanScreenSource.length} chars)`);
 assert(findPieceSource.length > 8000, `read ${FIND_PIECE}`);
 assert(midiDeviceExportSource.length > 3000, `read ${MIDI_DEVICE_EXPORT}`);
 
@@ -691,14 +694,14 @@ assert(
 
 console.log('\nv37 item 5 — the scan result always has a way forward');
 assertEq(
-  coverScanResultOffersTheWayForward(scanModalSource),
+  coverScanResultOffersTheWayForward(scanSectionSource),
   true,
-  'the cover-scan result offers save + Get this Song',
+  'the ONE resolve page offers suggestions, the read words, the typed title and a retake',
 );
 assertEq(
-  coverScanGetThisSongReachesTheMoneyPath(findPieceSource),
+  coverScanGetThisSongReachesTheMoneyPath(scanScreenSource),
   true,
-  'Get this Song reaches the existing affiliate builder and in-app shell',
+  'a scanned page reaches the app ONE search, which is where the affiliate CTAs live',
 );
 
 console.log('\nv37 item 6 — the .mid is validated, and it can leave the device');
@@ -893,83 +896,120 @@ assertEq(
   'MUTATION: a piece page with no save action FAILS piecePageOffersSaveToLibrary',
 );
 
-// MUTATION 21 (item 5): the scan result loses the save action (the dead end is back).
-const scanWithoutSave = scanModalSource.replace(/resultActions\.canSave/g, 'false');
-assert(scanWithoutSave !== scanModalSource, 'mutation 21 changed the scan modal');
+// MUTATION 21 (item 5): the read's words become a search again — the garbage
+// read is searchable, which is exactly the owner's on-device failure.
+const searchTheDebris = scanSectionSource.replace(/actions\.offerReadSearch/g, 'true');
+assert(searchTheDebris !== scanSectionSource, 'mutation 21 changed the resolve page');
 assertEq(
-  coverScanResultOffersTheWayForward(scanWithoutSave),
+  coverScanResultOffersTheWayForward(searchTheDebris),
   false,
-  'MUTATION: a scan result with no save action FAILS coverScanResultOffersTheWayForward',
+  'MUTATION: a resolve page that offers a search for a garbage read FAILS coverScanResultOffersTheWayForward',
 );
 
-// MUTATION 22 (item 5): the scan result loses the money CTA.
-const scanWithoutMoney = scanModalSource.replace(
-  /resultActions\.canGetThisSong/g,
-  'false',
-);
-assert(scanWithoutMoney !== scanModalSource, 'mutation 22 changed the scan modal');
+// MUTATION 22 (item 5): the words field is shown in every state, garbage included.
+const wordsAlways = scanSectionSource.replace(/actions\.showReadWords/g, 'true');
+assert(wordsAlways !== scanSectionSource, 'mutation 22 changed the resolve page');
 assertEq(
-  coverScanResultOffersTheWayForward(scanWithoutMoney),
+  coverScanResultOffersTheWayForward(wordsAlways),
   false,
-  'MUTATION: a scan result with no Get-this-Song FAILS coverScanResultOffersTheWayForward',
+  'MUTATION: a read-words field shown for every read FAILS coverScanResultOffersTheWayForward',
 );
 
-// MUTATION 23 (item 5): the save stops using the library store's scan path.
-const scanOwnStore = scanModalSource.replace('createScannedScore(', 'keepThisScanLocally(');
-assert(scanOwnStore !== scanModalSource, 'mutation 23 changed the scan modal');
+// MUTATION 23 (item 5): a suggestion no longer opens anything (the dead end is back).
+const deadSuggestion = scanSectionSource.replace(
+  'onPress={() => openCandidate(candidate)}',
+  'onPress={() => {}}',
+);
+assert(deadSuggestion !== scanSectionSource, 'mutation 23 changed the resolve page');
 assertEq(
-  coverScanResultOffersTheWayForward(scanOwnStore),
+  coverScanResultOffersTheWayForward(deadSuggestion),
   false,
-  'MUTATION: a scan save that bypasses the library store FAILS coverScanResultOffersTheWayForward',
+  'MUTATION: a suggestion that opens nothing FAILS coverScanResultOffersTheWayForward',
 );
 
-// MUTATION 24 (item 5): the modal starts building its own retailer URL.
-const scanOwnUrl = scanModalSource.replace(
-  'const getThisSong = useCallback(() => {',
-  "const getThisSong = useCallback(() => {\n    const own = 'https://www.sheetmusicdirect.com/en-US/Search.aspx?query=x';\n    void own;",
+// MUTATION 24 (item 5): a song we hold no score for searches for nothing.
+const emptySuggestionSearch = scanSectionSource.replace(
+  'onSearch(candidate.query)',
+  "onSearch('')",
 );
-assert(scanOwnUrl !== scanModalSource, 'mutation 24 changed the scan modal');
+assert(emptySuggestionSearch !== scanSectionSource, 'mutation 24 changed the resolve page');
 assertEq(
-  coverScanResultOffersTheWayForward(scanOwnUrl),
+  coverScanResultOffersTheWayForward(emptySuggestionSearch),
   false,
-  'MUTATION: a scan surface hand-writing a retailer URL FAILS coverScanResultOffersTheWayForward',
+  'MUTATION: a suggestion whose search runs nothing FAILS coverScanResultOffersTheWayForward',
 );
 
-// MUTATION 25 (item 5): the host hand-writes the affiliate URL instead of using
-// the ONE builder.
-const handWrittenUrl = findPieceSource.replace(
-  'sheetMusicDirectSearchUrl(text)',
-  "'https://www.sheetmusicdirect.com/en-US/Search.aspx?query=' + text",
-);
-assert(handWrittenUrl !== findPieceSource, 'mutation 25 changed the find-a-piece screen');
+// MUTATION 25 (item 5): the user's own title loses its CTA — the way out is gone.
+const noTypedCta = scanSectionSource.split('SCAN_FIND_TYPED_SEARCH_CTA').join('SCAN_FIND_SEARCH_CTA');
+assert(noTypedCta !== scanSectionSource, 'mutation 25 changed the resolve page');
 assertEq(
-  coverScanGetThisSongReachesTheMoneyPath(handWrittenUrl),
+  coverScanResultOffersTheWayForward(noTypedCta),
   false,
-  'MUTATION: a hand-written affiliate URL FAILS coverScanGetThisSongReachesTheMoneyPath',
+  'MUTATION: a resolve page with no typed-title CTA FAILS coverScanResultOffersTheWayForward',
 );
 
-// MUTATION 26 (item 5): the money path opens outside the app shell.
-const outsideShell = findPieceSource.replace(
-  'handleOpenRetailer(url)',
-  'Linking.openURL(url)',
+// MUTATION 26 (item 5): a garbage read fills the field it would be searched from.
+const debrisInField = scanSectionSource.replace(
+  "next.quality === 'garbage' ? ''",
+  "next.quality === 'garbage' ? next.query",
 );
-assert(outsideShell !== findPieceSource, 'mutation 26 changed the find-a-piece screen');
+assert(debrisInField !== scanSectionSource, 'mutation 26 changed the resolve page');
 assertEq(
-  coverScanGetThisSongReachesTheMoneyPath(outsideShell),
+  coverScanResultOffersTheWayForward(debrisInField),
   false,
-  'MUTATION: a Get-this-Song that leaves the in-app shell FAILS coverScanGetThisSongReachesTheMoneyPath',
+  'MUTATION: a field filled from a garbage read FAILS coverScanResultOffersTheWayForward',
 );
 
-// MUTATION 27 (item 5): the CTA is never handed to the modal (an unwired button).
-const unwiredCta = findPieceSource.replace(
-  'onGetThisSong={handleCoverGetThisSong}',
-  'onGetThisSong={handleSomethingElse}',
-);
-assert(unwiredCta !== findPieceSource, 'mutation 27 changed the find-a-piece screen');
+// MUTATION 27 (item 5): the resolve page starts building its own retailer URL.
+const sectionOwnUrl = `${scanSectionSource}\nconst own = 'https://www.sheetmusicdirect.com/en-US/Search.aspx?query=x';\n`;
+assert(sectionOwnUrl !== scanSectionSource, 'mutation 27 changed the resolve page');
 assertEq(
-  coverScanGetThisSongReachesTheMoneyPath(unwiredCta),
+  coverScanResultOffersTheWayForward(sectionOwnUrl),
   false,
-  'MUTATION: an unwired Get-this-Song FAILS coverScanGetThisSongReachesTheMoneyPath',
+  'MUTATION: a resolve page hand-writing a retailer URL FAILS coverScanResultOffersTheWayForward',
+);
+
+// MUTATION 21b (item 5): the scan screen's search is unwired — the words go nowhere.
+const unwiredSearch = scanScreenSource.replace('onSearch={setFindQuery}', 'onSearch={() => {}}');
+assert(unwiredSearch !== scanScreenSource, 'mutation 21b changed the scan screen');
+assertEq(
+  coverScanGetThisSongReachesTheMoneyPath(unwiredSearch),
+  false,
+  'MUTATION: an unwired search hand-off FAILS coverScanGetThisSongReachesTheMoneyPath',
+);
+
+// MUTATION 22b (item 5): a suggestion is opened with a made-up query.
+const inventedQuery = scanScreenSource.replace(
+  'candidate.query || candidate.title',
+  "''",
+);
+assert(inventedQuery !== scanScreenSource, 'mutation 22b changed the scan screen');
+assertEq(
+  coverScanGetThisSongReachesTheMoneyPath(inventedQuery),
+  false,
+  'MUTATION: a suggestion opened with no real query FAILS coverScanGetThisSongReachesTheMoneyPath',
+);
+
+// MUTATION 23b (item 5): the scan screen hand-writes a retailer URL instead of
+// handing a query to the ONE search.
+const scanOwnUrl = `${scanScreenSource}\nconst own = 'https://www.sheetmusicdirect.com/en-US/Search.aspx?query=x';\n`;
+assert(scanOwnUrl !== scanScreenSource, 'mutation 23b changed the scan screen');
+assertEq(
+  coverScanGetThisSongReachesTheMoneyPath(scanOwnUrl),
+  false,
+  'MUTATION: a scan screen hand-writing a retailer URL FAILS coverScanGetThisSongReachesTheMoneyPath',
+);
+
+// MUTATION 24b (item 5): the one search is never mounted — the hand-off is a no-op.
+const noSearchSurface = scanScreenSource.replace(
+  '<FindPieceScreen initialQuery={findQuery}',
+  '<SomeSearch initialQuery={findQuery}',
+);
+assert(noSearchSurface !== scanScreenSource, 'mutation 24b changed the scan screen');
+assertEq(
+  coverScanGetThisSongReachesTheMoneyPath(noSearchSurface),
+  false,
+  'MUTATION: a hand-off to a search that is never mounted FAILS coverScanGetThisSongReachesTheMoneyPath',
 );
 
 // MUTATION 28 (item 6): the export skips the structural check.
@@ -1050,8 +1090,8 @@ assertEq(
 );
 assertEq(pdResultCardOffersSaveToLibrary(''), false, 'an empty result surface offers no save');
 assertEq(piecePageOffersSaveToLibrary(''), false, 'an empty piece page offers no save');
-assertEq(coverScanResultOffersTheWayForward(''), false, 'an empty scan modal offers nothing');
-assertEq(coverScanGetThisSongReachesTheMoneyPath(''), false, 'an empty search screen has no money path');
+assertEq(coverScanResultOffersTheWayForward(''), false, 'an empty resolve page offers nothing');
+assertEq(coverScanGetThisSongReachesTheMoneyPath(''), false, 'an empty scan screen has no money path');
 assertEq(midiExportIsValidatedBeforeSharing(''), false, 'an empty export validates nothing');
 assertEq(takeEditorCanSendTheTakeOffDevice(''), false, 'an empty editor sends nothing');
 

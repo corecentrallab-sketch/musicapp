@@ -407,65 +407,84 @@ export function piecePageOffersSaveToLibrary(pieceSource: string): boolean {
 }
 
 /**
- * 5a. THE SCAN'S RESULT SURFACE ALWAYS HAS A WAY FORWARD (v37 item 5).
- * `modalSource` is src/components/CoverScanModal.tsx.
+ * 5a. THE SCAN'S RESULT SURFACE ALWAYS HAS A WAY FORWARD (v37 item 5, re-pointed
+ * by v43 item C). `sectionSource` is src/components/ScanFindSection.tsx — the ONE
+ * resolve page a photographed page lands on (v43 deleted the find-a-piece cover
+ * modal this guard used to read).
  *
  * The owner's finding (item 10): with nothing readable in the field the search
- * button is disabled and the result was a dead end. This guard asserts the two
- * actions that resolve it are really there:
- *   • SAVE — the captured photo goes into the library through the EXISTING scan
- *     write path (`createScannedScore(`), with the honest label/state from the
- *     shared model and a failure line that can be shown;
- *   • GET THIS SONG — the money path for a title we do not hold, decided by the
- *     pure model (`coverScanResultActions(`) and wired to the host's own handler
- *     (`onGetThisSong`) — this modal never builds a URL.
+ * button was disabled and the result was a dead end. v43's diagnosis added the
+ * second, worse case — a garbage read ("4ox 2Apx ors white Freddie Mer") that the
+ * user could search with. Both are resolved here, and every branch is driven by
+ * the PURE model (`scanFindView(` decides, `scanFindActions(` says what may be
+ * rendered), never by a check inlined in the component:
+ *   • SUGGESTIONS — up to three pieces the read answers, each opening the piece
+ *     (`openCandidate(candidate)`), or the same search one tap on when the host
+ *     holds no catalog row (`onSearch(candidate.query)`);
+ *   • THE USER'S OWN TITLE — the typed field + its CTA, present in EVERY state
+ *     including garbage (`actions.offerTypedSearch`);
+ *   • RETAKE — the way out (`actions.offerRetake`);
+ *   • the words that were read are offered as a search ONLY behind
+ *     `actions.offerReadSearch`, which the model makes false for every garbage
+ *     read, and the field is never filled from a garbage read at all;
+ *   • the section builds no retailer URL of its own — the money path is the
+ *     piece page / the one search, never a hand-written link here.
  */
-export function coverScanResultOffersTheWayForward(modalSource: string): boolean {
-  const src = maskComments(modalSource);
+export function coverScanResultOffersTheWayForward(sectionSource: string): boolean {
+  const src = maskComments(sectionSource);
   if (src.length < 3000) return false;
-  // The pure decision is what the surface renders from.
-  if (src.indexOf('coverScanResultActions(') < 0) return false;
-  if (src.indexOf('resultActions.canSave') < 0) return false;
-  if (src.indexOf('resultActions.canGetThisSong') < 0) return false;
-  // SAVE: the existing store's scan write path + honest state.
-  if (src.indexOf('createScannedScore(') < 0) return false;
-  if (src.indexOf('async () => {') < 0) return false;
-  if (src.indexOf('COVER_SCAN_SAVE_CTA') < 0) return false;
-  if (src.indexOf('saveToLibraryLabel(scanSave)') < 0) return false;
-  if (src.indexOf('saveToLibraryIsBusy(scanSave)') < 0) return false;
-  if (src.indexOf('COVER_SCAN_SAVED_LINE') < 0) return false;
-  if (src.indexOf('COVER_SCAN_SAVE_FAILED_LINE') < 0) return false;
-  // GET THIS SONG: labelled from the model and wired to the host's handler.
-  if (src.indexOf('GET_THIS_SONG_CTA') < 0) return false;
-  if (src.indexOf('onPress={getThisSong}') < 0) return false;
-  if (src.indexOf('onGetThisSong(text)') < 0) return false;
-  // …and the modal itself builds no retailer URL (it cannot invent one).
+  // The pure decisions are what the surface renders from.
+  if (src.indexOf('scanFindView(') < 0) return false;
+  if (src.indexOf('scanFindActions(') < 0) return false;
+  if (src.indexOf('actions.offerReadSearch') < 0) return false;
+  if (src.indexOf('actions.showReadWords') < 0) return false;
+  if (src.indexOf('actions.offerTypedSearch') < 0) return false;
+  if (src.indexOf('actions.offerRetake') < 0) return false;
+  // SUGGESTIONS: the way forward for a title we can name.
+  if (src.indexOf('SCAN_FIND_CANDIDATES_LABEL') < 0) return false;
+  if (src.indexOf('openCandidate(candidate)') < 0) return false;
+  if (src.indexOf('onSearch(candidate.query)') < 0) return false;
+  // THE USER'S OWN TITLE: the way out of every state, garbage included.
+  if (src.indexOf('SCAN_FIND_TYPED_SEARCH_CTA') < 0) return false;
+  if (src.indexOf('onSearch(typedTitle)') < 0) return false;
+  // RETAKE.
+  if (src.indexOf('SCAN_FIND_RETAKE_CTA') < 0) return false;
+  // A garbage read never fills the field it would be searched from.
+  if (src.indexOf("next.quality === 'garbage' ? ''") < 0) return false;
+  // …and the section itself builds no retailer URL (it cannot invent one).
   return src.indexOf('https://') < 0;
 }
 
 /**
- * 5b. THE "GET THIS SONG" CTA REACHES THE EXISTING MONEY PATH (v37 item 5).
- * `searchSource` is src/screens/FindPieceScreen.tsx — the host of the camera
- * surface, and the screen that already owns the in-app retailer shell.
+ * 5b. A SCANNED PAGE'S MONEY PATH IS THE APP'S ONE SEARCH (v37 item 5, re-pointed
+ * by v43 item C). `scanSource` is src/screens/ScanScoreScreen.tsx — the ONE door a
+ * photographed page enters by.
  *
- * The CTA must resolve through the ONE affiliate URL builder
- * (`sheetMusicDirectSearchUrl` — SMD, affiliate id 67650) and open it in the SAME
- * shell every other purchase path on this screen uses (`handleOpenRetailer`, whose
- * only writer is a tap), never a hand-written URL and never a second checkout. A
- * URL literal in the handler is a failure here, on purpose.
+ * What the read produces must reach the same purchase path a typed title does,
+ * and it must do it through surfaces that already exist:
+ *   • the confirmed words go to the host's own state (`onSearch={setFindQuery}`),
+ *     and a SUGGESTION goes there with the piece's own title
+ *     (`candidate.query || candidate.title`) — a candidate is never opened as a
+ *     fake piece page from a screen that holds no catalog row;
+ *   • that state mounts the ONE search surface in place
+ *     (`<FindPieceScreen initialQuery={findQuery}`), whose results carry the
+ *     affiliate CTAs — so the screen hands over a QUERY, never a URL, and holds no
+ *     `https://` literal of its own.
  */
-export function coverScanGetThisSongReachesTheMoneyPath(searchSource: string): boolean {
-  const src = maskComments(searchSource);
+export function coverScanGetThisSongReachesTheMoneyPath(scanSource: string): boolean {
+  const src = maskComments(scanSource);
   if (src.length < 8000) return false;
-  if (src.indexOf('onGetThisSong={handleCoverGetThisSong}') < 0) return false;
-  const at = src.indexOf('const handleCoverGetThisSong = useCallback(');
+  if (src.indexOf('onSearch={setFindQuery}') < 0) return false;
+  if (src.indexOf('onOpenPiece={openSuggestedPiece}') < 0) return false;
+  const at = src.indexOf('const openSuggestedPiece = useCallback(');
   if (at < 0) return false;
-  const body = src.slice(at, at + 700);
-  if (body.indexOf('sheetMusicDirectSearchUrl(text)') < 0) return false;
-  if (body.indexOf('handleOpenRetailer(url)') < 0) return false;
+  const body = src.slice(at, at + 500);
+  if (body.indexOf('candidate.query || candidate.title') < 0) return false;
+  if (body.indexOf('setFindQuery(words)') < 0) return false;
   if (/https?:\/\//.test(body)) return false;
-  // …and the shell it opens is the one already on the screen.
-  return src.indexOf('<PurchaseWebView') >= 0 && src.indexOf('setRetailerUrl(') >= 0;
+  // …and the query really opens the ONE search, in place.
+  if (src.indexOf('<FindPieceScreen initialQuery={findQuery}') < 0) return false;
+  return src.indexOf('https://') < 0;
 }
 
 /**
