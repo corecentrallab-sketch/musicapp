@@ -90,7 +90,9 @@ export function tabBarIsThemed(tabSource: string): boolean {
   if (src.indexOf('borderTopColor: theme.border,') < 0) return false;
   if (src.indexOf('tabBarActiveTintColor: theme.accent,') < 0) return false;
   if (src.indexOf('tabBarInactiveTintColor: theme.subtext,') < 0) return false;
-  if (src.indexOf('color={theme.accent}') < 0) return false; // the header button
+  // v43 (designer spec §2): the Library header's buttons (+ and Cloud Sync) moved
+  // out of this navigator into components/LibraryHeaderActions, which is themed
+  // from the SAME tokens — asserted there instead (scripts/v34bThemeWiring.test.ts).
   return true;
 }
 

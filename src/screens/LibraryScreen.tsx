@@ -1,5 +1,5 @@
 import { useThemedStyles } from '../services/themeStore';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -26,6 +26,9 @@ import {
   renameLibraryItem,
 } from '../services/libraryStore';
 import { SampleBadge } from '../components/SampleBadge';
+import { AddMusicSheet } from '../components/AddMusicSheet';
+import { LibraryHeaderActions } from '../components/LibraryHeaderActions';
+import { FindPieceScreen } from './FindPieceScreen';
 import {
   friendlyCloudError,
   sendItemToCloud,
@@ -77,7 +80,6 @@ export const LibraryScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
   // Rename modal state
   const [renameTarget, setRenameTarget] = useState<LibraryItem | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -90,6 +92,17 @@ export const LibraryScreen: React.FC = () => {
    * an image has no bar count to state.
    */
   const [abcTexts, setAbcTexts] = useState<Record<string, string>>({});
+  /**
+   * DESIGNER SPEC §2 — THE ONE "+ ADD MUSIC" SHEET. The state lives here (not in the
+   * header) because the sheet's "Upload File" row must run THIS screen's existing
+   * import and then refresh THIS list; the header button only opens it.
+   */
+  const [addMusicOpen, setAddMusicOpen] = useState(false);
+  /**
+   * Row 3's destination: the app's ONE search surface, `FindPieceScreen`, mounted in
+   * place exactly as Home and ScanScore mount it (browse state = the free catalog).
+   */
+  const [showLibrarySearch, setShowLibrarySearch] = useState(false);
 
   const reload = useCallback(async () => {
     const list = await getLibraryItems();
@@ -134,7 +147,6 @@ export const LibraryScreen: React.FC = () => {
         return;
       }
       const asset = result.assets[0];
-      setBusy(true);
       const item = await importDocumentAsset(asset);
       await reload();
       Alert.alert(
@@ -146,12 +158,52 @@ export const LibraryScreen: React.FC = () => {
         'Import failed',
         e instanceof Error ? e.message : 'The file could not be imported.'
       );
-    } finally {
-      setBusy(false);
     }
   }, [reload]);
 
+  // ─── The "+ Add music" sheet (designer spec §2) ────────────
+  //
+  // ONE entry point in this header, and each of its three rows opens a flow the app
+  // ALREADY has — nothing is re-implemented behind the sheet:
+  //   1. Scan Live Score       → the ScanScore screen (camera → scan → save)
+  //   2. Upload File           → handleImport above (DocumentPicker → libraryStore)
+  //   3. Browse Online Library → FindPieceScreen, the app's one catalog search
+
+  const openAddMusic = useCallback(() => setAddMusicOpen(true), []);
+  const closeAddMusic = useCallback(() => setAddMusicOpen(false), []);
+
+  /** Row 1 — the existing camera/scan flow. */
+  const handleAddMusicScan = useCallback(() => {
+    setAddMusicOpen(false);
+    navigation.navigate('ScanScore');
+  }, [navigation]);
+
+  /** Row 2 — the existing file import (the button this sheet replaced). */
+  const handleAddMusicUpload = useCallback(() => {
+    setAddMusicOpen(false);
+    handleImport();
+  }, [handleImport]);
+
+  /** Row 3 — the existing catalog search, in its browse state. */
+  const handleAddMusicBrowse = useCallback(() => {
+    setAddMusicOpen(false);
+    setShowLibrarySearch(true);
+  }, []);
+
+  /**
+   * THE HEADER IS OWNED HERE (not by the tab navigator) so the one `+` and the sheet
+   * it opens share a single owner — and the Library can pass the open handler
+   * straight through. The navigator no longer wires a Library `headerRight` at all,
+   * so a second `+` cannot appear.
+   */
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => <LibraryHeaderActions onOpenAddMusic={openAddMusic} />,
+    });
+  }, [navigation, openAddMusic]);
+
   // ─── Item actions ──────────────────────────────────────────
+
 
   const openItem = useCallback(
     (item: LibraryItem) => {
@@ -306,6 +358,12 @@ export const LibraryScreen: React.FC = () => {
     [abcTexts, openItem, showItemMenu]
   );
 
+  // Row 3's destination: the EXISTING catalog search, in place (its browse state is
+  // the free public-domain catalog), exactly as Home and ScanScore mount it.
+  if (showLibrarySearch) {
+    return <FindPieceScreen onClose={() => setShowLibrarySearch(false)} />;
+  }
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -316,33 +374,6 @@ export const LibraryScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.actionsRow}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.actionButton,
-            styles.actionButtonPrimary,
-            pressed && styles.rowPressed,
-          ]}
-          onPress={handleImport}
-          disabled={busy}
-        >
-          <Ionicons name="add" size={18} color="#fff" />
-          <Text style={styles.actionButtonTextPrimary}>Import file</Text>
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [
-            styles.actionButton,
-            styles.actionButtonSecondary,
-            pressed && styles.rowPressed,
-          ]}
-          onPress={() => navigation.navigate('ScanScore')}
-          disabled={busy}
-        >
-          <Ionicons name="camera" size={18} color={theme.accent} />
-          <Text style={styles.actionButtonTextSecondary}>Scan score</Text>
-        </Pressable>
-      </View>
-
       {sorted.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyIcon}>🎼</Text>
@@ -402,6 +433,16 @@ export const LibraryScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* THE ONE "+ ADD MUSIC" SHEET (designer spec §2) — the three rows that every
+          add/import affordance in the app collapses into. */}
+      <AddMusicSheet
+        visible={addMusicOpen}
+        onScanLiveScore={handleAddMusicScan}
+        onUploadFile={handleAddMusicUpload}
+        onBrowseOnlineLibrary={handleAddMusicBrowse}
+        onClose={closeAddMusic}
+      />
     </View>
   );
 };
@@ -410,42 +451,6 @@ const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#16213e',
-    borderBottomWidth: 1,
-    borderBottomColor: '#0f3460',
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  actionButtonPrimary: {
-    backgroundColor: '#e94560',
-  },
-  actionButtonSecondary: {
-    backgroundColor: '#1a1a2e',
-    borderWidth: 1,
-    borderColor: '#e94560',
-  },
-  actionButtonTextPrimary: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  actionButtonTextSecondary: {
-    color: '#e94560',
-    fontWeight: '700',
-    fontSize: 15,
   },
   listContent: {
     paddingVertical: 8,
