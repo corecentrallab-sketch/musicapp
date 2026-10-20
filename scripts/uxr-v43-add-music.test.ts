@@ -14,6 +14,7 @@
  *   src/components/LibraryHeaderActions.tsx — the 44 dp + beside the cog
  *   src/components/AddMusicSheet.tsx   — the sheet, its geometry and dismissals
  *   src/navigation/TabNavigator.tsx    — must NOT wire a second Library header
+ *   src/services/addMusicSheet.ts      — the constants' VALUES (swipe threshold = 48 dp)
  *
  * Sections 4 and 5 are the BITE PROOF: the pre-fix screen is reconstructed and
  * every detector is run against a mutation of the REAL source that restores the
@@ -44,6 +45,7 @@ import {
   addMusicSheetMountsEveryRow,
   addMusicSheetUsesThemeRolesOnly,
   addMusicSurfaceContracts,
+  addMusicSwipeThresholdIsPinned,
   libraryHasOneAddEntryPoint,
   libraryHasScatteredAddAffordances,
   libraryHeaderHasOneAddButton,
@@ -94,6 +96,8 @@ const library = read('src/screens/LibraryScreen.tsx');
 const header = read('src/components/LibraryHeaderActions.tsx');
 const sheet = read('src/components/AddMusicSheet.tsx');
 const tab = read('src/navigation/TabNavigator.tsx');
+/** The service that DECLARES the constants — read so the guard sees their values. */
+const service = read('src/services/addMusicSheet.ts');
 
 /** The colours the app ALREADY ships — the only hexes this surface may resolve to. */
 const SHIPPED_HEXES: string[] = Object.keys(DARK_THEME)
@@ -328,6 +332,14 @@ assertEq(styleValue(sheet, 'sheetSubtitle', 'fontSize'), '12', 'the sheet subtit
 assertEq(styleValue(sheet, 'cancelRow', 'minHeight'), '48', 'the Cancel row is a 48 dp target');
 assertEq(styleValue(sheet, 'cancelText', 'fontSize'), '15', 'the Cancel label is 15 dp');
 assertEq(ADD_MUSIC_SWIPE_DISMISS_DP > 0, true, 'the swipe threshold is a real number');
+// The threshold's VALUE is pinned, not just its name: identifier presence alone stayed
+// green while 48 → 24 silently turned a decisive swipe into a nudge.
+assertEq(ADD_MUSIC_SWIPE_DISMISS_DP, 48, 'the shipped swipe threshold is 48 dp');
+assertEq(
+  addMusicSwipeThresholdIsPinned(service),
+  true,
+  'the swipe threshold is pinned to its VALUE in the service source (48 dp)',
+);
 
 console.log('\n§2 NO NEW COLOURS, NO BRANDING — on the sheet itself');
 
@@ -513,6 +525,28 @@ bite(
   replaceLast(sheet, 'ADD_MUSIC_SWIPE_DISMISS_DP', '0'),
   sheet,
   addMusicSheetHasAllDismissals,
+);
+
+// The SERVICE: the threshold's VALUE, not just its name. Identifier-presence guards stay
+// green on all three of these — this is the gap the value pin closes.
+const SWIPE_DECL = 'export const ADD_MUSIC_SWIPE_DISMISS_DP = 48;';
+bite(
+  'the swipe threshold silently drops from 48 dp to 24 dp',
+  service.replace(SWIPE_DECL, 'export const ADD_MUSIC_SWIPE_DISMISS_DP = 24;'),
+  service,
+  addMusicSwipeThresholdIsPinned,
+);
+bite(
+  'the swipe threshold is raised to 96 dp',
+  service.replace(SWIPE_DECL, 'export const ADD_MUSIC_SWIPE_DISMISS_DP = 96;'),
+  service,
+  addMusicSwipeThresholdIsPinned,
+);
+bite(
+  'the swipe threshold stops being a literal number',
+  service.replace(SWIPE_DECL, 'export const ADD_MUSIC_SWIPE_DISMISS_DP = 24 * 2;'),
+  service,
+  addMusicSwipeThresholdIsPinned,
 );
 bite(
   'a retailer name appears on the sheet',

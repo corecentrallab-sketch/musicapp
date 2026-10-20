@@ -94,6 +94,12 @@ export const ADD_MUSIC_SPEC = {
   /** Cancel: centred 15 dp bold HUM on a 48 dp target. */
   cancelSize: 15,
   cancelTargetDp: 48,
+  /**
+   * The grabber swipe threshold, IN THE SPEC — the value ADD_MUSIC_SWIPE_DISMISS_DP
+   * must equal. `addMusicSwipeThresholdIsPinned` reads the constant's VALUE out of the
+   * service source and holds it to this number, so a silent 48 → 24 edit fails the gate.
+   */
+  swipeDismissDp: 48,
 } as const;
 
 // ──────────────────── the theme roles this surface may use ───────────────────
@@ -398,6 +404,25 @@ export function addMusicSheetHasAllDismissals(sheetSource: string): boolean {
   // …and no ✕ anywhere on the sheet.
   if (/name="close"/.test(text)) return false;
   return true;
+}
+/**
+ * THE SWIPE THRESHOLD'S **VALUE** IS PINNED, not just its name.
+ *
+ * `addMusicSheetHasAllDismissals` proves the sheet *uses* ADD_MUSIC_SWIPE_DISMISS_DP;
+ * that alone leaves the constant free to drift — 48 → 24 keeps every identifier in
+ * place and the old guard green, while the grabber starts dismissing on a nudge.
+ * This guard reads the constant's VALUE out of the SERVICE SOURCE text (never the
+ * imported module, so it bites on a source edit without a recompile) and holds it to
+ * the spec's 48 dp. It fails when the declaration is missing, when the value is not a
+ * literal number, or when the literal is anything other than ADD_MUSIC_SPEC.swipeDismissDp.
+ */
+export function addMusicSwipeThresholdIsPinned(serviceSource: string): boolean {
+  const text = maskSourceComments(serviceSource);
+  const match = /(?:export\s+)?const\s+ADD_MUSIC_SWIPE_DISMISS_DP\s*(?::\s*number\s*)?=\s*(\d+(?:\.\d+)?)\s*;/.exec(
+    text
+  );
+  if (match === null) return false;
+  return Number(match[1]) === ADD_MUSIC_SPEC.swipeDismissDp;
 }
 
 /**
