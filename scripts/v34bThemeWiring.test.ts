@@ -124,7 +124,16 @@ console.log('\nv34b — the app-wide wiring');
 assert(themeProviderMountedAtRoot(APP), 'App.tsx: ONE ThemeModeProvider mounted at the root, over the shell, above NavigationContainer');
 assert(statusBarIsThemed(APP), 'App.tsx: the status bar follows the mode (dark glyphs on light)');
 assert(navigationChromeIsThemed(APP), 'App.tsx: the stack chrome + loading view are painted from the tokens');
-assert(tabBarIsThemed(TAB), 'TabNavigator: the tab bar, its labels, headers and header button are painted from the tokens');
+assert(tabBarIsThemed(TAB), 'TabNavigator: the tab bar, its labels, headers and are painted from the tokens');
+const HEADER_ACTIONS = read('src/components/LibraryHeaderActions.tsx');
+assert(
+  HEADER_ACTIONS.indexOf("from '../services/themeStore'") >= 0 &&
+    HEADER_ACTIONS.indexOf('useThemeMode()') >= 0 &&
+    HEADER_ACTIONS.indexOf('palette.HUM') >= 0 &&
+    HEADER_ACTIONS.indexOf('palette.PILL_ON') >= 0 &&
+    HEADER_ACTIONS.indexOf('#') < 0,
+  'LibraryHeaderActions: the ONE + (and the Cloud Sync glyph) are painted from the tokens',
+);
 assert(themeApplierIsPureAndDarkIsIdentity(APPLY), 'themeApply.ts: pure, dark is the identity, light re-maps');
 assert(settingsToggleWritesTheSharedMode(SETTINGS, STORE), 'Settings: the toggle writes the SHARED persisted mode');
 assert(STORE.indexOf('useThemedStyles') > 0, 'themeStore: the shared useThemedStyles hook exists');

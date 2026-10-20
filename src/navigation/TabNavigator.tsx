@@ -1,16 +1,13 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { HomeScreen } from '../screens/HomeScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
 import { LibraryScreen } from '../screens/LibraryScreen';
 import { EditorScreen } from '../screens/EditorScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
-import type { RootTabParamList, RootStackParamList } from '../types';
+import type { RootTabParamList } from '../types';
 // The app-wide light/dark palette (v34b): the tab bar and the tab headers are the
 // most visible chrome in the app, so they read the SAME shared mode as the
 // screens (services/themeStore).
@@ -18,25 +15,15 @@ import { useThemeMode } from '../services/themeStore';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
-/** Header button on the Library tab that opens the Cloud Sync screen. */
-const LibraryHeaderButton: React.FC = () => {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { tokens: theme } = useThemeMode();
-  return (
-    <Pressable
-      onPress={() => navigation.getParent()?.navigate('CloudSync')}
-      accessibilityRole="button"
-      accessibilityLabel="Cloud sync"
-      style={({ pressed }) => ({
-        marginRight: 14,
-        opacity: pressed ? 0.6 : 1,
-      })}
-      hitSlop={8}
-    >
-      <Ionicons name="cloud-upload" size={22} color={theme.accent} />
-    </Pressable>
-  );
-};
+/**
+ * NOTE (designer spec §2, v43): the Library tab used to wire its own `headerRight`
+ * here (a single Cloud Sync glyph). That header is now owned by LibraryScreen
+ * itself, because the spec's ONE "+ Add music" circle and the sheet it opens must
+ * share a single owner — a header wired here AND in the screen would be a second
+ * `+`. The Cloud Sync glyph moved into components/LibraryHeaderActions with it, so
+ * the item menu's "tap the cloud icon at the top of the Library" still points at a
+ * real control.
+ */
 
 export const TabNavigator: React.FC = () => {
   // Android 16 edge-to-edge (targetSdk 36) draws the tab bar under the system
@@ -98,7 +85,6 @@ export const TabNavigator: React.FC = () => {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="library" size={size} color={color} />
           ),
-          headerRight: () => <LibraryHeaderButton />,
         }}
       />
       <Tab.Screen

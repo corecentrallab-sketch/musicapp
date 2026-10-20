@@ -171,6 +171,8 @@
     "src/services/takeStaffPalette.ts",
     "src/services/ocrPrefill.ts",
     "src/services/uxrV42Contract.ts",
-    "scripts/uxr-v42-fixes.test.ts"
+    "scripts/uxr-v42-fixes.test.ts",
+    "src/services/addMusicSheet.ts",
+    "scripts/uxr-v43-add-music.test.ts"
   ]
 }
