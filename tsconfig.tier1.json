@@ -162,6 +162,10 @@
     "scripts/takeGroupRestructure.test.ts",
     "src/services/scanViewport.ts",
     "src/services/uxr2ScanViewportContract.ts",
-    "scripts/uxr2-scan-viewport.test.ts"
+    "scripts/uxr2-scan-viewport.test.ts",
+    "src/services/audioFocusContract.ts",
+    "src/services/takePdfGuard.ts",
+    "src/services/uxrV41Contract.ts",
+    "scripts/uxr-v41-fixes.test.ts"
   ]
 }

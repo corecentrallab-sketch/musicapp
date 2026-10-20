@@ -35,6 +35,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { Share } from 'react-native';
 import { midiBytesToBase64, type SavedCaptureTake } from './midiExport';
+import { takePdfVerdict } from './takePdfGuard';
 import {
   TAKE_PDF_EMPTY_MESSAGE,
   TAKE_PDF_FAILED_MESSAGE,
@@ -182,6 +183,18 @@ export async function exportTakePdfFromTake(
   const deps = opts.deps ?? {};
   if (!takeHasSomethingToSend(take)) {
     return { status: 'failed', kind: 'pdf', message: TAKE_PDF_EMPTY_MESSAGE };
+  }
+  /**
+   * THE "NOTHING RECORDED" GATE (v41 item 2). The owner's v40 pass shared a ~8 KB
+   * page with an empty staff: the take looked non-empty (notes were present) but
+   * held nothing a staff can honestly draw — no note with a real pitch AND a real
+   * sounding length — because item 1's dead audio path captured nothing. A take
+   * with nothing usable in it now stops HERE, before a single byte is built,
+   * validated or written, and says so instead of handing over a stub.
+   */
+  const verdict = takePdfVerdict(take);
+  if (verdict.refused) {
+    return { status: 'failed', kind: 'pdf', message: verdict.message };
   }
 
   const bytes = buildTakeNotationPdf(take, { title: opts.title, chords: opts.chords });

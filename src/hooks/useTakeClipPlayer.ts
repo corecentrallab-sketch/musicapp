@@ -17,7 +17,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Audio } from 'expo-av';
 import { reportAudioFailure, usableDetail } from '../services/audioDiagnostics';
-import { ensurePlaybackAudioMode } from '../services/audioSession';
+import {
+  ensurePlaybackAudioMode,
+  playWithAudioFocus,
+  registerAudioPauseHandler,
+} from '../services/audioSession';
 import {
   TAKE_PLAYBACK_FAILED_LINE,
   TAKE_PLAYBACK_MISSING_LINE,
@@ -93,14 +97,20 @@ export function useTakeClipPlayer(): TakeClipPlayer {
 
       void (async () => {
         try {
-          // THE SESSION FIRST (v34). expo-av reports a play on a session that was
-          // never established as success and then plays nothing: on Android the
-          // player's volume is literally 0 while it does not hold audio focus, so
-          // the mode has to be (re)applied on the way into every play.
+          // THE ONE GUARDED PLAY PATH (v41 item 1). loading with `shouldPlay: true`
+          // IS the play, so it goes through playWithAudioFocus: the playback session
+          // is re-applied, and a refused audio-focus request (expo-av's
+          // AudioFocusNotAcquiredException — the owner's v40 "no sound") is retried
+          // once. Before this, a session the recorder had changed, or focus the OS
+          // had handed back, left this row silent with no way to recover.
           await ensurePlaybackAudioMode();
-          const { sound } = await Audio.Sound.createAsync(
-            { uri },
-            { shouldPlay: true },
+          // (The inner `await` is deliberate: the v34 source contract
+          // services/v34UiContract.takeClipPlayerUsesRealPlayback reads the
+          // literal `await Audio.Sound.createAsync(` and the session line above
+          // it, so the old guard keeps checking the same two facts.)
+          const { sound } = await playWithAudioFocus(
+            async () => await Audio.Sound.createAsync({ uri }, { shouldPlay: true }),
+            { source: 'take-playback', reason: 'clip-load' },
           );
           if (token !== tokenRef.current) {
             // The user started another row (or left) while this one loaded.
@@ -139,6 +149,9 @@ export function useTakeClipPlayer(): TakeClipPlayer {
 
   // Leaving History (or any unmount) never leaves a clip running.
   useEffect(() => stop, [stop]);
+  // The session stays active in the background (v41), so the APP pauses a running
+  // clip when the user leaves — a practice take must not play on in their pocket.
+  useEffect(() => registerAudioPauseHandler(stop), [stop]);
 
   return { playingId, busyId, note, toggle, stop };
 }

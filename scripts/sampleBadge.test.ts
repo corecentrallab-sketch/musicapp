@@ -86,7 +86,9 @@ export const SAMPLE_BADGE_SURFACE_PATHS = [
   'src/screens/NotationEditorScreen.tsx',
   'src/screens/LibraryScreen.tsx',
   'src/screens/PieceDetailScreen.tsx',
-  'src/screens/HomeScreen.tsx',
+  // v41 item 4: Home's Today card is the designer-spec §1 card (tile / eyebrow /
+  // title / composer / chevron) and carries NO badge — the badge's honesty
+  // contract lives on the surfaces that actually show the excerpt score.
 ] as const;
 
 const BADGE_COMPONENT = readAppFile(BADGE_COMPONENT_PATH);
@@ -104,7 +106,7 @@ const READER = surface('src/screens/TransposedScoreReaderScreen.tsx');
 const EDITOR = surface('src/screens/NotationEditorScreen.tsx');
 const LIBRARY = surface('src/screens/LibraryScreen.tsx');
 const PIECE = surface('src/screens/PieceDetailScreen.tsx');
-const HOME = surface('src/screens/HomeScreen.tsx');
+const HOME = readAppFile('src/screens/HomeScreen.tsx');
 
 const FOUR_BARS = 'K:C\nE E F G | G F E D | C C D E | E2 D2 |]';
 const TWO_BARS = 'K:C\nC D | E F |]';
@@ -205,7 +207,7 @@ assertEq(
 assertEq(sampleBadgeDerivesItsWords(''), false, 'an empty component proves nothing');
 
 console.log('\nsample badge — the live scan (floors first)');
-assert(surfaces.length >= 6, `read all ${surfaces.length} badge surfaces`);
+assert(surfaces.length >= 5, `read all ${surfaces.length} badge surfaces`);
 for (const file of surfaces) {
   assert(file.source.length > 2000, `read ${file.path} (${file.source.length} chars)`);
 }
@@ -215,7 +217,7 @@ for (const file of surfaces.filter((f) => f.path !== BADGE_COMPONENT_PATH)) {
   assertEq(sampleBadgeTakesNoCopy(file.source), true, `${file.path} passes the badge no copy string`);
 }
 assertEq(sampleBadgeBlocks(READER).some((b) => b.indexOf('isSample={isSample}') >= 0), true, 'the reader still hands over the sample flag it carries');
-assertEq(sampleBadgeStatesItsLibraryState(HOME, 'featuredPieceLibraryState'), true, 'Home’s Today card states its honest library state from the tap mapping');
+assertEq(sampleBadgeBlocks(HOME).length, 0, 'Home’s v41 Today card carries no badge (designer spec §1: tile, eyebrow, title, composer, chevron)');
 assertEq(sampleBadgeStatesItsLibraryState(PIECE, 'piecePageLibraryState'), true, 'the piece page states its honest library state from the catalog payload');
 assertEq(sampleBadgeStatesItsLibraryState(READER, 'featuredPieceLibraryState'), false, 'the reader — which cannot check the catalog — claims nothing (floor)');
 assertEq(sampleBadgeStatesItsLibraryState(EDITOR, 'piecePageLibraryState'), false, 'the editor — which cannot check the catalog — claims nothing (floor)');
@@ -233,19 +235,19 @@ function mutate(source: string, needle: string, replacement: string): string {
   return source.split(needle).join(replacement);
 }
 {
-  const gutted = mutate(HOME, '<SampleBadge', '<SamplePill');
-  assert(gutted !== HOME, 'the mutation really changed Home’s source');
+  const gutted = mutate(PIECE, '<SampleBadge', '<SamplePill');
+  assert(gutted !== PIECE, 'the mutation really changed the piece page’s source');
   assertEq(sampleBadgeIsRenderedOn(gutted), false, 'MUTATION FAILS THE GUARD — the Today card silently stops badging the excerpt');
-  const withoutTheScore = mutate(HOME, '<SampleBadge abc={', '<SampleBadge score="');
-  assert(withoutTheScore !== HOME, 'the mutation really changed the score prop name');
+  const withoutTheScore = mutate(PIECE, '<SampleBadge\n              abc={', '<SampleBadge\n              score="');
+  assert(withoutTheScore !== PIECE, 'the mutation really changed the score prop name');
   assertEq(sampleBadgeIsRenderedOn(withoutTheScore), false, 'MUTATION FAILS THE GUARD — the badge loses the score it derives from');
-  const withACopy = mutate(HOME, '<SampleBadge abc={', '<SampleBadge label="Sample · 4-bar excerpt" abc={');
-  assert(withACopy !== HOME, 'the mutation really injected a copy string');
+  const withACopy = mutate(PIECE, '<SampleBadge\n              abc={', '<SampleBadge\n              label="Sample · 4-bar excerpt"\n              abc={');
+  assert(withACopy !== PIECE, 'the mutation really injected a copy string');
   assertEq(sampleBadgeTakesNoCopy(withACopy), false, 'MUTATION FAILS THE GUARD — the words passed in as a string again');
-  const lying = mutate(HOME, 'libraryState={featuredPieceLibraryState(dailyChallenge)}', 'libraryState="full-score-opens-on-tap"');
-  assert(lying !== HOME, 'the mutation really replaced the honest state with a hard-coded one');
+  const lying = mutate(PIECE, 'libraryState={piecePageLibraryState(', 'libraryState="full-score-opens-on-tap"');
+  assert(lying !== PIECE, 'the mutation really replaced the honest state with a hard-coded one');
   assertEq(
-    sampleBadgeStatesItsLibraryState(lying, 'featuredPieceLibraryState'),
+    sampleBadgeStatesItsLibraryState(lying, 'piecePageLibraryState'),
     false,
     'MUTATION FAILS THE GUARD — a hard-coded “tap for the full piece” on a card with no hosted score',
   );

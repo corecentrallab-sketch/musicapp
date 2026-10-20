@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Audio, type AVPlaybackStatus } from "expo-av";
 import { resolveLoopPosition } from "../utils/playerLoop";
+import { ensurePlaybackAudioMode, playWithAudioFocus } from "../services/audioSession";
 
 /** Time-stretch presets offered in the viewer. */
 export const PLAYBACK_SPEEDS: readonly number[] = [0.5, 0.75, 1.0, 1.25];
@@ -112,12 +113,13 @@ export function useScoreAudio(source: ScoreAudioSource | null | undefined) {
     async function init() {
       if (source === null || source === undefined) return;
       try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-          staysActiveInBackground: false,
-        });
+        // v41 item 1: NO surface states a session of its own. This screen used to
+        // call Audio.setAudioModeAsync with a partial mode — expo-av merges a
+        // partial mode over the CURRENT one, so this line silently put
+        // `staysActiveInBackground: false` (and ducking) back and re-opened the
+        // audio-focus throw for every player in the app. The shared session is the
+        // one definition now.
+        await ensurePlaybackAudioMode();
         const sourceArg =
           typeof source === "number" ? source : { uri: source as string };
         const { sound } = await Audio.Sound.createAsync(
@@ -175,7 +177,9 @@ export function useScoreAudio(source: ScoreAudioSource | null | undefined) {
       ) {
         await s.setPositionAsync(0);
       }
-      await s.playAsync();
+      // The ONE guarded play path (v41 item 1): session re-applied, focus refusal
+      // retried once.
+      await playWithAudioFocus(() => s.playAsync());
     }
   }, []);
 

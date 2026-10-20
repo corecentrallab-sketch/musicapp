@@ -21,7 +21,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Audio } from 'expo-av';
 import { toneSourceFor } from '../services/toneBank';
-import { loadToneSound } from '../services/audioSession';
+import {
+  loadToneSound,
+  playWithAudioFocus,
+  registerAudioPauseHandler,
+} from '../services/audioSession';
 import {
   clearAudioFailure,
   currentAudioFailure,
@@ -132,7 +136,13 @@ export function useNotePreview(
           sound = loaded.sound;
           soundsRef.current.set(key, sound);
         }
-        await sound.replayAsync();
+        // v41 item 1: replaying a CACHED tone is still a play — the session and
+        // audio focus are re-established on the way in (a cached Sound created
+        // before the recorder ran used to replay into a silent session), and a
+        // refused focus request is retried once by the shared path.
+        // (Inner `await` kept on purpose: v34UiContract.previewPlaybackSetsAudioMode
+        // reads the literal `await sound.replayAsync()`.)
+        await playWithAudioFocus(async () => await sound.replayAsync());
         // A tone that just played means the audio path is healthy: the chip goes
         // away instead of leaving a stale reason on screen.
         const standing = currentAudioFailure();
@@ -150,6 +160,10 @@ export function useNotePreview(
   const pause = useCallback(() => {
     setPlaying(false);
   }, []);
+
+  // The session stays active in the background (v41), so the app pauses the clock
+  // when the user leaves instead of letting expo-av keep it running.
+  useEffect(() => registerAudioPauseHandler(pause), [pause]);
 
   const stop = useCallback(() => {
     setPlaying(false);

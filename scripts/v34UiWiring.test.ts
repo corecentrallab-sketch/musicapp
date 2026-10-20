@@ -247,8 +247,8 @@ assertEq(
 const lateSession = takePlayerSource
   .replace('await ensurePlaybackAudioMode();', '')
   .replace(
-    'const { sound } = await Audio.Sound.createAsync(\n            { uri },\n            { shouldPlay: true },\n          );',
-    'const { sound } = await Audio.Sound.createAsync(\n            { uri },\n            { shouldPlay: true },\n          );\n          await ensurePlaybackAudioMode();',
+    "{ source: 'take-playback', reason: 'clip-load' },\n          );",
+    "{ source: 'take-playback', reason: 'clip-load' },\n          );\n          await ensurePlaybackAudioMode();",
   );
 assert(lateSession !== takePlayerSource, 'mutation 9 changed the real take player');
 assert(

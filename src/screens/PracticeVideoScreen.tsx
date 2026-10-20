@@ -47,7 +47,12 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Video, ResizeMode } from 'expo-av';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
-import { ensurePlaybackAudioMode, restorePlaybackAudioMode } from '../services/audioSession';
+import {
+  ensurePlaybackAudioMode,
+  playWithAudioFocus,
+  registerAudioPauseHandler,
+  restorePlaybackAudioMode,
+} from '../services/audioSession';
 import { reportAudioFailure, usableDetail } from '../services/audioDiagnostics';
 import { deriveCaptureTakeFromRecording } from '../services/captureMidiExport';
 import { exportCaptureMidiFromTake } from '../services/captureMidiExport';
@@ -258,7 +263,13 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   useEffect(() => {
     if (phase !== 'playback') return undefined;
     void restorePlaybackAudioMode();
-    return undefined;
+    // The session stays active in the background (v41 item 1), so the APP pauses
+    // the video when the user leaves the screen/app — a practice video must never
+    // play on behind them (the guard expo-av used to provide by throwing).
+    const unregister = registerAudioPauseHandler(() => {
+      void videoRef.current?.pauseAsync().catch(() => undefined);
+    });
+    return unregister;
   }, [phase, row?.ref?.uri]);
 
   /**
@@ -286,7 +297,14 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
           setVideoLine(VIDEO_PLAYBACK_FAILED_LINE);
           return;
         }
-        await player.loadAsync({ uri }, { shouldPlay: true, volume: 1 });
+        // THE ONE GUARDED PLAY PATH (v41 item 1): loading with shouldPlay IS the
+        // play, so it is retried once after a refused audio-focus request —
+        // expo-av's AudioFocusNotAcquiredException is exactly what the owner's v40
+        // red banner carried ("the recording could not be opened on this device").
+        await playWithAudioFocus(
+          () => player.loadAsync({ uri }, { shouldPlay: true, volume: 1 }),
+          { source: 'take-playback', reason: 'clip-load' },
+        );
         return;
       }
       const at = (status as { positionMillis?: number; durationMillis?: number });
@@ -294,7 +312,10 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       const duration = Number.isFinite(at.durationMillis) ? Number(at.durationMillis) : 0;
       // A finished video starts again rather than appearing to do nothing.
       if (duration > 0 && position >= duration - 250) await player.setPositionAsync(0);
-      await player.playAsync();
+      await playWithAudioFocus(() => player.playAsync(), {
+        source: 'take-playback',
+        reason: 'clip-load',
+      });
     } catch (err) {
       setVideoLine(VIDEO_PLAYBACK_FAILED_LINE);
       reportAudioFailure({

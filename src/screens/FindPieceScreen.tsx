@@ -52,7 +52,6 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   ScrollView,
   TextInput,
   TouchableOpacity,
@@ -430,75 +429,86 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
         <Text style={styles.retryNotice}>{retryNotice}</Text>
       ) : null}
 
-      {status === 'loading' && pieces.length === 0 ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={theme.accent} />
-          <Text style={styles.centerSubtext}>Searching the catalog...</Text>
-        </View>
-      ) : null}
+      {/* ── THE ONE RESULTS SCROLLER (v41 item 3) ─────────────────────────────
+          ONE scrollable column holds the internal state AND the licensed-retailer
+          cards. Before this, the no-match block was a `flex: 1` sibling of a
+          `flexGrow: 0, maxHeight: 340` retailer frame: on the no-match state the
+          retailers were pushed below the bottom of a screen that could not
+          scroll, so the money path was BUILT and INVISIBLE (owner 10-18: scanned
+          the cover of "Every Time I Think of You" → "No Match", both retailer
+          links live, neither reachable). Every block below is a natural-height
+          child of this ONE scroller, so the retailer cards sit directly under the
+          no-match sentence and are always one swipe away — on no-match, while the
+          catalog loads, and on error alike. */}
+      <ScrollView
+        style={styles.resultsScroll}
+        contentContainerStyle={styles.resultsContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {status === 'loading' && pieces.length === 0 ? (
+          <View style={styles.stateBlock}>
+            <ActivityIndicator size="large" color={theme.accent} />
+            <Text style={styles.centerSubtext}>Searching the catalog...</Text>
+          </View>
+        ) : null}
 
-      {status === 'error' ? (
-        <View style={styles.center}>
-          <Text style={styles.emptyEmoji}>⚠️</Text>
-          <Text style={styles.emptyTitle}>Couldn't load the catalog</Text>
-          <Text style={styles.emptyText}>{SEARCH_ERROR_MESSAGE}</Text>
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={() => setReloadToken((n) => n + 1)}
-            accessibilityRole="button"
-            accessibilityLabel="Retry the catalog search"
-          >
-            <Text style={styles.primaryBtnText}>Try Again</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+        {status === 'error' ? (
+          <View style={styles.stateBlock}>
+            <Text style={styles.emptyEmoji}>⚠️</Text>
+            <Text style={styles.emptyTitle}>Couldn't load the catalog</Text>
+            <Text style={styles.emptyText}>{SEARCH_ERROR_MESSAGE}</Text>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={() => setReloadToken((n) => n + 1)}
+              accessibilityRole="button"
+              accessibilityLabel="Retry the catalog search"
+            >
+              <Text style={styles.primaryBtnText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
-      {status === 'empty' ? (
-        <View style={styles.center}>
-          <Text style={styles.emptyEmoji}>🔍</Text>
-          <Text style={styles.emptyTitle}>No match</Text>
-          <Text style={styles.emptyText}>{NO_MATCH_MESSAGE}</Text>
-          {/* The no-dead-end line (owner 10-01): a song our free library does not
-              hold still has a money path, and it is right below this text. */}
-          {external.visible ? (
-            <Text style={styles.emptyText}>{EXTERNAL_NO_MATCH_HINT}</Text>
-          ) : null}
-        </View>
-      ) : null}
+        {status === 'empty' ? (
+          <View style={styles.stateBlock}>
+            <Text style={styles.emptyEmoji}>🔍</Text>
+            <Text style={styles.emptyTitle}>No match</Text>
+            <Text style={styles.emptyText}>{NO_MATCH_MESSAGE}</Text>
+            {/* The no-dead-end line (owner 10-01): a song our free library does not
+                hold still has a money path, and it is right below this text. */}
+            {external.visible ? (
+              <Text style={styles.emptyText}>{EXTERNAL_NO_MATCH_HINT}</Text>
+            ) : null}
+          </View>
+        ) : null}
 
-      {status === 'ready' ? (
-        <FlatList
-          style={styles.resultsList}
-          data={pieces}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
-          keyboardShouldPersistTaps="handled"
-          ListHeaderComponent={
-            header.length > 0 ? (
+        {status === 'ready' ? (
+          <View>
+            {header.length > 0 ? (
               <Text style={styles.listHeader}>{header}</Text>
-            ) : null
-          }
-        />
-      ) : null}
+            ) : null}
+            {pieces.map((item) => (
+              <View key={item.id}>{renderItem({ item })}</View>
+            ))}
+          </View>
+        ) : null}
 
-      {/* ── EXTERNAL RESULTS — the licensed retailers (owner direction 10-01) ──
-          Rendered whenever the QUERY is non-empty, deliberately OUTSIDE every
-          internal-status branch. That placement is the whole no-dead-end rule:
-          "Fields of Gold" matches nothing in our public-domain library, and that
-          zero-match case is exactly the one this section exists for — so it must
-          survive `empty`, and it stays available while our catalog is still
-          loading or has failed outright. Tap-through only (each card opens the
-          retailer in the shell below); we host and cache nothing. */}
-      {external.visible ? (
-        <ScrollView
-          style={styles.externalWrap}
-          contentContainerStyle={styles.externalContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          <SearchExternalSection section={external} onOpen={handleOpenRetailer} />
-        </ScrollView>
-      ) : null}
+        {/* ── EXTERNAL RESULTS — the licensed retailers (owner direction 10-01) ──
+            Rendered whenever the QUERY is non-empty, deliberately OUTSIDE every
+            internal-status branch (it is a sibling of the status blocks inside the
+            shared scroller, never conditioned on `status`). That placement is the
+            whole no-dead-end rule: "Fields of Gold" matches nothing in our
+            public-domain library, and that zero-match case is exactly the one this
+            section exists for — so it survives `empty`, and it stays available
+            while our catalog is still loading or has failed outright. Since v41 it
+            also shares the scroller, so it can never be laid out below the fold of
+            a screen that does not scroll. Tap-through only (each card opens the
+            retailer in the shell below); we host and cache nothing. */}
+        {external.visible ? (
+          <View style={styles.externalBlock}>
+            <SearchExternalSection section={external} onOpen={handleOpenRetailer} />
+          </View>
+        ) : null}
+      </ScrollView>
 
       {/* The retailer's own search page (previews + checkout), in the shared
           in-app shell: Modal root, BACK / "← Back to NoteSnap" return HERE, and
@@ -625,12 +635,28 @@ const baseStyles = StyleSheet.create({
     marginTop: 10,
   },
 
-  // States
-  center: {
-    flex: 1,
+  // ── States (v41 item 3) ──────────────────────────────────────
+  // The ONE results scroller. It was a FlatList + a bounded, non-scrolling
+  // retailer frame; now every result block (state, list, retailers) is a child of
+  // this single scroller, so the retailer CTAs can never be laid out below the
+  // fold of a screen that does not scroll.
+  resultsScroll: {
+    flexGrow: 1,
+    flexShrink: 1,
+  },
+  resultsContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 40,
+  },
+  // A state block takes its NATURAL height and never `flex: 1`: a flexible block
+  // is what used to push the retailer cards off the bottom of the screen.
+  stateBlock: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 4,
+    paddingTop: 20,
+    paddingBottom: 8,
   },
   centerSubtext: {
     color: '#a0a0b8',
@@ -666,16 +692,7 @@ const baseStyles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Results
-  resultsList: {
-    flexGrow: 1,
-    flexShrink: 1,
-  },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 40,
-  },
+  // Results (inside resultsScroll now).
   listHeader: {
     fontSize: 13,
     fontWeight: '700',
@@ -735,15 +752,12 @@ const baseStyles = StyleSheet.create({
     borderColor: '#0f3460',
   },
 
-  // External (licensed-retailer) results — the money path under our own list.
-  // Bounded height + shrink so a long internal list or a short phone screen never
-  // squeezes the cards out of reach; the section scrolls inside its own frame.
-  externalWrap: {
-    flexGrow: 0,
-    flexShrink: 1,
-    maxHeight: 340,
-  },
-  externalContent: {
+  // External (licensed-retailer) results — the money path, now INSIDE the one
+  // results scroller (v41 item 3). No bounded frame and no maxHeight: the cards
+  // flow directly under the internal results / the no-match sentence and scroll
+  // with them, which is what makes them reachable on a no-match.
+  externalBlock: {
+    paddingTop: 12,
     paddingBottom: 20,
   },
 });

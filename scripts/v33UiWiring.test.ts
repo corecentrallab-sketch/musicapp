@@ -730,9 +730,12 @@ assertEq(
   'MUTATION: a playback control that does not play the row clip FAILS historyRowPlaysItsSavedClip',
 );
 // MUTATION 35: the player RE-SYNTHESISES the take instead of playing the clip.
+// Since v41 the create call is the guarded `playWithAudioFocus(...)` wrapper (the
+// audio-focus root-cause fix), so the rebuild is inserted in front of THAT call —
+// the same defect: a timeline built instead of the saved clip being played.
 const synthPlayer = clipHookSource.replace(
-  'const { sound } = await Audio.Sound.createAsync(',
-  'const timeline = buildPreviewTimeline([] as never, {} as never);\n          const { sound } = await Audio.Sound.createAsync(',
+  'const { sound } = await playWithAudioFocus(',
+  'const timeline = buildPreviewTimeline([] as never, {} as never);\n          const { sound } = await playWithAudioFocus(',
 );
 assert(synthPlayer !== clipHookSource, 'the synth-player mutation changed the real hook');
 assertEq(
