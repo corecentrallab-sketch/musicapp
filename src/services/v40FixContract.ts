@@ -288,7 +288,10 @@ export function practiceVideoAppliesItsSessionBeforePlayback(screenSource: strin
   if (restore > mount) return false;
   const toggle = src.indexOf(marker('const toggleVideo = useCallback(async () => {'));
   if (toggle < 0) return false;
-  const body = src.slice(toggle, toggle + 1600);
+  // The window covers the WHOLE toggle callback. v41 routed the load/play through
+  // the guarded `playWithAudioFocus` (audio-focus root cause), which lengthened the
+  // body past the old 1600-char window and pushed `reportAudioFailure(` out of it.
+  const body = src.slice(toggle, toggle + 3000);
   if (body.indexOf(marker('ensurePlaybackAudioMode()')) < 0) return false;
   if (body.indexOf(marker('loadAsync(')) < 0) return false;
   if (body.indexOf(marker('VIDEO_PLAYBACK_FAILED_LINE')) < 0) return false;

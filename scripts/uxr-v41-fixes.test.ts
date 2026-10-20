@@ -341,7 +341,10 @@ const home = readAppFile('src/screens/HomeScreen.tsx');
 assert(home.length > 40000, `HomeScreen was read (${home.length} chars)`);
 assertEq(todayCardMatchesSpec(home), true, 'the live card matches the spec (geometry, type, tile, chevron, one target)');
 assertEq(TODAYS_PIECE_EYEBROW, 'TODAY\u2019S PIECE', 'the eyebrow copy is the spec’s, verbatim');
-assert(todayCardBlock(home).indexOf('<TouchableOpacity') < 0, 'the card holds no second tap target (the chevron is only a mark)');
+assert(
+  (todayCardBlock(home).match(/<TouchableOpacity/g) || []).length === 1,
+  'the card holds no second tap target (exactly one: the card itself; the chevron is only a mark)',
+);
 assertEq(styleValue(home, 'todayCard', 'borderRadius'), '18', 'radius 18');
 assertEq(styleValue(home, 'todayCard', 'minHeight'), '92', '92 dp tall');
 assertEq(styleValue(home, 'todayCard', 'marginHorizontal'), '16', '16 dp side margins (never touches the screen edge)');

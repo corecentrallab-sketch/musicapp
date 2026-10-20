@@ -349,9 +349,24 @@ function mutationProbes(): void {
   );
 
   // (b) THE dead-end regression: the section gated behind internal results.
+  //
+  // Since v41 the section's render site is the LAST child of the one results
+  // scroller, wrapped by `styles.externalBlock`:
+  //     {external.visible ? (
+  //       <View style={styles.externalBlock}>
+  //         <SearchExternalSection … />
+  //       </View>
+  //     ) : null}
+  // so the mutation adds an internal-status conjunct to THAT wrapping condition —
+  // the exact shape the owner hit on device (retailer cards built, laid out
+  // unreachable on a zero match). The anchor is the two-line open of the block,
+  // which is unique in the screen (the other `{external.visible ? (` wraps the
+  // no-match HINT and carries no `<View style={styles.externalBlock}>`).
+  const SECTION_OPEN =
+    '{external.visible ? (\n          <View style={styles.externalBlock}>';
   const statusGated = screen.replace(
-    '{external.visible ? (\n        <ScrollView',
-    "{external.visible ? (\n          <View style={styles.externalBlock}>",
+    SECTION_OPEN,
+    "{status === 'ready' && external.visible ? (\n          <View style={styles.externalBlock}>",
   );
   assert(statusGated !== screen, 'the status-gate mutation changed FindPieceScreen');
   assertEq(
@@ -360,7 +375,7 @@ function mutationProbes(): void {
     'MUTATION: gating the section on `status === ´ready´` FAILS (a zero-match query would dead-end)',
   );
   const subtlyGated = screen.replace(
-    '{external.visible ? (\n        <ScrollView',
+    SECTION_OPEN,
     "{status !== 'empty' && external.visible ? (\n          <View style={styles.externalBlock}>",
   );
   assert(subtlyGated !== screen, 'the subtle status-gate mutation changed FindPieceScreen');

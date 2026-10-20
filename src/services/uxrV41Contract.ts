@@ -90,6 +90,17 @@ function matchingBrace(text: string, open: number): number {
   return -1;
 }
 
+/** How many times `needle` occurs in `text` (plain substring counting). */
+export function countTag(text: string, needle: string): number {
+  let count = 0;
+  let at = text.indexOf(needle);
+  while (at >= 0) {
+    count += 1;
+    at = text.indexOf(needle, at + needle.length);
+  }
+  return count;
+}
+
 /** The JSX of the Today's-Piece card: from its TouchableOpacity to its close tag. */
 export function todayCardBlock(source: string): string {
   const text = maskSourceComments(source);
@@ -121,7 +132,11 @@ export function todayCardMatchesSpec(source: string): boolean {
   if (block.indexOf('styles.todayCardPiece') < 0) return false;
   if (block.indexOf('styles.todayCardComposer') < 0) return false;
   if (block.indexOf('styles.todayCardChevron') < 0) return false;
-  if (block.indexOf('<TouchableOpacity') >= 0) return false;
+  // EXACTLY ONE tap target: the card's own `<TouchableOpacity>` (the block starts
+  // at that tag). A second one — a nested "open" button — is the defect. Counting
+  // rather than scanning for "any" is what makes this bite: the card's own tag is
+  // always present, so a `>= 0` test would fail the correct card too.
+  if (countTag(block, '<TouchableOpacity') !== 1) return false;
   // ...and the CTA line that used to sit inside the band is gone with the band.
   if (block.indexOf('{todayCardCta(dailyChallenge)}') >= 0) return false;
 

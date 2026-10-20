@@ -120,7 +120,10 @@ export function historyPlayButtonPlaysTheClip(historySource: string): boolean {
 export function takeClipPlayerUsesRealPlayback(hookSource: string): boolean {
   const src = maskComments(hookSource);
   if (src.indexOf("from 'expo-av'") < 0) return false;
-  if (src.indexOf('import { ensurePlaybackAudioMode }') < 0) return false;
+  // The session helper must come from the shared audio module. The import may list
+  // several symbols (v41 added `playWithAudioFocus` to the same multi-line import),
+  // so the check is the import statement, not one exact single-line spelling.
+  if (!/import\s*\{[^}]*\bensurePlaybackAudioMode\b[^}]*\}\s*from/.test(src)) return false;
   const session = src.indexOf('await ensurePlaybackAudioMode()');
   const load = src.indexOf('await Audio.Sound.createAsync(');
   if (session < 0 || load < 0) return false;
