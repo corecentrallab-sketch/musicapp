@@ -25,18 +25,21 @@ import {
   startScanSession,
 } from '../services/libraryStore';
 import {
+  SCAN_COVER_ONLY_HINT,
   SCAN_FIND_CTA,
   SCAN_SAVED_AS_YOU_GO_LINE,
   scanFinishCta,
   scanSessionResumedLine,
   scanSessionTitle,
 } from '../services/scanFind';
+import type { OcrTitleCandidate } from '../services/ocrTitleCandidates';
 import {
   DEFAULT_SCAN_FLASH_MODE,
   SCAN_CHIP_TRANSLUCENT,
   SCAN_CONTROL_GAP,
   SCAN_EMPTY_HINT,
   SCAN_FILMSTRIP_HEIGHT,
+  SCAN_FRAMING_HINT_MAX_HEIGHT,
   SCAN_PILL_RADIUS,
   SCAN_SHUTTER_SIZE,
   SCAN_SURFACE_TRANSLUCENT,
@@ -49,6 +52,7 @@ import {
   scanFlashControlLabel,
   scanFlashIcon,
   scanFlashShortLabel,
+  scanFramingHintTop,
   scanPageCountLabel,
   scanTopChipInset,
 } from '../services/scanViewport';
@@ -178,7 +182,14 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
     setCapturing(true);
     setErrorLine(null);
     try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.85 });
+      // v43 item C5 — THE FIRST PAGE IS THE ONE THAT GETS READ. It is captured at
+      // full quality (1.0): the resolve panel ranks the printed TITLE from this
+      // photo, and 0.85 is a lossy JPEG of small cover type. Later pages are
+      // pages of music kept for the library, so they stay at 0.85 (storage).
+      // A top-45% crop before the read would need expo-image-manipulator — a NEW
+      // native dependency, deliberately NOT added here (flagged to the lead).
+      const quality = pages.length === 0 ? 1.0 : 0.85;
+      const photo = await cameraRef.current.takePictureAsync({ quality });
       if (!photo?.uri) {
         setErrorLine('The photo could not be taken. Nothing was saved — try again.');
         return;
@@ -201,7 +212,7 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
     } finally {
       setCapturing(false);
     }
-  }, [capturing, sessionId]);
+  }, [capturing, pages.length, sessionId]);
 
   /**
    * UNDO removes the LAST page from this scan's own entry. It goes through the
@@ -239,6 +250,22 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
     }
     navigation.goBack();
   }, [navigation, pages.length, sessionId]);
+
+  /**
+   * A SUGGESTION THE READ PRODUCED (v43 item C3). This screen holds no catalog
+   * row of its own, so it cannot mount a piece page from a title alone — what it
+   * does instead is open the app's ONE search with that piece's OWN title, where
+   * the piece row (and its official-sheet-music CTA) is the first thing the user
+   * sees. The money path is unchanged: search → piece page → licensed retailers.
+   * A host that does hold the catalog row passes `onOpenPiece` and gets the piece
+   * page directly.
+   */
+  const openSuggestedPiece = useCallback((candidate: OcrTitleCandidate) => {
+    const words = candidate.query || candidate.title;
+    if (!words) return;
+    setFindOpen(false);
+    setFindQuery(words);
+  }, []);
 
   /**
    * THE MONEY PATH (v39 fix 1b). The section read the page's words and the user
@@ -337,6 +364,27 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
         </View>
       </View>
 
+      {/* ═══════ HOW TO FRAME THE SHOT — ON THE SCREEN, ALWAYS (v43 item C5b) ═══════
+          The owner's headline requirement (10-20, said three times): while framing
+          a shot the user must be TOLD to fit the TITLE/HEADING of the score into
+          the frame, not the whole piece — otherwise the photo cannot be matched to
+          a title. So this is not a toast, not a help page and not a sub-menu: it is
+          a permanent translucent panel over the viewfinder, rendered from the
+          moment this screen opens (before any photo is taken) and while framing
+          every shot. It sits between the top chip and the centre of the preview so
+          it never covers the area the title is being framed in, and the copy is the
+          named constant `SCAN_COVER_ONLY_HINT` (services/scanFind) so a source scan
+          can assert this screen really shows it. */}
+      <View
+        style={[styles.framingHintWrap, { top: scanFramingHintTop(insets.top) }]}
+        pointerEvents="none"
+      >
+        <View style={styles.framingHintPanel}>
+          <Text style={styles.framingHintTitle}>FRAMING TIP</Text>
+          <Text style={styles.framingHintText}>{SCAN_COVER_ONLY_HINT}</Text>
+        </View>
+      </View>
+
       {/* THE FLOATING BOTTOM DOCK: transparent, bottom-anchored, and stacking its
           layers in render order so the pill is the LAST — nothing can cover it. */}
       <View
@@ -393,7 +441,12 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
                 </Text>
               ) : null}
               <Text style={styles.savedLine}>{SCAN_SAVED_AS_YOU_GO_LINE}</Text>
-              <ScanFindSection pageUri={lastPageUri} onSearch={setFindQuery} />
+              <ScanFindSection
+                pageUri={lastPageUri}
+                onSearch={setFindQuery}
+                onOpenPiece={openSuggestedPiece}
+                onRetake={() => setFindOpen(false)}
+              />
             </ScrollView>
           </View>
         ) : (
@@ -504,6 +557,39 @@ const baseStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     lineHeight: 17,
+  },
+  /* v43 item C5b — THE FRAMING TIP. A translucent panel on a dark scrim, so the
+     words stay legible over ANY viewfinder image (a white title page included),
+     and `pointerEvents="none"` on its wrapper so it never eats a tap meant for
+     the camera. It is capped at SCAN_FRAMING_HINT_MAX_HEIGHT and sits below the
+     top chip, clear of the area the user is framing. */
+  framingHintWrap: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    alignItems: 'center',
+  },
+  framingHintPanel: {
+    maxHeight: SCAN_FRAMING_HINT_MAX_HEIGHT,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(78,205,196,0.55)',
+    backgroundColor: 'rgba(9,11,22,0.78)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 4,
+  },
+  framingHintTitle: {
+    color: '#4ecdc4',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  framingHintText: {
+    color: '#ffffff',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
   },
   /* THE BOTTOM LAYER: transparent by construction — it exists only to stack the
      floating pieces. Its only colour is the translucent pill at the end of it. */

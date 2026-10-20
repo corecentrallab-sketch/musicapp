@@ -1,25 +1,32 @@
 /**
- * ScanFindSection — a scanned page's way into the app's ONE search and money path
- * (v39 fix 1b, owner 10-11; backlog: CAMERA SCAN-TO-LIBRARY FLOW).
+ * ScanFindSection — THE ONE RESOLVE PAGE for a photographed page (v43 item C3,
+ * owner decisions 10-20; originally v39 fix 1b).
  *
- * WHAT IT DOES. The user's own photo of a page, read ON DEVICE for the printed
- * words (the same recogniser the cover scan uses — this is not OMR and reads no
- * notes), the words shown in a field the user can correct, and one button that
- * hands the confirmed text to the host. The host puts that text into the SAME
- * search a typed title opens (the find-a-piece screen), which is where the public
- * domain catalog and the licensed-retailer money path already live. No second
- * search surface, no retailer URL built here, no auto-redirect: this component
- * opens nothing by itself.
+ * WHAT IT DOES. The user's own photo, read ON DEVICE for the printed words (the
+ * same recogniser the app has always used — this reads WORDS, never notes, and
+ * there is no edition claim anywhere), and then ONE honest page of outcomes:
  *
- * HONEST BY CONSTRUCTION. The pre-filled field is ONLY ever the recogniser's own
- * output (`services/coverScan`'s decision, via `services/scanFind`), so a blank
- * field means nothing was read — never a guess. An empty field searches nothing.
- * Every outcome renders a line: a read that worked, a page with no words on it, a
- * reader that is not in this build, a read that failed, and no page yet.
+ *   • SUGGESTIONS — up to three pieces the read actually answers, ranked by
+ *     `services/ocrTitleCandidates`. Tapping one opens the piece (the host's
+ *     `onOpenPiece`), which is where the licensed-retailer money path already is.
+ *     A song we do not hold a score for is marked as such and goes to the search
+ *     that offers the official sheet music — never a fake piece page.
+ *   • THE WORDS THAT WERE READ — in an editable field, ONLY when the read could be
+ *     a title (`quality !== 'garbage'`), with the v42 note that these words came
+ *     from the photo and not from the user.
+ *   • [Search these words] — SECONDARY, never the red primary: it is a proposal the
+ *     user confirms, not the app's own conclusion.
+ *   • [Retake photo] — the way out that always exists.
  *
- * WHY IT IS A COMPONENT: both doors to a scanned score (the scan screen right
- * after a capture, and the viewer for a saved scan) offer the same action, and
- * there is one implementation of it.
+ * THE GARBAGE PATH (the owner's actual on-device case: "4ox 2Apx ors white Freddie
+ * Mer"). A read that is debris, or a PAGE OF PRINTED MUSIC rather than a cover,
+ * renders the honest line and a field for the user's OWN title. There is no
+ * "search these words" control at all — the flag that would render it is false in
+ * `services/scanFind`'s pure model, and the tier1 suite proves it.
+ *
+ * WHY IT IS A COMPONENT: both surviving doors to a scanned page (the scan screen
+ * right after a capture, and the viewer for a saved scan) render the same resolve
+ * page, and there is one implementation of it.
  */
 import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useState } from 'react';
@@ -32,15 +39,24 @@ import {
   View,
 } from 'react-native';
 import { readCoverText } from '../services/coverScanOcr';
+import type { OcrTitleCandidate, OcrTitleCorpusEntry } from '../services/ocrTitleCandidates';
 import {
+  SCAN_FIND_CANDIDATES_LABEL,
+  SCAN_FIND_CANDIDATE_HINT,
   SCAN_FIND_CONFIRM_HINT,
   SCAN_FIND_CONFIRM_LABEL,
+  SCAN_FIND_COVER_ONLY_LINE,
   SCAN_FIND_CTA,
   SCAN_FIND_HINT,
+  SCAN_FIND_MODERN_HINT,
   SCAN_FIND_NO_PAGE_LINE,
   SCAN_FIND_RAW_QUERY_NOTE,
   SCAN_FIND_READING_LINE,
+  SCAN_FIND_RETAKE_CTA,
   SCAN_FIND_SEARCH_CTA,
+  SCAN_FIND_TYPED_LABEL,
+  SCAN_FIND_TYPED_SEARCH_CTA,
+  scanFindActions,
   scanFindView,
   type ScanFindView,
 } from '../services/scanFind';
@@ -50,16 +66,30 @@ interface ScanFindSectionProps {
   pageUri: string | null;
   /** Hands the confirmed words to the host's ONE search surface. */
   onSearch: (query: string) => void;
+  /**
+   * Opens a suggested piece. Optional so a host that has no piece page still
+   * works: the suggestion then searches for that piece's own title instead
+   * (`candidate.query`), which is the same money path one tap further along.
+   */
+  onOpenPiece?: (candidate: OcrTitleCandidate) => void;
+  /** Take the photo again. Optional: a saved scan has no camera to return to. */
+  onRetake?: () => void;
+  /** Titles to rank the read against (the live catalog), when the host has them. */
+  corpus?: ReadonlyArray<OcrTitleCorpusEntry> | null;
 }
 
 export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
   pageUri,
   onSearch,
+  onOpenPiece,
+  onRetake,
+  corpus,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   const [reading, setReading] = useState(false);
   const [view, setView] = useState<ScanFindView | null>(null);
   const [text, setText] = useState('');
+  const [typed, setTyped] = useState('');
 
   /**
    * Read the page's WORDS on this device. `readCoverText` reports its own failures
@@ -68,30 +98,49 @@ export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
    */
   const read = useCallback(async () => {
     if (!pageUri) {
-      setView({ status: 'idle', query: '', line: SCAN_FIND_NO_PAGE_LINE, canSearch: false });
+      // No page yet is its own honest state — not a failed read, not a guess.
+      setView({ ...scanFindView(null), line: SCAN_FIND_NO_PAGE_LINE });
       return;
     }
     setReading(true);
     try {
       const result = await readCoverText(pageUri);
-      const next = scanFindView(result);
+      const next = scanFindView(result, corpus ?? null);
       setView(next);
-      setText(next.query);
+      // The field only ever carries words that could be a title — a garbage read
+      // has none, and the user's own typing is what the garbage path asks for.
+      setText(next.quality === 'garbage' ? '' : next.cleanedRead || next.query);
     } catch {
       setView(scanFindView({ text: '', failed: true }));
       setText('');
     } finally {
       setReading(false);
     }
-  }, [pageUri]);
+  }, [corpus, pageUri]);
 
+  const actions = scanFindActions(view);
   const confirmed = text.trim();
   const canSearch = confirmed.length > 0;
+  const typedTitle = typed.trim();
+
+  const openCandidate = useCallback(
+    (candidate: OcrTitleCandidate) => {
+      if (onOpenPiece) {
+        onOpenPiece(candidate);
+        return;
+      }
+      // No piece page on this host: the candidate's own words are the search, so
+      // the money path is still one tap away and nothing is invented.
+      onSearch(candidate.query);
+    },
+    [onOpenPiece, onSearch],
+  );
 
   return (
     <View style={styles.section}>
       <Text style={styles.rawNote}>{SCAN_FIND_RAW_QUERY_NOTE}</Text>
       <Text style={styles.hint}>{SCAN_FIND_HINT}</Text>
+      <Text style={styles.hint}>{SCAN_FIND_COVER_ONLY_LINE}</Text>
 
       <Pressable
         style={({ pressed }) => [styles.findBtn, pressed && styles.pressed]}
@@ -112,7 +161,36 @@ export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
 
       {view?.line ? <Text style={styles.line}>{view.line}</Text> : null}
 
-      {view && view.canSearch ? (
+      {/* ── THE SUGGESTIONS ───────────────────────────────────────────────────
+          Only for a read that could be a title. Each row opens the piece (money
+          path unchanged) or, for a song we do not hold, the search that offers
+          the official sheet music. */}
+      {actions.offerCandidates ? (
+        <View style={styles.candidateBlock}>
+          <Text style={styles.fieldLabel}>{SCAN_FIND_CANDIDATES_LABEL}</Text>
+          {view?.candidates.map((candidate) => (
+            <Pressable
+              key={`${candidate.source}-${candidate.id ?? candidate.title}`}
+              style={({ pressed }) => [styles.candidateRow, pressed && styles.pressed]}
+              onPress={() => openCandidate(candidate)}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${candidate.title}`}
+            >
+              <Text style={styles.candidateTitle}>{candidate.title}</Text>
+              {candidate.composer ? (
+                <Text style={styles.candidateMeta}>{candidate.composer}</Text>
+              ) : null}
+              {candidate.source === 'modern' ? (
+                <Text style={styles.candidateMeta}>{SCAN_FIND_MODERN_HINT}</Text>
+              ) : null}
+            </Pressable>
+          ))}
+          <Text style={styles.hint}>{SCAN_FIND_CANDIDATE_HINT}</Text>
+        </View>
+      ) : null}
+
+      {/* ── THE WORDS THAT WERE READ (only when they could be a title) ──────── */}
+      {actions.showReadWords ? (
         <>
           <Text style={styles.fieldLabel}>{SCAN_FIND_CONFIRM_LABEL}</Text>
           <TextInput
@@ -126,23 +204,76 @@ export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
             accessibilityLabel={SCAN_FIND_CONFIRM_LABEL}
           />
           <Text style={styles.hint}>{SCAN_FIND_CONFIRM_HINT}</Text>
+          {/* SECONDARY ON PURPOSE (owner 10-20): searching what the app read is a
+              proposal the user confirms, never the red primary action. */}
+          {actions.offerReadSearch ? (
+            <Pressable
+              style={({ pressed }) => [
+                styles.secondaryBtn,
+                !canSearch && styles.disabled,
+                pressed && styles.pressed,
+              ]}
+              onPress={() => {
+                if (!canSearch) return;
+                onSearch(confirmed);
+              }}
+              disabled={!canSearch}
+              accessibilityRole="button"
+              accessibilityLabel={SCAN_FIND_SEARCH_CTA}
+            >
+              <Text style={styles.secondaryBtnText}>{SCAN_FIND_SEARCH_CTA}</Text>
+            </Pressable>
+          ) : null}
+        </>
+      ) : null}
+
+      {/* ── THE USER'S OWN TITLE (the way out of every state, including garbage) */}
+      {actions.offerTypedSearch ? (
+        <>
+          <Text style={styles.fieldLabel}>{SCAN_FIND_TYPED_LABEL}</Text>
+          <TextInput
+            style={styles.field}
+            value={typed}
+            onChangeText={setTyped}
+            placeholder={SCAN_FIND_TYPED_LABEL}
+            placeholderTextColor={theme.subtext}
+            autoCorrect={false}
+            autoCapitalize="words"
+            returnKeyType="search"
+            onSubmitEditing={() => {
+              if (typedTitle.length === 0) return;
+              onSearch(typedTitle);
+            }}
+            accessibilityLabel={SCAN_FIND_TYPED_LABEL}
+          />
           <Pressable
             style={({ pressed }) => [
-              styles.searchBtn,
-              !canSearch && styles.disabled,
+              styles.secondaryBtn,
+              typedTitle.length === 0 && styles.disabled,
               pressed && styles.pressed,
             ]}
             onPress={() => {
-              if (!canSearch) return;
-              onSearch(confirmed);
+              if (typedTitle.length === 0) return;
+              onSearch(typedTitle);
             }}
-            disabled={!canSearch}
+            disabled={typedTitle.length === 0}
             accessibilityRole="button"
-            accessibilityLabel={SCAN_FIND_SEARCH_CTA}
+            accessibilityLabel={SCAN_FIND_TYPED_SEARCH_CTA}
           >
-            <Text style={styles.searchBtnText}>{SCAN_FIND_SEARCH_CTA}</Text>
+            <Text style={styles.secondaryBtnText}>{SCAN_FIND_TYPED_SEARCH_CTA}</Text>
           </Pressable>
         </>
+      ) : null}
+
+      {actions.offerRetake && onRetake ? (
+        <Pressable
+          style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
+          onPress={onRetake}
+          accessibilityRole="button"
+          accessibilityLabel={SCAN_FIND_RETAKE_CTA}
+        >
+          <Text style={styles.secondaryBtnText}>{SCAN_FIND_RETAKE_CTA}</Text>
+        </Pressable>
       ) : null}
     </View>
   );
@@ -186,16 +317,34 @@ const baseStyles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   findBtnText: { color: '#eaeaff', fontSize: 14, fontWeight: '700' },
-  searchBtn: {
-    backgroundColor: '#e94560',
+  /* v43 item C3 — the suggestions. Quiet cards: the piece title in the reading
+     size, the composer under it, and a modern song's honest note below. */
+  candidateBlock: { gap: 6, marginTop: 6 },
+  candidateRow: {
+    backgroundColor: '#16213e',
+    borderColor: '#0f3460',
+    borderWidth: 1,
     borderRadius: 10,
-    minHeight: 46,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 2,
+  },
+  candidateTitle: { color: '#eaeaff', fontSize: 15, fontWeight: '700' },
+  candidateMeta: { color: '#a0a0b8', fontSize: 12, lineHeight: 17 },
+  /* The secondary controls (search the read, type a title, retake): outlined, so
+     the ONE filled control on the page is the read itself. */
+  secondaryBtn: {
+    backgroundColor: 'transparent',
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 10,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
     paddingHorizontal: 16,
   },
-  searchBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
+  secondaryBtnText: { color: '#4ecdc4', fontSize: 14, fontWeight: '700' },
   disabled: { opacity: 0.4 },
   pressed: { opacity: 0.7 },
 });
