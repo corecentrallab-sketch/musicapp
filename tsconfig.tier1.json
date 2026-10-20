@@ -11,6 +11,12 @@
   },
   "include": [
     "src/services/scanFind.ts",
+    "src/services/ocrTitleCandidates.ts",
+    "src/services/ocrTitleCorpus.ts",
+    "src/services/buildStamp.ts",
+    "src/services/buildSha.ts",
+    "src/services/scanOneDoorContract.ts",
+    "src/services/v43UiContract.ts",
     "src/services/v40FixContract.ts",
     "scripts/v40FixBatch.test.ts",
     "src/services/v39FixContract.ts",
@@ -175,6 +181,10 @@
     "src/services/addMusicSheet.ts",
     "scripts/uxr-v43-add-music.test.ts",
     "src/services/settingsSpec.ts",
-    "scripts/uxr-v43-settings.test.ts"
+    "scripts/uxr-v43-settings.test.ts",
+    "scripts/ocrTitleCandidates.test.ts",
+    "scripts/scanOneDoor.test.ts",
+    "scripts/buildStamp.test.ts",
+    "scripts/v43UiWiring.test.ts"
   ]
 }

@@ -180,6 +180,10 @@ import { modernGenreLabel, resultGenreLabel } from '../services/resultGenre';
 import { getTodayChallenge } from '../services/dailyChallenge';
 import { featuredPieceLibraryState } from '../services/sampleBadge';
 import { resolvePieceAbc } from '../services/pieceAbc';
+// v43 item B1 — the build stamp (version + versionCode + the commit built).
+import Constants from 'expo-constants';
+import { BUILD_STAMP_TAG, buildStampLine } from '../services/buildStamp';
+import { BUILD_SHA } from '../services/buildSha';
 import type {
   WeeklyGoal,
   DailyChallengePiece,
@@ -202,6 +206,9 @@ const RETRY_DELAY_MS = 300;
 
 export const HomeScreen: React.FC = () => {
   const { styles, theme } = useThemedStyles(baseStyles);
+  /** v43 item B1 — the live version + versionCode, for the footer build stamp. */
+  const appVersion = Constants.expoConfig?.version ?? null;
+  const appVersionCode = Constants.expoConfig?.android?.versionCode ?? null;
   // Tab-navigation handle (used to jump to Settings → Pro upgrade from the
   // quota-exhausted modal).
   const navigation =
@@ -1706,6 +1713,18 @@ export const HomeScreen: React.FC = () => {
           </View>
         </View>
 
+        {/* v43 item B1 — THE BUILD STAMP, in the smallest type on the screen. It
+            answers the one question a tester cannot otherwise answer: is the
+            build I am holding the build I was told to test? Settings → About
+            shows the same line; this one is here so it is visible without
+            opening anything. */}
+        <Text
+          style={styles.buildStamp}
+          accessibilityLabel={BUILD_STAMP_TAG}
+          selectable
+        >
+          {buildStampLine({ version: appVersion, versionCode: appVersionCode, sha: BUILD_SHA })}
+        </Text>
         <View style={styles.bottomSpacer} />
       </ScrollView>
     </View>
@@ -2192,5 +2211,15 @@ const baseStyles = StyleSheet.create({
 
   bottomSpacer: {
     height: 60,
+  },
+  /* v43 item B1 — the build stamp. Quiet enough to never compete with the
+     content, selectable so a tester can copy it into a report. */
+  buildStamp: {
+    fontSize: 11,
+    color: '#6a6a8a',
+    lineHeight: 16,
+    textAlign: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 18,
   },
 });
