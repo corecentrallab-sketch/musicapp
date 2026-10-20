@@ -403,14 +403,21 @@ assertEq(
   'PRE-FIX: a viewer that neither injects the probe nor reads a message FAILS scoreViewerReportsItsOwnHeight',
 );
 
+// The PRE-FIX shape, RE-POINTED by v42 fix A: the box grew from a height the
+// editor clamped through the app's BOX ceiling (`abcScoreContainerHeight`), so a
+// work taller than 4000px was laid out in a 4000px box the non-interactive viewer
+// could not scroll. Rebuilt from the real file by reversing fix A.
 const v36Notation = notationSource
-  .replace(' onDocumentHeight={handleDocumentHeight}', '')
-  .replace(/scoreHeight !== null && \{[\s\S]*?\},/, '');
+  .replace(' wholeWork />', ' onDocumentHeight={handleDocumentHeight} />')
+  .replace(
+    'minHeight: SCORE_STAFF_MIN_HEIGHT',
+    'minHeight: Math.max(SCORE_STAFF_MIN_HEIGHT, scoreHeight ?? 0)',
+  );
 assert(v36Notation !== notationSource, 'the v36-notation fixture changed the real notation editor');
 assertEq(
   notationEditorGrowsTheScoreBox(v36Notation),
   false,
-  'PRE-FIX: a notation editor that ignores the measurement FAILS notationEditorGrowsTheScoreBox',
+  'PRE-FIX: a notation editor that grows from a clamped measurement FAILS notationEditorGrowsTheScoreBox',
 );
 
 const v36Revert = notationSource
@@ -530,22 +537,25 @@ assertEq(
   'MUTATION: a viewer that parses the message inline FAILS scoreViewerReportsItsOwnHeight',
 );
 
-// MUTATION 10: the editor ignores the measurement (the box stays a fixed floor).
-const deafNotation = notationSource.replace(' onDocumentHeight={handleDocumentHeight}', '');
+// MUTATION 10: the editor hands the viewer a plain box again — no whole-work band
+// — so the non-interactive viewer clips to the floor (the owner's "~4 bars").
+const deafNotation = notationSource.replace(' wholeWork />', ' />');
 assert(deafNotation !== notationSource, 'mutation 10 changed the real notation editor');
 assertEq(
   notationEditorGrowsTheScoreBox(deafNotation),
   false,
-  'MUTATION: an editor that never receives the height FAILS notationEditorGrowsTheScoreBox',
+  'MUTATION: an editor that never receives the whole-work band FAILS notationEditorGrowsTheScoreBox',
 );
 
-// MUTATION 11: the editor stops growing the box (minHeight override goes).
-const fixedBox = notationSource.replace(/minHeight:\s*Math\.max\([^)]*\)/, 'minHeight: 240');
+// MUTATION 11: the box stops being a floor at all (the v36 "the sheet wouldn't
+// open" regression — a `flex: 1` child inside a card with no height lays out at
+// zero, so the score vanishes).
+const fixedBox = notationSource.replace('minHeight: SCORE_STAFF_MIN_HEIGHT', 'minHeight: 0');
 assert(fixedBox !== notationSource, 'mutation 11 changed the real notation editor');
 assertEq(
   notationEditorGrowsTheScoreBox(fixedBox),
   false,
-  'MUTATION: a fixed-height score box (the ~4-bar shape) FAILS notationEditorGrowsTheScoreBox',
+  'MUTATION: a score box with no floor FAILS notationEditorGrowsTheScoreBox',
 );
 
 // MUTATION 12: the score element goes (a guard that passes because the tag is

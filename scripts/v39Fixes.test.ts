@@ -276,9 +276,12 @@ probe('the saved scan loses its way into the money path', viewerWithoutTheDoor, 
   scanFindOpensTheOneSearch({ scanScreen: SCAN_SCREEN, viewer: viewerWithoutTheDoor, section: SCAN_SECTION, host: FIND_PIECE }),
 );
 
-const hostWithoutTheQuery = mutate(FIND_PIECE, 'useState(initialQuery ?? ', 'useState(');
-probe('the search ignores the words a scan handed it', hostWithoutTheQuery, FIND_PIECE, () =>
-  scanFindOpensTheOneSearch({ scanScreen: SCAN_SCREEN, viewer: SCANNED_VIEWER, section: SCAN_SECTION, host: hostWithoutTheQuery }),
+// RE-POINTED by v42 fix D: the pre-fix auto-seed is gone, so the mutation is the
+// proposal losing the one control that turns it into a search — a read the user
+// can never act on is as dead as a silent auto-query.
+const hostWithoutTheConfirm = mutate(FIND_PIECE, 'onPress={handleSubmitPrefill}', 'onPress={() => {}}');
+probe('the search cannot turn the words a scan handed it into a search', hostWithoutTheConfirm, FIND_PIECE, () =>
+  scanFindOpensTheOneSearch({ scanScreen: SCAN_SCREEN, viewer: SCANNED_VIEWER, section: SCAN_SECTION, host: hostWithoutTheConfirm }),
 );
 
 const sectionBuildingItsOwnUrl = mutate(

@@ -23,6 +23,9 @@
  * never satisfy a guard. PURE: no react, no react-native, no fs, no network.
  */
 import { maskComments } from './modalBackContract';
+// v42 fix D re-pointed FIX 1b's host half: the words a scan read are a proposal
+// the user confirms, not a query the screen runs (services/uxrV42Contract.ts).
+import { ocrPrefillIsExplicit } from './uxrV42Contract';
 
 // ─── THE FILES THESE FIXES OWN ───────────────────────────────────────────────
 
@@ -167,7 +170,13 @@ export function scanFindOpensTheOneSearch(sources: {
   if (screen.indexOf(FIND_PIECE_MOUNT) < 0) return false;
   if (viewer.indexOf(FIND_PIECE_MOUNT) < 0) return false;
   if (host.indexOf('initialQuery?: string') < 0) return false;
-  if (host.indexOf('useState(initialQuery ?? ' ) < 0) return false;
+  // RE-POINTED by v42 fix D (owner, v41 device pass 10-20): the words a scan read
+  // are a PROPOSAL, not a query. The host still takes them (`initialQuery`), but
+  // it seeds a VISIBLE, EDITABLE prefill the user confirms — it must not seed the
+  // debounced search (that made a photo's words an invisible auto-query), and the
+  // one control that turns the proposal into a search must be rendered. That half
+  // is asserted by `ocrPrefillIsExplicit` (services/uxrV42Contract.ts).
+  if (!ocrPrefillIsExplicit(sources.host ?? '')) return false;
   // The scan path itself never builds a retailer link (the host owns the money
   // path): no affiliate/search URL tokens in the two scan surfaces.
   for (const src of [screen, viewer, section]) {

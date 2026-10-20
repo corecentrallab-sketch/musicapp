@@ -253,7 +253,7 @@ assert(PDF_SRC.length > 6000, `read ${V39_PDF_VIEWER_PATH} (${PDF_SRC.length} ch
 assert(SCANNED_SRC.length > 6000, `read ${V39_SCANNED_VIEWER_PATH} (${SCANNED_SRC.length} chars)`);
 
 console.log('\npage-turner guards');
-assertEq(pageTurnerViewersShareThePresets(PDF_SRC, SCANNED_SRC, HOOK_SRC), true, 'both readers get the presets, keyed on their own piece id');
+assertEq(pageTurnerViewersShareThePresets(PDF_SRC, SCANNED_SRC, HOOK_SRC), true, 'the PDF reader keeps the presets and the scanned surface no longer offers the dead control');
 assertEq(pageTurnerPresetTapChangesBothNumbers(PRESETS_SRC, ENGINE_SRC, CONTROL_SRC), true, 'one tap moves both numbers and the control wires it');
 assertEq(pageTurnerKeepsTheSteppers(CONTROL_SRC), true, 'the BPM and beats/page steppers survive with their bounds');
 assertEq(pageTurnerRemembersPerPiece(STORE_SRC, PRESETS_SRC), true, 'the device adapter owns the key and the pure module does not');
@@ -281,9 +281,18 @@ const pdfUnwired = PDF_SRC.replace('usePageTurnSpeed(itemId, autoScroll)', 'useA
 probe('the PDF viewer stops remembering a speed', pdfUnwired, PDF_SRC, () =>
   pageTurnerViewersShareThePresets(pdfUnwired, SCANNED_SRC, HOOK_SRC),
 );
-const scannedUnwired = SCANNED_SRC.replace('speedProfiles={speedProfiles}', '');
-probe('the scanned viewer stops offering the presets', scannedUnwired, SCANNED_SRC, () =>
-  pageTurnerViewersShareThePresets(PDF_SRC, scannedUnwired, HOOK_SRC),
+// RE-POINTED by v42 fix C: the dead control coming BACK must fail the guard.
+const scannedDeadControlBack = SCANNED_SRC.replace(
+  '<FlatList',
+  '<AutoScrollControl speedProfiles={speedProfiles} />\n        <FlatList',
+);
+probe('the scanned viewer takes the dead auto-scroll control back', scannedDeadControlBack, SCANNED_SRC, () =>
+  pageTurnerViewersShareThePresets(PDF_SRC, scannedDeadControlBack, HOOK_SRC),
+);
+// …and so must the surface losing its reason ("why there is nothing to start").
+const scannedSilent = SCANNED_SRC.replace(/<Text style=\{styles\.autoScrollNote\}>\{SCANNED_NO_AUTOSCROLL_LINE\}<\/Text>/, '');
+probe('the scanned viewer stops saying why there is no auto-scroll', scannedSilent, SCANNED_SRC, () =>
+  pageTurnerViewersShareThePresets(PDF_SRC, scannedSilent, HOOK_SRC),
 );
 const hookForgetsPiece = HOOK_SRC.replace('pageTurnSpeedForPiece(map, itemId', 'pageTurnSpeedForPiece(map, null');
 probe('the hook stops reading the per-piece speed', hookForgetsPiece, HOOK_SRC, () =>

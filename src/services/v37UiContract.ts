@@ -42,6 +42,9 @@
  * never satisfy a guard.
  */
 import { maskComments } from './modalBackContract';
+// v42 fix A re-pointed the notation-editor box guard below onto the whole-work
+// contract the reader already uses (services/uxrV42Contract.ts).
+import { editorScoreIsWholeWork } from './uxrV42Contract';
 
 /** The page scroller's own style — what makes it THE page scroller. */
 export const PAGE_SCROLLER_STYLE = 'style={styles.page}';
@@ -244,28 +247,31 @@ export function scoreViewerReportsItsOwnHeight(abcViewSource: string): boolean {
 }
 
 /**
- * 2b. THE NOTATION EDITOR'S SCORE BOX GROWS TO THE SCORE (v37 item 2).
+ * 2b. THE NOTATION EDITOR'S SCORE BOX CANNOT CLIP THE SCORE (v37 item 2) —
+ * RE-POINTED by v42 fix A (owner 10-20: "only 4 bars again").
  * `notationSource` is src/screens/NotationEditorScreen.tsx.
  *
- * The call site must hand the viewer the measurement (`onDocumentHeight={`) while
- * keeping it non-interactive, the measurement must be clamped through the same
- * pure rule (`setScoreHeight(abcScoreContainerHeight(`), and it must actually
- * reach the box the score sits in — as a growing `minHeight`, so the v36 floor
- * still stands and a long score can no longer be clipped.
+ * v37 grew this box from a height the viewer measured and the editor clamped —
+ * and the rule it clamped with (`abcScoreContainerHeight`) is the app's 4000px
+ * BOX ceiling. A work taller than that ceiling was therefore laid out inside a
+ * 4000px box the NON-INTERACTIVE viewer cannot scroll, so everything below the
+ * ceiling was unreachable: the very clip the reader was fixed for in UX round 1,
+ * still live on this surface. v42 hands the viewer the whole-work band instead
+ * (`wholeWork`, the reader's own contract) and applies no height of its own, so
+ * this screen can no longer pre-cap a score. That half is asserted by
+ * `editorScoreIsWholeWork` (services/uxrV42Contract.ts), which also rejects any
+ * return of `abcScoreContainerHeight` / `scoreHeight` / `onDocumentHeight`.
+ *
+ * The v37 property still has to hold in its NEW spelling, so this guard keeps
+ * both ends: the band (no ceiling) AND the v36 floor (a box that cannot
+ * collapse — "the sheet wouldn't open"). A band with no floor would be the v36
+ * bug coming back, so the floor is asserted here rather than assumed.
  */
 export function notationEditorGrowsTheScoreBox(notationSource: string): boolean {
+  if (!editorScoreIsWholeWork(notationSource)) return false;
   const src = maskComments(notationSource);
-  if (src.length < 5000) return false;
-  const open = src.indexOf('<AbcScoreView');
-  if (open < 0) return false;
-  const close = src.indexOf('/>', open);
-  if (close < 0) return false;
-  const tag = src.slice(open, close + 2);
-  if (tag.indexOf('interactive={false}') < 0) return false;
-  if (tag.indexOf('onDocumentHeight={') < 0) return false;
-  if (src.indexOf('setScoreHeight(abcScoreContainerHeight({') < 0) return false;
   if (src.indexOf('styles.scoreStaffBox') < 0) return false;
-  return /minHeight:\s*Math\.max\(/.test(src);
+  return /minHeight:\s*SCORE_STAFF_MIN_HEIGHT/.test(src);
 }
 
 /**
