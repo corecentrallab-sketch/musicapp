@@ -201,10 +201,20 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
           and the confirmed words open the app's ONE search in place, which is where
           the licensed retailers already are. One surface for a typed title and a
           scanned one, and no retailer URL is built here. It scrolls so the score
-          above it keeps its room. */}
+          above it keeps its room.
+
+          v44 #59 — THIS IS THE PAGE-OF-MUSIC DOOR (`photoKind="page"`). Every page
+          in this viewer is a page of a scanned SCORE, so a page of music is exactly
+          what the recogniser is looking at: the owner's Bohemian Rhapsody page came
+          back as the debris "Auio - Metal" in the "Search for…" box. With the page
+          kind set, the shared model offers an uncorroborated read NO query at all
+          and shows the honest page-of-music line instead; a read that actually
+          answers a piece still offers its suggestions, and the typed title and the
+          page swipe remain the ways forward. */}
       <ScrollView style={styles.findBar} contentContainerStyle={styles.findBody}>
         <ScanFindSection
           pageUri={pages[Math.min(page, pages.length) - 1] ?? pages[0] ?? null}
+          photoKind="page"
           onSearch={setFindQuery}
         />
       </ScrollView>

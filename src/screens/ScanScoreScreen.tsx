@@ -28,6 +28,7 @@ import {
   SCAN_COVER_ONLY_HINT,
   SCAN_FIND_CTA,
   SCAN_SAVED_AS_YOU_GO_LINE,
+  SCAN_TAKE_SAVES_LINE,
   scanFinishCta,
   scanSessionResumedLine,
   scanSessionTitle,
@@ -39,10 +40,23 @@ import {
   SCAN_CONTROL_GAP,
   SCAN_EMPTY_HINT,
   SCAN_FILMSTRIP_HEIGHT,
-  SCAN_FRAMING_HINT_MAX_HEIGHT,
   SCAN_PILL_RADIUS,
   SCAN_SHUTTER_SIZE,
   SCAN_SURFACE_TRANSLUCENT,
+  SCAN_TIP_BODY_FONT,
+  SCAN_TIP_BODY_LINE_HEIGHT,
+  SCAN_TIP_GAP,
+  SCAN_TIP_INK,
+  SCAN_TIP_MAX_FONT_SCALE,
+  SCAN_TIP_MAX_WIDTH_RATIO,
+  SCAN_TIP_PADDING_X,
+  SCAN_TIP_PADDING_Y,
+  SCAN_TIP_SCRIM,
+  SCAN_TIP_TAKE_FONT,
+  SCAN_TIP_TAKE_LINE_HEIGHT,
+  SCAN_TIP_TITLE_FONT,
+  SCAN_TIP_TITLE_INK,
+  SCAN_TIP_TITLE_LINE_HEIGHT,
   SCAN_TOUCH_MIN,
   nextScanFlashMode,
   scanControlState,
@@ -371,17 +385,56 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
           a title. So this is not a toast, not a help page and not a sub-menu: it is
           a permanent translucent panel over the viewfinder, rendered from the
           moment this screen opens (before any photo is taken) and while framing
-          every shot. It sits between the top chip and the centre of the preview so
-          it never covers the area the title is being framed in, and the copy is the
-          named constant `SCAN_COVER_ONLY_HINT` (services/scanFind) so a source scan
-          can assert this screen really shows it. */}
+          every shot.
+
+          v44 #58/#60 — THE FIX, AND WHY IT IS SHAPED LIKE THIS (owner, v43
+          checklist: backlog bdb27d6c "black on black", 33732422 "wrong copy, cut in
+          half"):
+            • COLOUR. The fill used to be a hard-coded rgba that services/themeApply
+              cannot repaint, against text that used `#ffffff` — a literal the theme
+              DOES repaint to the light palette's near-black ink. Light mode drew
+              black on black. The tip is not a themed surface at all (it floats over
+              a PHOTO), so its colours now come from the pure model's one fixed
+              high-contrast set (`SCAN_TIP_*` in services/scanViewport) as INLINE
+              colours, which no repaint can touch — and `scanTipInkIsReadable()`
+              proves ≥4.5:1 over a pure-white AND a pure-black photo.
+            • NO OBSCURING. It now hugs the top-LEFT under the chip instead of being
+              a full-width centred bar over the middle of the preview, it is capped
+              at `SCAN_TIP_MAX_WIDTH_RATIO`, and it is two short lines instead of
+              three long ones — so the area the title is framed in stays clear.
+            • NEVER CLIPPED. The old panel had a `maxHeight` cap, which sliced the
+              last line through the middle (the owner's "only the top half is
+              visible"). Size-to-content now, with `maxFontSizeMultiplier` capped at
+              the model's `SCAN_TIP_MAX_FONT_SCALE` so the 1.25× font scale cannot
+              overflow its measured room (`scanTipFits`, asserted in tier1). */}
       <View
         style={[styles.framingHintWrap, { top: scanFramingHintTop(insets.top) }]}
         pointerEvents="none"
       >
-        <View style={styles.framingHintPanel}>
-          <Text style={styles.framingHintTitle}>FRAMING TIP</Text>
-          <Text style={styles.framingHintText}>{SCAN_COVER_ONLY_HINT}</Text>
+        <View
+          style={[
+            styles.framingHintPanel,
+            { backgroundColor: SCAN_TIP_SCRIM, borderColor: SCAN_TIP_TITLE_INK },
+          ]}
+        >
+          <Text
+            style={[styles.framingHintTitle, { color: SCAN_TIP_TITLE_INK }]}
+            maxFontSizeMultiplier={SCAN_TIP_MAX_FONT_SCALE}
+          >
+            FRAMING TIP
+          </Text>
+          <Text
+            style={[styles.framingHintText, { color: SCAN_TIP_INK }]}
+            maxFontSizeMultiplier={SCAN_TIP_MAX_FONT_SCALE}
+          >
+            {SCAN_COVER_ONLY_HINT}
+          </Text>
+          <Text
+            style={[styles.framingHintTake, { color: SCAN_TIP_INK }]}
+            maxFontSizeMultiplier={SCAN_TIP_MAX_FONT_SCALE}
+          >
+            {SCAN_TAKE_SAVES_LINE}
+          </Text>
         </View>
       </View>
 
@@ -443,6 +496,17 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
               <Text style={styles.savedLine}>{SCAN_SAVED_AS_YOU_GO_LINE}</Text>
               <ScanFindSection
                 pageUri={lastPageUri}
+                /* v44 #59 — WHAT KIND OF PHOTO THIS IS. The FIRST page of a scan is
+                   the one the user framed as a title/cover (it is captured at full
+                   quality for exactly that read), so it keeps the cover door's
+                   behaviour: an uncorroborated read stays searchable but is
+                   honestly labelled "What we read on the photo". From the second
+                   page on this is a scan of a SCORE, where a page of music can
+                   never be a title page — so an uncorroborated read gets no query
+                   at all, only the page-of-music line. Same model, same component,
+                   one rule: the words are never dressed up as a title the app
+                   cannot vouch for. */
+                photoKind={pages.length > 1 ? 'page' : 'cover'}
                 onSearch={setFindQuery}
                 onOpenPiece={openSuggestedPiece}
                 onRetake={() => setFindOpen(false)}
@@ -567,29 +631,43 @@ const baseStyles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
-    alignItems: 'center',
+    /* v44 #58 — HUG THE TOP-LEFT, DO NOT SPAN THE FRAME. As a centred full-width
+       bar this box sat across the middle of the preview, which is where the title
+       is being framed (the owner's "it sits over the camera preview"). `flex-start`
+       + the model's width cap keeps it a small corner card, out of the way. */
+    alignItems: 'flex-start',
   },
   framingHintPanel: {
-    maxHeight: SCAN_FRAMING_HINT_MAX_HEIGHT,
+    /* v44 #60 — NO maxHeight. The cap is what cut the copy in half; the panel sizes
+       to its content and the room it needs is measured in the model
+       (`scanTipPanelHeight` / `scanTipFits`). Fill and border come from the
+       overlay's own fixed palette as INLINE colours on the screen, because a
+       themed StyleSheet repaint is exactly what turned this box black-on-black
+       (see services/scanViewport). */
+    maxWidth: `${Math.round(SCAN_TIP_MAX_WIDTH_RATIO * 100)}%`,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(78,205,196,0.55)',
-    backgroundColor: 'rgba(9,11,22,0.78)',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 4,
+    paddingHorizontal: SCAN_TIP_PADDING_X,
+    paddingVertical: SCAN_TIP_PADDING_Y,
+    gap: SCAN_TIP_GAP,
   },
   framingHintTitle: {
-    color: '#4ecdc4',
-    fontSize: 11,
+    fontSize: SCAN_TIP_TITLE_FONT,
+    lineHeight: SCAN_TIP_TITLE_LINE_HEIGHT,
     fontWeight: '800',
     letterSpacing: 1,
   },
   framingHintText: {
-    color: '#ffffff',
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: SCAN_TIP_BODY_FONT,
+    lineHeight: SCAN_TIP_BODY_LINE_HEIGHT,
     fontWeight: '600',
+  },
+  /* v44 #60 — the durability line, in the owner's own words, as its own text so it
+     can never be the half that gets cut off. */
+  framingHintTake: {
+    fontSize: SCAN_TIP_TAKE_FONT,
+    lineHeight: SCAN_TIP_TAKE_LINE_HEIGHT,
+    fontWeight: '400',
   },
   /* THE BOTTOM LAYER: transparent by construction — it exists only to stack the
      floating pieces. Its only colour is the translucent pill at the end of it. */

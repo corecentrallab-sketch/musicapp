@@ -27,6 +27,15 @@ export interface ThemeTokens {
   subtext: string;
   accent: string;
   accentSoft: string;
+  /**
+   * THE INK THAT SITS ON AN ACCENT FILL (v44 #59). A filled accent button needs a
+   * LIGHT label in BOTH modes — but `text` inverts for light mode (it is the ink
+   * for a themed surface, not for a red pill), so `#ffffff` in a StyleSheet became
+   * near-black on the light palette's accent and the owner saw a filled control
+   * whose label had vanished ("showed nothing in bold"). This token is white in
+   * both palettes and is read INLINE, so no repaint can invert it.
+   */
+  accentInk: string;
   positive: string;
   danger: string;
   chipBg: string;
@@ -46,6 +55,7 @@ export const DARK_THEME: ThemeTokens = {
   subtext: '#a0a0b8',
   accent: '#e94560',
   accentSoft: '#ff8fa3',
+  accentInk: '#ffffff',
   positive: '#4ecdc4',
   danger: '#e94560',
   chipBg: '#0f3460',
@@ -64,6 +74,7 @@ export const LIGHT_THEME: ThemeTokens = {
   subtext: '#5b6377',
   accent: '#c2233c',
   accentSoft: '#a01b31',
+  accentInk: '#ffffff',
   positive: '#0f7a72',
   danger: '#c2233c',
   chipBg: '#e6ebf5',

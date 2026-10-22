@@ -136,6 +136,177 @@ export function scanFramingHintTop(insetTop: unknown): number {
   return scanTopChipInset(insetTop) + SCAN_TOP_CHIP_HEIGHT + SCAN_FRAMING_HINT_GAP;
 }
 
+// ─── v44 #58/#60 — THE FRAMING TIP'S OWN COLOURS, AND "NEVER CLIPPED" ───────
+//
+// THE DEFECT (owner, v43 on-device checklist — backlog bdb27d6c / 33732422). The
+// tip rendered BLACK text on a BLACK panel, and only its top half was visible.
+//
+// WHY THE COLOUR BROKE, exactly. The panel's fill was a hard-coded rgba literal
+// (`rgba(9,11,22,0.78)`) while its text used `'#ffffff'`. services/themeApply.ts
+// repaints a StyleSheet by LOOKING UP each literal in LIGHT_ROLE_BY_COLOR, and
+// that table holds hex literals only — so the fill stayed near-black in BOTH
+// modes while `#ffffff` was repainted to the light palette's `text` token
+// (`#161a24`, near-black). Light mode therefore drew near-black ink on a
+// near-black panel: unreadable, exactly as the owner reported.
+//
+// THE RULE THIS FILE NOW ENFORCES. The camera tip is NOT a themed surface — it
+// floats over a PHOTO, which can be a white score or a dark stage, and the theme
+// is irrelevant to it. So its colours are ONE fixed, high-contrast set in both
+// modes, defined here (pure, tier1-compiled) instead of in a repaintable
+// StyleSheet, and the screen renders them as INLINE colours (the sanctioned path
+// in services/themeStore.ts for "the handful of inline colours that a StyleSheet
+// cannot carry"). `contrastRatio` proves the ink is readable over the WORST CASE
+// backings a photo can present — pure white paper and pure black — so the fix is
+// a measurement, not an opinion. scripts/uxr2-scan-viewport.test.ts asserts it.
+export const SCAN_TIP_SCRIM = 'rgba(9,11,22,0.88)';
+export const SCAN_TIP_INK = '#ffffff';
+export const SCAN_TIP_TITLE_INK = '#7fe3da';
+/** The tip's ink must clear this ratio over the scrim on ANY photo behind it. */
+export const SCAN_TIP_MIN_CONTRAST = 4.5;
+
+/** '#rgb'/'#rrggbb' → [r,g,b] 0-255 (null when the literal is not a hex colour). */
+export function parseHexColor(value: unknown): [number, number, number] | null {
+  const text = typeof value === 'string' ? value.trim() : '';
+  const match = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(text);
+  if (!match) return null;
+  const raw = match[1]!;
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
+  return [
+    parseInt(full.slice(0, 2), 16),
+    parseInt(full.slice(2, 4), 16),
+    parseInt(full.slice(4, 6), 16),
+  ];
+}
+
+/** 'rgba(r,g,b,a)' / 'rgb(r,g,b)' → { rgb, alpha } (null when it is not one). */
+export function parseRgbaColor(value: unknown): { rgb: [number, number, number]; alpha: number } | null {
+  const text = typeof value === 'string' ? value.trim() : '';
+  const match = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(text);
+  if (!match) return null;
+  const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
+  const alpha = match[4] === undefined ? 1 : Math.max(0, Math.min(1, Number(match[4])));
+  return {
+    rgb: [clamp(Number(match[1])), clamp(Number(match[2])), clamp(Number(match[3]))],
+    alpha: Number.isFinite(alpha) ? alpha : 1,
+  };
+}
+
+/** The colour a translucent scrim actually shows over a backing colour. */
+export function compositeOver(top: unknown, bottom: unknown): [number, number, number] | null {
+  const over = parseRgbaColor(top);
+  const under = parseHexColor(bottom);
+  if (!over || !under) return null;
+  return [0, 1, 2].map((i) =>
+    Math.round(over.rgb[i]! * over.alpha + under[i]! * (1 - over.alpha)),
+  ) as [number, number, number];
+}
+
+/** WCAG relative luminance of an sRGB colour (0 = black, 1 = white). */
+export function relativeLuminance(rgb: [number, number, number] | null): number {
+  if (!rgb) return 0;
+  const channel = (value: number) => {
+    const c = value / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+}
+
+/** WCAG contrast ratio between two opaque colours (1…21); 1 for bad input. */
+export function contrastRatio(a: unknown, b: unknown): number {
+  const la = relativeLuminance(parseHexColor(a));
+  const lb = relativeLuminance(parseHexColor(b));
+  const lighter = Math.max(la, lb);
+  const darker = Math.min(la, lb);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** The tip's ink over the scrim, over the worst-case photo backings. */
+export function scanTipContrast(backing: string): number {
+  const seen = compositeOver(SCAN_TIP_SCRIM, backing);
+  if (!seen) return 0;
+  return contrastRatio(SCAN_TIP_INK, toHexColor(seen));
+}
+
+/** The dot colour a scrim shows over a backing — the real fill behind the ink. */
+function toHexColor(rgb: [number, number, number]): string {
+  return `#${rgb.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** True when BOTH tip inks stay readable over a white photo AND a black one. */
+export function scanTipInkIsReadable(): boolean {
+  return ['#ffffff', '#000000'].every((backing) => {
+    const seen = compositeOver(SCAN_TIP_SCRIM, backing);
+    if (!seen) return false;
+    const behind = toHexColor(seen);
+    return (
+      contrastRatio(SCAN_TIP_INK, behind) >= SCAN_TIP_MIN_CONTRAST &&
+      contrastRatio(SCAN_TIP_TITLE_INK, behind) >= SCAN_TIP_MIN_CONTRAST
+    );
+  });
+}
+
+// ─── v44 #60 — THE TIP IS NEVER CLIPPED ─────────────────────────────────────
+//
+// The panel used to be CAPPED (`maxHeight: SCAN_FRAMING_HINT_MAX_HEIGHT`), so the
+// last sentence of the copy was cut through the middle of its glyphs — the
+// owner's "only the TOP half of the box is visible". A fixed cap cannot be right
+// for text whose height depends on the device width AND the user's font scale, so
+// the panel now sizes to its content and the room it needs is MEASURED here
+// instead: at the largest font scale the tip allows (1.25×, `maxFontSizeMultiplier`
+// on the screen's Texts), the whole box must fit between the top chip and the
+// middle of the preview. scripts/uxr2-scan-viewport.test.ts asserts the fit.
+export const SCAN_TIP_MAX_FONT_SCALE = 1.25;
+export const SCAN_TIP_TITLE_FONT = 11;
+export const SCAN_TIP_TITLE_LINE_HEIGHT = 14;
+export const SCAN_TIP_BODY_FONT = 12;
+export const SCAN_TIP_BODY_LINE_HEIGHT = 16;
+export const SCAN_TIP_TAKE_FONT = 12;
+export const SCAN_TIP_TAKE_LINE_HEIGHT = 16;
+/** Padding inside the panel, per side, and the gap between its three lines. */
+export const SCAN_TIP_PADDING_Y = 9;
+export const SCAN_TIP_PADDING_X = 12;
+export const SCAN_TIP_GAP = 2;
+/** The widest the box may get — it hugs the top-left, never a full-width bar. */
+export const SCAN_TIP_MAX_WIDTH_RATIO = 0.86;
+
+/**
+ * THE PANEL'S HEIGHT AT ITS LARGEST ALLOWED FONT SCALE, from how many lines each
+ * of its three pieces of text takes on the device. No cap, no clipping: this is
+ * the truth the layout has to make room for.
+ */
+export function scanTipPanelHeight(input: {
+  titleLines?: number;
+  bodyLines?: number;
+  takeLines?: number;
+} | null): number {
+  const count = (value: unknown) =>
+    Number.isFinite(value) ? Math.max(0, Math.floor(Number(value))) : 0;
+  const scale = SCAN_TIP_MAX_FONT_SCALE;
+  const lines = [
+    count(input?.titleLines) * SCAN_TIP_TITLE_LINE_HEIGHT,
+    count(input?.bodyLines) * SCAN_TIP_BODY_LINE_HEIGHT,
+    count(input?.takeLines) * SCAN_TIP_TAKE_LINE_HEIGHT,
+  ].filter((height) => height > 0);
+  if (lines.length === 0) return 0;
+  const text = lines.reduce((sum, height) => sum + height, 0) * scale;
+  const gaps = (lines.length - 1) * SCAN_TIP_GAP;
+  return Math.ceil(text + gaps + SCAN_TIP_PADDING_Y * 2);
+}
+
+/**
+ * ROOM UNDER THE TOP CHIP BEFORE THE MIDDLE OF THE PREVIEW — the band the tip may
+ * occupy without covering the area the user is framing the title in. It is
+ * generous enough for the real copy at 1.25× (proved by the tier1 suite) and it is
+ * the number the panel's placement is documented against.
+ */
+export const SCAN_TIP_ROOM = 152;
+
+/** Does the real tip fit the room it is given, at the biggest font scale allowed? */
+export function scanTipFits(layout: { titleLines?: number; bodyLines?: number; takeLines?: number } | null): boolean {
+  const height = scanTipPanelHeight(layout);
+  return height > 0 && height <= SCAN_TIP_ROOM && height <= SCAN_FRAMING_HINT_MAX_HEIGHT + 40;
+}
+
 // ───────────────────────────── the pill's geometry ───────────────────────────
 
 /** The pill's corner radius — well past half its own height, so it reads as a pill. */

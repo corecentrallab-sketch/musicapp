@@ -30,6 +30,7 @@
  * PURE LOGIC: imports nothing native, so it compiles under tsconfig.tier1.json.
  */
 import { maskComments } from './modalBackContract';
+import { SCAN_TIP_SCRIM } from './scanViewport';
 import { scanFindCopyClaimsNoNoteReading } from './v39FixContract';
 
 // ───────────────────────────── the files this owns ───────────────────────────
@@ -261,7 +262,22 @@ export function scanHasNoOpaqueFullWidthBar(source: string): boolean {
   if (hint.length < 30) return false;
   if (hint.indexOf('left: 0') >= 0 || hint.indexOf('right: 0') >= 0) return false;
   if (hint.indexOf('backgroundColor:') >= 0) return false;
-  if (styleBlock(src, 'framingHintPanel').indexOf('rgba(') < 0) return false;
+  // THE FILL IS TRANSLUCENT, NEVER OPAQUE — and since v44 #58 it may arrive from
+  // either of two places, so both are pinned:
+  //   • the old form: an rgba literal inside the panel's own style block;
+  //   • the shipped form: NO literal at all (a themed StyleSheet repaint is what
+  //     turned this box black-on-black), with the screen painting the model's
+  //     translucent `SCAN_TIP_SCRIM` inline.
+  // An OPAQUE fill is refused either way: that is what the owner called a box
+  // sitting over the capture.
+  const panel = styleBlock(src, 'framingHintPanel');
+  const panelFill = /backgroundColor\s*:\s*([^,\n]+)/.exec(panel);
+  if (panelFill) {
+    if (!/^['"]rgba\(/.test(panelFill[1]!.trim())) return false;
+  } else {
+    if (countOf(src, 'backgroundColor: SCAN_TIP_SCRIM') < 1) return false;
+    if (!/^rgba\(/.test(SCAN_TIP_SCRIM)) return false;
+  }
   if (countOf(src, 'pointerEvents="none"') < 1) return false;
   // Both floating layers let taps through to the preview around their content.
   if (countOf(src, 'pointerEvents="box-none"') < 2) return false;
