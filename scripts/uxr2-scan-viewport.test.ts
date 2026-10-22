@@ -56,7 +56,13 @@ import {
   scanFlashShortLabel,
   scanOverlayInsets,
   scanPageCountLabel,
+  scanTipContrast,
+  scanTipFits,
+  scanTipInkIsReadable,
+  scanTipPanelHeight,
   scanTopChipInset,
+  SCAN_TIP_MAX_FONT_SCALE,
+  SCAN_TIP_ROOM,
 } from '../src/services/scanViewport';
 import {
   UXR2_PACKAGE_PATH,
@@ -529,6 +535,67 @@ assertEq(
   true,
   'and it still reads the page’s printed words on device',
 );
+
+// ════════════════════════════════════════════════════════════════════════════
+// v44 #58 / #60 — THE FRAMING TIP: READABLE ON ANY PHOTO, AND NEVER CLIPPED
+//
+// The owner read this box as black-on-black on device (#58, bdb27d6c) and its last
+// line was cut in half (#60, 33732422). Both are numbers now, not opinions:
+//   • the ink must clear WCAG 4.5:1 over the scrim, over a PURE WHITE photo AND a
+//     PURE BLACK one — the two worst cases a camera can present;
+//   • the whole panel, at the largest font scale it allows (1.25×), must fit in the
+//     room between the top chip and the framing band, with no height cap at all.
+// ════════════════════════════════════════════════════════════════════════════
+console.log('\nv44 #58 — the tip’s ink is readable over any photo');
+assertEq(scanTipInkIsReadable(), true, 'both tip inks clear 4.5:1 over a white AND a black photo');
+assertEq(
+  scanTipContrast('#ffffff') >= 4.5,
+  true,
+  `over a white page: ${scanTipContrast('#ffffff').toFixed(1)}:1`,
+);
+assertEq(
+  scanTipContrast('#000000') >= 4.5,
+  true,
+  `over a black page: ${scanTipContrast('#000000').toFixed(1)}:1`,
+);
+assertEq(
+  scanTipContrast('#ffffff') !== scanTipContrast('#000000'),
+  true,
+  'the measurement is real (the two backings do not collapse to one number)',
+);
+// THE MUTATION: the pre-fix fill was rgba(9,11,22,0.78). Even then the ink was
+// fine — the BUG was that the theme repainted the ink to near-black, which is why
+// a colour literal is now forbidden on that panel (framingTipColoursCannotInvert in
+// services/scanOneDoorContract, asserted in scripts/scanOneDoor.test.ts).
+
+console.log('\nv44 #60 — the tip fits, uncut, at 1.25× font scale');
+assertEq(SCAN_TIP_MAX_FONT_SCALE, 1.25, 'the cap is the 1.25× the owner asked for');
+assertEq(
+  scanTipFits({ titleLines: 1, bodyLines: 2, takeLines: 1 }),
+  true,
+  'the shipped copy (title + 2 lines + the Take line) fits with room to spare',
+);
+assertEq(
+  scanTipFits({ titleLines: 1, bodyLines: 3, takeLines: 2 }),
+  true,
+  'even a narrow phone (3 body lines, 2 Take lines) still fits — no clipping',
+);
+assertEq(
+  scanTipPanelHeight({ titleLines: 1, bodyLines: 2, takeLines: 1 }) > 0,
+  true,
+  'the panel has a real measured height',
+);
+assertEq(
+  scanTipFits({ titleLines: 1, bodyLines: 9, takeLines: 4 }),
+  false,
+  'MUTATION: copy that cannot fit in the room FAILS the fit guard (so the guard bites)',
+);
+assertEq(
+  scanTipPanelHeight(null),
+  0,
+  'and an empty layout measures nothing (the guard cannot pass vacuously)',
+);
+assertEq(SCAN_TIP_ROOM > 0, true, `the room under the chip is ${SCAN_TIP_ROOM}pt`);
 
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures === 0 ? 0 : 1);

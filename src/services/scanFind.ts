@@ -101,9 +101,24 @@ export const SCAN_FIND_RAW_QUERY_NOTE =
 // that were read (a proposal, never a query), the user's own typed title, and —
 // for a page of music rather than a cover — the honest line instead of a search.
 
-/** WHAT THE CAMERA SCREEN SAYS, ALWAYS, BEFORE THE FIRST PHOTO. */
+/**
+ * WHAT THE CAMERA SCREEN SAYS, ALWAYS, BEFORE THE FIRST PHOTO.
+ *
+ * v44 #60 (owner, v43 checklist — backlog 33732422: "wrong and cut in half"). The
+ * old sentence was the instruction AND the durability note AND the why, all in one
+ * parenthesis — "…(Every page you take still saves to your Library.)" — and the
+ * panel was capped, so its last line was sliced through the middle. It is now TWO
+ * named lines rendered as two texts: this one (the instruction, the only thing the
+ * framing needs) and `SCAN_TAKE_SAVES_LINE` below it, in the owner's exact words.
+ * The why ("the title at the top of the page is what gets matched") is not lost —
+ * it is `SCAN_FIND_COVER_ONLY_LINE`, one tap away in the resolve panel, which keeps
+ * this box short enough to sit out of the framing area.
+ */
 export const SCAN_COVER_ONLY_HINT =
-  'Fit the TITLE at the top of the score into the frame — not the whole page. We match the printed title, so a photo of a whole page cannot be matched to a piece. (Every page you take still saves to your Library.)';
+  'Fit the TITLE at the top of the score into the frame — not the whole page.';
+
+/** The durability note under it — the owner's own string (v44 #60), verbatim. */
+export const SCAN_TAKE_SAVES_LINE = 'Your Take still saves to the library';
 
 /** The same rule, short, inside the resolve panel. */
 export const SCAN_FIND_COVER_ONLY_LINE =
@@ -112,6 +127,35 @@ export const SCAN_FIND_COVER_ONLY_LINE =
 /** A page of printed music is not a cover — said plainly, never searched. */
 export const SCAN_FIND_NOTATION_LINE =
   'This looks like a page of music, not a cover — type the title you see and we will search for it.';
+
+/**
+ * THE PAGE-OF-MUSIC LINE FOR A SCANNED PAGE (v44 #59, owner v43 checklist —
+ * backlog ce3a2282). The owner scanned a page of Bohemian Rhapsody and the
+ * "Search for…" box came back holding the recogniser's debris ("Auio - Metal"):
+ * an uncorroborated read off a page of MUSIC presented as if it were a title.
+ * A page of music can never BE a title page, so on this door an uncorroborated
+ * read is not offered as a query at all — this line is what the user gets, and the
+ * ways forward are the typed title and the retake.
+ */
+export const SCAN_FIND_PAGE_OF_MUSIC_LINE =
+  'This looks like a page of music — a cover or title page helps find the piece.';
+
+/**
+ * THE LABEL FOR A READ THE APP CANNOT VOUCH FOR (v44 #59, the cover door). When
+ * the words were read off a photo but answer no piece we know, they are still a
+ * way into the search (a real title we simply do not hold looks exactly like this)
+ * — but they are NOT "Search for": that label claimed a confidence the app does
+ * not have. They sit under this label instead, editable, with the words themselves
+ * printed in the control that will search them.
+ */
+export const SCAN_FIND_WHAT_WE_READ_LABEL = 'What we read on the photo';
+
+/** The read-search control: it shows the words it will actually search. */
+export const SCAN_FIND_SEARCH_WORDS_CTA = 'Search these words';
+
+/** …and when the read produced no words, the honest empty state beside it. */
+export const SCAN_FIND_NO_WORDS_LINE =
+  'We read no words on that photo to search with — type the title you can see instead.';
 
 /** A read that came back, but too thin to trust as a title. */
 export const SCAN_FIND_WEAK_LINE =
@@ -140,6 +184,15 @@ export interface ScanFindRead {
   blocks?: OcrBlock[] | null;
   /** The photo's pixel size, so a block's position on the page is known. */
   imageSize?: OcrImageSize | null;
+  /**
+   * WHAT WAS PHOTOGRAPHED (v44 #59). 'cover' (the default) is the title-page door:
+   * a read we cannot corroborate may still be a real title we do not hold, so it
+   * stays searchable — under an honest label, never as "Search for". 'page' is a
+   * page of a scanned score (the saved-scan viewer, an extra page in the scanner):
+   * a page of MUSIC can never be a title page, so an uncorroborated read there is
+   * offered no query at all — the owner's "Auio - Metal" case.
+   */
+  photoKind?: 'cover' | 'page';
 }
 
 export interface ScanFindView {
@@ -159,6 +212,12 @@ export interface ScanFindView {
   line: string | null;
   /** True only when there is a real query to search with. */
   canSearch: boolean;
+  /**
+   * THE WORDS ARE NOT VOUCHED FOR (v44 #59): a query exists, but it answers
+   * nothing the app knows. The surface must label it as what was read, never as
+   * "Search for", and must print the words in the control that searches them.
+   */
+  uncorroborated: boolean;
 }
 
 /** The result of nothing at all — used for the idle and failed states. */
@@ -175,6 +234,7 @@ function viewOf(
     candidates: [],
     line: null,
     canSearch: false,
+    uncorroborated: false,
     ...extra,
   };
 }
@@ -189,11 +249,24 @@ function viewOf(
  * `readTitleCandidates`' instead — it can tell a printed title from a page of
  * music, which text alone cannot. A read with no geometry keeps the v39 behaviour
  * exactly, so nothing that worked before changes.
+ *
+ * v44 #59 — THE PAGE-OF-MUSIC GATE (`read.photoKind === 'page'`). Geometry alone
+ * was not enough: a page of music can return one tidy-looking line ("Auio -
+ * Metal"), and with nothing to compare it against the model called it a title and
+ * filled the search box. On a page door that is the wrong claim to make, so an
+ * uncorroborated read — a query, but no piece in the corpus answering it — is
+ * refused a query entirely and replaced with `SCAN_FIND_PAGE_OF_MUSIC_LINE`: the
+ * honest line, no pre-filled box, and the typed title and retake as the ways
+ * forward. A read that DOES answer a piece keeps its suggestions (that is the money
+ * path, and it is evidence, not a guess). On the cover door the same uncorroborated
+ * read stays searchable but is flagged `uncorroborated`, so its surface labels it
+ * "What we read on the photo" instead of "Search for".
  */
 export function scanFindView(
   read: ScanFindRead | null | undefined,
   corpus?: ReadonlyArray<OcrTitleCorpusEntry> | null,
 ): ScanFindView {
+  const photoKind: 'cover' | 'page' = read?.photoKind === 'page' ? 'page' : 'cover';
   if (!read) return viewOf('idle');
   if (read.failed === true) {
     const outcome = coverQueryFromScan({ ocrFailed: true, ocrAvailable: COVER_SCAN_OCR_AVAILABLE });
@@ -218,6 +291,12 @@ export function scanFindView(
       return viewOf('no-text', { quality: 'garbage', reason: result.reason, line });
     }
     const query = typeof result.query === 'string' ? result.query.trim() : '';
+    const corroborated = result.candidates.length > 0;
+    if (photoKind === 'page' && query.length > 0 && !corroborated) {
+      // THE OWNER'S CASE (v44 #59): words off a page of music, answering nothing
+      // we know. No query, no pre-filled box — the honest line instead.
+      return pageOfMusicView();
+    }
     return viewOf('ready', {
       quality: result.quality,
       reason: result.reason,
@@ -226,6 +305,7 @@ export function scanFindView(
       candidates: result.candidates,
       line: result.quality === 'good' ? SCAN_FIND_CONFIRM_HINT : SCAN_FIND_WEAK_LINE,
       canSearch: query.length > 0,
+      uncorroborated: query.length > 0 && !corroborated,
     });
   }
   const outcome = coverQueryFromScan({
@@ -235,6 +315,11 @@ export function scanFindView(
     ocrAvailable: COVER_SCAN_OCR_AVAILABLE,
   });
   const query = typeof outcome.query === 'string' ? outcome.query.trim() : '';
+  if (photoKind === 'page' && query.length > 0) {
+    // No geometry on a page door: there is nothing to corroborate the words
+    // against, so they are not offered as a query.
+    return pageOfMusicView();
+  }
   return viewOf(outcome.status, {
     // Without geometry the read is either words we can search or nothing we can
     // use: the v39 behaviour, labelled with the same vocabulary.
@@ -243,8 +328,23 @@ export function scanFindView(
     cleanedRead: query,
     line: outcome.line,
     canSearch: query.length > 0,
+    uncorroborated: query.length > 0,
   });
 }
+
+/**
+ * THE HONEST PAGE-OF-MUSIC STATE (v44 #59): the line, no words, no query, and the
+ * two ways forward the actions model already gives a garbage read (type the title,
+ * take the photo again) — the 09-28 no-dead-end rule.
+ */
+function pageOfMusicView(): ScanFindView {
+  return viewOf('no-text', {
+    quality: 'garbage',
+    reason: 'notation',
+    line: SCAN_FIND_PAGE_OF_MUSIC_LINE,
+  });
+}
+
 
 /** The words to actually search with, or null when there is nothing to run. */
 export function scanFindQuery(read: ScanFindRead | null | undefined): string | null {

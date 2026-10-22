@@ -50,12 +50,15 @@ import {
   SCAN_FIND_HINT,
   SCAN_FIND_MODERN_HINT,
   SCAN_FIND_NO_PAGE_LINE,
+  SCAN_FIND_NO_WORDS_LINE,
   SCAN_FIND_RAW_QUERY_NOTE,
   SCAN_FIND_READING_LINE,
   SCAN_FIND_RETAKE_CTA,
   SCAN_FIND_SEARCH_CTA,
+  SCAN_FIND_SEARCH_WORDS_CTA,
   SCAN_FIND_TYPED_LABEL,
   SCAN_FIND_TYPED_SEARCH_CTA,
+  SCAN_FIND_WHAT_WE_READ_LABEL,
   scanFindActions,
   scanFindView,
   type ScanFindView,
@@ -66,6 +69,13 @@ interface ScanFindSectionProps {
   pageUri: string | null;
   /** Hands the confirmed words to the host's ONE search surface. */
   onSearch: (query: string) => void;
+  /**
+   * WHAT WAS PHOTOGRAPHED (v44 #59). Defaults to 'cover'. A host that is showing a
+   * page of a scanned SCORE (the saved-scan viewer, an extra page in the scanner)
+   * passes 'page', and the same pure model then refuses an uncorroborated read a
+   * query instead of filling the box with the recogniser's debris.
+   */
+  photoKind?: 'cover' | 'page';
   /**
    * Opens a suggested piece. Optional so a host that has no piece page still
    * works: the suggestion then searches for that piece's own title instead
@@ -81,6 +91,7 @@ interface ScanFindSectionProps {
 export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
   pageUri,
   onSearch,
+  photoKind = 'cover',
   onOpenPiece,
   onRetake,
   corpus,
@@ -94,7 +105,8 @@ export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
   /**
    * Read the page's WORDS on this device. `readCoverText` reports its own failures
    * as a value rather than throwing, but a throw still lands in an honest state
-   * instead of a silent no-op.
+   * instead of a silent no-op. The photo's KIND goes with the read, so the one pure
+   * model can tell a title page from a page of music (v44 #59).
    */
   const read = useCallback(async () => {
     if (!pageUri) {
@@ -105,18 +117,18 @@ export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
     setReading(true);
     try {
       const result = await readCoverText(pageUri);
-      const next = scanFindView(result, corpus ?? null);
+      const next = scanFindView({ ...result, photoKind }, corpus ?? null);
       setView(next);
       // The field only ever carries words that could be a title — a garbage read
       // has none, and the user's own typing is what the garbage path asks for.
       setText(next.quality === 'garbage' ? '' : next.cleanedRead || next.query);
     } catch {
-      setView(scanFindView({ text: '', failed: true }));
+      setView(scanFindView({ text: '', failed: true, photoKind }));
       setText('');
     } finally {
       setReading(false);
     }
-  }, [corpus, pageUri]);
+  }, [corpus, pageUri, photoKind]);
 
   const actions = scanFindActions(view);
   const confirmed = text.trim();
@@ -189,10 +201,17 @@ export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
         </View>
       ) : null}
 
-      {/* ── THE WORDS THAT WERE READ (only when they could be a title) ──────── */}
+      {/* ── THE WORDS THAT WERE READ (only when they could be a title) ────────
+          v44 #59 — THE LABEL TELLS THE TRUTH. "Search for" is the title-page door:
+          the read answered something we know. A read we cannot vouch for is
+          labelled as what it is — the words the recogniser saw — and the control
+          below prints them, in bold, so the search the user is about to run is the
+          search they can read. */}
       {actions.showReadWords ? (
         <>
-          <Text style={styles.fieldLabel}>{SCAN_FIND_CONFIRM_LABEL}</Text>
+          <Text style={styles.fieldLabel}>
+            {view?.uncorroborated ? SCAN_FIND_WHAT_WE_READ_LABEL : SCAN_FIND_CONFIRM_LABEL}
+          </Text>
           <TextInput
             style={styles.field}
             value={text}
@@ -201,29 +220,30 @@ export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
             placeholderTextColor={theme.subtext}
             autoCorrect={false}
             autoCapitalize="none"
-            accessibilityLabel={SCAN_FIND_CONFIRM_LABEL}
+            accessibilityLabel={
+              view?.uncorroborated ? SCAN_FIND_WHAT_WE_READ_LABEL : SCAN_FIND_CONFIRM_LABEL
+            }
           />
           <Text style={styles.hint}>{SCAN_FIND_CONFIRM_HINT}</Text>
           {/* SECONDARY ON PURPOSE (owner 10-20): searching what the app read is a
               proposal the user confirms, never the red primary action. */}
-          {actions.offerReadSearch ? (
+          {actions.offerReadSearch && canSearch ? (
             <Pressable
-              style={({ pressed }) => [
-                styles.secondaryBtn,
-                !canSearch && styles.disabled,
-                pressed && styles.pressed,
-              ]}
-              onPress={() => {
-                if (!canSearch) return;
-                onSearch(confirmed);
-              }}
-              disabled={!canSearch}
+              style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
+              onPress={() => onSearch(confirmed)}
               accessibilityRole="button"
               accessibilityLabel={SCAN_FIND_SEARCH_CTA}
             >
-              <Text style={styles.secondaryBtnText}>{SCAN_FIND_SEARCH_CTA}</Text>
+              <Text style={styles.secondaryBtnText}>{SCAN_FIND_SEARCH_WORDS_CTA}</Text>
+              {/* THE WORDS IT WILL ACTUALLY SEARCH (v44 #59) — never an empty
+                  control that searches something the user cannot see. */}
+              <Text style={styles.searchWordsBold} numberOfLines={2}>
+                {confirmed}
+              </Text>
             </Pressable>
-          ) : null}
+          ) : (
+            <Text style={styles.hint}>{SCAN_FIND_NO_WORDS_LINE}</Text>
+          )}
         </>
       ) : null}
 
@@ -345,6 +365,18 @@ const baseStyles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   secondaryBtnText: { color: '#4ecdc4', fontSize: 14, fontWeight: '700' },
+  /* v44 #59 — THE WORDS THE CONTROL WILL SEARCH, IN BOLD. The owner's report: the
+     "Search these words" box "showed nothing in bold" — the words were in the
+     field above and the control said only its own label, so the one thing that
+     mattered (what will actually be searched) was invisible at the point of tap.
+     It is printed here, in the palette's own `text` token so it stays legible in
+     BOTH modes (v40 fix B's rule). */
+  searchWordsBold: {
+    color: '#eaeaff',
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 4,
+  },
   disabled: { opacity: 0.4 },
   pressed: { opacity: 0.7 },
 });

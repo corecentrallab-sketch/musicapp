@@ -87,6 +87,7 @@ import { mergeCatalogIntoDetail } from '../services/historyPiece';
 import { PieceDetailScreen } from './PieceDetailScreen';
 import { useHardwareBack } from '../hooks/useHardwareBack';
 import {
+  OCR_PREFILL_EMPTY_NOTE,
   OCR_PREFILL_SEARCH_CTA,
   OCR_PREFILL_WAITING_LINE,
   canConfirmOcrPrefill,
@@ -415,6 +416,17 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
       {prefillPending ? (
         <View style={styles.prefillCard}>
           <Text style={styles.prefillNote}>{ocrPrefillNote({ query, pending: true })}</Text>
+          {/* v44 #59 — THE WORDS THE CONTROL WILL SEARCH, PRINTED IN BOLD. The
+              owner's report: the "Search these words" box "showed nothing in
+              bold" — the words lived only in the field above, so at the moment of
+              tapping the user could not see what was about to be searched. They are
+              printed here, from the SAME `query` the control submits, so the search
+              shown is the search that runs. */}
+          {canConfirmOcrPrefill({ query, pending: true }) ? (
+            <Text style={styles.prefillWords} numberOfLines={3}>
+              {query}
+            </Text>
+          ) : null}
           {canConfirmOcrPrefill({ query, pending: true }) ? (
             <TouchableOpacity
               style={styles.prefillCta}
@@ -422,9 +434,19 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
               accessibilityRole="button"
               accessibilityLabel={OCR_PREFILL_SEARCH_CTA}
             >
-              <Text style={styles.prefillCtaText}>{OCR_PREFILL_SEARCH_CTA}</Text>
+              {/* The ink is the palette's accentInk, read INLINE: white on the red
+                  pill in BOTH modes. As a StyleSheet `#ffffff` it was repainted to
+                  the light palette's near-black text token and vanished on the red
+                  (v44 #59). */}
+              <Text style={[styles.prefillCtaText, { color: theme.accentInk }]}>
+                {OCR_PREFILL_SEARCH_CTA}
+              </Text>
             </TouchableOpacity>
-          ) : null}
+          ) : (
+            /* The honest EMPTY state: no words were read, so there is nothing to
+               search and nothing pretends otherwise. */
+            <Text style={styles.prefillNote}>{OCR_PREFILL_EMPTY_NOTE}</Text>
+          )}
         </View>
       ) : null}
 
@@ -584,6 +606,13 @@ const baseStyles = StyleSheet.create({
     color: '#cfe9ff',
     fontSize: 12,
     lineHeight: 17,
+  },
+  /* v44 #59 — the words this control will search, in bold, before the tap. */
+  prefillWords: {
+    color: '#eaeaff',
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 6,
   },
   prefillCta: {
     alignSelf: 'flex-start',
