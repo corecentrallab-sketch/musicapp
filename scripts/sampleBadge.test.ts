@@ -33,6 +33,8 @@ import {
   sampleBadgeTakesNoCopy,
 } from '../src/services/sampleBadge';
 import { PUBLIC_DOMAIN_ABC_SCORES } from '../src/data/abcScores';
+// v43 slice 2: the badge's rule is the score's own bar count, so the suite needs it.
+import { SAMPLE_EXCERPT_MAX_BARS, countAbcBars } from '../src/services/transposedScore';
 
 declare const process: { cwd(): string; exit(code: number): never };
 declare const require: (name: string) => any;
@@ -160,9 +162,16 @@ assertEq(
   'the state and the words agree on the one surface that can prove both',
 );
 
-console.log('\nsample badge — the bundled scores are all excerpts (the owner’s report)');
+console.log('\nsample badge — the bundled samples are badged, the full-length scores are not');
 for (const score of PUBLIC_DOMAIN_ABC_SCORES) {
-  assert(sampleBadgeLabel({ abc: score.abc }) !== null, `the bundled score “${score.title}” is badged as an excerpt`);
+  const bundledBars = countAbcBars(score.abc);
+  if (bundledBars <= SAMPLE_EXCERPT_MAX_BARS) {
+    assert(sampleBadgeLabel({ abc: score.abc }) !== null, `the bundled SAMPLE “${score.title}” is badged as an excerpt (${bundledBars} bars)`);
+  } else {
+    // v43 slice 2: a whole melody is not an excerpt, so it carries no sample badge —
+    // the honest length line ("16 bars") says how long it is instead.
+    assert(sampleBadgeLabel({ abc: score.abc }) === null, `the FULL-LENGTH “${score.title}” is not badged as an excerpt (${bundledBars} bars)`);
+  }
 }
 assert(PUBLIC_DOMAIN_ABC_SCORES.length >= 8, `the bundle still holds its ${PUBLIC_DOMAIN_ABC_SCORES.length} scores (floor)`);
 
