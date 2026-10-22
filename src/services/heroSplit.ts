@@ -320,10 +320,31 @@ export function tipBubbleWidth(screenWidth: number): number {
 export function tipBubbleLeft(screenWidth: number): number {
   return rowRightEdge(screenWidth) - tipBubbleWidth(screenWidth);
 }
-/** The arrow is placed at the hum panel's centre, not at the bubble's centre. */
+/**
+ * How far the arrow's own tip must stay inside the bubble's rounded ends.
+ * The bubble radius is 14 dp; 10 dp keeps the 18 dp arrow inside the flat part of
+ * the edge on the narrowest shipped width.
+ */
+export const TIP_ARROW_EDGE_INSET = 10;
+
+/**
+ * The arrow is placed at the HUM PANEL'S CENTRE, not at the bubble's centre
+ * (spec §7: "18 dp wide × 11 dp tall triangle, pointing down at x = 302 dp — the
+ * hum panel's centre"). The two only coincide when the bubble is exactly as wide
+ * as the hum panel; on the 412 dp reference screen the 176 dp bubble is narrower
+ * than the 180 dp panel, so the centres sit 2 dp apart — which is why this is
+ * computed from `humPanelCentre` and not from the bubble, and why the arrow is
+ * clamped inside the bubble (it may never hang over the bubble's edge).
+ */
 export function tipArrowLeftInBubble(screenWidth: number): number {
-  return tipBubbleWidth(screenWidth) / 2 - SPLIT_TIP.arrowWidth / 2;
+  const width = tipBubbleWidth(screenWidth);
+  const desired =
+    humPanelCentre(screenWidth) - tipBubbleLeft(screenWidth) - SPLIT_TIP.arrowWidth / 2;
+  const min = TIP_ARROW_EDGE_INSET;
+  const max = width - TIP_ARROW_EDGE_INSET - SPLIT_TIP.arrowWidth;
+  return Math.max(min, Math.min(max, desired));
 }
+/** Where the arrow's tip lands, in screen dp — the hum panel's centre (spec §7). */
 export function tipArrowX(screenWidth: number): number {
   return tipBubbleLeft(screenWidth) + tipArrowLeftInBubble(screenWidth) + SPLIT_TIP.arrowWidth / 2;
 }
@@ -489,9 +510,18 @@ export function equalSplitHeroWired(home: string, panel: string): boolean {
   if (maskedPanel.indexOf('split-core-listen-320.png') < 0) return false;
   if (maskedPanel.indexOf('split-core-hum-320.png') < 0) return false;
   if (maskedPanel.indexOf('SPLIT_CORE_WIDTH') < 0) return false;
-  // Both variants really branch inside the one component.
-  if (maskedPanel.indexOf("variant === 'listen'") < 0) return false;
-  if (maskedPanel.indexOf("variant === 'hum'") < 0) return false;
+  // Both variants really branch inside the ONE component: the core image and the
+  // pressed fill are chosen PER VARIANT. HeroSplitPanel does that with keyed
+  // lookups (`CORE_SOURCE[variant]`, `splitPanelFill(variant, pressed)`) rather
+  // than an `if (variant === …)` ladder — both forms are honest, so either one
+  // satisfies the contract; what must never happen is a hand-copied variant.
+  if (!/variant:\s*SplitVariant/.test(maskedPanel)) return false;
+  const branchesCore =
+    maskedPanel.indexOf('CORE_SOURCE[variant]') >= 0 || maskedPanel.indexOf("variant === 'hum'") >= 0;
+  const branchesFill =
+    maskedPanel.indexOf('splitPanelFill(variant,') >= 0 ||
+    maskedPanel.indexOf('SPLIT_PALETTES[variant]') >= 0;
+  if (!branchesCore || !branchesFill) return false;
   return true;
 }
 
@@ -523,11 +553,19 @@ export function splitPanelPressIsSpec(panel: string): boolean {
  *  · reduced motion respected, and the tip announced for screen readers;
  *  · NEVER a scrim (a scrim would dim the peer and break the equality) and never
  *    over the Listen panel (the bubble is right-aligned over the hum panel only).
+ *
+ * THREE sources, because the tip genuinely spans three files: the one-time key is
+ * read/written by the SCREEN (`home`), the bubble is `tip`, and the pulse rings
+ * are painted INSIDE the hum panel (`panel`) — where they are clipped to the
+ * panel, which is what keeps them off Listen. `panel` has no default on purpose:
+ * a caller that forgets it gets `false`, not a silently shortened guard.
  */
-export function splitTipIsOneTimeAndSafe(home: string, tip: string): boolean {
+export function splitTipIsOneTimeAndSafe(home: string, tip: string, panel: string): boolean {
   const maskedHome = maskComments(home);
   const maskedTip = maskComments(tip);
+  const maskedPanel = maskComments(panel ?? '');
   if (maskedHome.length < 5000 || maskedTip.length < 800) return false;
+  if (maskedPanel.length < 1500) return false;
   // ── persistence: one key, read then written, one-time per install ──
   if (maskedHome.indexOf('SPLIT_TIP.key') < 0) return false;
   if (maskedHome.indexOf('AsyncStorage.getItem(SPLIT_TIP.key)') < 0) return false;
@@ -540,7 +578,9 @@ export function splitTipIsOneTimeAndSafe(home: string, tip: string): boolean {
     // the hum panel's own press dismisses it (either order is honest)
     if (maskedHome.indexOf('dismissSplitTip') < 0) return false;
   }
-  if (maskedHome.indexOf('onTouchStart=') < 0) return false;
+  // The band's first touch is the "tap anywhere" dismissal (the hum panel sits
+  // inside that band, so a hum press dismisses it too, by the same handler).
+  if (!/onTouchStart=\{[\s\S]{0,120}?dismissSplitTip/.test(maskedHome)) return false;
   // ── a11y: announced, and reduced motion respected ──
   if (maskedHome.indexOf('announceForAccessibility(HOME_SPLIT_HUM_TIP)') < 0) return false;
   if (maskedHome.indexOf('isReduceMotionEnabled') < 0) return false;
@@ -552,9 +592,10 @@ export function splitTipIsOneTimeAndSafe(home: string, tip: string): boolean {
   // No full-screen dim: any scrim would carry a translucent BLACK fill.
   if (/rgba\(\s*0\s*,\s*0\s*,\s*0/.test(maskedTip)) return false;
   if (/backgroundColor: '#000/.test(maskedTip)) return false;
-  // The rings live in the panel, clipped to it, staggered (spec §7).
-  if (maskedTip.indexOf('SPLIT_TIP.ringOffsets') < 0) return false;
-  if (maskedTip.indexOf('SPLIT_TIP.staggerMs') < 0) return false;
+  // The rings live in the PANEL, clipped to it, staggered (spec §7).
+  if (maskedPanel.indexOf('SPLIT_TIP.ringOffsets') < 0) return false;
+  if (maskedPanel.indexOf('SPLIT_TIP.staggerMs') < 0) return false;
+  if (maskedPanel.indexOf('SPLIT_TIP.loopMs') < 0) return false;
   return true;
 }
 

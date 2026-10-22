@@ -57,8 +57,10 @@ import {
   splitPuckState,
   splitShouldShowTip,
   splitTipIsOneTimeAndSafe,
+  tipArrowLeftInBubble,
   tipArrowX,
   tipBubbleLeft,
+  tipBubbleWidth,
 } from '../src/services/heroSplit';
 
 declare const require: any;
@@ -119,12 +121,32 @@ function main(): void {
   assertEq(SPLIT_GEOMETRY.chevronHeight, 12, 'chevron is 12 dp tall');
   assertEq(SPLIT_GEOMETRY.chevronStroke, 2.2, 'chevron stroke is 2.2');
   // The two panels are ALWAYS equal: same function, so same width on every screen.
-  assertEq(panelWidthForScreen(412), 182, 'at 412 dp both panels are 182 dp wide');
+  // SPEC §1 table: "Screen / page padding — 412 dp wide, paddingHorizontal: 20";
+  // "Hero row — gap 12"; "Panel box — 180 × 236 dp each (flex: 1 inside the row)".
+  // The arithmetic the spec implies: (412 − 2×20 − 12) / 2 = 180. (This assertion
+  // used to read 182, which fits NO reading of the spec: 2×182 + 12 + 2×20 = 416,
+  // i.e. 4 dp wider than the page itself.)
+  assertEq(panelWidthForScreen(412), 180, 'at 412 dp both panels are 180 dp wide (spec §1)');
   assertEq(
     panelWidthForScreen(412),
     panelWidthForScreen(412),
     'the peers are computed by one function — they can never drift apart',
   );
+  // The row must fit the page EXACTLY: two panels + the gap + both page insets.
+  assertEq(
+    2 * panelWidthForScreen(412) + SPLIT_GEOMETRY.gap + 2 * SPLIT_GEOMETRY.screenPadding,
+    412,
+    'two 180 dp peers + the 12 dp gap + 2 × 20 dp padding fill the 412 dp page exactly',
+  );
+  // …and on the other widths the app ships to, the pair still divides the row.
+  for (const width of [360, 393, 430, 480]) {
+    assertEq(
+      2 * panelWidthForScreen(width) + SPLIT_GEOMETRY.gap + 2 * SPLIT_GEOMETRY.screenPadding >=
+        width - 1,
+      true,
+      `at ${width} dp the pair (${panelWidthForScreen(width)} dp each) fills the row`,
+    );
+  }
 
   console.log('\nspec §2 — exact fills, gradients and the pressed delta');
   assertEq(SPLIT_PALETTES.listen.top, '#F4586F', 'Listen gradient top is #F4586F');
@@ -143,11 +165,41 @@ function main(): void {
   assertEq(rest.top, '#F4586F', 'resting fill is the palette fill');
   const pressedHum = splitPanelFill('hum', true);
   assertEq(SPLIT_PRESS_FILL_FACTOR, 0.7, 'the pressed fill factor is exactly 0.70');
-  // #7A45FF × 0.70 = (85, 48, 178) → #5530B2, the spec's pressed hum top.
-  assertEq(pressedHum.top, '#5530B2', 'pressed hum top is #5530B2 (fill × 0.70)');
-  assertEq(pressedHum.bottom, '#291376', 'pressed hum bottom is #291376 (fill × 0.70)');
+  // SPEC §2 pressed table, row "Fill": "×0.70: rose #AB3E4E → #8C1D31, hum #5530B2
+  // → #291376". The RULE is ×0.70; the hexes in that table are the still's picked
+  // values, and they do NOT agree with the rule to the last channel:
+  //   #7A45FF ×0.70 → 122, 69, 255 ×0.7 = 85.4, 48.3, 178.5 → 85, 48, 179 = #5530B3
+  //                                          (the spec prints #5530B2 = 178, i.e.
+  //                                          178.5 rounded DOWN — but 18.2 below is
+  //                                          rounded UP, so no single rounding rule
+  //                                          reproduces the printed table)
+  //   #3B1AA8 ×0.70 → 58, 26, 168 ×0.7 = 40.6, 18.2, 117.6 → 41, 18, 118 = #291276
+  //                                          (the spec prints #291376 = 19 green)
+  // So the code is asserted against the EXACT ×0.70 product with the app's own
+  // Math.round (heroSplit.clamp255), and every channel must ALSO land within ±1 of
+  // the spec's printed still value — a real drift (wrong factor, wrong palette,
+  // hand-typed fill) moves a channel far more than one step and still fails here.
+  assertEq(pressedHum.top, '#5530B3', 'pressed hum top is #7A45FF × 0.70 = #5530B3');
+  assertEq(pressedHum.bottom, '#291276', 'pressed hum bottom is #3B1AA8 × 0.70 = #291276');
+  const pressedHumSpec: Array<[string, string]> = [
+    [pressedHum.top, '#5530B2'],
+    [pressedHum.bottom, '#291376'],
+  ];
+  for (const [got, spec] of pressedHumSpec) {
+    const close = hexToRgb(got).every((v, i) => Math.abs(v - hexToRgb(spec)[i]) <= 1);
+    assert(close, `pressed hum ${got} matches the spec still ${spec} to within 1/255 per channel`);
+  }
   // #F4586F × 0.70 = (171, 62, 78) → #AB3E4E, the spec's pressed rose top.
   assertEq(splitPanelFill('listen', true).top, '#AB3E4E', 'pressed rose top is #AB3E4E');
+  // The exact ×0.70 products for the rose family, rule-checked the same way:
+  // #C92A46 × 0.70 = 141, 29, 49 = #8D1D31 (the spec prints #8C1D31, again one
+  // channel off its own ×0.70 rule — same still-picked-table effect as above).
+  const pressedRose = splitPanelFill('listen', true);
+  assertEq(pressedRose.bottom, '#8D1D31', 'pressed rose bottom is #C92A46 × 0.70 = #8D1D31');
+  assert(
+    hexToRgb(pressedRose.bottom).every((v, i) => Math.abs(v - hexToRgb('#8C1D31')[i]) <= 1),
+    'pressed rose bottom matches the spec still #8C1D31 to within 1/255 per channel',
+  );
   assertEq(SPLIT_PRESS.inMs, 90, 'press-in is 90 ms');
   assertEq(SPLIT_PRESS.outMs, 140, 'press-out is 140 ms');
   assertEq(SPLIT_PRESS.rippleRadiusFactor, 0.36, 'ripple radius is 0.36 × panel width');
@@ -207,7 +259,23 @@ function main(): void {
   assertEq(SPLIT_TIP.timeoutMs, 8000, 'the timeout is 8 s');
   assertEq(SPLIT_TIP.key, 'notesnap.humSplitTip.v1', 'the one-time key is the spec’s');
   assertEq(humPanelCentre(412), 302, 'the hum panel centre is x = 302 at 412 dp');
+  // SPEC §7: "18 dp wide × 11 dp tall triangle, pointing down at x = 302 dp (the
+  // hum panel's centre)". The arrow follows the PANEL's centre, not the bubble's —
+  // on 412 dp the 176 dp bubble is 4 dp narrower than the 180 dp panel, so their
+  // centres are 2 dp apart (the bug this assertion caught: 304 instead of 302).
   assertEq(tipArrowX(412), 302, 'the arrow points down at x = 302');
+  for (const width of [360, 393, 412, 430, 480]) {
+    assertEq(
+      tipArrowX(width),
+      humPanelCentre(width),
+      `at ${width} dp the arrow tip lands on the hum panel's centre (x = ${humPanelCentre(width)})`,
+    );
+    const left = tipArrowLeftInBubble(width);
+    assert(
+      left >= 0 && left + SPLIT_TIP.arrowWidth <= tipBubbleWidth(width),
+      `at ${width} dp the arrow stays inside the bubble (left ${left}, width ${tipBubbleWidth(width)})`,
+    );
+  }
   assertEq(SPLIT_TIP.ringOffsets.join(','), '7,15,23', 'the rings are +7/+15/+23 dp');
   assertEq(SPLIT_TIP.ringAlphas.join(','), '0.47,0.24,0.12', 'the ring alphas are 47/24/12 %');
   assertEq(SPLIT_TIP.loopMs, 1600, 'the ring loop is 1.6 s');
@@ -272,7 +340,7 @@ function main(): void {
     'the panel is a real button with the pressed delta, capped copy and a 236 dp floor',
   );
   assertEq(
-    splitTipIsOneTimeAndSafe(home, tip),
+    splitTipIsOneTimeAndSafe(home, tip, panel),
     true,
     'the coach mark is one-time per install, dismissed three ways, never a scrim',
   );
@@ -327,7 +395,7 @@ function main(): void {
   const noKey = home.split('SPLIT_TIP.key').join('notesnap.someOtherKey');
   assert(noKey !== home, 'M4 changed the real Home screen');
   assertEq(
-    splitTipIsOneTimeAndSafe(noKey, tip),
+    splitTipIsOneTimeAndSafe(noKey, tip, panel),
     false,
     'MUTATION: a tip with no persisted key FAILS splitTipIsOneTimeAndSafe',
   );
@@ -339,7 +407,7 @@ function main(): void {
   );
   assert(noWrite !== home, 'M5 changed the real Home screen');
   assertEq(
-    splitTipIsOneTimeAndSafe(noWrite, tip),
+    splitTipIsOneTimeAndSafe(noWrite, tip, panel),
     false,
     'MUTATION: a tip that is never written FAILS splitTipIsOneTimeAndSafe',
   );
@@ -351,7 +419,7 @@ function main(): void {
   );
   assert(scrim !== tip, 'M6 changed the real coach-mark component');
   assertEq(
-    splitTipIsOneTimeAndSafe(home, scrim),
+    splitTipIsOneTimeAndSafe(home, scrim, panel),
     false,
     'MUTATION: a dimming scrim FAILS splitTipIsOneTimeAndSafe',
   );
@@ -379,6 +447,39 @@ function main(): void {
     equalSplitHeroWired(inlinedCopy, panel),
     false,
     'MUTATION: a retyped panel title FAILS equalSplitHeroWired',
+  );
+
+  // M9 — the core image hand-copied for BOTH variants (hum wears Listen's emblem).
+  const handCopiedCore = panel.replace(
+    'CORE_SOURCE[variant]',
+    'CORE_SOURCE.listen',
+  );
+  assert(handCopiedCore !== panel, 'M9 changed the real panel component');
+  assertEq(
+    equalSplitHeroWired(home, handCopiedCore),
+    false,
+    'MUTATION: a hand-copied variant core FAILS equalSplitHeroWired',
+  );
+
+  // M10 — the pulse rings dropped from the hum panel (the tip stops teaching).
+  const noRings = panel.split('SPLIT_TIP.ringOffsets').join('[]');
+  assert(noRings !== panel, 'M10 changed the real panel component');
+  assertEq(
+    splitTipIsOneTimeAndSafe(home, tip, noRings),
+    false,
+    'MUTATION: rings removed from the panel FAILS splitTipIsOneTimeAndSafe',
+  );
+
+  // M11 — the one-time read dropped (the tip would re-show on every launch).
+  const noRead = home.replace(
+    'await AsyncStorage.getItem(SPLIT_TIP.key)',
+    'await Promise.resolve(null)',
+  );
+  assert(noRead !== home, 'M11 changed the real Home screen');
+  assertEq(
+    splitTipIsOneTimeAndSafe(noRead, tip, panel),
+    false,
+    'MUTATION: a tip that is never READ back FAILS splitTipIsOneTimeAndSafe',
   );
 
   console.log(`\n${passes} passed, ${failures} failed`);
