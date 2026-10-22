@@ -28,6 +28,7 @@ import { useThemedStyles } from '../services/themeStore';
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { AbcScoreView } from './AbcScoreView';
+import { ExpandScoreButton } from './ExpandScoreButton';
 import { autoCleanTake } from '../services/melodyCapture';
 import {
   STAFF_CAPTION,
@@ -96,6 +97,15 @@ export interface TakeStaffCardProps {
    * A caller that genuinely wants a self-scrolling staff can still pass `true`;
    * nothing does today. */
   interactive?: boolean;
+  /**
+   * THE FULL-SCREEN EXPANDER (v43 fix batch, slice 3, item E4). When the host can
+   * open a full-screen reading window for this take, it hands the opener here and
+   * the card shows the one shared affordance top-right. One change covers every
+   * surface that draws a take (the capture page, the practice-video page, the take
+   * editor's read-only original view): none of them has to re-invent the button.
+   * Without it the card is exactly what it was.
+   */
+  onExpand?: (() => void) | null;
 }
 
 export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
@@ -104,6 +114,7 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
   chordHonestLine,
   title,
   interactive = false,
+  onExpand,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   const rows = useMemo(() => {
@@ -126,7 +137,10 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
 
   return (
     <View style={styles.card}>
-      <Text style={styles.caption}>{STAFF_CAPTION}</Text>
+      <View style={styles.cardHeader}>
+        <Text style={styles.caption}>{STAFF_CAPTION}</Text>
+        {onExpand && hasStaff ? <ExpandScoreButton onPress={onExpand} testID="take-staff-expand" /> : null}
+      </View>
 
       {/* ── THE CHORD ROW (above the staff, as the notation would carry it) ──
           Always the take's own SUGGESTED chords; the editor is where a chord
@@ -198,7 +212,13 @@ const baseStyles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
   },
-  caption: { color: '#7d7d99', fontSize: 11, lineHeight: 16 },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+  },
+  caption: { color: '#7d7d99', fontSize: 11, lineHeight: 16, flex: 1, paddingRight: 8 },
   chordRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

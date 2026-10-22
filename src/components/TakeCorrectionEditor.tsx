@@ -103,6 +103,9 @@ import {
   shouldStartEditorDrag,
 } from '../services/editorGestures';
 import { AbcScoreView } from './AbcScoreView';
+import { ExpandScoreButton } from './ExpandScoreButton';
+import { FullScreenScore, useFullScreenScoreBox } from './FullScreenScore';
+import { SCORE_EXPAND_READONLY_LABEL } from '../services/scoreExpand';
 import { TakeStaffCard } from './TakeStaffCard';
 import { TakePreviewSection } from './TakePreviewSection';
 import {
@@ -243,15 +246,27 @@ interface EditorGroupHeaderProps {
   label: string;
   /** The sub-label under it, from the editor's exported constant. */
   sub: string;
+  /**
+   * THE FULL-SCREEN EXPANDER (v43 slice 3, item E3): when the group carries a
+   * staff, the header hosts the one shared affordance. It is READ-ONLY — the
+   * expanded staff draws the same notation, and every edit still happens on the
+   * lane inside this editor (which stays mounted underneath).
+   */
+  onExpand?: (() => void) | null;
 }
 
-const EditorGroupHeader: React.FC<EditorGroupHeaderProps> = ({ num, label, sub }) => {
+const EditorGroupHeader: React.FC<EditorGroupHeaderProps> = ({ num, label, sub, onExpand }) => {
   const { styles } = useThemedStyles(baseStyles);
   return (
     <View style={styles.groupHeader}>
-      <Text style={styles.groupLabel}>
-        {num} · {label}
-      </Text>
+      <View style={styles.groupHeaderRow}>
+        <Text style={styles.groupLabel}>
+          {num} · {label}
+        </Text>
+        {onExpand ? (
+          <ExpandScoreButton onPress={onExpand} label={SCORE_EXPAND_READONLY_LABEL} testID="take-editor-expand" />
+        ) : null}
+      </View>
       <Text style={styles.groupSub}>{sub}</Text>
       <View style={styles.groupRule} />
     </View>
@@ -269,6 +284,15 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   onClose,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
+  /**
+   * THE FULL-SCREEN READING WINDOW (v43 slice 3, item E3). It shows the SAME staff
+   * this page draws (`staffAbc`, the take's own cleaned notation) in the same ink
+   * and on the same paper; it is read-only on purpose, because every edit belongs
+   * to the lane below and a second editing surface would be a second source of
+   * truth for the take.
+   */
+  const [scoreExpanded, setScoreExpanded] = useState(false);
+  const expandBoxHeight = useFullScreenScoreBox();
   const [state, setState] = useState<TakeEditorState>(() => createEditorState(take));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [chordIndex, setChordIndex] = useState<number | null>(null);
@@ -816,6 +840,7 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
             num="1"
             label={EDITOR_GROUP_FIX_LABEL}
             sub={EDITOR_GROUP_FIX_SUB}
+            onExpand={() => setScoreExpanded(true)}
           />
           {/* 1. THE STAFF — the take as notation, redrawn from the CURRENT notes.
               DECORATIVE: it is drawn in a WebView, and a WebView swallows the
@@ -1213,6 +1238,7 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
                 chordHonestLine={originalChords.length > 0 ? null : EDITOR_NO_CHORDS_LINE}
                 title={EDITOR_ORIGINAL_TITLE}
                 interactive={false}
+                onExpand={() => setScoreExpanded(true)}
               />
               <View style={styles.originalNote}>
                 <Text style={styles.viewNote}>{editorViewNote(view)}</Text>
@@ -1363,6 +1389,30 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
       midiLine={midiLine}
       onClose={() => setSendOpen(false)}
     />
+    {/* THE FULL-SCREEN READING WINDOW (v43 slice 3, item E3) — a SIBLING of the
+        editor's modal for the same reason the sheets are: BACK must close only
+        what the user opened. It draws the SAME staff this page draws (`staffAbc`,
+        same ink, same paper) and hands it the modal's own viewport box, so a long
+        take lands in the renderer's `self-scroll` band and every bar is reachable.
+        READ-ONLY: no lane, no chord editor — editing stays on the page underneath,
+        which is still mounted with all of its state. */}
+    <FullScreenScore
+      visible={visible && scoreExpanded}
+      onClose={() => setScoreExpanded(false)}
+      title={EDITOR_TITLE}
+      subtitle={SCORE_EXPAND_READONLY_LABEL}
+    >
+      <ScrollView contentContainerStyle={styles.expandBody}>
+        <AbcScoreView
+          abc={staffAbc}
+          ink={TAKE_STAFF_CLEANED_INK}
+          background={TAKE_STAFF_PAPER}
+          interactive={false}
+          wholeWork
+          viewportHeight={expandBoxHeight}
+        />
+      </ScrollView>
+    </FullScreenScore>
     </>
   );
 };
@@ -1643,6 +1693,12 @@ const baseStyles = StyleSheet.create({
   // divider. Colours come from the same tokens the page already uses (`subtext`,
   // `border`), so both themes repaint from ONE StyleSheet (services/themeApply).
   groupHeader: { marginTop: 32, marginBottom: 12 },
+  groupHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  expandBody: { flexGrow: 1, padding: 8 },
   groupLabel: {
     color: '#7d7d99',
     fontSize: 11,

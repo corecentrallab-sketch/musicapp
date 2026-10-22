@@ -52,6 +52,7 @@
  *     generated notation for the song (standing rule).
  */
 import { useThemedStyles } from '../services/themeStore';
+import { ExpandScoreButton } from './ExpandScoreButton';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -129,6 +130,13 @@ export interface MelodyCaptureWindowProps {
   exportKeyLine?: string | null;
   /** The take drawn as notation (v33 §C) — built by the flow, rendered here. */
   staff?: React.ReactNode;
+  /**
+   * THE FULL-SCREEN EXPANDER (v43 slice 3, item E6). The window is already nearly
+   * the whole screen, but the take's staves inside it are still card-width; the
+   * flow hands its opener here and the header shows the one shared affordance, so
+   * a captured melody can be read big without leaving the window.
+   */
+  onExpand?: (() => void) | null;
   /** Copy owned by the hosting flow (the mode-naming lines it must render). */
   copy: MelodyWindowCopy;
   /** The flow's own notices (its error cards, the read-again action). */
@@ -164,6 +172,7 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
   exportNote,
   exportKeyLine,
   staff,
+  onExpand,
   copy: text,
   children,
 }) => {
@@ -180,6 +189,7 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
           <Text style={styles.backText}>{recording ? '✕ Cancel' : '← Back'}</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{CAPTURE_WINDOW_TITLE}</Text>
+        {onExpand && staff ? <ExpandScoreButton onPress={onExpand} testID="capture-window-expand" /> : null}
       </View>
 
       {/* THE CAPTURE-ONLY RULE, ON THE SURFACE (brief §B.1). The user has to be
