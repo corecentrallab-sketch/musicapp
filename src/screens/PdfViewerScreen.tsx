@@ -19,6 +19,12 @@ import {
 import { useAutoScroll } from '../hooks/useAutoScroll';
 import { usePageTurnSpeed } from '../hooks/usePageTurnSpeed';
 import { AutoScrollControl } from '../components/AutoScrollControl';
+// THE FULL-SCREEN SCORE, IN PLACE (v43 fix batch, slice 3, item E11). A PDF page
+// is the case where full screen helps most, and a second `<Pdf>` would hold a
+// second decoded document in memory — so this surface goes IMMERSIVE instead:
+// the same native page keeps its place, and only the chrome around it goes.
+import { ExpandScoreButton } from '../components/ExpandScoreButton';
+import { SCORE_EXPAND_CLOSE_LABEL } from '../services/scoreExpand';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PdfViewer'>;
 
@@ -49,6 +55,13 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
   const [pageCount, setPageCount] = useState(0);
   const [failed, setFailed] = useState(false);
   const [viewWidth, setViewWidth] = useState(0);
+  /**
+   * IN-PLACE FULL SCREEN (v43 slice 3, item E11). NOT a second viewer: the SAME
+   * `<Pdf>` instance stays mounted at the SAME `page`, so the user's place and the
+   * document's decoded state are untouched — only the auto-scroll bar, the page
+   * footer and the note row are hidden while it is on.
+   */
+  const [immersive, setImmersive] = useState(false);
 
   // Auto-scroll (BPM-linked): the hook owns the timer and the toolbar renders
   // its state; this screen only supplies the page turner.
@@ -200,16 +213,19 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
           disabled play button on a one-page PDF reads as a broken feature. One
           page now says so plainly; zero pages (still loading) renders neither. */}
       {pageCount >= 2 ? (
+        immersive ? null : (
         <AutoScrollControl
           autoScroll={autoScroll}
           disabled={pageCount < 2}
           speedProfiles={speedProfiles}
         />
+        )
       ) : pageCount === 1 ? (
-        <Text style={styles.autoScrollNote}>{PDF_NO_AUTOSCROLL_LINE}</Text>
+        immersive ? null : <Text style={styles.autoScrollNote}>{PDF_NO_AUTOSCROLL_LINE}</Text>
       ) : null}
 
       {/* Page indicator + controls */}
+      {immersive ? null : (
       <View style={styles.footer}>
         <Pressable
           style={[styles.footerButton, page <= 1 && styles.footerButtonDisabled]}
@@ -240,6 +256,28 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
           <Ionicons name="chevron-down" size={20} color={theme.text} />
         </Pressable>
       </View>
+      )}
+
+      {/* THE EXPANDER (v43 slice 3, item E11) — the shared affordance, top-right,
+          floating over the page so it is reachable on a long document. */}
+      {!immersive ? (
+        <View style={styles.expandDock}>
+          <ExpandScoreButton onPress={() => setImmersive(true)} testID="pdf-expand" />
+        </View>
+      ) : (
+        <View style={styles.expandDock}>
+          <Pressable
+            style={styles.immersiveExit}
+            onPress={() => setImmersive(false)}
+            accessibilityRole="button"
+            accessibilityLabel={SCORE_EXPAND_CLOSE_LABEL}
+            testID="pdf-expand-exit"
+            hitSlop={8}
+          >
+            <Ionicons name="contract-outline" size={20} color={theme.text} />
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 };
@@ -248,6 +286,22 @@ const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#10101c',
+  },
+  /** The floating expand / exit control (v43 slice 3, item E11). */
+  expandDock: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+  },
+  immersiveExit: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 22,
+    backgroundColor: '#16213e',
+    borderWidth: 1,
+    borderColor: '#0f3460',
   },
   pdf: {
     flex: 1,

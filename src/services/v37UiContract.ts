@@ -44,7 +44,7 @@
 import { maskComments } from './modalBackContract';
 // v42 fix A re-pointed the notation-editor box guard below onto the whole-work
 // contract the reader already uses (services/uxrV42Contract.ts).
-import { editorScoreIsWholeWork } from './uxrV42Contract';
+import { abcScoreStaffTags, editorScoreIsWholeWork } from './uxrV42Contract';
 
 /** The page scroller's own style — what makes it THE page scroller. */
 export const PAGE_SCROLLER_STYLE = 'style={styles.page}';
@@ -266,12 +266,45 @@ export function scoreViewerReportsItsOwnHeight(abcViewSource: string): boolean {
  * both ends: the band (no ceiling) AND the v36 floor (a box that cannot
  * collapse — "the sheet wouldn't open"). A band with no floor would be the v36
  * bug coming back, so the floor is asserted here rather than assumed.
+ *
+ * v43 slice 3 added a second staff (the full-screen window's), so the band half
+ * is asserted PER INSTANCE below — every <AbcScoreView> in the editor carries
+ * `wholeWork`, the newest one is handed the window's `viewportHeight`, and the
+ * page staff is still really inside the floored box.
  */
 export function notationEditorGrowsTheScoreBox(notationSource: string): boolean {
   if (!editorScoreIsWholeWork(notationSource)) return false;
   const src = maskComments(notationSource);
   if (src.indexOf('styles.scoreStaffBox') < 0) return false;
+  // v43 slice 3 (item E1): the editor now mounts a SECOND <AbcScoreView> — the one
+  // inside the full-screen window — so "THE staff has the band" is no longer a
+  // single-tag fact. Same move as `transposedCopyIsWhatReopens` (74e71b8): the rule
+  // is PER INSTANCE. Every staff this screen renders carries the whole-work band
+  // (a bandless staff is the v42 fix A clip, wherever it mounts), at least one
+  // staff exists, and the full-screen window's staff is handed its own viewport box
+  // (`viewportHeight`, from `useFullScreenScoreBox`) — without it the window sizes
+  // the staff from its own flex, not from the window.
+  const staves = abcScoreStaffTags(src);
+  if (staves.length < 1) return false;
+  if (!staves.every((tag) => /\swholeWork\b/.test(tag))) return false;
+  if (!staves.some((tag) => /\sviewportHeight=\{/.test(tag))) return false;
+  // …and the PAGE staff is really inside the box the floor protects: deleting the
+  // in-page <AbcScoreView> leaves the window's staff behind, and a guard that
+  // passed on that leftover would be vacuous about the sheet the user plays from.
+  if (!staffBoxHoldsAStaff(src)) return false;
   return /minHeight:\s*SCORE_STAFF_MIN_HEIGHT/.test(src);
+}
+
+/** The `style={styles.scoreStaffBox}` box still holds a staff as its first child. */
+export function staffBoxHoldsAStaff(source: string): boolean {
+  const box = source.indexOf('style={styles.scoreStaffBox}');
+  if (box < 0) return false;
+  const open = source.indexOf('>', box);
+  if (open < 0) return false;
+  const staff = source.indexOf('<AbcScoreView', open + 1);
+  if (staff < 0) return false;
+  const close = source.indexOf('</View>', open + 1);
+  return close < 0 || staff < close;
 }
 
 /**

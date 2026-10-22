@@ -26,6 +26,9 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import { AbcScoreView } from '../components/AbcScoreView';
+import { ExpandScoreButton } from '../components/ExpandScoreButton';
+import { FullScreenScore, useFullScreenScoreBox } from '../components/FullScreenScore';
+import { canExpandScore, scoreExpandSubtitle } from '../services/scoreExpand';
 import { SampleBadge } from '../components/SampleBadge';
 import { ScoreLengthLine } from '../components/ScoreLengthLine';
 import {
@@ -88,6 +91,14 @@ function scoreFromAbc(abc: string, title: string): AbcScore {
 
 export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
+  /**
+   * THE FULL-SCREEN READING WINDOW (v43 slice 3, item E1). The card's staff is
+   * readable but narrow; this opens the SAME transposed notation at full size.
+   * The box it hands the renderer is the modal's own viewport, so a full-length
+   * piece scrolls inside the window instead of clipping (services/scoreExpand).
+   */
+  const [scoreExpanded, setScoreExpanded] = useState(false);
+  const expandBoxHeight = useFullScreenScoreBox();
   const [selected, setSelected] = useState<AbcScore | null>(null);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -268,6 +279,7 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
   }
 
   return (
+    <>
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.screenSubtitle}>
         Transpose a public-domain score into a new key and save the copy to
@@ -378,12 +390,26 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
       {/* Live rendered score */}
       <View style={styles.scoreCard}>
         <View style={styles.scoreHeader}>
-          <Text style={styles.scoreTitle} numberOfLines={1}>
-            {selected.title}
-          </Text>
-          <Text style={styles.scoreComposer} numberOfLines={1}>
-            {selected.composer}
-          </Text>
+          <View style={styles.scoreHeaderRow}>
+            <View style={styles.scoreHeaderText}>
+              <Text style={styles.scoreTitle} numberOfLines={1}>
+                {selected.title}
+              </Text>
+              <Text style={styles.scoreComposer} numberOfLines={1}>
+                {selected.composer}
+              </Text>
+            </View>
+            {/* THE FULL-SCREEN EXPANDER (v43 slice 3, item E1) — the QUICK LOOK.
+                The "View full score" button below still carries save and share; this
+                only makes the card's own staff readable at full size, in the same
+                transposition (`transposedAbc`, the exact notation drawn here). */}
+            {canExpandScore({ hasAbc: transposedAbc }) ? (
+              <ExpandScoreButton
+                onPress={() => setScoreExpanded(true)}
+                testID="notation-editor-expand"
+              />
+            ) : null}
+          </View>
         </View>
         {!itemId && selected.isPublicDomain && (
           <View style={styles.pdBadge}>
@@ -482,6 +508,22 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
         </Text>
       )}
     </ScrollView>
+    {/* THE FULL-SCREEN READING WINDOW (v43 slice 3, item E1). Presentation only:
+        it draws the SAME `transposedAbc` the card above draws, handed the modal's
+        own viewport box so a long work lands in the renderer's `self-scroll` band
+        instead of being clipped at the card's width. The header's chip carries the
+        transposition, so the user can see the key they are reading in. */}
+    <FullScreenScore
+      visible={!!selected && scoreExpanded}
+      onClose={() => setScoreExpanded(false)}
+      title={selected?.title ?? 'Score'}
+      subtitle={scoreExpandSubtitle({ from: keyLabels.from, to: keyLabels.to })}
+    >
+      <ScrollView contentContainerStyle={styles.expandBody}>
+        <AbcScoreView abc={transposedAbc} wholeWork viewportHeight={expandBoxHeight} />
+      </ScrollView>
+    </FullScreenScore>
+    </>
   );
 };
 
@@ -678,6 +720,13 @@ const baseStyles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 4,
   },
+  scoreHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  scoreHeaderText: { flex: 1, paddingRight: 10 },
+  expandBody: { flexGrow: 1, padding: 8 },
   scoreTitle: {
     color: '#ffffff',
     fontSize: 17,

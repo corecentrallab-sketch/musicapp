@@ -775,7 +775,12 @@ export function transposedCopyIsWhatReopens(
   if (editor.indexOf('scoreFromAbc(abc, item.title)') < 0) return false;
   // The staff renders the SELECTED score's abc (never a constant).
   if (editor.indexOf('transposedAbc') < 0) return false;
-  if (countOf(editor, '<AbcScoreView abc={') !== 1) return false;
+  // v43 slice 3 (item E1): the editor may mount a SECOND <AbcScoreView> for the
+  // full-screen window, so the rule is no longer "exactly one" — it is "never a
+  // constant": at least one staff, and every staff it renders is the SELECTED
+  // (transposed) score's abc.
+  if (countOf(editor, '<AbcScoreView abc={') < 1) return false;
+  if (/<AbcScoreView abc=\{(?!transposedAbc)/.test(editor)) return false;
   // The renderer keys on the whole ABC content, not on its length/prefix.
   if (view.indexOf('abcRenderKey(') < 0) return false;
   if (/abc\.length/.test(view)) return false;

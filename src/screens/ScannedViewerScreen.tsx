@@ -17,6 +17,12 @@ import type { LibraryItem } from '../types';
 import { getLibraryItem } from '../services/libraryStore';
 import { ScanFindSection } from '../components/ScanFindSection';
 import { FindPieceScreen } from './FindPieceScreen';
+// THE FULL-SCREEN SCAN (v43 fix batch, slice 3, item E12). A photographed page is
+// the surface where full screen helps most: the same page images, contain-fit,
+// starting at the page the user is already on — and no OMR/score-following claim
+// is made by any of it.
+import { FullScreenScore } from '../components/FullScreenScore';
+import { ExpandScoreButton } from '../components/ExpandScoreButton';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScannedViewer'>;
 
@@ -63,6 +69,9 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
   // The confirmed words a page's on-device read produced (v39 fix 1b). Non-null =
   // the app's ONE search is open in place, on this score's own words.
   const [findQuery, setFindQuery] = useState<string | null>(null);
+  // The full-screen scan (v43 slice 3, item E12). It opens ON the page the user is
+  // looking at, so expanding never loses their place.
+  const [expandOpen, setExpandOpen] = useState(false);
 
   const pages = item?.pageUris ?? [];
   const listRef = useRef<FlatList<string>>(null);
@@ -142,7 +151,41 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
           )}
         />
 
+        {/* THE EXPANDER (v43 slice 3, item E12) — the shared affordance, floating
+            over the page so it is reachable without leaving the score. */}
+        <View style={styles.expandDock}>
+          <ExpandScoreButton onPress={() => setExpandOpen(true)} testID="scan-expand" />
+        </View>
       </View>
+
+      {/* THE FULL-SCREEN SCAN (v43 slice 3, item E12). The SAME page images, in
+          the app's one full-screen window, contain-fit and paged — opened at the
+          page the user is already reading. */}
+      <FullScreenScore
+        visible={expandOpen}
+        onClose={() => setExpandOpen(false)}
+        title={item?.title ?? 'Scanned score'}
+        subtitle={`Page ${page} of ${pages.length}`}
+      >
+        <FlatList
+          data={pages}
+          keyExtractor={(uri, index) => `full-${index}-${uri}`}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          initialScrollIndex={Math.min(page, pages.length) - 1}
+          getItemLayout={(_, index) => ({
+            length: width,
+            offset: width * index,
+            index,
+          })}
+          renderItem={({ item: uri }) => (
+            <View style={[styles.fullPage, { width }]}>
+              <Image source={{ uri }} style={styles.pageImage} resizeMode="contain" />
+            </View>
+          )}
+        />
+      </FullScreenScore>
 
       {/* WHY THERE IS NO PLAY/AUTO-SCROLL HERE (v42 fix C). Said out loud rather
           than left as an absence: the user who looks for it gets the reason, and
@@ -183,6 +226,19 @@ const baseStyles = StyleSheet.create({
   scoreArea: {
     flex: 1,
     position: 'relative',
+  },
+  /** The floating expander (v43 slice 3, item E12). */
+  expandDock: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+  },
+  /** One page inside the full-screen window (v43 slice 3, item E12). */
+  fullPage: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10101c',
   },
   page: {
     flex: 1,

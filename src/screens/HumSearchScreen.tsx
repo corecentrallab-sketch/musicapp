@@ -45,7 +45,7 @@
  */
 import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useHardwareBack } from '../hooks/useHardwareBack';
 import { fetchPieceById, humToSearch } from '../services/api';
@@ -100,6 +100,12 @@ import { RecognitionResultView } from '../components/RecognitionResultView';
 // its `staff` slot — the dimmed raw trace, the "auto-clean ✦" divider and the
 // crisp auto-cleaned line, with the take's SUGGESTED chords above the staff.
 import { TakeStaffCard } from '../components/TakeStaffCard';
+// THE FULL-SCREEN READING WINDOW (v43 fix batch, slice 3, item E5). The capture
+// window is already nearly screen-sized, but the take's staves inside it are
+// card-width; this flow OWNS the modal (a modal must never be nested inside the
+// window's own screens) and hands the window its opener, so the capture header
+// shows the one shared affordance and this screen renders the window itself.
+import { FullScreenScore, useFullScreenScoreBox } from '../components/FullScreenScore';
 // THE TAKE-CORRECTION EDITOR (v33 §D): the full-screen surface that corrects the
 // notes, pitch, timing and chords of THIS take. It saves through the one seam
 // (services/correctedTakeStore), and the flow re-reads the corrected take so the
@@ -198,6 +204,12 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
    * the History row all move together — one take, one source of truth.
    */
   const [editorOpen, setEditorOpen] = useState(false);
+  // THE FULL-SCREEN READING STATE (v43 slice 3, item E5). This flow owns the
+  // modal — the capture window only renders the shared opener — so the state and
+  // the viewport box both live here, and the box is the SAME number every other
+  // surface computes (useFullScreenScoreBox → services/scoreExpand).
+  const [takeExpanded, setTakeExpanded] = useState(false);
+  const expandBoxHeight = useFullScreenScoreBox();
   const [saved, setSaved] = useState(false);
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -644,6 +656,7 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
         exportNote={exportNote}
         exportKeyLine={exportKey}
         staff={staffCard}
+        onExpand={() => setTakeExpanded(true)}
         onCorrectTake={() => setEditorOpen(true)}
         copy={CAPTURE_COPY}
       >
@@ -747,11 +760,32 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
         />
       ) : null}
       </MelodyCaptureWindow>
+
+      {/* THE FULL-SCREEN TAKE (v43 slice 3, item E5). The window's header hands
+          its opener to this screen, and the modal is a SIBLING of the window —
+          never nested inside its screens — so closing it lands the user back on
+          the take they were reading. The staff inside is the SAME plain card the
+          window renders (no `onExpand`): a modal that carried its own expander
+          would offer a button that can only open what is already open. */}
+      <FullScreenScore
+        visible={takeExpanded && staffCard !== null}
+        onClose={() => setTakeExpanded(false)}
+        title={analysis?.rowTitle ?? 'My melody'}
+      >
+        <ScrollView contentContainerStyle={[styles.expandedBody, { minHeight: expandBoxHeight }]}>
+          {staffCard}
+        </ScrollView>
+      </FullScreenScore>
     </>
   );
 };
 
 const baseStyles = StyleSheet.create({
+  /** The full-screen take's own scrolling body (v43 slice 3, item E5). */
+  expandedBody: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
   errorCard: {
     backgroundColor: '#1a1a2e',
     borderRadius: 12,
