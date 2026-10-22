@@ -129,6 +129,10 @@ import { OVERLAY_LANE_HEIGHT } from '../components/VideoOverlayLane';
 import { VideoOverlayLane } from '../components/VideoOverlayLane';
 import { PracticeVideoSendToSheet } from '../components/PracticeVideoSendToSheet';
 import { TakeStaffCard } from '../components/TakeStaffCard';
+// THE FULL-SCREEN READING WINDOW (v43 fix batch, slice 3, item E7). The row's
+// staff is card-width inside a scrolling page; this screen hands the shared
+// opener to the card and renders the one window itself.
+import { FullScreenScore, useFullScreenScoreBox } from '../components/FullScreenScore';
 import { TakeCorrectionEditor } from '../components/TakeCorrectionEditor';
 
 /**
@@ -218,6 +222,10 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   const [errorLine, setErrorLine] = useState<string | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [editorOpen, setEditorOpen] = useState(false);
+  // THE FULL-SCREEN READING STATE (v43 slice 3, item E7) — the same window and
+  // the same viewport box every other notation surface uses.
+  const [takeExpanded, setTakeExpanded] = useState(false);
+  const expandBoxHeight = useFullScreenScoreBox();
   const [sendOpen, setSendOpen] = useState(false);
   const [midiBusy, setMidiBusy] = useState(false);
   const [midiLine, setMidiLine] = useState<string | null>(null);
@@ -807,8 +815,30 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               chordHonestLine={null}
               title={PRACTICE_VIDEO_ROW_TITLE}
               interactive={false}
+              onExpand={() => setTakeExpanded(true)}
             />
           ) : null}
+
+          {/* THE FULL-SCREEN TAKE (v43 slice 3, item E7). Same window, same box,
+              same affordance as every other notation surface; the card inside is
+              plain (no `onExpand`) so the modal never carries a second button. */}
+          <FullScreenScore
+            visible={takeExpanded && !!take && take.notes.length > 0}
+            onClose={() => setTakeExpanded(false)}
+            title={PRACTICE_VIDEO_ROW_TITLE}
+          >
+            <ScrollView contentContainerStyle={[styles.expandedBody, { minHeight: expandBoxHeight }]}>
+              {take ? (
+                <TakeStaffCard
+                  take={take}
+                  chordNames={chordRow}
+                  chordHonestLine={null}
+                  title={PRACTICE_VIDEO_ROW_TITLE}
+                  interactive={false}
+                />
+              ) : null}
+            </ScrollView>
+          </FullScreenScore>
 
           <TouchableOpacity
             style={styles.primaryBtn}
@@ -1054,6 +1084,8 @@ function levelHeight(level: number): number {
 const baseStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#12122b' },
   body: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 },
+  /** The full-screen take's own scrolling body (v43 slice 3, item E7). */
+  expandedBody: { paddingHorizontal: 16, paddingVertical: 12 },
   title: { color: '#ffffff', fontSize: 22, fontWeight: '800', marginBottom: 8 },
   honest: { color: '#9aa0b5', fontSize: 12, lineHeight: 18, marginTop: 6 },
   meta: { color: '#cfe4ff', fontSize: 13, lineHeight: 19, marginTop: 10 },

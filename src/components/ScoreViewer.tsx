@@ -41,11 +41,15 @@ import { useAutoScroll, type AutoScrollStatus } from '../hooks/useAutoScroll';
 import { buildSheetViewerHtml, sheetThemeScript } from '../services/sheetViewerHtml';
 import {
   AUTO_TURN_TOGGLE_LABEL,
-  IMMERSIVE_ENTER_LABEL,
   IMMERSIVE_EXIT_LABEL,
   autoTurnChipLabel,
   autoTurnEndedAtLastPage,
 } from '../services/sheetViewerFit';
+// THE ONE WORD FOR "READ THIS BIGGER" (v43 slice 3, items E9/E10). The reader's
+// immersive toggle was already the app's full-screen sheet affordance; naming it
+// with the label every other notation surface uses means the same control is
+// called the same thing on the score card, the take, the PDF and the scan.
+import { SCORE_EXPAND_LABEL } from '../services/scoreExpand';
 import type { ScoreAudioSource } from '../hooks/useScoreAudio';
 
 interface ScoreViewerProps {
@@ -277,7 +281,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
               style={styles.headerButton}
               onPress={() => setImmersive(true)}
               accessibilityRole="button"
-              accessibilityLabel={IMMERSIVE_ENTER_LABEL}
+              accessibilityLabel={SCORE_EXPAND_LABEL}
             >
               <Ionicons name="expand-outline" size={22} color={theme.text} />
             </TouchableOpacity>

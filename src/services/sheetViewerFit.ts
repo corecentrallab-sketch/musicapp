@@ -30,6 +30,8 @@
  * module the tier1 gate can compile with node_modules absent.
  */
 
+import { SCORE_EXPAND_LABEL } from './scoreExpand';
+
 /** Share of the container width the page may occupy (contain-fit). */
 export const SHEET_FIT_WIDTH_RATIO = 0.95;
 /** Share of the container height the page may occupy (contain-fit). */
@@ -63,8 +65,13 @@ export const AUTO_TURN_DEFAULT_BEATS_PER_PAGE = 4;
 /** Auto-turn lifecycle, identical to useAutoScroll's status union. */
 export type AutoTurnStatus = 'idle' | 'running' | 'paused';
 
-/** Accessibility / UI copy for immersive mode. */
-export const IMMERSIVE_ENTER_LABEL = 'Full screen';
+/** Accessibility / UI copy for immersive mode.
+ *
+ *  v43 slice 3 (items E9/E10): the ENTER label is no longer a literal here — it
+ *  is the app's one "read this bigger" word, owned by services/scoreExpand, so
+ *  the reader's immersive toggle and the expander on every notation surface can
+ *  never drift into two different names for the same control. */
+export const IMMERSIVE_ENTER_LABEL = SCORE_EXPAND_LABEL;
 export const IMMERSIVE_EXIT_LABEL = 'Exit full screen';
 export const AUTO_TURN_TOGGLE_LABEL = 'Auto page-turn controls';
 
