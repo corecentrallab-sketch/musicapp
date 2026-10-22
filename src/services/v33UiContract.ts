@@ -492,28 +492,39 @@ export function styleBlockOf(source: string, key: string): string {
  * `homeSource` is src/screens/HomeScreen.tsx.
  */
 export function humIsTheHerosSiblingCard(homeSource: string): boolean {
+  // v44 EQUAL SPLIT (owner-approved 10-22). The NAME is kept for its callers; the
+  // contract is now the PEER one: hum is the right-hand panel of ONE row, built by
+  // the SAME component as Listen (`variant`), wired to the real hum flow, and the
+  // retired third row (HUM_SPLIT_TEACH_LINE) is gone — two labelled peers teach
+  // which door is which by structure.
   const masked = maskComments(homeSource);
   if (masked.length < 5000) return false;
+  const tagAround = (marker: string): string => {
+    const at = masked.indexOf(marker);
+    if (at < 0) return '';
+    const open = masked.lastIndexOf('<', at);
+    if (open < 0) return '';
+    const close = masked.indexOf('>', at);
+    return close < 0 ? masked.slice(open) : masked.slice(open, close + 1);
+  };
   const heroAt = masked.indexOf('onPress={handleHeroTap}');
   const humAt = masked.indexOf('onPress={handleHumEntry}');
   if (heroAt < 0 || humAt < 0) return false;
-  // SIBLING, not nested-in-the-hero and not a rival above it: it renders after.
+  // PEER, not a rival above and not a nested afterthought: it renders after.
   if (humAt < heroAt) return false;
-  // Its OWN element, carrying the module's copy by reference.
-  const card = elementFromTag(masked, 'styles.humEntryBtn');
-  if (!card) return false;
-  if (card.indexOf('onPress={handleHumEntry}') < 0) return false;
-  if (card.indexOf('HUM_SIBLING_TITLE') < 0) return false;
-  if (card.indexOf('HUM_SIBLING_BODY') < 0) return false;
-  // The style really IS a card: full width + the v33 teal, and NOT the v32
-  // quiet text row (underlined, unfilled).
-  const style = styleBlockOf(masked, 'humEntryBtn');
-  if (!style) return false;
-  if (style.indexOf("width: '100%'") < 0) return false;
-  if (style.indexOf('#4ecdc4') < 0) return false;
-  if (/textDecorationLine/.test(style)) return false;
-  // …and the one line that teaches which door is which.
-  if (masked.indexOf('HUM_SPLIT_TEACH_LINE') < 0) return false;
+  const hum = tagAround('styles.humEntryBtn');
+  if (!hum) return false;
+  if (hum.indexOf('onPress={handleHumEntry}') < 0) return false;
+  if (hum.indexOf('variant="hum"') < 0) return false;
+  if (hum.indexOf('HOME_SPLIT_HUM_TITLE') < 0) return false;
+  const hero = tagAround('styles.recognitionBtn');
+  if (!hero) return false;
+  if (hero.indexOf('onPress={handleHeroTap}') < 0) return false;
+  if (hero.indexOf('variant="listen"') < 0) return false;
+  // The old card / quiet row / teach line are RETIRED.
+  if (/textDecorationLine/.test(masked)) return false;
+  if (masked.indexOf('HUM_SPLIT_TEACH_LINE') >= 0) return false;
+  if (masked.indexOf('humSplitLine') >= 0) return false;
   return true;
 }
 

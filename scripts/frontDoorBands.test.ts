@@ -61,7 +61,7 @@ import {
   type FrontDoorBand,
 } from '../src/services/frontDoorBands';
 import {
-  HUM_SIBLING_TITLE,
+  HOME_SPLIT_HUM_TITLE,
   chipDoesNotClaimRecordingRecognition,
   findAnySongChipWired,
   findPieceEntryIsSearchRow,
@@ -224,7 +224,7 @@ function bandModelTests(): void {
   );
   assertEq(
     a.find((i) => i.id === 'hum-entry')?.label,
-    HUM_SIBLING_TITLE,
+    HOME_SPLIT_HUM_TITLE,
     'the hum card is titled from the module (one source of copy)',
   );
   // v33 §E / owner 10-04: the search entry is NOT inside the Listen/Hum block.

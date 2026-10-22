@@ -47,9 +47,10 @@ import {
 import {
   FIND_PIECE_ENTRY_HINT,
   FIND_PIECE_ENTRY_LABEL,
-  HERO_TITLE,
-  HUM_SECONDARY_CTA,
-  HUM_SIBLING_TITLE,
+  HOME_SPLIT_HUM_A11Y,
+  HOME_SPLIT_HUM_TITLE,
+  HOME_SPLIT_LISTEN_A11Y,
+  HOME_SPLIT_LISTEN_TITLE,
 } from './frontDoor';
 
 // ─────────────────── the "Find any song" chip (bundle B) ───────────────────
@@ -492,25 +493,27 @@ export interface FrontDoorBandInput {
   facets?: BandFacetInput;
 }
 
-/** Band A — identify. The hero card's entries, in their existing order. */
+/** Band A — identify. The equal-split hero pair, in its existing order. */
 function identifyItems(): BandItem[] {
   return [
     {
       id: 'hero-identify',
       kind: 'hero',
-      label: HERO_TITLE,
-      accessibilityLabel: 'Identify the music playing around you',
+      // v44 (owner 10-22): the hero is the LEFT panel of the equal split.
+      label: HOME_SPLIT_LISTEN_TITLE,
+      accessibilityLabel: HOME_SPLIT_LISTEN_A11Y,
       destination: 'identify',
       entryGroup: 'identify',
       primary: true,
     },
     {
       id: 'hum-entry',
-      // v33 §E (owner 10-03): the hum entry is a SIBLING CARD directly under the
-      // hero — same width and weight class — not the quiet text row it was.
+      // v44 equal split (owner 10-22): hum is the RIGHT panel — a true PEER of
+      // Listen (same box, same fill weight, same affordance), not the navy
+      // sibling card under the hero, and not the quiet text row before that.
       kind: 'card',
-      label: HUM_SIBLING_TITLE,
-      accessibilityLabel: HUM_SECONDARY_CTA,
+      label: HOME_SPLIT_HUM_TITLE,
+      accessibilityLabel: HOME_SPLIT_HUM_A11Y,
       destination: 'hum-search',
       entryGroup: 'hum',
     },

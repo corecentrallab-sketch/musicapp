@@ -121,8 +121,63 @@ export const HUM_FALLBACK_LIBRARY_NOTE =
  */
 export const HUM_SIBLING_TITLE = '🎤 Hum / sing a melody';
 export const HUM_SIBLING_BODY = HUM_SECONDARY_CTA;
-/** The one line under the pair that teaches the two doors (designer concept 5). */
+/**
+ * RETIRED FROM THE SCREEN (v44 equal split, owner 10-22). The line is kept as a
+ * constant only so the retirement is greppable: two labelled PEER panels teach
+ * which door is which by structure, so the row is gone from Home
+ * (`heroSplit.ts`'s `splitHeroCopyIsHonest` fails if it comes back).
+ */
 export const HUM_SPLIT_TEACH_LINE = 'Hear it → Listen · Think it → Hum';
+
+// ──────────── the EQUAL SPLIT hero (v44, owner-approved 10-22) ─────────────
+//
+// Owner: "Equal split is great with the first time tooltip embedded."
+// Spec: /home/team/shared/hum-button-concept/ENGINEER-NOTES.md §4.
+//
+// The user-test failure this fixes: the navy `#16213e` hum card with the teal
+// outline read as INFORMATION, not as a button. Two panels of identical shape,
+// size, fill weight and affordance fix it by STRUCTURE — hum can no longer read
+// as a sub-paragraph of Listen. The copy below is the spec's, verbatim.
+//
+// Honest-claims discipline (spec §4 last bullet): Listen identifies audio you
+// can already hear; hum/whistle/sing is the melody door. No "scan", "camera",
+// "photo", "PDF" or "shazam" wording anywhere on the hero.
+/** Listen's panel title (spec §4). */
+export const HOME_SPLIT_LISTEN_TITLE = 'Listen';
+/** Listen's panel body at rest — what the left door actually does. */
+export const HOME_SPLIT_LISTEN_BODY = 'Listen to the music around you';
+/**
+ * Hum's panel title. REPLACES the on-screen use of `HUM_SIBLING_TITLE` (the
+ * emoji prefix read as a secondary row); the constant itself is untouched.
+ */
+export const HOME_SPLIT_HUM_TITLE = 'Hum a Tune Instead';
+/**
+ * Hum's panel body. Deliberately NOT `HUM_SECONDARY_CTA`: that string is the
+ * fallback path's own wording (via `HUM_SIBLING_BODY`) and keeps its job.
+ */
+export const HOME_SPLIT_HUM_BODY =
+  "Can't find it playing? Hum, whistle or sing the melody.";
+/** The one-time coach-mark bubble over the hum panel (spec §7, still 04). */
+export const HOME_SPLIT_HUM_TIP = 'Stuck without sheet music? Hum your melody here';
+/** The section label above the pair. */
+export const HOME_SPLIT_SECTION_LABEL = 'RECOGNISE MUSIC';
+/** Screen-reader label for the Listen panel (spec §5, measured not estimated). */
+export const HOME_SPLIT_LISTEN_A11Y = 'Listen — identify the music around you';
+/** Screen-reader label for the hum panel (spec §5). */
+export const HOME_SPLIT_HUM_A11Y =
+  'Hum a tune instead — hum, whistle or sing the melody';
+/**
+ * Wording the hero may NEVER carry: none of these surfaces takes a photo, scans
+ * paper or reads a PDF, and the app is not Shazam. (The scanner/PDF reader are
+ * real features elsewhere in the app — they are simply not this hero.)
+ */
+export const HERO_FORBIDDEN_WORDS: readonly string[] = [
+  'scan',
+  'camera',
+  'photo',
+  'pdf',
+  'shazam',
+];
 
 // ─────────────────────── the home promise (genre-neutral) ───────────────
 
@@ -490,19 +545,23 @@ export function hasSingleHeroCta(source: string): boolean {
   return true;
 }
 
-/** True when the hero button itself (the big round red one) is wired to the ONE
- *  front-door handler and renders its label state. */
+/** True when the hero button itself (the big round red one — since v44 the rose
+ *  LISTEN panel of the equal split) is wired to the ONE front-door handler and
+ *  renders its label state. */
 export function heroButtonWired(source: string): boolean {
   const masked = maskComments(source);
   const at = masked.indexOf('styles.recognitionBtn');
   if (at < 0) return false;
-  const open = masked.lastIndexOf('<TouchableOpacity', at);
-  const end = masked.indexOf('</TouchableOpacity>', at);
+  const open = masked.lastIndexOf('<', at);
+  const end = masked.indexOf('>', at);
   if (open < 0 || end < 0) return false;
-  const tag = masked.slice(open, end);
-  return (
-    /onPress=\{handleHeroTap\}/.test(tag) && /heroLabel\(/.test(tag)
-  );
+  const tag = masked.slice(open, end + 1);
+  // The element is the hero's own control: v43's round button (heroLabel) or —
+  // v44 — the LISTEN panel of the equal split (variant="listen"), which hands
+  // its body slot to the same state words.
+  const heroLabelTag = /onPress=\{handleHeroTap\}/.test(tag);
+  if (!heroLabelTag) return false;
+  return /heroLabel\(/.test(tag) || /variant="listen"/.test(tag);
 }
 
 /**
@@ -674,19 +733,27 @@ export const HUM_ENTRY_STYLE = 'styles.humEntryBtn';
  * screen — hum reachable only post-recognition via result-card levers". The one
  * button was correct (identify-first), but a musician who cannot play the audio
  * at all had no visible way in on the surface they land on. The affordance must
- * therefore be present, LABELLED as the alternative (HUM_SECONDARY_CTA), styled
- * distinctly (a secondary row, never a second hero), rendered BELOW the one hero
- * button, and wired to open the EXISTING hum flow (setShowHumSearch(true)) — one
- * hum implementation, not two.
+ * therefore be present, LABELLED as the alternative (HUM_SECONDARY_CTA — or, since
+ * the v44 equal split, the peer panel's own HOME_SPLIT_HUM_BODY), styled
+ * distinctly (its own panel style, never the Listen panel's), rendered BELOW or
+ * BESIDE the one hero button as a PEER, and wired to open the EXISTING hum flow
+ * (setShowHumSearch(true)) — one hum implementation, not two.
  */
 export function humEntryWired(source: string): boolean {
   const masked = maskComments(source);
   const entry = masked.indexOf(`onPress={${HUM_ENTRY_HANDLER}}`);
   const hero = masked.indexOf(`onPress={${HERO_TAP_HANDLER}}`);
   if (entry < 0 || hero < 0) return false;
-  // Secondary, not a rival hero: it renders after the one button.
+  // Not a rival ABOVE the hero: it renders after the one button (v44: it is the
+  // right-hand peer of the pair, so this stays true).
   if (entry < hero) return false;
-  if (masked.indexOf('HUM_SECONDARY_CTA') < 0) return false;
+  // Labelled as the alternative in ONE of the two honest ways.
+  if (
+    masked.indexOf('HUM_SECONDARY_CTA') < 0 &&
+    masked.indexOf('HOME_SPLIT_HUM_BODY') < 0
+  ) {
+    return false;
+  }
   if (masked.indexOf(HUM_ENTRY_STYLE) < 0) return false;
   // It opens the existing hum flow — the handler body is the arrow function the
   // declaration opens.

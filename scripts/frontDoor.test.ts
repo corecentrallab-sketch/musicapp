@@ -936,16 +936,16 @@ function humEntryTests(): void {
     `the entry is wired to ${HUM_ENTRY_HANDLER}`,
   );
   assert(
-    /<Text style=\{styles\.humEntryBody\}>\{HUM_SIBLING_BODY\}<\/Text>/.test(home),
-    "the entry's visible body IS the shared secondary CTA copy (never a rival hero label)",
+    /body=\{splitPanelBody\('hum', hero\)\}/.test(home),
+    "the hum panel's visible body comes from the split's ONE body source (v44)",
   );
   assert(
-    /<Text style=\{styles\.humEntryTitle\}>\{HUM_SIBLING_TITLE\}<\/Text>/.test(home),
-    'the hum sibling card carries its own title (v33 §E: a card, not a text row)',
+    /title=\{HOME_SPLIT_HUM_TITLE\}/.test(home),
+    'the hum panel carries its own peer title (v44 equal split)',
   );
   assert(
-    /accessibilityLabel=\{HUM_SECONDARY_CTA\}/.test(home),
-    'the entry is reachable to a screen reader under the same copy',
+    /accessibilityLabel=\{HOME_SPLIT_HUM_A11Y\}/.test(home),
+    'the hum panel is reachable to a screen reader under its own label',
   );
   assert(
     home.indexOf(`onPress={${HUM_ENTRY_HANDLER}}`) >

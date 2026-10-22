@@ -608,27 +608,21 @@ assertEq(
   'the "Find any song" field left the Listen/Hum block for its own Discover band, wired to the search',
 );
 
-// MUTATION 29: the hum card is demoted back to the v32 quiet text row.
-const textRow = homeSource.replace(
-  "humEntryBtn: {\n    alignSelf: 'stretch',\n    width: '100%',\n    alignItems: 'center',\n    justifyContent: 'center',\n    backgroundColor: '#16213e',\n    borderRadius: 16,\n    borderWidth: 2,\n    borderColor: '#4ecdc4',\n    paddingVertical: 16,\n    paddingHorizontal: 18,\n    marginBottom: 8,\n  },",
-  "humEntryBtn: {\n    flexDirection: 'row',\n    alignItems: 'center',\n    justifyContent: 'center',\n    paddingVertical: 10,\n    paddingHorizontal: 8,\n    textDecorationLine: 'underline',\n  },",
-);
-assert(textRow !== homeSource, 'the text-row mutation changed the real Home screen');
+// MUTATION 29 (v44 equal split): the Listen panel rewired to a dead handler.
+const deadListenPanel = homeSource.replace('onPress={handleHeroTap}', 'onPress={handleHeroTapRemoved}');
+assert(deadListenPanel !== homeSource, 'the dead-listen mutation changed the real Home screen');
 assertEq(
-  humIsTheHerosSiblingCard(textRow),
+  humIsTheHerosSiblingCard(deadListenPanel),
   false,
-  'MUTATION: the v32 underlined hum text row FAILS humIsTheHerosSiblingCard',
+  'MUTATION: a Listen panel that opens nothing FAILS the peer-panel contract',
 );
-// MUTATION 30: the hum card renders as the search CHIP instead of its own card.
-const chipHum = homeSource.replace(
-  '<TouchableOpacity\n          style={styles.humEntryBtn}',
-  '<TouchableOpacity\n          style={styles.findAnySongChip}',
-);
-assert(chipHum !== homeSource, 'the chip-hum mutation changed the real Home screen');
+// MUTATION 30: the hum door demoted to a chip instead of the peer panel.
+const chipHumV44 = homeSource.replace('style={styles.humEntryBtn}', 'style={styles.findAnySongChip}');
+assert(chipHumV44 !== homeSource, 'the chip-hum mutation changed the real Home screen');
 assertEq(
-  humIsTheHerosSiblingCard(chipHum),
+  humIsTheHerosSiblingCard(chipHumV44),
   false,
-  'MUTATION: a hum CHIP fails humIsTheHerosSiblingCard (it must be a card)',
+  'MUTATION: a hum CHIP fails the peer-panel contract',
 );
 // MUTATION 31: the hum entry loses its wiring (the dead-CTA class).
 const deadHum = homeSource.replace('onPress={handleHumEntry}', 'onPress={undefined}');
@@ -636,29 +630,26 @@ assert(deadHum !== homeSource, 'the dead-hum mutation changed the real Home scre
 assertEq(
   humIsTheHerosSiblingCard(deadHum),
   false,
-  'MUTATION: a hum card that opens nothing FAILS humIsTheHerosSiblingCard',
+  'MUTATION: a hum panel that opens nothing FAILS the peer-panel contract',
 );
-// MUTATION 32: the search field slips back into the Listen/Hum block.
-const chipBackInBandA = homeSource.replace(
-  '<Text style={styles.tier1BetaNote}>',
-  '<TouchableOpacity style={styles.findAnySongChip}></TouchableOpacity>\n          <Text style={styles.tier1BetaNote}>',
+// MUTATION 32: the retired third row (the teach line) comes back under the hero.
+const teachRowBack = homeSource.replace(
+  '{splitTipVisible && <HumSplitCoachMark />}',
+  '{splitTipVisible && <HumSplitCoachMark />}{HUM_SPLIT_TEACH_LINE}',
 );
-assert(chipBackInBandA !== homeSource, 'the chip-back mutation changed the real Home screen');
+assert(teachRowBack !== homeSource, 'the teach-row mutation changed the real Home screen');
 assertEq(
-  searchHasItsOwnDiscoverBand(chipBackInBandA),
+  humIsTheHerosSiblingCard(teachRowBack),
   false,
-  'MUTATION: the search chip back inside band A FAILS searchHasItsOwnDiscoverBand',
+  'MUTATION: the retired teach line FAILS the peer-panel contract',
 );
-// MUTATION 33: the Discover band keeps its shell but loses the search entry.
-const emptyDiscover = homeSource.replace(
-  'style={styles.findAnySongChip}\n            onPress={handleFindAnySong}',
-  'style={styles.bandChip}\n            onPress={handleFindAnySong}',
-);
-assert(emptyDiscover !== homeSource, 'the empty-discover mutation changed the real Home screen');
+// MUTATION 33: the hum panel stops being the peer COMPONENT.
+const notAPeer = homeSource.replace('variant="hum"', 'variant="hum-chip"');
+assert(notAPeer !== homeSource, 'the not-a-peer mutation changed the real Home screen');
 assertEq(
-  searchHasItsOwnDiscoverBand(emptyDiscover),
+  humIsTheHerosSiblingCard(notAPeer),
   false,
-  'MUTATION: a Discover band with no search entry FAILS searchHasItsOwnDiscoverBand',
+  'MUTATION: a hum door that is not the peer panel FAILS the contract',
 );
 
 // ────────── slice F1 — a History melody row plays its SAVED clip ──────────
