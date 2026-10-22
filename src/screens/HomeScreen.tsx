@@ -1571,8 +1571,12 @@ export const HomeScreen: React.FC = () => {
         {/* The old full-width HUM SIBLING CARD and its teach line are RETIRED
             here (v44 equal split, owner 10-22): hum is now the right-hand PEER of
             Listen, above this point, so neither the card nor the third row of
-            text ("Hear it → Listen · Think it → Hum") has a job any more. */}
-        </View>
+            text ("Hear it → Listen · Think it → Hum") has a job any more.
+            The wrapper View that carried the retired card is gone WITH it — this
+            close tag was its leftover, and it left band A's parent unbalanced
+            (`Expected corresponding JSX closing tag for <ScrollView>`), which the
+            babel pre-flight caught and the tier-1 tsc run could not, because
+            tsconfig.tier1.json never includes the screens. */}
 
         {/* ══ DISCOVER BAND (v33 §E + §F3b, owner 10-04) ══
             The "Find any song" search entry has its OWN band now, directly under

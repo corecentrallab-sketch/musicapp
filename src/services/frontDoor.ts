@@ -531,6 +531,25 @@ export function elementWithMarker(source: string, marker: string): string {
 }
 
 /**
+ * The ELEMENT that carries `marker`: its opening tag, extended through its
+ * children to the matching close tag when the tag is not self-closing.
+ *
+ * The distinction matters for the hero label: v43's round button carries
+ * `{heroLabel(hero)}` in its BODY (`<TouchableOpacity …><Text>{heroLabel(…)}`),
+ * while v44's LISTEN panel is self-closing and names itself in its own props
+ * (`variant="listen"`). A predicate that only reads the opening tag misses the
+ * v43 shape and reports a healthy round button as unwired.
+ */
+function elementAround(masked: string, marker: string): string {
+  const tag = tagAround(masked, marker);
+  if (!tag) return '';
+  if (/\/\s*>$/.test(tag)) return tag;
+  const open = masked.lastIndexOf('<', masked.indexOf(marker));
+  const close = masked.indexOf('</', open + tag.length);
+  return close < 0 ? tag : masked.slice(open, close);
+}
+
+/**
  * The ONE primary CTA contract: exactly one `onPress={handleHeroTap}` on Home,
  * on the big round button, and NO rival mode button left wired (the old hum /
  * "find any song" hero buttons). A second hero, or a resurrected rival, fails.
@@ -550,18 +569,15 @@ export function hasSingleHeroCta(source: string): boolean {
  *  renders its label state. */
 export function heroButtonWired(source: string): boolean {
   const masked = maskComments(source);
-  const at = masked.indexOf('styles.recognitionBtn');
-  if (at < 0) return false;
-  const open = masked.lastIndexOf('<', at);
-  const end = masked.indexOf('>', at);
-  if (open < 0 || end < 0) return false;
-  const tag = masked.slice(open, end + 1);
-  // The element is the hero's own control: v43's round button (heroLabel) or —
-  // v44 — the LISTEN panel of the equal split (variant="listen"), which hands
-  // its body slot to the same state words.
-  const heroLabelTag = /onPress=\{handleHeroTap\}/.test(tag);
-  if (!heroLabelTag) return false;
-  return /heroLabel\(/.test(tag) || /variant="listen"/.test(tag);
+  const tag = tagAround(masked, 'styles.recognitionBtn');
+  if (!tag) return false;
+  // The element is the hero's own control and takes the ONE front-door tap.
+  if (!/onPress=\{handleHeroTap\}/.test(tag)) return false;
+  // v44 — the LISTEN panel of the equal split names its variant in its own tag.
+  if (/variant="listen"/.test(tag)) return true;
+  // v43 and earlier — the round red button keeps its label state in its BODY
+  // (`<Text>{heroLabel(hero)}</Text>`), so the ELEMENT is what has to be read.
+  return /heroLabel\(/.test(elementAround(masked, 'styles.recognitionBtn'));
 }
 
 /**
@@ -747,14 +763,23 @@ export function humEntryWired(source: string): boolean {
   // Not a rival ABOVE the hero: it renders after the one button (v44: it is the
   // right-hand peer of the pair, so this stays true).
   if (entry < hero) return false;
-  // Labelled as the alternative in ONE of the two honest ways.
-  if (
-    masked.indexOf('HUM_SECONDARY_CTA') < 0 &&
-    masked.indexOf('HOME_SPLIT_HUM_BODY') < 0
-  ) {
-    return false;
-  }
-  if (masked.indexOf(HUM_ENTRY_STYLE) < 0) return false;
+  // The door's OWN element — the label and the style must sit on the control the
+  // user taps, not merely somewhere else in the file.
+  const element = elementAround(masked, `onPress={${HUM_ENTRY_HANDLER}}`);
+  if (!element) return false;
+  // Labelled as the alternative from a COPY MODULE, never a retyped string:
+  //   · the v26–v43 row — the shared HUM_SECONDARY_CTA on the door itself; or
+  //   · v44's peer panel — its body slot, which heroSplit.splitPanelBody('hum', …)
+  //     resolves from frontDoor.HOME_SPLIT_HUM_BODY (all three capture modes).
+  const sharedRowLabel = element.indexOf('HUM_SECONDARY_CTA') >= 0;
+  const splitPeerBody =
+    element.indexOf('HOME_SPLIT_HUM_BODY') >= 0 ||
+    /body=\{\s*splitPanelBody\(\s*['"]hum['"]/.test(element);
+  if (!sharedRowLabel && !splitPeerBody) return false;
+  // A peer panel is the hum VARIANT of the ONE split component — the body must
+  // belong to the hum door, not be borrowed from the Listen panel beside it.
+  if (splitPeerBody && !/variant=["']hum["']/.test(element)) return false;
+  if (element.indexOf(HUM_ENTRY_STYLE) < 0) return false;
   // It opens the existing hum flow — the handler body is the arrow function the
   // declaration opens.
   const declaration = masked.indexOf(`const ${HUM_ENTRY_HANDLER}`);

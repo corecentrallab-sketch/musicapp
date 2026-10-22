@@ -650,6 +650,33 @@ function liveScanTests(): void {
     true,
     'the achievements entry is quiet, wired, and sits BELOW the one-button front door',
   );
+  // The ordering rule has to BITE, in BOTH front-door shapes. It did not before
+  // v44: ENTRY_ABOVE_HERO_FIXTURE was declared and never asserted, and the guard
+  // keyed on the v43 round card only — so the day the equal split replaced that
+  // card, the anchor vanished and the guard could never pass again. Both shapes
+  // are asserted here, and the v44 one is the shape Home ships today.
+  assertEq(
+    homeHasQuietAchievementsEntry(ENTRY_ABOVE_HERO_FIXTURE),
+    false,
+    'PRE-FIX: an entry ABOVE the v43 round hero fails the quiet-entry contract',
+  );
+  const entryAboveSplit = [
+    "import { AchievementsScreen } from './AchievementsScreen';",
+    'const line = achievementsSummaryLine(stats, records);',
+    '<TouchableOpacity style={styles.achievementsCard} onPress={handleOpenAchievements}>',
+    '  {ACHIEVEMENTS_ENTRY_LABEL}',
+    '</TouchableOpacity>',
+    '<HeroSplitPanel variant="listen" style={styles.recognitionBtn} onPress={handleHeroTap} />',
+  ].join('\n');
+  assertEq(
+    homeHasQuietAchievementsEntry(entryAboveSplit),
+    false,
+    'PRE-FIX: an entry ABOVE the v44 LISTEN panel fails the quiet-entry contract',
+  );
+  assert(
+    home.indexOf('styles.recognitionCard') < 0,
+    'Home ships the v44 split hero — the quiet entry\'s anchor really is styles.recognitionBtn',
+  );
   assertEq(homeOpensAchievementsScreen(home), true, 'Home opens the medals screen (BACK included)');
   assertEq(
     hasSingleHeroCta(home),
