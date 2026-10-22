@@ -93,6 +93,27 @@ export function hasMinHeight(source: string, styleName: string): boolean {
   return /(?:^|[\s{,])minHeight\s*:/.test(block);
 }
 
+/**
+ * EVERY `<AbcScoreView …>` opening tag in a source (v43 slice 3).
+ *
+ * The editor mounts more than one staff since the full-screen window landed (the
+ * page staff + the window's), so a "the score has the band" rule has to iterate
+ * the tags instead of testing the file for one lucky match. Attribute slices stop
+ * at the tag's own `>`, so a prop on one staff can never vouch for another.
+ */
+export function abcScoreStaffTags(source: string): string[] {
+  const tags: string[] = [];
+  const needle = '<AbcScoreView';
+  let at = source.indexOf(needle);
+  while (at >= 0) {
+    const end = source.indexOf('>', at);
+    if (end < 0) break;
+    tags.push(source.slice(at, end + 1));
+    at = source.indexOf(needle, end + 1);
+  }
+  return tags;
+}
+
 // ─────────────────────── FIX A — the editor's score card ─────────────────────
 
 /**
@@ -120,9 +141,16 @@ export function editorScoreIsWholeWork(source: string): boolean {
   const masked = maskSourceComments(source);
   if (masked.length < 2000) return false;
   if (editorScorePreClampsBox(source)) return false;
-  // The viewer is handed the transposed score WITH the whole-work band.
-  const render = /<AbcScoreView[^>]*abc=\{transposedAbc\}[^>]*wholeWork/.exec(masked);
-  if (!render) return false;
+  // Every viewer this screen mounts is handed the transposed score WITH the
+  // whole-work band. v43 slice 3 (item E) made that a PER-INSTANCE rule: the editor
+  // now renders a second <AbcScoreView> inside the full-screen window, so a
+  // surviving band on one staff must not excuse a bandless one on the other (the
+  // bandless staff is the clip this fix exists for, whichever surface it is on).
+  const staves = abcScoreStaffTags(masked);
+  if (staves.length < 1) return false;
+  if (!staves.every((tag) => /\sabc=\{transposedAbc\}/.test(tag) && /\swholeWork\b/.test(tag))) {
+    return false;
+  }
   // …and the editor never applies a measured height of its own.
   if (masked.indexOf('onDocumentHeight') >= 0) return false;
   if (masked.indexOf('scoreHeight') >= 0) return false;

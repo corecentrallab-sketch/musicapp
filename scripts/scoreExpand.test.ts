@@ -107,7 +107,9 @@ function main(): void {
   );
   assertEq(SCORE_EXPAND_HEADER_HEIGHT, 56, 'the header the box subtracts is 56');
 
-  const tall = fullScreenScoreBox({ windowHeight: 2400, topInset: 0, bottomInset: 0 });
+  // 9000 − 56 = 8944, which is ABOVE the reader ceiling (a 2400pt window is not:
+  // it leaves 2344, still inside [120, 4000], so it is the usable rectangle).
+  const tall = fullScreenScoreBox({ windowHeight: 9000, topInset: 0, bottomInset: 0 });
   assertEq(tall, ABC_READER_MAX_HEIGHT, 'an absurdly tall window clamps to the reader ceiling');
   assert(tall <= ABC_READER_MAX_HEIGHT, 'never above ABC_READER_MAX_HEIGHT');
 
@@ -118,10 +120,17 @@ function main(): void {
   // JUNK AND ZERO: a headless render, a 0-height window mid-rotation, a missing
   // inset. Every one of them must land on the FLOOR — a visible staff, not a
   // collapsed one and not NaN.
-  for (const junk of [0, -100, NaN, Infinity, undefined, null, '844', {}]) {
+  for (const junk of [0, -100, NaN, Infinity, undefined, null, {}]) {
     const box = fullScreenScoreBox({ windowHeight: junk as unknown });
     assertEq(box, ABC_SCORE_MIN_HEIGHT, `junk window ${String(junk)} → the score floor`);
   }
+  // A NUMERIC STRING is not junk: `px()` reads it as the number it spells (a native
+  // measure can hand us "844"), so the box is 844 − 56, not the floor.
+  assertEq(
+    fullScreenScoreBox({ windowHeight: '844' as unknown }),
+    788,
+    'a numeric string window reads as that number, not as junk',
+  );
   assertEq(
     fullScreenScoreBox({ windowHeight: 900 }),
     fullScreenScoreBox({ windowHeight: 900, topInset: 0, bottomInset: 0 }),
