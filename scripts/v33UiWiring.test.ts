@@ -33,7 +33,7 @@ import {
   takeActionBarWired,
   transposedCopyIsWhatReopens,
   settingsAppliesTheChosenTheme,
-  coverScanFlowWired,
+  coverScanDoorIsRetired,
   coverScanReadsPhoto,
 } from '../src/services/v33UiContract';
 import { oneMeaningPerCard } from '../src/services/frontDoorBands';
@@ -1086,17 +1086,28 @@ assertEq(
   'MUTATION: an editor that never selects the library copy FAILS transposedCopyIsWhatReopens',
 );
 
-// ────────── slice H — "Scan a cover" feeds the REAL search ──────────
+// ────────── slice H — the cover-scan door is RETIRED; the READ has one home ──────────
+//
+// v43 item C (owner 10-20) removed the "Scan a cover" camera row from the
+// find-a-piece search bar. The owner's own evidence: a photo of a whole page is
+// not a cover, the read came back as debris ("4ox 2Apx ors white Freddie Mer"),
+// and the result was a search button fed with that debris. The scan now has ONE
+// door — the Library scanner (ScanScoreScreen → ScanFindSection), where the
+// framing notice is on screen before the first photo — and that door is guarded by
+// services/scanOneDoorContract.ts (scripts/scanOneDoor.test.ts).
+//
+// This slice keeps the READER's own guard (a photo must really be read, on this
+// device, and a failed read must stay a failure) and proves the retirement really
+// happened: every mutation below puts a piece of the old door BACK, and each one
+// must fail the guard. The component itself is deleted, so there is no file to
+// read — that is the point.
 const FIND_PIECE_H = 'src/screens/FindPieceScreen.tsx';
-const COVER_MODAL = 'src/components/CoverScanModal.tsx';
 const COVER_OCR = 'src/services/coverScanOcr.ts';
 const findPieceSourceH = readAppFile(FIND_PIECE_H);
-const coverModalSource = readAppFile(COVER_MODAL);
 const coverOcrSource = readAppFile(COVER_OCR);
 
-console.log('\nslice H — a photographed cover lands on the same search');
+console.log('\nslice H — the find-a-piece cover-scan door is retired, the read still happens');
 assert(findPieceSourceH.length > 8000, `read ${FIND_PIECE_H} (${findPieceSourceH.length} chars)`);
-assert(coverModalSource.length > 3000, `read ${COVER_MODAL} (${coverModalSource.length} chars)`);
 
 // v36 fix 4 — the owner's "snaps but does not scan": the read itself is guarded
 // against the REAL reader source, and its failure modes are the point.
@@ -1157,94 +1168,46 @@ assertEq(
 );
 
 assertEq(
-  coverScanFlowWired(findPieceSourceH, coverModalSource),
+  coverScanDoorIsRetired(findPieceSourceH),
   true,
-  'the search bar carries a real camera affordance, the captured photo is READ on device, the field carries what was read, and the confirmed title runs the screen’s OWN search',
+  'the find-a-piece search screen carries no cover-scan door, no modal mount and no recogniser',
 );
+// The guard is not vacuous.
+assertEq(coverScanDoorIsRetired(''), false, 'an empty search screen satisfies no retirement guard');
 
-// MUTATION 56: the confirm field is prefilled with a guess — i.e. the photo is
-// pretended to have been read. This is the exact dishonesty the rule bans.
-const prefilled = coverModalSource.replace(
-  "const [confirmText, setConfirmText] = useState('')",
-  "const [confirmText, setConfirmText] = useState('Für Elise')",
-);
-assert(prefilled !== coverModalSource, 'the prefilled-confirm mutation changed the real modal');
+// MUTATION 56: the camera row comes back on the search bar.
+const rowBack = `${findPieceSourceH}\nconst rowLabel = coverScanAffordanceLabel();\n`;
+assert(rowBack !== findPieceSourceH, 'mutation 56 appended the affordance label');
 assertEq(
-  coverScanFlowWired(findPieceSourceH, prefilled),
+  coverScanDoorIsRetired(rowBack),
   false,
-  'MUTATION: a confirm field prefilled as if the photo had been read FAILS coverScanFlowWired',
+  'MUTATION: a cover-scan row back on the search bar FAILS coverScanDoorIsRetired',
 );
-// MUTATION 57: the field is filled from a literal instead of from the read — the
-// capture runs, the recogniser is never asked, and the user still sees a title.
-const fakeRead = coverModalSource.replace(
-  'coverQueryFromScan({ ocrText: result.text, ocrFailed: result.failed }).query',
-  "'Für Elise'",
-);
-assert(fakeRead !== coverModalSource, 'the fake-read mutation changed the real modal');
+// MUTATION 57: the deleted modal is mounted again.
+const modalBack = `${findPieceSourceH}\nconst again = <CoverScanModal visible onClose={() => {}} />;\n`;
+assert(modalBack !== findPieceSourceH, 'mutation 57 mounted the modal again');
 assertEq(
-  coverScanFlowWired(findPieceSourceH, fakeRead),
+  coverScanDoorIsRetired(modalBack),
   false,
-  'MUTATION: a confirm field filled from a literal rather than from the read FAILS coverScanFlowWired',
+  'MUTATION: a second door (the old modal) mounted in the search screen FAILS coverScanDoorIsRetired',
 );
-// MUTATION 58: the captured photo is never handed to the reader — the camera
-// surface exists ("it snaps") but nothing scans.
-const noRead = coverModalSource.replace('readCoverText(photo.uri)', 'Promise.resolve(null)');
-assert(noRead !== coverModalSource, 'the no-read mutation changed the real modal');
+// MUTATION 58: the state that opens it comes back.
+const stateBack = `${findPieceSourceH}\nconst [showCoverScan, setShowCoverScan] = useState(false);\n`;
+assert(stateBack !== findPieceSourceH, 'mutation 58 restored the modal state');
 assertEq(
-  coverScanFlowWired(findPieceSourceH, noRead),
+  coverScanDoorIsRetired(stateBack),
   false,
-  'MUTATION: a camera surface that never reads the photo FAILS coverScanFlowWired',
+  'MUTATION: the cover-scan open state back on the search screen FAILS coverScanDoorIsRetired',
 );
-// MUTATION 58b: the read's outcome is dropped — a failed read renders as if it
-// had produced text (the failure state is what the user must see).
-const ignoredFailure = coverModalSource.replace('ocrFailed: result.failed', 'ocrFailed: false');
-assert(ignoredFailure !== coverModalSource, 'the ignored-failure mutation changed the real modal');
+// MUTATION 59: the recogniser is imported onto the search screen — a SECOND,
+// unattended read of the user's photo (the read has one home).
+const secondReader = `${findPieceSourceH}\nimport { TextRecognition } from '@react-native-ml-kit/text-recognition';\n`;
+assert(secondReader !== findPieceSourceH, 'mutation 59 imported a recogniser');
 assertEq(
-  coverScanFlowWired(findPieceSourceH, ignoredFailure),
+  coverScanDoorIsRetired(secondReader),
   false,
-  'MUTATION: a read failure the surface ignores FAILS coverScanFlowWired',
+  'MUTATION: an on-device recogniser on the search screen FAILS coverScanDoorIsRetired',
 );
-// MUTATION 58c: the pre-v36 "reading a photo is not in this build" claim comes
-// back — the owner's "snaps but does not scan", stated in the surface itself.
-const staleClaim = coverModalSource.replace(
-  '{COVER_SCAN_READING_LINE}',
-  "{'Reading text from a photo is not in this build'}",
-);
-assert(staleClaim !== coverModalSource, 'the stale-claim mutation changed the real modal');
-assertEq(
-  coverScanFlowWired(findPieceSourceH, staleClaim),
-  false,
-  'MUTATION: the surface claiming photos cannot be read FAILS coverScanFlowWired',
-);
-// MUTATION 59: the affordance is decorative — the camera surface is never mounted.
-const noModal = findPieceSourceH.replace('<CoverScanModal', '');
-assert(noModal !== findPieceSourceH, 'the no-modal mutation changed the real search screen');
-assertEq(
-  coverScanFlowWired(noModal, coverModalSource),
-  false,
-  'MUTATION: an affordance that opens nothing FAILS coverScanFlowWired',
-);
-// MUTATION 60: the confirmed title bypasses this screen's search field (a second
-// search path, a second result set).
-const secondSearchPath = findPieceSourceH.replace('setQuery(text);', "setQuery('');");
-assert(secondSearchPath !== findPieceSourceH, 'the bypass mutation changed the real search screen');
-assertEq(
-  coverScanFlowWired(secondSearchPath, coverModalSource),
-  false,
-  'MUTATION: a confirmed title that never reaches the real search FAILS coverScanFlowWired',
-);
-// MUTATION 61: the surface stops capturing — a photo that was never taken.
-const noCapture = coverModalSource.replace(
-  'await cameraRef.current.takePictureAsync({ quality: 0.7 })',
-  'await Promise.resolve(null)',
-);
-assert(noCapture !== coverModalSource, 'the no-capture mutation changed the real modal');
-assertEq(
-  coverScanFlowWired(findPieceSourceH, noCapture),
-  false,
-  'MUTATION: a camera surface that never captures FAILS coverScanFlowWired',
-);
-
 
 console.log(`\n${passes} passed, ${failures} failed`);
 if (failures > 0) process.exit(1);

@@ -193,6 +193,8 @@ import {
   type MicrophoneAccessState,
   type SettingsPalette,
 } from '../services/settingsSpec';
+import { BUILD_STAMP_TAG, buildStampLine } from '../services/buildStamp';
+import { BUILD_SHA } from '../services/buildSha';
 import { providerConnected } from '../services/cloudSync';
 
 // Owner-account Stripe price IDs (USD). These are public identifiers passed to
@@ -319,6 +321,12 @@ export const SettingsScreen: React.FC = () => {
   const palette = settingsPalette(theme);
   /** The live app version (the spec frame's "0.1.32" is stale by construction). */
   const appVersion = Constants.expoConfig?.version ?? null;
+  /**
+   * v43 item B1 — THE BUILD STAMP. The version alone cannot answer "am I testing
+   * the new build?" (one version can be uploaded twice), so the About block also
+   * shows the Android versionCode and the commit the build was made from
+   * (services/buildSha.ts, stamped by the release slice). */
+  const appVersionCode = Constants.expoConfig?.android?.versionCode ?? null;
 
   // ── WHAT IS ARMED — derived from the ONE decision point (services/calendarReminder).
   // These are computed here (before the handlers that read them) and passed to the
@@ -957,6 +965,16 @@ export const SettingsScreen: React.FC = () => {
           chevron
           divider
         />
+        {/* v43 item B1 — THE BUILD STAMP, under the About row. Step 0 of every
+            owner checklist from v43 on: this line must read the version you were
+            told to test. It is the only reliable cure for a stale Play install. */}
+        <Text
+          style={styles.buildStamp}
+          accessibilityLabel={BUILD_STAMP_TAG}
+          selectable
+        >
+          {buildStampLine({ version: appVersion, versionCode: appVersionCode, sha: BUILD_SHA })}
+        </Text>
       </View>
 
       {/* ═══════════ BELOW THE SPEC'S FOUR GROUPS ═══════════
@@ -1561,6 +1579,15 @@ const baseStyles = StyleSheet.create({
     fontSize: 14,
     color: '#a0a0b8',
     lineHeight: 22,
+  },
+  /* v43 item B1 — the build stamp: the quietest type on the screen, but
+     selectable, so a tester can copy it into a report. */
+  buildStamp: {
+    fontSize: 12,
+    color: '#8a8ab0',
+    lineHeight: 17,
+    paddingHorizontal: 4,
+    paddingTop: 8,
   },
 
   bottomSpacer: {

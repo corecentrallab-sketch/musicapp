@@ -783,86 +783,40 @@ export function transposedCopyIsWhatReopens(
   return true;
 }
 
-// ────────── H: "Scan a cover" is wired to the REAL search (v33 §H) ──────────
+// ────── H: the cover-scan door is RETIRED — ONE door remains (v43 item C) ──────
 
 /**
- * The cover-scan affordance (owner 10-04 §H; the READ is v36 fix 4, owner FAIL
- * 10-08: "snaps a picture and can save it — snaps but does not scan"). A camera
- * row on the find-a-piece search bar photographs a score's title page — the
- * on-device recogniser reads the WORDS on it — and lands on the SAME search a
- * typed title produces.
+ * THE FIND-A-PIECE COVER-SCAN DOOR IS GONE (v43 item C, owner 10-20).
+ * `searchSource` is src/screens/FindPieceScreen.tsx.
  *
- * Four things must be true, and each one has a way to be silently wrong:
- *   1. WIRED, not decorative — the affordance has a real onPress that opens the
- *      camera surface, and what the user confirms goes back through
- *      `setQuery(text)`, the one entry point this screen already has. A second
- *      search path would be a second set of results (and a second money path).
- *   2. REAL capture — the surface uses expo-camera's takePictureAsync.
- *   3. REALLY READ — the captured photo is handed to the on-device recogniser
- *      (`readCoverText(photo.uri)`), and the confirm field is filled from THAT
- *      READ's output and nothing else. The field's initial value is '' so a
- *      surface that never read anything shows an empty field, not a guess.
- *   4. HONEST — the read's own outcome drives the line the user reads
- *      (`scanned.line`), and the field's emptiness is what stops a search: an
- *      empty field is never sent to `setQuery`. Nothing here may say the photo is
- *      read "later" or "not in this build" (the recogniser ships now), and no
- *      recogniser may appear on the SEARCH screen — the read belongs to the
- *      camera surface alone.
+ * WHY IT WENT. v33 §H put a "Scan a cover" camera row on the find-a-piece search
+ * bar. v43's diagnosis (owner's own on-device evidence, 10-20) found the whole
+ * flow mis-aimed: a photo of a whole page is not a cover, the read came back as
+ * debris ("4ox 2Apx ors white Freddie Mer"), and the result was a search button
+ * fed with garbage. The scan now has exactly ONE door — the Library scanner
+ * (ScanScoreScreen → ScanFindSection) — where the framing notice is on screen
+ * before the first photo, the read is scored for whether it looks like a title,
+ * and a garbage read is never offered as a search.
  *
- * `searchSource` is src/screens/FindPieceScreen.tsx; `modalSource` is
- * src/components/CoverScanModal.tsx. The reader itself is guarded separately by
- * `coverScanReadsPhoto` (src/services/coverScanOcr.ts).
+ * THIS GUARD IS A RETIREMENT GUARD, so its failure mode is a COMEBACK:
+ *   1. no `coverScanAffordanceLabel(` on the search screen — the row is gone, not
+ *      hidden (a hidden row is a second door waiting to be un-hidden);
+ *   2. no `<CoverScanModal` — the component no longer exists (deleted in v43);
+ *   3. no `setShowCoverScan` — no state that could open it again;
+ *   4. no on-device recogniser module on the search screen — the read has ONE
+ *      home (`services/coverScanOcr.ts`, driven by `ScanFindSection`), and a
+ *      second read of the user's photo is exactly what this bans.
+ *
+ * The reader itself is still guarded separately by `coverScanReadsPhoto`.
  */
-export function coverScanFlowWired(
-  searchSource: string,
-  modalSource: string,
-): boolean {
+export function coverScanDoorIsRetired(searchSource: string): boolean {
   const search = maskComments(searchSource);
-  const modal = maskComments(modalSource);
   if (search.length < 3000) return false;
-  if (modal.length < 2000) return false;
-
-  // 1. The affordance is on the search bar and it OPENS the camera surface.
-  if (search.indexOf('coverScanAffordanceLabel()') < 0) return false;
-  if (search.indexOf('setShowCoverScan(true)') < 0) return false;
-  if (search.indexOf('<CoverScanModal') < 0) return false;
-  if (search.indexOf('visible={showCoverScan}') < 0) return false;
-  // 2. …and the confirmed text runs the screen's OWN search (no second path).
-  if (search.indexOf('onConfirm={handleCoverQuery}') < 0) return false;
-  if (!/handleCoverQuery = useCallback\(\(text: string\)[\s\S]{0,600}?setQuery\(text\)/.test(search)) {
-    return false;
-  }
-  // The recogniser lives in the camera surface: the search screen must not hold
-  // one (it would be a second, unattended read of the user's photo).
+  if (search.indexOf('coverScanAffordanceLabel(') >= 0) return false;
+  if (search.indexOf('<CoverScanModal') >= 0) return false;
+  if (search.indexOf('setShowCoverScan') >= 0) return false;
   for (const module of COVER_SCAN_OCR_MODULE_IDS) {
     if (search.toLowerCase().indexOf(module) >= 0) return false;
-  }
-  // 3. Real capture on the device.
-  if (modal.indexOf("from 'expo-camera'") < 0) return false;
-  if (modal.indexOf('takePictureAsync(') < 0) return false;
-  // 3b. …and the photo is really READ: the captured uri goes to the on-device
-  //     recogniser, and what it returns is what fills the field.
-  if (modal.indexOf('readCoverText(photo.uri)') < 0) return false;
-  if (modal.indexOf('setRead(result)') < 0) return false;
-  if (modal.indexOf('ocrText: result.text') < 0) return false;
-  if (modal.indexOf('ocrFailed: result.failed') < 0) return false;
-  if (!/setConfirmText\(\s*coverQueryFromScan\(/.test(modal)) return false;
-  // 4. The field starts EMPTY (nothing read yet ⇒ nothing written) and only the
-  //    read's own outcome is rendered for the user to act on.
-  if (modal.indexOf("const [confirmText, setConfirmText] = useState('')") < 0) {
-    return false;
-  }
-  if (modal.indexOf('ocrText: read?.text ?? null') < 0) return false;
-  if (modal.indexOf('ocrFailed: read?.failed === true') < 0) return false;
-  if (modal.indexOf('scanned.line') < 0) return false;
-  // 4b. …and the surface must NOT carry the pre-v36 claim that reading a photo is
-  //     still to come: that sentence is the owner's "snaps but does not scan".
-  if (modal.toLowerCase().indexOf('not in this build') >= 0) return false;
-  // 5. Only the user's own confirmed words leave the modal, and an empty field
-  //    runs nothing (no query invented out of a photo, in any state).
-  if (modal.indexOf('onConfirm(text)') < 0) return false;
-  if (!/const confirm = useCallback\(\(\) => \{[\s\S]{0,600}?if \(!text\) return;/.test(modal)) {
-    return false;
   }
   return true;
 }

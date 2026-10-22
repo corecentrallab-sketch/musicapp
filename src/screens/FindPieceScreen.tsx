@@ -75,14 +75,13 @@ import { queryVariants, rankFuzzyMatches, retryNoticeLine, SUBSTITUTE_MIN_SCORE 
 import {
   EXTERNAL_NO_MATCH_HINT,
   externalSearchSection,
-  sheetMusicDirectSearchUrl,
 } from '../services/searchExternal';
 import { SearchExternalSection } from '../components/SearchExternalSection';
-// v33 §H (owner 10-04): "Scan a cover" — photograph a score's title page and
-// land on THIS screen's own search. The label and the honest no-OCR state come
-// from the model (services/coverScan.ts); this screen never invents either.
-import { CoverScanModal } from '../components/CoverScanModal';
-import { coverScanAffordanceLabel } from '../services/coverScan';
+// v43 ITEM C4 — THE CAMERA DOOR IS GONE FROM THIS SCREEN (owner decision 10-20).
+// The app has ONE way to photograph a score: Library "+" → Add Music → Scan
+// score, which saves the pages to the library AND resolves a cover's title. The
+// "📷 Scan a cover" row, its modal mount, its handlers and its label were
+// removed here, so there is no second camera surface and no second search path.
 import { PurchaseWebView } from '../components/PurchaseWebView';
 import { mergeCatalogIntoDetail } from '../services/historyPiece';
 import { PieceDetailScreen } from './PieceDetailScreen';
@@ -147,7 +146,6 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
   // v33 §H: the cover-photo flow (camera → confirm → THIS screen's search). It is
   // opened only by the affordance's own tap, and it adds no second search: the
   // confirmed text is written into `query`, the field the user types into.
-  const [showCoverScan, setShowCoverScan] = useState(false);
   // Guards against a stale response replacing newer results.
   const searchRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
@@ -288,47 +286,6 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
   }, []);
 
   /**
-   * v33 §H — "Scan a cover". The affordance opens the camera surface; the photo
-   * itself never becomes a query. The modal reads the cover ON DEVICE (v36 fix 4)
-   * and pre-fills its own field with what it read so the user can correct it — a
-   * field that is empty means nothing was read, never that something was guessed.
-   * What the user confirms comes back through `handleCoverQuery` — the same entry
-   * point as typing.
-   */
-  const handleScanCover = useCallback(() => {
-    setShowCoverScan(true);
-  }, []);
-
-  const handleCloseCoverScan = useCallback(() => {
-    setShowCoverScan(false);
-  }, []);
-
-  const handleCoverQuery = useCallback((text: string) => {
-    setShowCoverScan(false);
-    // The ONE search entry point: the debounced effect above, unchanged. A
-    // scanned title therefore produces exactly the results a typed one does
-    // (internal catalog + the official sheet music money path).
-    setQuery(text);
-  }, []);
-
-  /**
-   * GET THIS SONG (v37 item 5, backlog bce8f6f2, owner ask 10): the scan result's
-   * money path for a title we do not hold. It resolves the host's own words with
-   * the ONE affiliate URL builder (`sheetMusicDirectSearchUrl`, SMD id 67650) and
-   * opens the result in the SAME in-app shell every other purchase path on this
-   * screen uses. No second checkout, no hand-written link, no auto-redirect — the
-   * shell opens only ever from the user's own tap.
-   */
-  const handleCoverGetThisSong = useCallback(
-    (text: string) => {
-      const url = sheetMusicDirectSearchUrl(text);
-      if (!url) return;
-      handleOpenRetailer(url);
-    },
-    [handleOpenRetailer],
-  );
-
-  /**
    * The external half of the results — a licensed-retailer search for whatever
    * the user typed. SIMPLE dependency on the query (and the internal match count,
    * which only changes the honest subtitle): no request, no debounce, nothing
@@ -336,11 +293,6 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
    * matched nothing. Empty query → `visible: false` → the section renders nothing.
    */
   const external = externalSearchSection(query, pieces.length);
-
-  // The affordance's own label (v33 §H). It names what the user does — photograph
-  // a cover — and, while this build has no on-device reader, it does not claim
-  // the photo will be read for them.
-  const coverScanLabel = coverScanAffordanceLabel();
 
   const renderItem = ({ item }: { item: CatalogPiece }) => {
     const meta = [item.composer, item.catalog].filter(
@@ -387,10 +339,6 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
   // piece first, then back to whoever opened the search. Guarded by
   // src/services/backExitContract.ts.
   useHardwareBack(() => {
-    if (showCoverScan) {
-      handleCloseCoverScan();
-      return true;
-    }
     if (showDetail) {
       handleCloseDetail();
       return true;
@@ -453,19 +401,6 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
         ) : null}
       </View>
 
-      {/* v33 §H: the camera affordance sits with the search field it feeds —
-          one small row, no new screen. Its label comes from coverScan.ts, so the
-          copy and the scan's honest states stay in one place. Zero-promise: it
-          promises a search, never that the photo was understood. */}
-      <TouchableOpacity
-        style={styles.coverScanRow}
-        onPress={handleScanCover}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel={coverScanLabel}
-      >
-        <Text style={styles.coverScanText}>{coverScanLabel}</Text>
-      </TouchableOpacity>
 
       <Text style={styles.subtitle}>
         Free public-domain and classical pieces — search, then open the score.
@@ -592,14 +527,6 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
       {/* The retailer's own search page (previews + checkout), in the shared
           in-app shell: Modal root, BACK / "← Back to NoteSnap" return HERE, and
           it only ever opens from a tap. */}
-      {/* The camera surface (v33 §H): capture → confirm → the search above.
-          Tap-driven only — it exists solely behind the affordance's onPress. */}
-      <CoverScanModal
-        visible={showCoverScan}
-        onClose={handleCloseCoverScan}
-        onConfirm={handleCoverQuery}
-        onGetThisSong={handleCoverGetThisSong}
-      />
 
       <PurchaseWebView
         url={retailerUrl}
@@ -671,24 +598,6 @@ const baseStyles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // The "Scan a cover" affordance (v33 §H): a quiet row under the search field,
-  // never a second primary action on this screen.
-  coverScanRow: {
-    alignSelf: 'flex-start',
-    marginHorizontal: 20,
-    marginTop: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-    backgroundColor: '#16213e',
-  },
-  coverScanText: {
-    color: '#4ecdc4',
-    fontSize: 13,
-    fontWeight: '600',
-  },
 
   // The "what actually matched" line for a typo'd query (v33 §F3): quiet, above
   // the list, never a warning — it explains the results, it does not scold.

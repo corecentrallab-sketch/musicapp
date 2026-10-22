@@ -119,6 +119,23 @@ export function scanOverlayInsets(input: {
   };
 }
 
+/**
+ * WHERE THE FRAMING TIP SITS (v43 item C5b). It hangs BELOW the top chip and
+ * above the middle of the preview, so the area the user is aiming at — the title
+ * at the top of the score, held inside the frame — stays visible. Its own height
+ * is bounded (`SCAN_FRAMING_HINT_MAX_HEIGHT`) so the panel can never creep down
+ * over the shutter.
+ */
+export const SCAN_FRAMING_HINT_GAP = 10;
+/** The most room the tip's panel may take under the chip. */
+export const SCAN_FRAMING_HINT_MAX_HEIGHT = 132;
+/** The chip's own height, which the tip's offset must clear. */
+export const SCAN_TOP_CHIP_HEIGHT = 44;
+
+export function scanFramingHintTop(insetTop: unknown): number {
+  return scanTopChipInset(insetTop) + SCAN_TOP_CHIP_HEIGHT + SCAN_FRAMING_HINT_GAP;
+}
+
 // ───────────────────────────── the pill's geometry ───────────────────────────
 
 /** The pill's corner radius — well past half its own height, so it reads as a pill. */

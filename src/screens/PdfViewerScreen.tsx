@@ -23,6 +23,16 @@ import { AutoScrollControl } from '../components/AutoScrollControl';
 type Props = NativeStackScreenProps<RootStackParamList, 'PdfViewer'>;
 
 /**
+ * v43 item B2 — THE HONEST ONE-PAGE LINE. Auto-scroll moves a document forward a
+ * page at a time, so on a single-page PDF the control had nothing to do and was a
+ * dead button (the owner's "the play button does nothing"). A one-page document
+ * says so instead — the same treatment the scanned viewer already gives a photo
+ * (`SCANNED_NO_AUTOSCROLL_LINE`). Two pages or more and the control is there.
+ */
+export const PDF_NO_AUTOSCROLL_LINE =
+  'Auto-scroll needs more than one page — this PDF has one, so there is nothing to scroll.';
+
+/**
  * Minimal PDF viewer (Phase 4a). Renders the imported PDF with swipe page
  * navigation (enablePaging), a page indicator, and prev/next + tap-to-turn
  * controls driven by the native setPage API. FEATURE BUILD 2 adds BPM-linked
@@ -184,12 +194,20 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
       )}
 
-      {/* Auto-scroll control (FEATURE BUILD 2 + owner 10-10 speed presets) */}
-      <AutoScrollControl
-        autoScroll={autoScroll}
-        disabled={pageCount < 2}
-        speedProfiles={speedProfiles}
-      />
+      {/* Auto-scroll control (FEATURE BUILD 2 + owner 10-10 speed presets).
+          v43 item B2 — the control is rendered ONLY when the document has more
+          than one page: with a single page there is nothing to scroll to, and a
+          disabled play button on a one-page PDF reads as a broken feature. One
+          page now says so plainly; zero pages (still loading) renders neither. */}
+      {pageCount >= 2 ? (
+        <AutoScrollControl
+          autoScroll={autoScroll}
+          disabled={pageCount < 2}
+          speedProfiles={speedProfiles}
+        />
+      ) : pageCount === 1 ? (
+        <Text style={styles.autoScrollNote}>{PDF_NO_AUTOSCROLL_LINE}</Text>
+      ) : null}
 
       {/* Page indicator + controls */}
       <View style={styles.footer}>
@@ -280,6 +298,15 @@ const baseStyles = StyleSheet.create({
   },
   footerButtonDisabled: {
     opacity: 0.35,
+  },
+  /* v43 item B2 — the honest one-page line, in the footer's own quiet type. */
+  autoScrollNote: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    lineHeight: 17,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    textAlign: 'center',
   },
   pageLabel: {
     color: '#a0a0b8',
