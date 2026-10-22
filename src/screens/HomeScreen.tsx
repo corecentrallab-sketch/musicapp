@@ -11,6 +11,7 @@
 import { useThemedStyles } from '../services/themeStore';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
+  AccessibilityInfo,
   View,
   Text,
   StyleSheet,
@@ -19,6 +20,7 @@ import {
   RefreshControl,
   Animated,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -68,17 +70,17 @@ import {
   FIND_PIECE_ENTRY_HINT,
   FIND_PIECE_ENTRY_LABEL,
   HUM_FALLBACK_LIBRARY_NOTE,
-  HUM_SECONDARY_CTA,
-  HUM_SIBLING_BODY,
-  HUM_SIBLING_TITLE,
-  HUM_SPLIT_TEACH_LINE,
+  HOME_SPLIT_HUM_A11Y,
+  HOME_SPLIT_HUM_TIP,
+  HOME_SPLIT_HUM_TITLE,
+  HOME_SPLIT_LISTEN_A11Y,
+  HOME_SPLIT_LISTEN_TITLE,
+  HOME_SPLIT_SECTION_LABEL,
   frontDoorStartFailure,
   heroAccessibilityLabel,
-  heroLabel,
   heroState,
   heroSupport,
   heroTapAction,
-  heroTitle,
   homePromiseCopy,
   humMatchToResultResponse,
 } from '../services/frontDoor';
@@ -86,6 +88,20 @@ import {
 // result surface renders it INLINE, so the door's own hum pass looks the piece up
 // in our catalog exactly as the full hum screen does.
 import type { HumResolvedSheet } from '../services/frontDoor';
+// THE v44 EQUAL SPLIT (owner-approved 10-22): two peer panels, ONE component
+// with a `variant` prop. Every hex/dp/delta/copy string lives in
+// src/services/heroSplit.ts (spec: hum-button-concept/ENGINEER-NOTES.md) so this
+// screen never retypes a number, and the tier-1 gate scans this file's real
+// source for the wiring (both panels → real handlers, the one-time tip key).
+import { HeroSplitPanel } from '../components/HeroSplitPanel';
+import { HumSplitCoachMark } from '../components/HumSplitCoachMark';
+import {
+  SPLIT_TEST_IDS,
+  SPLIT_TIP,
+  splitPanelBody,
+  splitPuckState,
+  splitShouldShowTip,
+} from '../services/heroSplit';
 // The front door's BAND MODEL and the "Find any song" chip's one source of copy
 // (re-flow bundle D + B, owner build-go 10-02). The band containers below render
 // from these names, and src/services/frontDoorBands.ts + scripts/frontDoorBands.test.ts
@@ -514,6 +530,49 @@ export const HomeScreen: React.FC = () => {
     humFallback,
     busy: heroBusy,
   });
+
+  // ── The v44 first-time coach mark (spec §7, still 04) ──
+  // ONE TIME per install: the key is READ before it shows and WRITTEN the moment
+  // it shows, so a dismissed tip can never come back (spec §7 "never re-show
+  // after a dismiss"). It fires once, on the FIRST Home render after install, and
+  // is dismissed by the first tap anywhere (the screen's onTouchStart + the hum
+  // panel's own press) or by the 8 s timeout. Nothing here scrims the page: a dim
+  // layer would darken the Listen panel and break the equality.
+  const [splitTipVisible, setSplitTipVisible] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem(SPLIT_TIP.key);
+        if (cancelled || !splitShouldShowTip(stored)) return;
+        // Reduced motion: the bubble still shows — the pulse does not run.
+        const reduced = await AccessibilityInfo.isReduceMotionEnabled().catch(
+          () => false,
+        );
+        if (cancelled) return;
+        setReduceMotion(reduced);
+        setSplitTipVisible(true);
+        await AsyncStorage.setItem(SPLIT_TIP.key, SPLIT_TIP.shownValue);
+        AccessibilityInfo.announceForAccessibility(HOME_SPLIT_HUM_TIP);
+      } catch {
+        // A failed read/write only costs the tip; the door itself never breaks.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const dismissSplitTip = useCallback(() => setSplitTipVisible(false), []);
+
+  // The 8 s dismissal (spec §7). A visible tip always has this timer armed.
+  useEffect(() => {
+    if (!splitTipVisible) return;
+    const timer = setTimeout(() => setSplitTipVisible(false), SPLIT_TIP.timeoutMs);
+    return () => clearTimeout(timer);
+  }, [splitTipVisible]);
 
   /** Everything a successful LIBRARY match does after the card is shown: save it,
    *  count the practice day, refresh the streak/week/badges. */
@@ -1182,8 +1241,9 @@ export const HomeScreen: React.FC = () => {
   // instrument-aware too — guitar users get the live TAB promise.
   // (Rendered inline below from that helper — one source of truth.)
 
-  // The one button, mirrored from the front door's state machine.
-  const heroEmoji = recorder.isRecording ? '🎙️' : '🎤';
+  // The one button, mirrored from the front door's state machine. (v44: the
+  // button is the LISTEN panel of the equal split — its face is the brand
+  // emblem, so the 🎤/🎙️ emoji is retired with the round disc.)
 
   /** The week is complete when the user hit the goal they set. */
   const weekComplete = weeklyGoal.current >= weeklyGoal.target;
@@ -1395,27 +1455,70 @@ export const HomeScreen: React.FC = () => {
           {homePromiseCopy(onboarding?.instrument)}
         </Text>
 
-        {/* ══ BAND A — IDENTIFY ══ (re-flow bundle D, owner build-go 10-02)
-            The hero card exactly as it was: emoji, title, support, the ONE button,
-            the hum row with the new "Find any song" chip beside it, and the honest
-            beta note. Nothing in this band is re-ordered — the audit's band A is
-            "identify (hero, unchanged)".
+        {/* ══ BAND A — RECOGNISE MUSIC ══ (v44 EQUAL SPLIT, owner-approved 10-22)
 
-            ONE-BUTTON FRONT DOOR (owner-approved 09-24): the ONLY primary action on
-            this screen. One tap runs the whole hybrid pipeline (our library landmark
-            match, then the AudD modern pass) with no mode choice; when the ambient
-            pass hears nothing we recognise, this SAME button becomes the
-            hum/whistle/sing fallback — inline, never a rival button. Every state's
-            words come from src/services/frontDoor.ts. */}
-        <View style={styles.band} testID={BAND_TEST_IDS.identify}>
-        <View style={styles.recognitionCard}>
-          <Text style={styles.recognitionEmoji}>{heroEmoji}</Text>
-          <Text style={styles.recognitionTitle}>{heroTitle(hero)}</Text>
-          <Text style={styles.recognitionDesc}>
-            {heroSupport(hero, { isPro, freeRecognitions })}
-          </Text>
+            The user-test failure this replaces: the navy `#16213e` hum card with
+            a teal outline read as INFORMATION, not as a BUTTON. The fix is
+            structural, not verbal — TWO PEER PANELS of identical shape, size,
+            fill weight and affordance (180 × 236 dp, radius 22, gap 12), so hum
+            can never read as a sub-paragraph of Listen:
 
-          {/* Mic permission error inline */}
+              · LISTEN (rose #F4586F → #C92A46) — the money-path door, still left,
+                still the brand emblem; one tap runs the whole hybrid pipeline
+                (our library landmark match, then the AudD modern pass), and when
+                the ambient pass hears nothing the SAME door carries the inline
+                hum fallback (frontDoor.heroState);
+              · HUM & SING (electric indigo #7A45FF → #3B1AA8) — the melody door:
+                handleHumEntry → HumSearchScreen, whose capture window starts
+                recording on mount. No second hum implementation.
+
+            Both panels are ONE component with a `variant` prop (two hand-copied
+            styles drift, and drift is the failure the split removes). Every hex,
+            dp, press delta and copy string lives in src/services/heroSplit.ts
+            and frontDoor.ts; the tier-1 gate scans THIS source for the wiring.
+            Spec: /home/team/shared/hum-button-concept/ENGINEER-NOTES.md. */}
+        <View
+          style={styles.band}
+          testID={BAND_TEST_IDS.identify}
+          onTouchStart={splitTipVisible ? dismissSplitTip : undefined}
+        >
+          {/* The section label above the pair (spec §1). */}
+          <Text style={styles.splitSectionLabel}>{HOME_SPLIT_SECTION_LABEL}</Text>
+
+          <View style={styles.heroPairWrap}>
+            {/* The ONE-TIME first-run bubble (spec §7): above the pair, right-
+                aligned over the hum panel, never a scrim, never over Listen. */}
+            {splitTipVisible && <HumSplitCoachMark />}
+            <View style={styles.heroPairRow}>
+              <HeroSplitPanel
+                variant="listen"
+                style={styles.recognitionBtn}
+                testID={SPLIT_TEST_IDS.listen}
+                puckState={splitPuckState('listen', hero)}
+                title={HOME_SPLIT_LISTEN_TITLE}
+                body={splitPanelBody('listen', hero)}
+                accessibilityLabel={
+                  hero === 'idle'
+                    ? HOME_SPLIT_LISTEN_A11Y
+                    : heroAccessibilityLabel(hero)
+                }
+                onPress={handleHeroTap}
+              />
+              <HeroSplitPanel
+                variant="hum"
+                style={styles.humEntryBtn}
+                testID={SPLIT_TEST_IDS.hum}
+                puckState={splitPuckState('hum', hero)}
+                title={HOME_SPLIT_HUM_TITLE}
+                body={splitPanelBody('hum', hero)}
+                accessibilityLabel={HOME_SPLIT_HUM_A11Y}
+                onPress={handleHumEntry}
+                tipRings={splitTipVisible && !reduceMotion}
+              />
+            </View>
+          </View>
+
+          {/* Mic permission error inline — a real error always reaches a surface */}
           {recorder.error && !recorder.isRecording && (
             <View style={styles.permissionError}>
               <Text style={styles.permissionErrorText}>{recorder.error}</Text>
@@ -1428,7 +1531,8 @@ export const HomeScreen: React.FC = () => {
             </View>
           )}
 
-          {/* Recording indicator */}
+          {/* Recording indicator (the panel puck also carries the listening /
+              recording treatment — spec §8 — this dot is the screen-level cue) */}
           {recorder.isRecording && (
             <Animated.View
               style={[
@@ -1440,21 +1544,17 @@ export const HomeScreen: React.FC = () => {
             </Animated.View>
           )}
 
-          {/* THE one button. In hum-fallback mode it is the SAME button — the
-              user never picks a mode. */}
-          <TouchableOpacity
-            style={[
-              styles.recognitionBtn,
-              recorder.isRecording && styles.recognitionBtnActive,
-            ]}
-            onPress={handleHeroTap}
-            disabled={recorder.checkingPermissions || hero === 'busy'}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={heroAccessibilityLabel(hero)}
-          >
-            <Text style={styles.recognitionBtnText}>{heroLabel(hero)}</Text>
-          </TouchableOpacity>
+          {/* The honest support line: the free-recognition count, or what the
+              current state is doing. Every state has words (frontDoor.heroSupport). */}
+          <Text style={styles.splitSupportLine}>
+            {heroSupport(hero, { isPro, freeRecognitions })}
+          </Text>
+
+          {/* Honest beta note — the recognition library is small and growing.
+              In hum mode it says what the hum fallback can actually do. */}
+          <Text style={styles.tier1BetaNote}>
+            {humFallback ? HUM_FALLBACK_LIBRARY_NOTE : FRONT_DOOR_BETA_NOTE}
+          </Text>
 
           {/* Demo button — dev-only shortcut that skips microphone */}
           {__DEV__ && !recorder.isRecording && (
@@ -1466,48 +1566,17 @@ export const HomeScreen: React.FC = () => {
               <Text style={styles.demoBtnText}>🧪 Try Demo</Text>
             </TouchableOpacity>
           )}
-
-          {/* The two secondary ways in, SIDE BY SIDE (re-flow bundle B, owner
-              10-02): the hum row (owner 09-25) and the new "Find any song" chip.
-              The hum entry stays FIRST, so the door's priority order is unchanged
-              (frontDoor.humEntryWired), and the chip renders AFTER it in source
-              order (frontDoor.findAnySongChipWired) — it must never disturb the
-              hero's own order.
-
-              v33 §E (owner 10-03, designer concept 5) RESTRUCTURED THIS BLOCK:
-              the hum entry is no longer a quiet text row beside a search chip —
-              it is a full SIBLING CARD directly under the Listen hero (see below
-              the hero card), and the search chip has moved OUT of this block
-              into its own Discover band (owner 10-04: the search bar under
-              hum/whistle "does not fit the flow there"). Band A therefore holds
-              the two LISTENING doors + the honest beta note, nothing else. */}
-
-          {/* Honest beta note — the recognition library is small and growing.
-              In hum mode it says what the hum fallback can actually do. */}
-          <Text style={styles.tier1BetaNote}>
-            {humFallback ? HUM_FALLBACK_LIBRARY_NOTE : FRONT_DOOR_BETA_NOTE}
-          </Text>
         </View>
 
-        {/* The HUM SIBLING CARD (v33 §E, owner 10-03): a real full-width card
-            directly beneath the Listen hero — same weight class, its own title +
-            body + one tap — NOT a chip and NOT a menu item. It opens the SAME
-            hum flow as before (handleHumEntry → HumSearchScreen, whose capture
-            window starts recording on mount), so there is no second hum
-            implementation. Its copy comes from frontDoor.ts, and the teach line
-            under the pair names which door is which. */}
-        <TouchableOpacity
-          style={styles.humEntryBtn}
-          onPress={handleHumEntry}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={HUM_SECONDARY_CTA}
-        >
-          <Text style={styles.humEntryTitle}>{HUM_SIBLING_TITLE}</Text>
-          <Text style={styles.humEntryBody}>{HUM_SIBLING_BODY}</Text>
-        </TouchableOpacity>
-        <Text style={styles.humSplitLine}>{HUM_SPLIT_TEACH_LINE}</Text>
-        </View>
+        {/* The old full-width HUM SIBLING CARD and its teach line are RETIRED
+            here (v44 equal split, owner 10-22): hum is now the right-hand PEER of
+            Listen, above this point, so neither the card nor the third row of
+            text ("Hear it → Listen · Think it → Hum") has a job any more.
+            The wrapper View that carried the retired card is gone WITH it — this
+            close tag was its leftover, and it left band A's parent unbalanced
+            (`Expected corresponding JSX closing tag for <ScrollView>`), which the
+            babel pre-flight caught and the tier-1 tsc run could not, because
+            tsconfig.tier1.json never includes the screens. */}
 
         {/* ══ DISCOVER BAND (v33 §E + §F3b, owner 10-04) ══
             The "Find any song" search entry has its OWN band now, directly under
@@ -1825,54 +1894,44 @@ const baseStyles = StyleSheet.create({
   },
 
 
-  // Recognition CTA
-  recognitionCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 22,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#0f3460',
-    marginBottom: 16,
-  },
-  recognitionEmoji: {
-    fontSize: 40,
-    marginBottom: 8,
-  },
-  recognitionTitle: {
-    fontSize: 18,
+  // ── The v44 EQUAL SPLIT (owner 10-22) ──
+  // The section label sits ABOVE the pair (spec §1: label, then the panels), and
+  // the two slots below are just that: SLOTS. Both are `flex: 1` in one row with
+  // a 12 dp gap, so the peers are always exactly equal — the fill, radius,
+  // shadow, press deltas and copy inside them live in
+  // src/components/HeroSplitPanel.tsx and src/services/heroSplit.ts. The names
+  // `recognitionBtn` / `humEntryBtn` are kept on purpose: the tier-1 door
+  // contracts look the two panels up by these markers.
+  splitSectionLabel: {
+    fontSize: 11,
     fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 6,
+    letterSpacing: 1.4,
+    color: '#8a8aa3',
+    marginBottom: 10,
   },
-  recognitionDesc: {
-    fontSize: 13,
-    color: '#a0a0b8',
-    textAlign: 'center',
-    lineHeight: 19,
-    marginBottom: 16,
-    paddingHorizontal: 10,
+  heroPairWrap: {
+    position: 'relative',
+    width: '100%',
+  },
+  heroPairRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 12,
+    width: '100%',
   },
   recognitionBtn: {
-    backgroundColor: '#e94560',
-    borderRadius: 90,
-    width: 172,
-    height: 172,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#e94560',
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
+    flex: 1,
   },
-  recognitionBtnActive: {
-    backgroundColor: '#ff6b6b',
+  humEntryBtn: {
+    flex: 1,
   },
-  recognitionBtnText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
+  // The honest support line under the pair (free-recognition count / state).
+  splitSupportLine: {
+    fontSize: 12,
+    color: '#a0a0b8',
+    textAlign: 'center',
+    marginTop: 12,
+    lineHeight: 17,
   },
 
   // Demo button (dev-only)
@@ -1909,44 +1968,10 @@ const baseStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#0f3460',
   },
-  // v33 §E (owner 10-03, designer concept 5): the hum entry is a SIBLING CARD
-  // directly under the Listen hero card — full width, same weight class, its own
-  // title + body + one tap, teal (#4ecdc4, the "you can act here" colour of the
-  // v33 concepts). It is deliberately NOT a chip, NOT a menu item and NOT the
-  // quiet underlined text row it was in v32.
-  humEntryBtn: {
-    alignSelf: 'stretch',
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#4ecdc4',
-    paddingVertical: 16,
-    paddingHorizontal: 18,
-    marginBottom: 8,
-  },
-  humEntryTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#4ecdc4',
-    marginBottom: 4,
-  },
-  humEntryBody: {
-    fontSize: 13,
-    color: '#a0a0b8',
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  // The one line under the pair that teaches which door is which (concept 5).
-  humSplitLine: {
-    fontSize: 12,
-    color: '#8a8aa3',
-    textAlign: 'center',
-    marginBottom: 14,
-  },
-  // The Discover band's one honest line above the search entry.
+  // v44 (owner 10-22): the navy sibling card, its title/body styles and the
+  // teach line under it are GONE — the hum door is the right-hand PEER panel
+  // above, painted by src/components/HeroSplitPanel.tsx. `humEntryBtn` is now
+  // nothing but that panel's slot; the contract marker name is kept on purpose.
   discoverNote: {
     fontSize: 12,
     color: '#a0a0b8',

@@ -585,8 +585,15 @@ export function homeHasQuietAchievementsEntry(source: string): boolean {
   const tag = elementWithMarker(masked, 'styles.achievementsCard');
   if (!/onPress=\{handleOpenAchievements\}/.test(tag)) return false;
   // The front door still renders, and the entry sits AFTER it — never above the
-  // hero, never a competing primary CTA.
-  const heroIndex = masked.indexOf('styles.recognitionCard');
+  // hero, never a competing primary CTA. The hero's OWN anchor is whichever
+  // front door Home ships: v43's round card (`styles.recognitionCard`) or, since
+  // the v44 equal split, the rose LISTEN panel (`styles.recognitionBtn`, the peer
+  // that carries onPress={handleHeroTap}). Keying on the v43 card alone made this
+  // guard silently un-meetable when the split landed — the entry had nothing left
+  // to sit below. Whichever anchor is present is the reference point; with
+  // neither, there is no hero to sit under and the entry is not quiet by default.
+  const heroCard = masked.indexOf('styles.recognitionCard');
+  const heroIndex = heroCard >= 0 ? heroCard : masked.indexOf('styles.recognitionBtn');
   const entryIndex = masked.indexOf('styles.achievementsCard');
   if (heroIndex < 0 || entryIndex < 0) return false;
   if (entryIndex < heroIndex) return false;

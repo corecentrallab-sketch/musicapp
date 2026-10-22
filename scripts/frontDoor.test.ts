@@ -936,16 +936,16 @@ function humEntryTests(): void {
     `the entry is wired to ${HUM_ENTRY_HANDLER}`,
   );
   assert(
-    /<Text style=\{styles\.humEntryBody\}>\{HUM_SIBLING_BODY\}<\/Text>/.test(home),
-    "the entry's visible body IS the shared secondary CTA copy (never a rival hero label)",
+    /body=\{splitPanelBody\('hum', hero\)\}/.test(home),
+    "the hum panel's visible body comes from the split's ONE body source (v44)",
   );
   assert(
-    /<Text style=\{styles\.humEntryTitle\}>\{HUM_SIBLING_TITLE\}<\/Text>/.test(home),
-    'the hum sibling card carries its own title (v33 §E: a card, not a text row)',
+    /title=\{HOME_SPLIT_HUM_TITLE\}/.test(home),
+    'the hum panel carries its own peer title (v44 equal split)',
   );
   assert(
-    /accessibilityLabel=\{HUM_SECONDARY_CTA\}/.test(home),
-    'the entry is reachable to a screen reader under the same copy',
+    /accessibilityLabel=\{HOME_SPLIT_HUM_A11Y\}/.test(home),
+    'the hum panel is reachable to a screen reader under its own label',
   );
   assert(
     home.indexOf(`onPress={${HUM_ENTRY_HANDLER}}`) >
@@ -1125,12 +1125,54 @@ function humLabelCopyTests(): void {
   );
 
   // ── mutation probes on the REAL sources ──
-  const humOnlyHome = home.split('HUM_SECONDARY_CTA').join('"Can\'t play it? Hum it"');
-  assert(humOnlyHome !== home, 'the Home mutation fixture changed the real source');
+  // v44: Home's hum door no longer spells the shared CTA inline — the panel body
+  // comes from frontDoor.HOME_SPLIT_HUM_BODY through heroSplit.splitPanelBody().
+  // A byte-swap of the now-retired HUM_SECONDARY_CTA token therefore changed
+  // nothing Home renders and the scan could no longer SEE the hum-only copy
+  // coming back (it passed). So the probe injects the retired copy where the
+  // door actually renders it, AND the authored constant is scanned separately
+  // below — the guard follows the copy to wherever it moves.
+  const humOnlyHome = home.replace(
+    "body={splitPanelBody('hum', hero)}",
+    'body={"Can\'t play it? Hum it"}',
+  );
+  assert(
+    humOnlyHome !== home,
+    'the Home mutation fixture changed the real hum panel body (v44 equal split)',
+  );
   assertEq(
     humOnlyCopyRetired(humOnlyHome),
     false,
     'MUTATION: the hum-only CTA coming back to Home fails the live scan',
+  );
+
+  // The copy's home since the split: the constant itself, scanned as authored.
+  const copyModule = readAppFile('src/services/frontDoor.ts');
+  const splitHumBody = /export const HOME_SPLIT_HUM_BODY =\s*([\s\S]*?);/.exec(copyModule);
+  assert(splitHumBody !== null, 'the equal split\'s hum-panel copy is declared in frontDoor.ts');
+  const humBodyLiteral = splitHumBody === null ? '' : splitHumBody[1];
+  assertEq(
+    humOnlyCopyRetired(humBodyLiteral),
+    true,
+    'the hum panel\'s authored copy carries no retired hum-only string',
+  );
+  assertEq(
+    captureCopyIsHonest(humBodyLiteral),
+    true,
+    'the hum panel\'s authored copy names all three capture modes',
+  );
+  const humOnlyCopy = copyModule.replace(
+    'Hum, whistle or sing the melody.',
+    'Hum it',
+  );
+  assert(
+    humOnlyCopy !== copyModule,
+    'the copy-module mutation fixture changed the real constant',
+  );
+  assertEq(
+    humOnlyCopyRetired(humOnlyCopy),
+    false,
+    'MUTATION: hum-only copy returning to the split panel fails the live scan',
   );
 
   const hummedCapture = hum.replace('Recording your melody...', 'Humming...');
@@ -1346,6 +1388,24 @@ function rivalHeroMutationTests(): void {
     findPieceIsSearchEntry(twoHeroes),
     false,
     'MUTATION: a promoted search entry FAILS the "search field, not a hero" contract',
+  );
+
+  // Defect 3 (v44): the hum PEER panel promoted into a second hero — its body
+  // line stays, its own style stays, but its tap now runs the identify pipeline.
+  // That is the hum-centric hero the one-hero contract exists to forbid, and it
+  // is the exact way the new split could hollow out the guard, so it must bite
+  // on BOTH contracts: one hero CTA, and hum as the labelled secondary door.
+  const humAsHero = home.replace('onPress={handleHumEntry}', 'onPress={handleHeroTap}');
+  assert(humAsHero !== home, 'the hum-as-hero mutation fixture changed the real source');
+  assertEq(
+    hasSingleHeroCta(humAsHero),
+    false,
+    'MUTATION: the hum panel turned into a second hero FAILS the one-CTA contract',
+  );
+  assertEq(
+    humEntryWired(humAsHero),
+    false,
+    'MUTATION: a hum panel that no longer opens the hum flow FAILS the hum-entry contract',
   );
 }
 
