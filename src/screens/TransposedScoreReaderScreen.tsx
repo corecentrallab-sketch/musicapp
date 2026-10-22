@@ -54,6 +54,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import { AbcScoreView } from '../components/AbcScoreView';
 import { SampleBadge } from '../components/SampleBadge';
+import { ScoreLengthLine } from '../components/ScoreLengthLine';
 import { addAbcToLibrary } from '../services/libraryStore';
 import {
   transposedCopyTitle,
@@ -279,10 +280,17 @@ export const TransposedScoreReaderScreen: React.FC<Props> = ({ navigation, route
           {title}
         </Text>
         <Text style={styles.subtitle}>{subtitle}</Text>
+        {/* THE HONEST LENGTH LINE (v43 slice 2, item A2). The reader header now
+            states the score's own length in the owner's words — "Bars 1–4 of 4"
+            for a bundled sample, "16 bars" for a full melody — so a short piece
+            can never again read as a renderer fault. Derived from the ABC
+            (services/scoreLength.ts), never typed. */}
+        <ScoreLengthLine abc={abc} style={styles.scoreLengthLine} />
         {/* WHAT THIS SCORE ACTUALLY IS (UX round 1 step 1, owner 10-18 item 5).
-            Every bundled ABC score is a 3-4 bar excerpt, so a reader showing "the
-            whole piece" shows a few bars — correctly. The shared badge says so,
-            from the score's own bar count. The reader may not reach the network
+            Since v43 slice 2 the five headliners are full-length melodies and the
+            three remaining samples still show a few bars, so the length line above
+            (and this badge, from the score's own bar count) is what makes the
+            difference legible. The reader may not reach the network
             (v39's no-network contract), so it passes no `libraryState` and the
             badge makes no claim about what the free library holds beyond this. */}
         <SampleBadge abc={abc} isSample={isSample} style={styles.sampleBadge} />
@@ -455,6 +463,10 @@ const baseStyles = StyleSheet.create({
     fontSize: 13,
   },
   sampleBadge: {
+    marginTop: 4,
+  },
+  /** The honest length line: directly under the subtitle it completes. */
+  scoreLengthLine: {
     marginTop: 4,
   },
   keyRow: {

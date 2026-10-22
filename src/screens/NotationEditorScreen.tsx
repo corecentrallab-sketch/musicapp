@@ -27,6 +27,11 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import { AbcScoreView } from '../components/AbcScoreView';
 import { SampleBadge } from '../components/SampleBadge';
+import { ScoreLengthLine } from '../components/ScoreLengthLine';
+import {
+  NOTATION_PICKER_TAG,
+  choosePieceLabel,
+} from '../services/notationPicker';
 import {
   PUBLIC_DOMAIN_ABC_SCORES,
   type AbcScore,
@@ -75,6 +80,8 @@ function scoreFromAbc(abc: string, title: string): AbcScore {
     composer: 'Your library',
     keyLabel: extractAbcKey(abc) ?? 'C',
     isPublicDomain: true,
+    // A saved copy is whatever the user saved; this bundle never claims more.
+    scope: 'A saved copy from your library',
     abc,
   };
 }
@@ -267,15 +274,20 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
         your library. Note-by-note editing arrives in a later version.
       </Text>
 
-      {/* Piece picker (only when not opened from a saved library item). */}
+      {/* Piece picker (only when not opened from a saved library item).
+          ALL EIGHT, VISIBLE AT ONCE (v43 slice 2, item D; owner 10-22: "only
+          Für Elise and Ode to Joy"). The list always held eight pieces — the
+          surface was a HORIZONTAL chip scroller with no scroll indicator and no
+          count, so two fit on screen and nothing said the rest existed. It is now
+          a wrapping 2-column grid (four short rows) under a label whose count is
+          DERIVED from the list (`choosePieceLabel`, services/notationPicker.ts),
+          so a ninth piece can never go unseen again. */}
       {!itemId && (
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Choose a piece</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.pickerRow}
-          >
+          <Text style={styles.sectionLabel}>
+            {choosePieceLabel(PUBLIC_DOMAIN_ABC_SCORES.length)}
+          </Text>
+          <View style={styles.pickerGrid} testID={NOTATION_PICKER_TAG}>
             {PUBLIC_DOMAIN_ABC_SCORES.map((p) => {
               const active = selected.id === p.id;
               return (
@@ -283,6 +295,9 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
                   key={p.id}
                   style={[styles.chip, active && styles.chipActive]}
                   onPress={() => pick(p)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={`${p.title}, ${p.composer}`}
                 >
                   <Text style={[styles.chipTitle, active && styles.chipTextActive]}>
                     {p.title}
@@ -293,7 +308,7 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </View>
         </View>
       )}
 
@@ -377,13 +392,20 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
           </View>
         )}
         {/* WHAT THIS SCORE ACTUALLY IS (v39 Part 2; shared badge from UX round 1
-            step 1, owner 10-18 item 5). Every bundled ABC score is a 3-4 bar
-            excerpt, so a reader showing "the whole piece" shows a few bars —
-            correctly. Saying so, from the score's own bar count, is the honest
+            step 1, owner 10-18 item 5). Since v43 slice 2 five headliners carry
+            their whole melody and three entries are still short samples, so the
+            badge says which is which — from the score's own bar count. Saying so
+            is the honest
             fix; the title is deliberately left alone because
             services/pieceAbc.ts fuzzy-matches pieces BY TITLE. The editor cannot
             check the catalog, so the badge makes no claim about the free library. */}
         <SampleBadge abc={selected?.abc} style={styles.sampleBadge} />
+        {/* THE HONEST LENGTH LINE (v43 slice 2, item A2 — the diagnosis' own
+            wording). "Bars 1–4 of 4" for a bundled sample, "16 bars" for a full
+            melody: the number comes from the score itself
+            (services/scoreLength.ts), so a short piece can never again look like
+            a broken renderer, and a full piece never claims to be an excerpt. */}
+        <ScoreLengthLine abc={transposedAbc} style={styles.scoreLengthLine} />
         {/* THE STAFF NEEDS A REAL BOX (v36 fix 3 — "the sheet wouldn't open"), AND
             IT IS A FLOOR, NEVER A CEILING (v42 fix A — the owner's "only 4 bars
             again", v41 device pass 10-20).
@@ -504,6 +526,16 @@ const baseStyles = StyleSheet.create({
     gap: 10,
     paddingRight: 8,
   },
+  /**
+   * THE WRAPPING GRID (v43 slice 2, item D). Two chips per row, `wrap` so the
+   * rest fall onto the next lines instead of scrolling off-screen; each chip
+   * takes just under half the width so eight pieces read as a 2 × 4 block.
+   */
+  pickerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
   chip: {
     backgroundColor: '#16213e',
     borderWidth: 1,
@@ -511,7 +543,8 @@ const baseStyles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    maxWidth: 200,
+    width: '48%',
+    flexGrow: 1,
   },
   chipActive: {
     borderColor: '#e94560',
@@ -674,6 +707,10 @@ const baseStyles = StyleSheet.create({
   },
   sampleBadge: {
     marginTop: 8,
+  },
+  /** The honest length line sits right under the badge it complements. */
+  scoreLengthLine: {
+    marginTop: 6,
   },
   readerBtn: {
     flexDirection: 'row',

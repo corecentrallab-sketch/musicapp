@@ -191,7 +191,14 @@ assertEq(readerSampleLabel({ isSample: true, abc: 'K:C\nC D | E F |]' }), 'Sampl
 assertEq(readerSampleLabel({ isSample: true, abc: 'K:C\nC D | E F |]' }) !== SAMPLE_EXCERPT_FALLBACK_LABEL, true, 'the fallback is only for an unreadable count');
 assertEq(readerSampleLabel({ isSample: true, abc: '' }), SAMPLE_EXCERPT_FALLBACK_LABEL, 'a flagged sample with no readable music still says it is a sample');
 for (const score of PUBLIC_DOMAIN_ABC_SCORES) {
-  assertEq(sampleExcerptLabel(score.abc) !== null, true, `the bundled score "${score.title}" is labelled a sample (it is an excerpt)`);
+  const bundledBars = countAbcBars(score.abc);
+  if (bundledBars <= SAMPLE_EXCERPT_MAX_BARS) {
+    assertEq(sampleExcerptLabel(score.abc), `Sample \u00b7 ${bundledBars}-bar excerpt`, `the bundled SAMPLE "${score.title}" is labelled a sample, with its own count`);
+  } else {
+    // v43 slice 2: five headliners are now WHOLE melodies. The badge must not claim
+    // they are excerpts — the honest length line ("16 bars") is what names their length.
+    assertEq(sampleExcerptLabel(score.abc), null, `the FULL-LENGTH "${score.title}" is not called a sample (${bundledBars} bars)`);
+  }
 }
 
 console.log('\nv39 reader — the share decision (a file, or the score as text)');

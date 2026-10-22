@@ -1,7 +1,16 @@
 /**
  * AbcScoreView — renders ABC notation to an interactive SVG score inside a
- * WebView using ABCjs (loaded from CDN, mirroring how ScoreViewer loads pdf.js
- * from CDN).
+ * WebView using ABCjs.
+ *
+ * v43 slice 2 (A4, owner 10-22) — ABCJS IS BUNDLED, NOT FETCHED. The document
+ * used to load the renderer from a public CDN with a remote script tag.
+ * With no network — or a blocked CDN — the document had no renderer at all, so
+ * the score drew NOTHING and the app looked broken on exactly the surfaces that
+ * promise offline. The renderer now ships inside the app
+ * (`src/assets/abcjsBasic.ts`, generated from the official dist file by
+ * `scripts/gen-abcjs-asset.js`, provenance + sha256 in that file's header) and
+ * `generateAbcHtml` inlines it, so the viewer's document contains no remote URL
+ * of any kind and renders the same on a plane as in a studio.
  *
  * This is the "renderer" for the notation editor: it draws the (possibly
  * transposed) ABC string so the user sees the result of every transpose
@@ -26,6 +35,7 @@ import {
   abcScoreContainerHeight,
   scoreReaderBand,
 } from '../services/scoreHeight';
+import { ABCJS_BASIC_MIN_JS } from '../assets/abcjsBasic';
 
 /** The ink a score is drawn in when the caller names none (near-black on paper). */
 export const ABC_DEFAULT_INK = '#0b1220';
@@ -124,13 +134,20 @@ interface AbcScoreViewProps {
 }
 
 /**
- * Build the HTML document that pulls in ABCjs from CDN and renders the given
- * ABC to SVG, scaled to fit the container width.
+ * Build the HTML document that renders the given ABC to SVG, scaled to fit the
+ * container width.
+ *
+ * v43 slice 2 (A4): the ABCjs renderer is INLINED from the app's own bundle —
+ * `rendererScript` defaults to `ABCJS_BASIC_MIN_JS` (src/assets/abcjsBasic.ts,
+ * abcjs 6.2.3, MIT). The document therefore carries no remote URL at all, which
+ * is what makes an offline render possible; `scripts/v43Slice2.test.ts` fails if
+ * a CDN host ever comes back into this function or anywhere in `src/`.
  */
 export function generateAbcHtml(
   abc: string,
   ink: string = ABC_DEFAULT_INK,
   background: string = ABC_DEFAULT_BACKGROUND,
+  rendererScript: string = ABCJS_BASIC_MIN_JS,
 ): string {
   const abcJson = JSON.stringify(abc);
   const inkJson = JSON.stringify(ink);
@@ -161,21 +178,31 @@ export function generateAbcHtml(
 <body>
   <div id="paper"></div>
   <div id="error">Could not render this ABC score.</div>
-<script src="https://cdn.jsdelivr.net/npm/abcjs@6.2.3/dist/abcjs-basic-min.js"></script>
+<script>${rendererScript}</script>
 <script>
   (function () {
     var abc = ${abcJson};
     var ink = ${inkJson};
+    var errorBox = document.getElementById('error');
     try {
-      window.ABCJS.renderAbc('paper', abc, {
-        responsive: 'resize',
-        paddingtop: 0,
-        paddingbottom: 0,
-        add_classes: true,
-        foregroundColor: ink
-      });
+      if (!window.ABCJS || typeof window.ABCJS.renderAbc !== 'function') {
+        // Honest failure, on screen. The renderer is bundled, so this can only
+        // happen if the bundle in this build is damaged — never because the
+        // phone is offline. Silence here was the whole bug: an empty staff.
+        errorBox.textContent = 'The score renderer did not load in this build.';
+        errorBox.style.display = 'block';
+      } else {
+        window.ABCJS.renderAbc('paper', abc, {
+          responsive: 'resize',
+          paddingtop: 0,
+          paddingbottom: 0,
+          add_classes: true,
+          foregroundColor: ink
+        });
+      }
     } catch (e) {
-      document.getElementById('error').style.display = 'block';
+      errorBox.textContent = 'Could not render this ABC score.';
+      errorBox.style.display = 'block';
     }
   })();
 </script>
