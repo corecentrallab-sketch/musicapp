@@ -16,6 +16,17 @@ export interface CatalogPiece {
   title: string;
   composer: string;
   catalog: string | null;
+  /**
+   * Era bucket stored on `pieces.genre` (Renaissance / Baroque / Classical /
+   * Romantic / Impressionist / Modern), or null for a row with no era.
+   *
+   * Additive in v45 slice 3a — optional so a site build served against an older
+   * API deployment still type-checks (the key is simply absent and readers must
+   * treat `undefined` exactly like `null`). Deliberately an ERA, not one of the
+   * five Discover style families: the family grouping is presentation, done in
+   * the app, never stored server-side (owner all-genres scope 2026-10-26).
+   */
+  genre?: string | null;
   difficulty: number | null;
   difficulty_label: string | null;
   is_public_domain: boolean;

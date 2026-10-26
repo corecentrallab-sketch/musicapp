@@ -17,10 +17,26 @@
  *      Kept opt-in so the default gate stays hermetic and reproducible offline;
  *      `scripts/catalog-search-check.ts` runs the same probes as a one-liner.
  *
+ * v45 slice 3a adds a third layer: the `genre` field (owner all-genres scope
+ * 2026-10-26). Pure tests pin that the shared `PIECE_COLUMNS` really selects
+ * `p.genre`, that BOTH endpoints build their SELECT from it (a source scan — the
+ * list and detail queries drifting apart is exactly how the column went missing
+ * for so long), and that `serializePiece` maps an era through and serves `null`
+ * rather than an invented label. The live layer then proves the real API returns
+ * a genre key on every row it serves.
+ *
  * Run with: bun test src/services/catalog-handler.test.ts
  */
 import { describe, expect, test } from "bun:test";
-import { buildCatalogWhere, handleCatalogList } from "./catalog-handler";
+import { readFileSync } from "node:fs";
+import {
+  PIECE_COLUMNS,
+  buildCatalogWhere,
+  handleCatalogDetail,
+  handleCatalogList,
+  serializePiece,
+  type PieceRow,
+} from "./catalog-handler";
 import {
   CATALOG_ALIASES,
   lookupCatalogAlias,
@@ -161,6 +177,99 @@ describe("buildCatalogWhere — the SQL the handler runs", () => {
 });
 
 // ---------------------------------------------------------------------------
+// genre (v45 slice 3a) — the catalog API must carry the era bucket per piece.
+// ---------------------------------------------------------------------------
+/** The era buckets the database is allowed to hold (DB granularity, not the
+ *  five public style families — those are an app-side taxonomy). */
+const ERAS = ["Renaissance", "Baroque", "Classical", "Romantic", "Impressionist", "Modern"];
+
+function pieceRow(over: Partial<PieceRow> = {}): PieceRow {
+  return {
+    id: "741700db-72cf-4c6d-9b61-cf1e091621ef",
+    title: "Bagatelle in A Minor (Fur Elise)",
+    composer: "Ludwig van Beethoven",
+    catalog: "WoO 59",
+    genre: "Classical",
+    difficulty: 6,
+    is_public_domain: true,
+    sheet_music_url: null,
+    album_art_url: null,
+    ...over,
+  };
+}
+
+describe("PIECE_COLUMNS — genre is selected, and both endpoints use one list", () => {
+  test("the shared column list includes p.genre", () => {
+    expect(PIECE_COLUMNS.split(",").map((c) => c.trim())).toContain("p.genre");
+  });
+
+  test("the pre-existing columns are all still selected (additive change only)", () => {
+    for (const col of [
+      "p.id",
+      "p.title",
+      "p.composer",
+      "p.catalog",
+      "p.difficulty",
+      "p.is_public_domain",
+      "p.sheet_music_url",
+      "p.album_art_url",
+    ]) {
+      expect(PIECE_COLUMNS.split(",").map((c) => c.trim())).toContain(col);
+    }
+  });
+
+  test("SOURCE SCAN: both catalog queries are built from PIECE_COLUMNS", () => {
+    // The list endpoint and the detail endpoint each select the piece row. If
+    // either one goes back to hand-written columns, the field sets can drift
+    // again (which is how /api/pieces shipped without genre for months).
+    const src = readFileSync(new URL("./catalog-handler.ts", import.meta.url), "utf8");
+    const uses = src.match(/SELECT \$\{PIECE_COLUMNS\}/g) ?? [];
+    expect(uses.length).toBe(2);
+    // No hand-rolled piece-row SELECT may survive next to them.
+    expect(src).not.toContain("SELECT p.id, p.title, p.composer");
+  });
+});
+
+describe("serializePiece — the era reaches the response, or an honest null", () => {
+  test("a row with an era serializes that era", () => {
+    const piece = serializePiece(pieceRow({ genre: "Romantic" }));
+    expect(piece.genre).toBe("Romantic");
+    expect(ERAS).toContain(piece.genre as string);
+  });
+
+  test("a row with no era serializes genre: null — never an invented label", () => {
+    const piece = serializePiece(pieceRow({ genre: null }));
+    expect(piece.genre).toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(piece, "genre")).toBe(true);
+  });
+
+  test("the key is always present, even when the driver hands back undefined", () => {
+    const row = pieceRow();
+    delete (row as { genre?: string | null }).genre;
+    expect(serializePiece(row).genre).toBeNull();
+  });
+
+  test("REGRESSION: the pre-existing response fields are unchanged", () => {
+    const piece = serializePiece(pieceRow({ sheet_music_url: null }));
+    expect(piece).toMatchObject({
+      id: "741700db-72cf-4c6d-9b61-cf1e091621ef",
+      title: "Bagatelle in A Minor (Fur Elise)",
+      composer: "Ludwig van Beethoven",
+      catalog: "WoO 59",
+      difficulty: 6,
+      difficulty_label: "Intermediate",
+      is_public_domain: true,
+      sheet_music_available: false,
+      sheet_music_url: null,
+      album_art_url: null,
+    });
+    // The money field is still built for every piece (affiliate ID 67650).
+    expect(String(piece.affiliate_url)).toContain("sheetmusicdirect.com");
+    expect(String(piece.affiliate_url)).toContain("67650");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Live layer — real handler, real Neon rows. Opt-in so the default gate stays
 // hermetic; run with CATALOG_LIVE_PROBE=1 (see scripts/catalog-search-check.ts
 // for the same probes as a script).
@@ -264,5 +373,36 @@ describe.skipIf(!LIVE)("LIVE /api/pieces — catalog numbers and nicknames (opt-
     const r = await search("zzzzqqqq not a piece 999");
     expect(r.status).toBe(200);
     expect(r.total).toBe(0);
+  });
+
+  test("every listed piece carries a genre key — an era bucket or null (v45 slice 3a)", async () => {
+    const res = await handleCatalogList(new Request("http://x/api/pieces?limit=50"));
+    const body = (await res.json()) as { pieces?: Array<Record<string, unknown>> };
+    const pieces = body.pieces ?? [];
+    expect(pieces.length).toBeGreaterThan(0);
+    for (const p of pieces) {
+      expect(Object.prototype.hasOwnProperty.call(p, "genre")).toBe(true);
+      const genre = p.genre;
+      expect(genre === null || typeof genre === "string").toBe(true);
+      if (typeof genre === "string") expect(ERAS).toContain(genre);
+    }
+    // The era cleanup (scripts/genre-era-cleanup.ts) means real rows do carry
+    // one; an all-null library would be a silent regression of that work.
+    expect(pieces.some((p) => typeof p.genre === "string")).toBe(true);
+  });
+
+  test("the detail endpoint carries genre too (same PIECE_COLUMNS)", async () => {
+    const listRes = await handleCatalogList(new Request("http://x/api/pieces?q=fur%20elise"));
+    const list = (await listRes.json()) as { pieces?: Array<{ id: string; genre?: string | null }> };
+    const id = list.pieces?.[0]?.id;
+    expect(id).toBeTruthy();
+    const res = await handleCatalogDetail(new Request(`http://x/api/pieces/${id}`));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      piece?: { id: string; genre?: string | null; sheet_music_sources?: unknown[] };
+    };
+    expect(body.piece?.id).toBe(id!);
+    expect(body.piece).toHaveProperty("genre");
+    expect(Array.isArray(body.piece?.sheet_music_sources)).toBe(true);
   });
 });
