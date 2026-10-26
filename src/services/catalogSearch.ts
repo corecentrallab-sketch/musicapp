@@ -108,6 +108,10 @@ export function parseCatalogPiece(raw: unknown): CatalogPiece | null {
     id,
     title,
     composer: composer ?? '',
+    // OPTIONAL (v45 slice 3b): the catalog's era tag, served by /api/pieces since
+    // the backend's 3a slice. ABSENT or null → the row simply carries no era, and
+    // the Discover counts omit their numbers rather than invent one.
+    genre: clean(typeof r.genre === 'string' ? r.genre : undefined) ?? null,
     catalog: clean(typeof r.catalog === 'string' ? r.catalog : undefined) ?? null,
     difficulty: grade(r.difficulty),
     difficultyLabel:

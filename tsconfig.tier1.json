@@ -199,6 +199,8 @@
     "scripts/heroSplit.test.ts",
     "src/services/scorePdf.ts",
     "src/services/v44PrintPdfContract.ts",
-    "scripts/scorePdf.test.ts"
+    "scripts/scorePdf.test.ts",
+    "src/services/genreFamilies.ts",
+    "scripts/genreFamilies.test.ts"
   ]
 }

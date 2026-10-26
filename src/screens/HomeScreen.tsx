@@ -123,6 +123,17 @@ import {
   TODAYS_PIECE_NO_PIECE_LINE,
   TODAYS_PIECE_NO_PIECE_TITLE,
 } from '../services/uxrV41Contract';
+// ── v45 slice 3b: THE FIVE STYLE FAMILIES (owner-ratified all-genres scope) ──
+// Discover renders BROWSE BY STYLE from the family table in
+// services/genreFamilies.ts (never a classical-only grid), every tile opens the
+// FamilyScreen, and the counts come from the real catalog via genreCountsStore.
+// The surface itself is components/DiscoverStyles.tsx so this screen only wires
+// it; familyTilesAreBackedByRealContent() reads THIS file's source to prove the
+// tiles, the tap and the family-screen mount are all really here.
+import { DiscoverStyles } from '../components/DiscoverStyles';
+import { FamilyScreen } from '../components/FamilyScreen';
+import { DISCOVER_LAYOUT, type EraCounts, type FamilyId } from '../services/genreFamilies';
+import { loadGenreCounts } from '../services/genreCountsStore';
 // The categories a result is allowed to claim — never a hardcoded genre.
 import { PUBLIC_DOMAIN_GENRE } from '../services/resultGenre';
 // The PD-library cross-check on the modern route (owner 09-25, build #3): a
@@ -263,6 +274,15 @@ export const HomeScreen: React.FC = () => {
   const [showModernSearch, setShowModernSearch] = useState(false);
   // "Find a piece" — catalog search by title/composer (no mic involved).
   const [showFindPiece, setShowFindPiece] = useState(false);
+  // ── v45 slice 3b: the Discover style surface's real numbers ──
+  // `familyCounts` starts null and stays null if the catalog cannot be read, so
+  // every count on the tiles is OPTIONAL by construction: no data → no numbers.
+  const [familyCounts, setFamilyCounts] = useState<{
+    total: number;
+    eras: EraCounts | null;
+  } | null>(null);
+  // The family whose screen is open, or null. One in-place flow, one family.
+  const [selectedFamily, setSelectedFamily] = useState<FamilyId | null>(null);
 
   // ── Medals (owner-approved 08-25 retention build) ──
   // Only the freshly-earned medal shown as a NON-BLOCKING toast stays on Home:
@@ -310,6 +330,22 @@ export const HomeScreen: React.FC = () => {
   // ── Load initial data ──
   useEffect(() => {
     loadData();
+  }, []);
+
+  // ── The Discover style surface's REAL numbers (v45 slice 3b) ──
+  // One fire-and-forget walk of the catalog, cached for the session by
+  // services/genreCountsStore. It NEVER blocks the door and never fails loudly:
+  // no data means the tiles and the era chips render their names without counts,
+  // which is exactly what a backend that has not shipped `genre` yet produces.
+  useEffect(() => {
+    let alive = true;
+    void loadGenreCounts().then((counts) => {
+      if (!alive || !counts) return;
+      setFamilyCounts({ total: counts.total, eras: counts.eras });
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   /**
@@ -1181,6 +1217,23 @@ export const HomeScreen: React.FC = () => {
     setShowFindPiece(true);
   }, []);
 
+  // ── v45 slice 3b: every family tile opens its family screen ──
+  // ONE handler for all five tiles, carrying the family id from the table — a
+  // tile is never a no-op and never opens something generic. The screen decides
+  // what an empty family resolves to (money path first, free library under it),
+  // so this handler cannot disagree with the design.
+  const handleOpenFamily = useCallback((id: FamilyId) => {
+    setSelectedFamily(id);
+  }, []);
+
+  // "Browse what is free now" on a family screen → the Library tab, the same
+  // destination the modern interstitial's free-library lever uses. Closing the
+  // family screen first keeps exactly one in-place flow mounted at a time.
+  const handleBrowseLibraryFromFamily = useCallback(() => {
+    setSelectedFamily(null);
+    navigation.navigate('Library');
+  }, [navigation]);
+
   // ── Permission denied state ──
   if (recorder.error && !recorder.isRecording) {
     // Only show a full error screen if the user can't proceed
@@ -1244,6 +1297,24 @@ export const HomeScreen: React.FC = () => {
   // Catalog search by name — its own full-screen flow, no recorder.
   if (showFindPiece) {
     return <FindPieceScreen onClose={() => setShowFindPiece(false)} />;
+  }
+
+  // ── v45 slice 3b: THE FAMILY SCREEN (one of the five style families) ──
+  // The destination of EVERY Discover style tile. Rendered in place, exactly
+  // like the other full-screen flows above, and it owns its own BACK handling
+  // (FamilyScreen → useHardwareBack) so a hardware BACK returns HERE, never out
+  // of the app. Its first row is the money path for a family with no free
+  // scores; the free library is always the row beneath it.
+  if (selectedFamily) {
+    return (
+      <FamilyScreen
+        family={selectedFamily}
+        freeCount={familyCounts ? familyCounts.total : null}
+        eraCounts={familyCounts ? familyCounts.eras : null}
+        onClose={() => setSelectedFamily(null)}
+        onBrowseLibrary={handleBrowseLibraryFromFamily}
+      />
+    );
   }
 
   // NOTE (v45 slice 2, owner 10-26): the practice-week view and the achievements
@@ -1548,6 +1619,27 @@ export const HomeScreen: React.FC = () => {
             <Text style={styles.findASongBarLabel}>{FIND_ANY_SONG_CHIP_LABEL}</Text>
             <Text style={styles.findASongBarChevron}>›</Text>
           </TouchableOpacity>
+
+          {/* ── BROWSE BY STYLE — THE FIVE STYLE FAMILIES (v45 slice 3b) ─────
+              Owner-ratified all-genres scope (10-26): the app is for music
+              enthusiasts and the library is public domain, so Discover shows
+              all five families — Classical · Early Jazz & Blues · Folk &
+              Traditional · Patriotic & Holiday · Vaudeville, Opera & Parlor —
+              and NEVER a classical-only grid. The six catalogue eras are chips
+              INSIDE the Classical tile (hero-classical layout), not peers of the
+              families. Four families hold no free scores today; their tiles look
+              exactly like a populated one, say "Official sheet music", and open
+              a family screen whose first row is the live official-editions
+              search (money path) with the free library one row below it. No
+              toast, no grey-out, no no-op tile — every family resolves.
+              Counts are rendered only when genreCountsStore derived them from
+              real rows; with no data the tiles show names and no numbers. */}
+          <DiscoverStyles
+            layout={DISCOVER_LAYOUT}
+            freeCount={familyCounts ? familyCounts.total : null}
+            eraCounts={familyCounts ? familyCounts.eras : null}
+            onOpenFamily={handleOpenFamily}
+          />
 
           {/* ── THE BAND-C FOLD (v45 slice 2, owner 10-26) ──
               Band C ("Browse & keep going") is GONE as a band. Everything in it
