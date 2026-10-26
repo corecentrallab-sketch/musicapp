@@ -201,6 +201,9 @@
     "src/services/v44PrintPdfContract.ts",
     "scripts/scorePdf.test.ts",
     "src/services/genreFamilies.ts",
-    "scripts/genreFamilies.test.ts"
+    "scripts/genreFamilies.test.ts",
+    "src/services/scanClassify.ts",
+    "src/services/scanBatchContract.ts",
+    "scripts/scanBatch.test.ts"
   ]
 }
