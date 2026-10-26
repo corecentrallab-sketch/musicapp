@@ -29,7 +29,7 @@
  * page, and there is one implementation of it.
  */
 import { useThemedStyles } from '../services/themeStore';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -40,6 +40,7 @@ import {
 } from 'react-native';
 import { readCoverText } from '../services/coverScanOcr';
 import type { OcrTitleCandidate, OcrTitleCorpusEntry } from '../services/ocrTitleCandidates';
+import { classifyScanPhoto, type ScanPhotoClassification } from '../services/scanClassify';
 import {
   SCAN_FIND_CANDIDATES_LABEL,
   SCAN_FIND_CANDIDATE_HINT,
@@ -54,8 +55,8 @@ import {
   SCAN_FIND_RAW_QUERY_NOTE,
   SCAN_FIND_READING_LINE,
   SCAN_FIND_RETAKE_CTA,
-  SCAN_FIND_SEARCH_CTA,
   SCAN_FIND_SEARCH_WORDS_CTA,
+  SCAN_FIND_TYPED_HINT,
   SCAN_FIND_TYPED_LABEL,
   SCAN_FIND_TYPED_SEARCH_CTA,
   SCAN_FIND_WHAT_WE_READ_LABEL,
@@ -86,6 +87,21 @@ interface ScanFindSectionProps {
   onRetake?: () => void;
   /** Titles to rank the read against (the live catalog), when the host has them. */
   corpus?: ReadonlyArray<OcrTitleCorpusEntry> | null;
+  /**
+   * READ THE PHOTO AS SOON AS IT IS HERE (v45 slice 4, owner 2026-10-26 — the
+   * "scan → OCR → auto-search" headline). The scanner sets this for the photo it
+   * just took, so the read happens without a second tap. It is a REQUEST, not a
+   * decision: what may happen with the result is `services/scanClassify`'s, and
+   * only a good cover read that names a piece we hold may look itself up.
+   */
+  autoRead?: boolean;
+  /**
+   * WHAT THE READ SAYS THIS PHOTO IS (v45 slice 4). The classification goes to the
+   * host, which keeps it as the scan's own state — the scanner's photo door
+   * (`scanPhotoKindFor`) and its auto-search gate both read it from there, so the
+   * two surfaces can never disagree about the same photo.
+   */
+  onClassified?: (classification: ScanPhotoClassification) => void;
 }
 
 export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
@@ -95,18 +111,32 @@ export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
   onOpenPiece,
   onRetake,
   corpus,
+  autoRead = false,
+  onClassified,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   const [reading, setReading] = useState(false);
   const [view, setView] = useState<ScanFindView | null>(null);
+  // THE ONE FIELD (v45 slice 4). It is seeded with what the recogniser read and it
+  // is what the single CTA searches — the second "type the title" input this page
+  // used to carry is gone; the user's own words go in the same box.
   const [text, setText] = useState('');
-  const [typed, setTyped] = useState('');
+  // The classification goes to the host through a ref, so the read callback never
+  // has to be rebuilt (and re-run) just because the host passed a new function.
+  const onClassifiedRef = useRef(onClassified);
+  useEffect(() => {
+    onClassifiedRef.current = onClassified;
+  }, [onClassified]);
+  // Which photo has already been auto-read, so one capture is read exactly once.
+  const autoReadRef = useRef<string | null>(null);
 
   /**
    * Read the page's WORDS on this device. `readCoverText` reports its own failures
    * as a value rather than throwing, but a throw still lands in an honest state
    * instead of a silent no-op. The photo's KIND goes with the read, so the one pure
-   * model can tell a title page from a page of music (v44 #59).
+   * model can tell a title page from a page of music (v44 #59) — and the same read
+   * is CLASSIFIED (v45 slice 4) and handed to the host, which decides whether this
+   * photo is a cover or a page of music and whether it may look itself up.
    */
   const read = useCallback(async () => {
     if (!pageUri) {
@@ -117,23 +147,65 @@ export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
     setReading(true);
     try {
       const result = await readCoverText(pageUri);
+      // WHAT THIS PHOTO IS, from the read's own evidence (services/scanClassify).
+      const classification = classifyScanPhoto({ ...result, photoKind }, corpus ?? null);
       const next = scanFindView({ ...result, photoKind }, corpus ?? null);
       setView(next);
       // The field only ever carries words that could be a title — a garbage read
-      // has none, and the user's own typing is what the garbage path asks for.
+      // has none, and the user's own typing is what the garbage path asks for. A
+      // page of music is the same: nothing from it is pre-filled.
       setText(next.quality === 'garbage' ? '' : next.cleanedRead || next.query);
+      onClassifiedRef.current?.(classification);
     } catch {
       setView(scanFindView({ text: '', failed: true, photoKind }));
       setText('');
+      onClassifiedRef.current?.(
+        classifyScanPhoto({ text: '', failed: true, photoKind }, corpus ?? null),
+      );
     } finally {
       setReading(false);
     }
   }, [corpus, pageUri, photoKind]);
 
+  /**
+   * THE AUTO STEP (v45 slice 4). When the host asks for it, the photo it just
+   * handed us is read once — no second tap between "take the photo" and "we read
+   * it". Nothing is decided here: the classification travels to the host, which
+   * consults `services/scanClassify`'s gate before anything is searched.
+   */
+  useEffect(() => {
+    if (autoRead !== true) return;
+    if (typeof pageUri !== 'string' || pageUri.length === 0) return;
+    if (autoReadRef.current === pageUri) return;
+    autoReadRef.current = pageUri;
+    void read();
+  }, [autoRead, pageUri, read]);
+
   const actions = scanFindActions(view);
+  // THE ONE FIELD'S WORDS. `confirmed` is the name the v39/v43 contracts pin (the
+  // words the user has seen and may correct); `typedTitle` is the same string now
+  // that the read's box and the typed box are one field.
   const confirmed = text.trim();
+  const typedTitle = confirmed;
   const canSearch = confirmed.length > 0;
-  const typedTitle = typed.trim();
+  // WHICH WORDING the one field and the one CTA carry, from the pure model: the
+  // read's own words when the model says they may be searched (never for a garbage
+  // read — `offerReadSearch` is false there), the user's own title otherwise.
+  const readWordsAreSearchable = actions.showReadWords && actions.offerReadSearch;
+  const searchLabel = readWordsAreSearchable
+    ? SCAN_FIND_SEARCH_WORDS_CTA
+    : SCAN_FIND_TYPED_SEARCH_CTA;
+  const fieldLabel = readWordsAreSearchable
+    ? view?.uncorroborated
+      ? SCAN_FIND_WHAT_WE_READ_LABEL
+      : SCAN_FIND_CONFIRM_LABEL
+    : SCAN_FIND_TYPED_LABEL;
+
+  /** The single CTA: search exactly what the one field holds. */
+  const submitSearch = useCallback(() => {
+    if (confirmed.length === 0) return;
+    onSearch(confirmed);
+  }, [confirmed, onSearch]);
 
   const openCandidate = useCallback(
     (candidate: OcrTitleCandidate) => {
@@ -201,60 +273,34 @@ export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
         </View>
       ) : null}
 
-      {/* ── THE WORDS THAT WERE READ (only when they could be a title) ────────
-          v44 #59 — THE LABEL TELLS THE TRUTH. "Search for" is the title-page door:
-          the read answered something we know. A read we cannot vouch for is
-          labelled as what it is — the words the recogniser saw — and the control
-          below prints them, in bold, so the search the user is about to run is the
-          search they can read. */}
-      {actions.showReadWords ? (
+      {/* ── ONE FIELD, ONE CTA (v45 slice 4, owner 2026-10-26) ─────────────────
+          WHAT WAS MERGED AWAY. This page used to render TWO inputs: the words the
+          read produced (with its own "Search these words" control) AND, beside it,
+          a second "Type the title" field with a second CTA. On a phone that read as
+          a read-only box next to an edit button, with two ways to do one thing. The
+          owner asked for the suggestion/confirmation box to BE the editable search
+          field: one field, one CTA.
+
+          So there is exactly one `TextInput` on this page now, and it is the one
+          `text` state the read fills in (`next.cleanedRead`, never a garbage read's
+          debris — `next.quality === 'garbage' ? ''`). It is seeded with what the
+          recogniser read, it is editable, and it is what the single control below
+          searches. The label and the control's wording follow the PURE model:
+            • the read answered something (`actions.showReadWords`) → labelled as
+              what it is ("What we read on the photo" for an uncorroborated read,
+              v44 #59) and the CTA says "Search these words";
+            • anything else (a debris read, a page of music, a fresh field) → the
+              typed-title wording, same field.
+          v44 #59 SURVIVES THE MERGE: the CTA still PRINTS the words it will search,
+          in bold, from the same string it submits — so the search shown is the
+          search that runs. */}
+      {actions.offerTypedSearch || actions.showReadWords ? (
         <>
-          <Text style={styles.fieldLabel}>
-            {view?.uncorroborated ? SCAN_FIND_WHAT_WE_READ_LABEL : SCAN_FIND_CONFIRM_LABEL}
-          </Text>
+          <Text style={styles.fieldLabel}>{fieldLabel}</Text>
           <TextInput
             style={styles.field}
             value={text}
             onChangeText={setText}
-            placeholder={SCAN_FIND_CONFIRM_LABEL}
-            placeholderTextColor={theme.subtext}
-            autoCorrect={false}
-            autoCapitalize="none"
-            accessibilityLabel={
-              view?.uncorroborated ? SCAN_FIND_WHAT_WE_READ_LABEL : SCAN_FIND_CONFIRM_LABEL
-            }
-          />
-          <Text style={styles.hint}>{SCAN_FIND_CONFIRM_HINT}</Text>
-          {/* SECONDARY ON PURPOSE (owner 10-20): searching what the app read is a
-              proposal the user confirms, never the red primary action. */}
-          {actions.offerReadSearch && canSearch ? (
-            <Pressable
-              style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
-              onPress={() => onSearch(confirmed)}
-              accessibilityRole="button"
-              accessibilityLabel={SCAN_FIND_SEARCH_CTA}
-            >
-              <Text style={styles.secondaryBtnText}>{SCAN_FIND_SEARCH_WORDS_CTA}</Text>
-              {/* THE WORDS IT WILL ACTUALLY SEARCH (v44 #59) — never an empty
-                  control that searches something the user cannot see. */}
-              <Text style={styles.searchWordsBold} numberOfLines={2}>
-                {confirmed}
-              </Text>
-            </Pressable>
-          ) : (
-            <Text style={styles.hint}>{SCAN_FIND_NO_WORDS_LINE}</Text>
-          )}
-        </>
-      ) : null}
-
-      {/* ── THE USER'S OWN TITLE (the way out of every state, including garbage) */}
-      {actions.offerTypedSearch ? (
-        <>
-          <Text style={styles.fieldLabel}>{SCAN_FIND_TYPED_LABEL}</Text>
-          <TextInput
-            style={styles.field}
-            value={typed}
-            onChangeText={setTyped}
             placeholder={SCAN_FIND_TYPED_LABEL}
             placeholderTextColor={theme.subtext}
             autoCorrect={false}
@@ -264,23 +310,35 @@ export const ScanFindSection: React.FC<ScanFindSectionProps> = ({
               if (typedTitle.length === 0) return;
               onSearch(typedTitle);
             }}
-            accessibilityLabel={SCAN_FIND_TYPED_LABEL}
+            accessibilityLabel={fieldLabel}
           />
+          <Text style={styles.hint}>
+            {actions.showReadWords ? SCAN_FIND_CONFIRM_HINT : SCAN_FIND_TYPED_HINT}
+          </Text>
+          {actions.showReadWords && !canSearch ? (
+            <Text style={styles.hint}>{SCAN_FIND_NO_WORDS_LINE}</Text>
+          ) : null}
+          {/* SECONDARY ON PURPOSE (owner 10-20): searching what the app read is a
+              proposal the user confirms, never the red primary action. */}
           <Pressable
             style={({ pressed }) => [
               styles.secondaryBtn,
-              typedTitle.length === 0 && styles.disabled,
+              !canSearch && styles.disabled,
               pressed && styles.pressed,
             ]}
-            onPress={() => {
-              if (typedTitle.length === 0) return;
-              onSearch(typedTitle);
-            }}
-            disabled={typedTitle.length === 0}
+            onPress={submitSearch}
+            disabled={!canSearch}
             accessibilityRole="button"
-            accessibilityLabel={SCAN_FIND_TYPED_SEARCH_CTA}
+            accessibilityLabel={searchLabel}
           >
-            <Text style={styles.secondaryBtnText}>{SCAN_FIND_TYPED_SEARCH_CTA}</Text>
+            <Text style={styles.secondaryBtnText}>{searchLabel}</Text>
+            {/* THE WORDS IT WILL ACTUALLY SEARCH (v44 #59) — never an empty
+                control that searches something the user cannot see. */}
+            {actions.showReadWords ? (
+              <Text style={styles.searchWordsBold} numberOfLines={2}>
+                {confirmed}
+              </Text>
+            ) : null}
           </Pressable>
         </>
       ) : null}

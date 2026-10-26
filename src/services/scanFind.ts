@@ -172,6 +172,14 @@ export const SCAN_FIND_MODERN_HINT =
 /** The field for the user's OWN words, used when the read is not a title. */
 export const SCAN_FIND_TYPED_LABEL = 'Type the title';
 export const SCAN_FIND_TYPED_SEARCH_CTA = 'Search the title I type';
+/**
+ * THE ONE FIELD'S HINT WHEN IT HOLDS NOTHING READABLE (v45 slice 4). The read's
+ * words and the user's own title share the same editable field now, so this is the
+ * hint under it on the garbage / page-of-music path — the state where the app has
+ * nothing of its own to offer and the user types what they can see.
+ */
+export const SCAN_FIND_TYPED_HINT =
+  'Type the title (or the composer) you can see, then search — the official sheet music is on the result page.';
 /** The way out of every state — take the photo again. */
 export const SCAN_FIND_RETAKE_CTA = 'Retake photo';
 

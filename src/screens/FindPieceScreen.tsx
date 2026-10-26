@@ -106,9 +106,29 @@ interface FindPieceScreenProps {
    * passes nothing gets the same empty search box it always had.
    */
   initialQuery?: string;
+  /**
+   * ADDITIVE (v45 slice 4, owner 2026-10-26 — "scan → OCR → auto-search"). The
+   * scan flow's lookup: when the classifier proved this photo is a COVER, the read
+   * is good, and it named a piece we hold, the words below are a CONFIRMED title
+   * rather than a proposal, so this screen searches them straight away.
+   *
+   * It is never silent. The plan carries the headline ("Looking up “X” for you")
+   * and the dismiss label, both printed above the results, and the dismiss puts the
+   * user back on the camera with the resolve page still open. Nothing here touches
+   * a retailer: a store is only ever reached by tapping a result row, which is the
+   * 08-24 no-auto-redirect rule.
+   */
+  autoSearchNotice?: { headline: string; dismissLabel: string } | null;
+  /** The way out of a lookup the app started: back to the scan, in control. */
+  onDismissAutoSearch?: () => void;
 }
 
-export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initialQuery }) => {
+export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
+  onClose,
+  initialQuery,
+  autoSearchNotice,
+  onDismissAutoSearch,
+}) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   /**
    * A query handed in by the caller (v39 fix 1b: a scanned page's own words).
@@ -127,8 +147,17 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
    * exactly the type-ahead screen it always had.
    */
   const [query, setQuery] = useState(() => initialOcrPrefillState(initialQuery).query);
-  const [prefillPending, setPrefillPending] = useState(
-    () => initialOcrPrefillState(initialQuery).pending,
+  /**
+   * v45 SLICE 4 — THE ONE EXCEPTION TO THE PROPOSAL STEP, and it is not silent.
+   * A prefilled read starts PENDING (v42 fix D) so a photo's words never become an
+   * invisible query. The scan flow may hand in an `autoSearchNotice` only when
+   * services/scanClassify's gate fired — the photo is a COVER, the read is 'good',
+   * AND it named a piece we hold — so the words are a confirmed title, not a
+   * proposal: this starts unpending and the lookup runs. The notice above the
+   * results says so and cancels it.
+   */
+  const [prefillPending, setPrefillPending] = useState(() =>
+    autoSearchNotice ? false : initialOcrPrefillState(initialQuery).pending,
   );
   const [pieces, setPieces] = useState<CatalogPiece[]>([]);
   const [total, setTotal] = useState(0);
@@ -370,8 +399,33 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({ onClose, initi
         <Text style={styles.headerTitle}>Find a piece</Text>
       </View>
 
+      {/* ── THE LOOKUP THE APP STARTED FOR YOU (v45 slice 4) ────────────────────
+          A scan whose read proved it was a cover, was good, and named a piece we
+          hold opens this screen already searching that title. The app moved first,
+          so it says so in words ("Looking up “X” for you"), in the same strip as
+          the one control that undoes it — "Not now" returns the user to the camera
+          with the resolve page still open. No retailer is opened by any of this:
+          the money path is still the user's own tap on a result row. */}
+      {autoSearchNotice ? (
+        <View style={styles.autoSearchCard}>
+          <Text style={styles.autoSearchHeadline}>{autoSearchNotice.headline}</Text>
+          <TouchableOpacity
+            style={styles.autoSearchDismiss}
+            onPress={onDismissAutoSearch}
+            accessibilityRole="button"
+            accessibilityLabel={autoSearchNotice.dismissLabel}
+            hitSlop={8}
+          >
+            <Text style={styles.autoSearchDismissText}>
+              {autoSearchNotice.dismissLabel}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {/* Query field — focused on open so the keyboard is ready for a title. */}
       <View style={styles.searchRow}>
+
         <Text style={styles.searchIcon}>🔎</Text>
         <TextInput
           style={styles.searchInput}
@@ -586,6 +640,44 @@ const baseStyles = StyleSheet.create({
   headerTitle: {
     color: '#ffffff',
     fontSize: 18,
+    fontWeight: '700',
+  },
+
+  /* v45 SLICE 4 — THE LOOKUP THE APP STARTED, SAID OUT LOUD. One strip: what is
+     being looked up, and the control that stops it. Palette literals for the same
+     reason as the prefill card (v40 fix B): these colours must read in BOTH modes,
+     and `#16213e` is the palette's own `surface` in each. */
+  autoSearchCard: {
+    marginHorizontal: 20,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    backgroundColor: '#16213e',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  autoSearchHeadline: {
+    flexShrink: 1,
+    color: '#eaeaff',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  autoSearchDismiss: {
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  autoSearchDismissText: {
+    color: '#4ecdc4',
+    fontSize: 13,
     fontWeight: '700',
   },
 

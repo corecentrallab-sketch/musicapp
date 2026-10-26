@@ -198,10 +198,20 @@ assertEq(
   true,
   'the saved-scan viewer (a page of a scanned score) is the page door',
 );
+// RE-POINTED BY v45 SLICE 4 (owner 2026-10-26). The first-photo/later-page rule is
+// still the FALLBACK, but the door now comes from the CLASSIFIER's verdict on the
+// photo itself (`services/scanClassify`) — see scripts/scanBatch.test.ts for the
+// guards that pin the verdict, the honest gate and the mutation proof.
 assertEq(
-  scanScreenSource.indexOf("photoKind={pages.length > 1 ? 'page' : 'cover'}") >= 0,
+  scanScreenSource.indexOf("const pageDoorFallback: 'cover' | 'page' = pages.length > 1 ? 'page' : 'cover';") >= 0,
   true,
-  'the scanner keeps the cover door for the first photo and the page door from the second on',
+  'the scanner keeps the cover door for the first photo and the page door from the second on (as the fallback)',
+);
+assertEq(
+  scanScreenSource.indexOf('const photoDoor = scanPhotoKindFor(scanClassification, pageDoorFallback);') >= 0 &&
+    scanScreenSource.indexOf('photoKind={photoDoor}') >= 0,
+  true,
+  'and the read’s own verdict decides the door once the photo has been classified',
 );
 assertEq(
   resolveSource.indexOf('scanFindView({ ...result, photoKind }') >= 0,

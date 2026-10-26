@@ -35,6 +35,11 @@ import {
 } from '../services/scanFind';
 import type { OcrTitleCandidate } from '../services/ocrTitleCandidates';
 import {
+  scanPhotoKindFor,
+  type ScanAutoSearchPlan,
+  type ScanPhotoClassification,
+} from '../services/scanClassify';
+import {
   DEFAULT_SCAN_FLASH_MODE,
   SCAN_CHIP_TRANSLUCENT,
   SCAN_CONTROL_GAP,
@@ -155,6 +160,15 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
   // find-this-music panel is open (it starts collapsed — see services/scanViewport).
   const [flash, setFlash] = useState(DEFAULT_SCAN_FLASH_MODE);
   const [findOpen, setFindOpen] = useState(false);
+  // ─── v45 SLICE 4 — WHAT THIS PHOTO IS, AND THE LOOKUP IT MAY EARN ─────────
+  // `scanClassification` is the per-scan state: the verdict ('cover' |
+  // 'score-page'), the read's quality, its confidence and the candidates, all from
+  // services/scanClassify. It decides the photo DOOR the resolve page uses and
+  // whether this scan may look itself up. `autoSearch` is that lookup, when the
+  // classifier's gate fired — it is cancellable, it is explained, and it carries a
+  // QUERY for the app's own search, never a link.
+  const [scanClassification, setScanClassification] = useState<ScanPhotoClassification | null>(null);
+  const [autoSearch, setAutoSearch] = useState<ScanAutoSearchPlan | null>(null);
 
   /**
    * THE PREVIEW OWNS THE WHOLE WINDOW. The route is registered with the stack's
@@ -221,6 +235,17 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
       }
       setSessionId(saved.id);
       setPages((saved.pageUris ?? []).map((uri) => ({ uri })));
+      /**
+       * v45 SLICE 4 — THE COVER PHOTO IS READ WITHOUT A SECOND TAP. The FIRST page
+       * is the one the user framed as a title/cover (it is captured at full quality
+       * for exactly that read), so the find panel opens itself and the resolve
+       * component reads it. What happens with the read is NOT decided here: the
+       * classification comes back through `handleClassified`, and only
+       * `services/scanClassify`'s gate — a good cover read that names a piece we
+       * hold — may open the search on the user's behalf. Later pages are pages of
+       * music: they are captured, saved and never read on their own.
+       */
+      if (pages.length === 0) setFindOpen(true);
     } catch {
       setErrorLine('The photo could not be saved. Nothing was added — try again.');
     } finally {
@@ -282,6 +307,45 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
   }, []);
 
   /**
+   * THE CLASSIFIER'S ANSWER (v45 slice 4, owner 2026-10-26). The read has already
+   * happened inside the resolve component; what came back is the verdict on this
+   * photo and — only if the honest gate fired — a lookup plan.
+   *
+   * THIS SCREEN DECIDES NOTHING HERE. It stores the classification (the resolve
+   * page's door and the panel's honest line read it from this state) and, when
+   * `autoSearch.fire` is true, opens the app's ONE search with the plan's query.
+   * The gate itself is three pure clauses in services/scanClassify — a good cover
+   * read that names a piece we hold — so a debris read, a weak read or a page of
+   * music cannot reach this branch by any route.
+   */
+  const handleClassified = useCallback((classification: ScanPhotoClassification) => {
+    setScanClassification(classification);
+    if (classification.autoSearch.fire === true) {
+      setAutoSearch(classification.autoSearch);
+    }
+  }, []);
+
+  /**
+   * THE AUTO-SEARCH (v45 slice 4): the owner's "scan → OCR → auto-search"
+   * headline. It opens the SAME search a typed title opens, one tap from the
+   * official sheet music on a result row — NEVER a retailer, never a redirect, and
+   * never without being explained: the search surface prints "Looking up “X” for
+   * you" and carries a "Not now" that puts the user straight back on the camera
+   * with the resolve page still there. Manual control is the default; this is the
+   * one case the app is allowed to move first, and only on evidence.
+   */
+  if (autoSearch !== null) {
+    return (
+      <FindPieceScreen
+        initialQuery={autoSearch.query}
+        autoSearchNotice={autoSearch}
+        onDismissAutoSearch={() => setAutoSearch(null)}
+        onClose={() => setAutoSearch(null)}
+      />
+    );
+  }
+
+  /**
    * THE MONEY PATH (v39 fix 1b). The section read the page's words and the user
    * confirmed them: the app's own find-a-piece surface opens IN PLACE with that
    * query — one search surface, the same results the user would get by typing it,
@@ -338,6 +402,18 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
   const controls = scanControlState({ capturing, pageCount: pages.length });
   // The detail panel's state comes from the pure rule as well: it opens closed.
   const findPanel = scanFindPanel(findOpen);
+  // WHICH DOOR THIS PHOTO IS, from the classifier once it has answered (v45 slice
+  // 4). Until a read has happened the pre-existing page-index rule still holds:
+  // the first photo is the cover door, later pages are pages of a scanned score.
+  // A verdict of 'score-page' overrides both — the read is better evidence than
+  // the position of the page.
+  const pageDoorFallback: 'cover' | 'page' = pages.length > 1 ? 'page' : 'cover';
+  const photoDoor = scanPhotoKindFor(scanClassification, pageDoorFallback);
+  // THE HONEST LINE ABOUT THIS PHOTO, when there is one to say: a page of music,
+  // a weak read, a debris read or a failed read each come with their own words
+  // from services/scanClassify. Never invented here, and never a dead end — the
+  // panel below always offers the typed title and the retake.
+  const verdictLine = scanClassification?.autoSearch.holdLine ?? null;
 
   return (
     <View style={styles.container}>
@@ -494,19 +570,29 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
                 </Text>
               ) : null}
               <Text style={styles.savedLine}>{SCAN_SAVED_AS_YOU_GO_LINE}</Text>
+              {/* WHAT THE READ SAID ABOUT THIS PHOTO (v45 slice 4). A page of music,
+                  a weak read, a debris read or a failed read all say so HERE, in
+                  services/scanClassify's own words, instead of searching anything.
+                  It is the honest "why" the owner asked for, and the resolve page
+                  below still gives the typed title and the retake. */}
+              {verdictLine ? <Text style={styles.verdictLine}>{verdictLine}</Text> : null}
               <ScanFindSection
                 pageUri={lastPageUri}
-                /* v44 #59 — WHAT KIND OF PHOTO THIS IS. The FIRST page of a scan is
-                   the one the user framed as a title/cover (it is captured at full
-                   quality for exactly that read), so it keeps the cover door's
-                   behaviour: an uncorroborated read stays searchable but is
-                   honestly labelled "What we read on the photo". From the second
-                   page on this is a scan of a SCORE, where a page of music can
-                   never be a title page — so an uncorroborated read gets no query
-                   at all, only the page-of-music line. Same model, same component,
-                   one rule: the words are never dressed up as a title the app
-                   cannot vouch for. */
-                photoKind={pages.length > 1 ? 'page' : 'cover'}
+                /* v44 #59 — WHAT KIND OF PHOTO THIS IS, now from the CLASSIFIER
+                   (v45 slice 4) rather than from the page index alone: the first
+                   photo is the cover door (it is captured at full quality for
+                   exactly that read) and the read's own verdict overrides that the
+                   moment it lands. A page of music can never be a title page, so on
+                   that door an uncorroborated read gets no query at all — only the
+                   page-of-music line. Same model, same component, one rule: the
+                   words are never dressed up as a title the app cannot vouch for. */
+                photoKind={photoDoor}
+                /* v45 slice 4 — THE AUTO STEP. The page this scan just took is
+                   read without a second tap; the classification comes back through
+                   `handleClassified`, which is the ONLY thing that may open the
+                   search (and only on the classifier's gate). */
+                autoRead
+                onClassified={handleClassified}
                 onSearch={setFindQuery}
                 onOpenPiece={openSuggestedPiece}
                 onRetake={() => setFindOpen(false)}
@@ -783,6 +869,17 @@ const baseStyles = StyleSheet.create({
     color: '#c8c8e0',
     fontSize: 12,
     lineHeight: 17,
+  },
+  /* v45 slice 4 — WHAT THE READ SAID ABOUT THIS PHOTO (a page of music, a weak
+     read, a debris read, a failed read). The palette's `text` token and one step
+     up in weight, so the honest reason is the first thing read in the panel —
+     and it is never a dead end, because the typed title and the retake sit under
+     it. */
+  verdictLine: {
+    color: '#eaeaff',
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
   },
   /* THE PILL: semi-transparent, rounded well past its own height, centred at its
      own width, holding the shutter, the flash toggle, Undo and Done — and nothing
