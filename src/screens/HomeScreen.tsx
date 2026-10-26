@@ -36,10 +36,10 @@ import { PieceDetailScreen } from './PieceDetailScreen';
 import { HumSearchScreen } from './HumSearchScreen';
 import { ModernSearchScreen } from './ModernSearchScreen';
 import { FindPieceScreen } from './FindPieceScreen';
-import { PracticeWeekScreen } from './PracticeWeekScreen';
-// The medals surface (owner-approved 08-25 retention build). Rendered IN PLACE
-// like the flows above; it registers useHardwareBack itself.
-import { AchievementsScreen } from './AchievementsScreen';
+// NOTE (v45 slice 2, owner 10-26): PracticeWeekScreen and AchievementsScreen are
+// NOT imported here any more. The two retention chips that opened them left the
+// front door for SETTINGS, which mounts both screens itself
+// (frontDoorBands.retentionChipsAreInSettings asserts the wiring from source).
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { NO_AUDIO_DIAGNOSTICS } from '../services/captureTelemetry';
 import type { CaptureDiagnostics } from '../services/captureTelemetry';
@@ -67,8 +67,6 @@ import {
 // src/services/frontDoor.ts so the screen and the tier1 gate read the SAME
 // words, and the guard can assert the wiring from the app's own source.
 import {
-  FIND_PIECE_ENTRY_HINT,
-  FIND_PIECE_ENTRY_LABEL,
   HOME_SPLIT_HUM_A11Y,
   HOME_SPLIT_HUM_TIP,
   HOME_SPLIT_HUM_TITLE,
@@ -117,10 +115,7 @@ import {
   FIND_ANY_SONG_CHIP_LABEL,
   FRONT_DOOR_BETA_NOTE,
   FRONT_DOOR_FACET_FLAGS,
-  WEEK_CHIP_ACCESSIBILITY_LABEL,
-  WEEK_CHIP_LABEL,
   bandFacets,
-  retentionChips,
   todayCardAccessibilityLabel,
 } from '../services/frontDoorBands';
 import {
@@ -171,11 +166,8 @@ import { checkAndAwardBadges } from '../services/achievements';
 // scripts/medals.test.ts asserts this screen's wiring from the source text.
 import { ShareCard } from '../components/ShareCard';
 import {
-  ACHIEVEMENTS_ENTRY_HINT,
-  ACHIEVEMENTS_ENTRY_LABEL,
   MEDAL_TOAST_SHARE_LABEL,
   MEDAL_UNLOCK_LABEL,
-  achievementsSummaryLine,
   medalCardSubtitle,
   medalCardTitle,
   medalContext,
@@ -271,18 +263,12 @@ export const HomeScreen: React.FC = () => {
   const [showModernSearch, setShowModernSearch] = useState(false);
   // "Find a piece" — catalog search by title/composer (no mic involved).
   const [showFindPiece, setShowFindPiece] = useState(false);
-  // "📋 This Week" — the practice-week surface (which days were practised). The
-  // app has no practice-run tab, so Home renders it in place like the flows above.
-  const [showPracticeWeek, setShowPracticeWeek] = useState(false);
 
   // ── Medals (owner-approved 08-25 retention build) ──
-  // The quiet entry card's line ("3 of 11 earned · next: 7-Day Streak"), the
-  // freshly-earned medal shown as a NON-BLOCKING toast, and the achievement card
-  // the toast's Share action opens. Nothing here can interrupt play: the toast is
-  // a banner (no modal), and the card only ever opens because the user tapped.
-  const [showAchievements, setShowAchievements] = useState(false);
+  // Only the freshly-earned medal shown as a NON-BLOCKING toast stays on Home:
+  // the toast is a banner (no modal) and the achievement card it opens is a share
+  // card, not a screen. The achievements SCREEN moved to Settings (v45 slice 2).
   const [medalToast, setMedalToast] = useState<Medal | null>(null);
-  const [medalSummary, setMedalSummary] = useState('');
   const [medalCard, setMedalCard] = useState<{
     medal: Medal;
     context: MedalContext;
@@ -335,7 +321,6 @@ export const HomeScreen: React.FC = () => {
    */
   const refreshMedals = useCallback(async () => {
     const result = await checkAndAwardMedals();
-    setMedalSummary(achievementsSummaryLine(result.stats, result.records));
 
     const unlock = result.unlocks[0];
     const medal = result.medals[0];
@@ -1048,13 +1033,7 @@ export const HomeScreen: React.FC = () => {
     setShowFindPiece(true);
   }, []);
 
-  // ── Medals entry + achievement card (owner-approved 08-25) ──
-  /** Open the medals screen (quiet entry card, below the front door). */
-  const handleOpenAchievements = useCallback(() => {
-    setShowAchievements(true);
-    // Settle anything earned since the last check so the screen is current.
-    void refreshMedals();
-  }, [refreshMedals]);
+  // ── The medal SHARE card (owner-approved 08-25) ──
   /** Open the achievement card for the medal that just unlocked. */
   const openMedalShare = useCallback(() => {
     if (!medalCard) return;
@@ -1096,24 +1075,10 @@ export const HomeScreen: React.FC = () => {
   // replaced the handler: a second destination is what was removed, so there is
   // no dead handler left behind and no second practice target.
 
-  // ── "📋 This Week" tap ──
-  // Opens the practice-week surface in place (see PracticeWeekScreen): the days
-  // practised this week, minutes per day, and this week's coached takes.
-  const handleOpenPracticeWeek = useCallback(() => {
-    setShowPracticeWeek(true);
-  }, []);
-
-  // From the week view: close it, then run the same destination logic the card
-  // uses (featured piece → sheet/piece page, otherwise Find-a-Piece).
-  const handlePracticeFromWeek = useCallback(() => {
-    setShowPracticeWeek(false);
-    handlePracticeTodayTap();
-  }, [handlePracticeTodayTap]);
-
-  const handleFindPieceFromWeek = useCallback(() => {
-    setShowPracticeWeek(false);
-    setShowFindPiece(true);
-  }, []);
+  // ── "📋 This Week" moved to SETTINGS (v45 slice 2, owner 10-26) ──
+  // The week surface and the handler that opened it are no longer Home's:
+  // Settings mounts PracticeWeekScreen itself and sends its practice exits back
+  // to this tab, where today's piece and the search live.
 
   // ── The modern surfaces (the pipeline's pass 2, and the hum bridge) ──
   // From the modern interstitial (or the modern screen): jump to the hum flow,
@@ -1239,23 +1204,12 @@ export const HomeScreen: React.FC = () => {
   // button is the LISTEN panel of the equal split — its face is the brand
   // emblem, so the 🎤/🎙️ emoji is retired with the round disc.)
 
-  /** The week is complete when the user hit the goal they set. */
-  const weekComplete = weeklyGoal.current >= weeklyGoal.target;
+  // NOTE (v45 slice 2, owner 10-26): Home renders NO retention chip any more.
+  // The streak STATE, 🏅 Achievements and 📋 This Week are Settings entries now
+  // (SettingsScreen renders all three from the same copy module), so there is no
+  // `retentionChips` call and no `browseChips` row left on this screen.
 
-  // The door's retention STATE, resolved ONCE: the streak/week chips inside band
-  // B's card and the chips in band C both come from this single call, so the two
-  // bands can never show different numbers. Each is a state chip (no
-  // destination) except the two that really open a surface.
-  const retention = retentionChips({
-    currentDays: streak.currentDays,
-    weekCurrent: weeklyGoal.current,
-    weekTarget: weeklyGoal.target,
-    weekComplete,
-  });
-  const todayCardChips = retention.filter((chip) => chip.where === 'today-card');
-  const browseChips = retention.filter((chip) => chip.where === 'browse');
-
-  // Band C's facet chips — ONLY the ones whose content exists today. Guitar &
+  // Discover's facet chips — ONLY the ones whose content exists today. Guitar &
   // keyboard is absent (frontDoorBands.guitarContentAvailable is false until a
   // screen surfaces the audited PD guitar batch), and an absent facet is the
   // honest answer: no "coming soon" chip, ever.
@@ -1292,26 +1246,11 @@ export const HomeScreen: React.FC = () => {
     return <FindPieceScreen onClose={() => setShowFindPiece(false)} />;
   }
 
-  // "📋 This Week" — the practice-week surface, rendered in place. Home owns the
-  // practice destinations, so it passes them in (the week view has no recorder or
-  // navigation of its own).
-  if (showPracticeWeek) {
-    return (
-      <PracticeWeekScreen
-        onClose={() => setShowPracticeWeek(false)}
-        featuredTitle={dailyChallenge?.title ?? null}
-        onPracticeToday={handlePracticeFromWeek}
-        onFindPiece={handleFindPieceFromWeek}
-      />
-    );
-  }
-
-  // 🏅 Medals — the achievements surface, rendered in place like the flows above.
-  // It owns its own Android BACK handling (useHardwareBack) and reads the medal
-  // rules from src/services/medals.ts, so Home only supplies the exit.
-  if (showAchievements) {
-    return <AchievementsScreen onClose={() => setShowAchievements(false)} />;
-  }
+  // NOTE (v45 slice 2, owner 10-26): the practice-week view and the achievements
+  // screen are not Home's in-place flows any more — Settings mounts BOTH behind
+  // its own flags. That also retires two "blank body" opportunities: a flag left
+  // true with no dialog on screen could only blank Home, and Home no longer has
+  // either flag.
 
   // NOTE (owner-reported blank Home page, v22 → v24): the sheet-music viewer used
   // to be a body-replacement early return HERE (the whole Home body was replaced
@@ -1609,6 +1548,60 @@ export const HomeScreen: React.FC = () => {
             <Text style={styles.findASongBarLabel}>{FIND_ANY_SONG_CHIP_LABEL}</Text>
             <Text style={styles.findASongBarChevron}>›</Text>
           </TouchableOpacity>
+
+          {/* ── THE BAND-C FOLD (v45 slice 2, owner 10-26) ──
+              Band C ("Browse & keep going") is GONE as a band. Everything in it
+              that was not a second search entry moved up here into Discover, so
+              nothing that was reachable became unreachable:
+                · the facet chips (🎼 Free classical & public-domain, 🛒 Any song
+                  → official sheet music) — the money facet included;
+                · the free-library row and, travelling WITH it, the honest beta
+                  note that renders under that row;
+              and the ONE thing that did die is band C's own "Search by title or
+              composer" row: the bar above opens exactly the same screen, and the
+              owner's 10-26 call is ONE search entry on the whole door.
+              The three retention chips that closed band C — the streak state,
+              🏅 Achievements and 📋 This Week — are SETTINGS entries now (the
+              "Your practice" group), never a Home chip. */}
+          {facets.length > 0 && (
+            <View style={styles.bandChipRow}>
+              {facets.map((facet) => (
+                <TouchableOpacity
+                  key={facet.id}
+                  style={styles.bandChip}
+                  onPress={handleOpenFindPiece}
+                  activeOpacity={0.6}
+                  accessibilityRole="button"
+                  accessibilityLabel={facet.label}
+                >
+                  <Text style={styles.bandChipText}>{facet.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* The free library — the hook (free content earns the trust the paid
+              paths live on). Same destination the modern interstitial's own
+              "browse the free library" lever uses: handleBrowseLibraryFromModern
+              → the Library tab. */}
+          <TouchableOpacity
+            style={styles.browseLibraryRow}
+            onPress={handleBrowseLibraryFromModern}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={BROWSE_LIBRARY_ACCESSIBILITY_LABEL}
+          >
+            <Text style={styles.browseLibraryEmoji}>📚</Text>
+            <View style={styles.browseLibraryInfo}>
+              <Text style={styles.browseLibraryTitle}>{BROWSE_LIBRARY_LABEL}</Text>
+              <Text style={styles.browseLibraryHint}>{BROWSE_LIBRARY_HINT}</Text>
+              {/* The honest library-size note travels WITH this row: it left the
+                  hero in slice 1 and may not be dropped on the way up into
+                  Discover. Same constant, same render. */}
+              <Text style={styles.browseLibraryBetaNote}>{FRONT_DOOR_BETA_NOTE}</Text>
+            </View>
+            <Text style={styles.browseLibraryChevron}>›</Text>
+          </TouchableOpacity>
         </View>
 
 
@@ -1697,108 +1690,15 @@ export const HomeScreen: React.FC = () => {
             }
           />
 
-        {/* ══ BAND C — BROWSE + KEEP GOING ══ (re-flow bundle D, owner 10-02)
-            One meaning per entry: the honest search row (the real field is one tap
-            away — audit D9), the facet chips that are each backed by content that
-            exists TODAY, the free library row, then the small chips.
-
-            GUITAR & KEYBOARD IS DELIBERATELY ABSENT. Its content
-            (PD_GUITAR_CATALOG + gateGuitarSheet) is audited and gate-cleared, but
-            no screen surfaces it yet, so the facet does not render at all — no
-            "coming soon" chip, ever (frontDoorBands.guitarContentAvailable, and
-            bandFacetsAreBackedByRealContent fails if the flag is flipped alone). */}
-        <View style={styles.band} testID={BAND_TEST_IDS.browse}>
-          <Text style={styles.bandTitle}>{BAND_TITLES.browse}</Text>
-
-          {/* The search entry: it used to be a hint line under the hero. It is a
-              row in this band now, and one tap opens the real field. */}
-          <TouchableOpacity
-            style={styles.findPieceBtn}
-            onPress={handleOpenFindPiece}
-            activeOpacity={0.6}
-            accessibilityRole="search"
-            accessibilityLabel={FIND_PIECE_ENTRY_LABEL}
-          >
-            <Text style={styles.findPieceEmoji}>🔎</Text>
-            <Text style={styles.findPieceText}>{FIND_PIECE_ENTRY_HINT}</Text>
-          </TouchableOpacity>
-
-          {/* Breadth, honestly — only the facets whose content exists today. */}
-          {facets.length > 0 && (
-            <View style={styles.bandChipRow}>
-              {facets.map((facet) => (
-                <TouchableOpacity
-                  key={facet.id}
-                  style={styles.bandChip}
-                  onPress={handleOpenFindPiece}
-                  activeOpacity={0.6}
-                  accessibilityRole="button"
-                  accessibilityLabel={facet.label}
-                >
-                  <Text style={styles.bandChipText}>{facet.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* The free library — the hook (free content earns the trust the paid
-              paths live on). Same destination the modern interstitial's own
-              "browse the free library" lever uses. */}
-          <TouchableOpacity
-            style={styles.browseLibraryRow}
-            onPress={handleBrowseLibraryFromModern}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={BROWSE_LIBRARY_ACCESSIBILITY_LABEL}
-          >
-            <Text style={styles.browseLibraryEmoji}>📚</Text>
-            <View style={styles.browseLibraryInfo}>
-              <Text style={styles.browseLibraryTitle}>{BROWSE_LIBRARY_LABEL}</Text>
-              <Text style={styles.browseLibraryHint}>{BROWSE_LIBRARY_HINT}</Text>
-              {/* The honest library-size note, RELOCATED here by v45 (designer
-                  notes §6 "moves"): it left the hero, where it told a first-time
-                  user the library was small before they had tapped anything,
-                  and it now renders where a musician is actually choosing to
-                  browse the free scores. Same constant, moved render — and the
-                  same line is on the recognition no-match card. */}
-              <Text style={styles.browseLibraryBetaNote}>{FRONT_DOOR_BETA_NOTE}</Text>
-            </View>
-            <Text style={styles.browseLibraryChevron}>›</Text>
-          </TouchableOpacity>
-
-          {/* The small chips: the streak STATE (no tap — it is a number, not a
-              promise), the medals entry (kept, as a chip) and This Week. */}
-          <View style={styles.bandChipRow}>
-            {browseChips
-              .filter((chip) => chip.destination === null)
-              .map((chip) => (
-                <View key={chip.id} style={styles.bandChip}>
-                  <Text style={styles.bandChipText}>{chip.label}</Text>
-                </View>
-              ))}
-            <TouchableOpacity
-              style={styles.achievementsCard}
-              onPress={handleOpenAchievements}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={ACHIEVEMENTS_ENTRY_LABEL}
-            >
-              <Text style={styles.achievementsEmoji}>🏅</Text>
-              <Text style={styles.achievementsTitle}>
-                {medalSummary || ACHIEVEMENTS_ENTRY_HINT}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.bandChipButton}
-              onPress={handleOpenPracticeWeek}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={WEEK_CHIP_ACCESSIBILITY_LABEL}
-            >
-              <Text style={styles.bandChipText}>{WEEK_CHIP_LABEL}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* ══ (BAND C RETIRED — v45 slice 2, owner 10-26) ══
+            "Browse & keep going" was the fourth band. It is not a band any more:
+            the facet chips and the free-library row above moved INTO Discover,
+            its duplicate search row died against the "Find a song" bar, and its
+            three retention chips (streak state / 🏅 Achievements / 📋 This Week)
+            are Settings rows. The container's own marker
+            (`BAND_TEST_IDS.browse`) and heading are gone from this file for good —
+            frontDoorBands.bandOrderIsIdentifyDiscoverToday fails if either comes
+            back, so this is a retirement, not a pause. */}
 
         {/* v45 (owner 10-26, designer notes §3 row 4): THE BUILD STAMP IS OFF
             HOME. It was v43 item B1's footer line; the front door is now the
@@ -1851,25 +1751,6 @@ const baseStyles = StyleSheet.create({
 
   // 🏅 The quiet medals entry — a small row, deliberately lighter than the
   // streak card so it never competes with the one-button front door.
-  achievementsCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1a1a2e',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  achievementsEmoji: {
-    fontSize: 14,
-    marginRight: 6,
-  },
-  achievementsTitle: {
-    color: '#a0a0b8',
-    fontSize: 12,
-    fontWeight: '600',
-  },
 
 
   // Shared affordance line on the tappable summary cards (Practice today /
@@ -1971,18 +1852,6 @@ const baseStyles = StyleSheet.create({
   // than the hero — because it must never read as a competing primary CTA.
   // (The old tier-1 row of hum/modern/find-piece buttons is gone: those modes
   //  collapsed into the one front door.)
-  findPieceBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    backgroundColor: '#1a1a2e',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-  },
   // v44 (owner 10-22): the navy sibling card, its title/body styles and the
   // teach line under it are GONE — the hum door is the right-hand PEER panel
   // above, painted by src/components/HeroSplitPanel.tsx. `humEntryBtn` is now
@@ -1991,16 +1860,6 @@ const baseStyles = StyleSheet.create({
     fontSize: 12,
     color: '#a0a0b8',
     marginBottom: 10,
-  },
-  findPieceEmoji: {
-    fontSize: 18,
-    marginRight: 10,
-  },
-  findPieceText: {
-    flex: 1,
-    color: '#8a8aa3',
-    fontSize: 13,
-    fontWeight: '600',
   },
 
   // Recording indicator
@@ -2083,14 +1942,6 @@ const baseStyles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   // A chip that is also a tap (the band-C "This Week" chip).
-  bandChipButton: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
   bandChipText: {
     color: '#a0a0b8',
     fontSize: 12,

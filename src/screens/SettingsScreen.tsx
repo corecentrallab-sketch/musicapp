@@ -78,7 +78,22 @@ import Constants from 'expo-constants';
 import { Audio } from 'expo-av';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '../types';
+import type { RootStackParamList, RootTabParamList } from '../types';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+// ── v45 slice 2 (OWNER CALL 10-26): the two retention ENTRIES that left Home's
+// bands — 🏅 Achievements and 📋 This Week — are Settings rows now, and the streak
+// is visible here as STATE. Both screens are mounted by THIS screen behind its own
+// flags (rendered in place, each owning its Android BACK handling), and the row
+// labels come from services/frontDoorBands so there is ONE copy of each name.
+// frontDoorBands.retentionChipsAreInSettings asserts all of that from source.
+import { AchievementsScreen } from './AchievementsScreen';
+import { PracticeWeekScreen } from './PracticeWeekScreen';
+import {
+  MEDALS_CHIP_LABEL,
+  WEEK_CHIP_LABEL,
+  streakChipCopy,
+} from '../services/frontDoorBands';
+import { getDisplayStreakLocal } from '../services/reinforcementStore';
 import { useEffect } from 'react';
 import { getNotificationEnabled, setNotificationEnabled, getProState, saveProState, type ProState } from '../services/storage';
 // The user's chosen practice-reminder time (owner request 09-25): the value, its
@@ -269,6 +284,9 @@ type LoadingPlan = string | null;
 
 export const SettingsScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  // The TAB navigator's own view of the same object: the week view's exits have to
+  // switch tabs (Home), which the stack typing does not describe.
+  const tabNavigation = useNavigation<BottomTabNavigationProp<RootTabParamList>>();
   const [loadingPlan, setLoadingPlan] = useState<LoadingPlan>(null);
   const [proState, setProState] = useState<ProState>({
     isPro: false,
@@ -305,6 +323,11 @@ export const SettingsScreen: React.FC = () => {
   const [themeOpen, setThemeOpen] = useState(false);
   const [microphone, setMicrophone] = useState<MicrophoneAccessState>('unknown');
   const [cloud, setCloud] = useState({ gdrive: false, dropbox: false });
+  // ── v45 slice 2 · the retention entries that moved off Home (owner 10-26) ──
+  const [showAchievements, setShowAchievements] = useState(false);
+  const [showPracticeWeek, setShowPracticeWeek] = useState(false);
+  /** The streak NUMBER from the same store the front door read (never invented). */
+  const [streakDays, setStreakDays] = useState<number | null>(null);
   // The chosen theme (v33 §F2, app-wide in v34b). `theme` is the RESOLVED token
   // table for the current mode: every surface below reads its colours from here,
   // so flipping the toggle repaints the screen instead of only relabelling a
@@ -365,6 +388,27 @@ export const SettingsScreen: React.FC = () => {
     }
   }, []);
 
+  // The streak this screen shows is the ENGINE's (practice history), read from the
+  // SAME store Home used — a Settings row may never print a different number.
+  useEffect(() => {
+    let alive = true;
+    const readStreak = () => {
+      void getDisplayStreakLocal()
+        .then((display) => {
+          if (alive) setStreakDays(display.currentDays);
+        })
+        .catch(() => {
+          if (alive) setStreakDays(null);
+        });
+    };
+    readStreak();
+    // A practice day can start on another tab, so the row re-reads on focus.
+    const unsubscribe = navigation.addListener('focus', readStreak);
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, [navigation]);
   useEffect(() => {
     void readMicrophonePermission().then(setMicrophone);
     void refreshCloudState();
@@ -686,6 +730,24 @@ export const SettingsScreen: React.FC = () => {
   const openAbout = useCallback(() => {
     Alert.alert('NoteSnap', aboutDialogBody(appVersion));
   }, [appVersion]);
+  // ── v45 slice 2 · the two retention entries (owner 10-26: off Home, in here) ──
+  /** 🏅 Achievements — the medals surface, rendered in place like Home used to. */
+  const handleOpenAchievements = useCallback(() => {
+    setShowAchievements(true);
+  }, []);
+  /** 📋 This Week — the practice-week surface, rendered in place. */
+  const handleOpenPracticeWeek = useCallback(() => {
+    setShowPracticeWeek(true);
+  }, []);
+  /**
+   * The week view's practice exits. Settings owns no practice flow of its own, so
+   * both land on the HOME tab — where today's piece and the find-a-song search
+   * live. That is a real destination, not a dead tap: the tab actually changes.
+   */
+  const goPracticeOnHome = useCallback(() => {
+    setShowPracticeWeek(false);
+    tabNavigation.navigate('Home');
+  }, [tabNavigation]);
 
   /**
    * The screen's colours, resolved from the chosen theme (v33 §F2). Each entry is
@@ -703,6 +765,22 @@ export const SettingsScreen: React.FC = () => {
     chipText: { color: theme.chipText },
   };
 
+  // ── v45 slice 2 · the two retention SURFACES (rendered in place) ──
+  // Same full-screen-in-place pattern every flow in this app uses, so no route is
+  // added and Android BACK is each screen's own job (src/services/backExitContract).
+  if (showAchievements) {
+    return <AchievementsScreen onClose={() => setShowAchievements(false)} />;
+  }
+  if (showPracticeWeek) {
+    return (
+      <PracticeWeekScreen
+        onClose={() => setShowPracticeWeek(false)}
+        featuredTitle={null}
+        onPracticeToday={goPracticeOnHome}
+        onFindPiece={goPracticeOnHome}
+      />
+    );
+  }
   return (
     <ScrollView
       style={[styles.container, themed.screen]}
@@ -1049,6 +1127,58 @@ export const SettingsScreen: React.FC = () => {
         </View>
       </View>
 
+      {/* ═══════════ v45 slice 2 · YOUR PRACTICE (owner 10-26) ═══════════
+          These three were Home's retention CHIPS, closing the "Browse & keep
+          going" band. The owner moved them here rather than deleting them, so the
+          door lost its last non-search rows and retention stayed reachable:
+
+            · the streak STATE — visible, never a tap (a number promises nothing);
+            · 🏅 Achievements — opens AchievementsScreen;
+            · 📋 This Week — opens PracticeWeekScreen.
+
+          Both rows are real taps into screens this screen mounts itself, and the
+          labels come from services/frontDoorBands (one copy of each name). */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, themed.title]}>Your practice</Text>
+        <Text style={[styles.sectionSubtitle, themed.subtitle]}>
+          Your streak, your medals and this week.
+        </Text>
+        <View
+          style={[
+            styles.retentionCard,
+            { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE },
+          ]}
+        >
+          <SpecRow
+            styles={styles}
+            palette={palette}
+            title="Current streak"
+            sub="Days in a row you have practised"
+            value={streakChipCopy(streakDays)}
+          />
+          <SpecRow
+            styles={styles}
+            palette={palette}
+            title={MEDALS_CHIP_LABEL}
+            sub="The medals you have earned"
+            onPress={handleOpenAchievements}
+            hint="Opens your achievements and medals"
+            chevron
+            divider
+          />
+          <SpecRow
+            styles={styles}
+            palette={palette}
+            title={WEEK_CHIP_LABEL}
+            sub="The days you practised this week"
+            onPress={handleOpenPracticeWeek}
+            hint="Opens this week's practice"
+            chevron
+            divider
+          />
+        </View>
+      </View>
+
       {/* THE CALENDAR CHANNEL (owner-approved 10-10, backlog b033ab48): opt-in,
           OFF by default, CALENDAR-ONLY when armed, with "also keep the in-app
           reminder" as the explicit two-reminders choice. Every line here comes
@@ -1365,6 +1495,16 @@ const baseStyles = StyleSheet.create({
     marginBottom: 20,
   },
   specDivider: { height: 1 },
+  // v45 slice 2 · the "Your practice" card that carries the three retention rows.
+  // Same geometry as the spec's cards ON PURPOSE (one row idiom on this screen),
+  // but its own key: the spec's four-group guard counts ITS cards, and these rows
+  // deliberately sit BELOW the spec's closed row set (owner 10-26).
+  retentionCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
   // ONE row style: 52 dp, inset x32, title 15 / sub 11 / value 13.
   specRow: {
     height: 52,

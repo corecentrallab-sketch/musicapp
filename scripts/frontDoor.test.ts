@@ -44,6 +44,7 @@ import {
   demoButtonHiddenInProd,
   elementWithMarker,
   findPieceIsSearchEntry,
+  fragmentEntryPointsAreWired,
   findPieceOpensScreen,
   frontDoorStartFailure,
   hasSingleHeroCta,
@@ -1575,15 +1576,14 @@ function findAnySongTests(): void {
     'and the screen behind it is mounted with its BACK path',
   );
 
-  const rowOutsideBandC = home.replace(
-    'testID={BAND_TEST_IDS.browse}',
-    'testID={undefined}',
-  );
-  assert(rowOutsideBandC !== home, 'the band-C mutation changed the real source');
+  // v45 slice 2: band C is retired, so the classification mutation is now the
+  // FREE-LIBRARY row losing its landing — a row that renders and opens nothing.
+  const libraryDead = home.replace("    navigation.navigate('Library');\n", '');
+  assert(libraryDead !== home, 'the library-row mutation changed the real source');
   assertEq(
-    findPieceEntryIsSearchRow(rowOutsideBandC),
+    fragmentEntryPointsAreWired(libraryDead),
     false,
-    'MUTATION: the search row outside band C FAILS (the band is where the audit puts it)',
+    'MUTATION: a free-library row that opens nothing FAILS the fold contract',
   );
 
   const rowDead = home.replace(

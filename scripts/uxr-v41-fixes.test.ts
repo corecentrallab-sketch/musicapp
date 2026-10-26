@@ -380,7 +380,8 @@ for (const mutation of cardMutations) {
 }
 // The band still renders exactly ONE card (no retired practice card comes back).
 const bandStart = home.indexOf('testID={BAND_TEST_IDS.today}');
-const bandEnd = home.indexOf('BAND_TEST_IDS.browse');
+// v45 slice 2: band C is retired, so band B's region ends at the door's footer.
+const bandEnd = home.indexOf('styles.bottomSpacer');
 const band = bandStart >= 0 && bandEnd > bandStart ? home.slice(bandStart, bandEnd) : '';
 assert(band.length > 200, `band B was located (${band.length} chars)`);
 assertEq(

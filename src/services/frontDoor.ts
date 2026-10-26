@@ -693,8 +693,20 @@ export function heroStaysIdentifyFirst(source: string): boolean {
 /** True when "Find a piece" is the secondary search-field entry under the hero
  *  button (not a competing CTA), labelled from this module. */
 export function findPieceIsSearchEntry(source: string): boolean {
+  // v45 slice 2: on the REAL screen the row is gone and the "Find a song" bar is
+  // the search entry, so a BAR that is wired satisfies this contract too (its own
+  // geometry/wiring is pinned by `findASongBarWired`). The row checks below still
+  // hold for any surface that renders the row.
   const masked = maskComments(source);
-  if (!/onPress=\{handleOpenFindPiece\}/.test(masked)) return false;
+  // v45 slice 2: the ROW that carried this contract is retired on the real screen
+  // (styles.findPieceBtn is gone); the "Find a song" bar is the door's search entry
+  // there. On such a surface the contract is the BAR plus the facet chips that
+  // still open the same screen — a bar that keeps its wiring while its chips were
+  // promoted to the hero handler is exactly the "second hero" this must catch.
+  if (masked.indexOf('styles.findPieceBtn') < 0) {
+    if (!/onPress=\{handleOpenFindPiece\}/.test(masked)) return false;
+    return findASongBarWired(source);
+  }
   if (masked.indexOf('FIND_PIECE_ENTRY_LABEL') < 0) return false;
   const tag = tagAround(masked, 'styles.findPieceBtn');
   return /onPress=\{handleOpenFindPiece\}/.test(tag);
@@ -1045,8 +1057,12 @@ export function findASongBarWired(source: string): boolean {
  */
 export function findPieceEntryIsSearchRow(source: string): boolean {
   const masked = maskComments(source);
-  const band = bandRegion(source, 'browse');
-  if (!band) return false;
+  const band = retiredBrowseRegion(source);
+  if (!band) {
+    // v45 slice 2: the row is retired; the rows that REPLACED its job (the facet
+    // chips + the free-library row, now inside Discover) carry the contract.
+    return fragmentEntryPointsAreWired(source);
+  }
   if (band.indexOf('styles.findPieceBtn') < 0) return false;
   if (band.indexOf('onPress={handleOpenFindPiece}') < 0) return false;
   // It renders the front door's search wording — a search entry, not a promise.
@@ -1057,4 +1073,41 @@ export function findPieceEntryIsSearchRow(source: string): boolean {
   if (!/setShowFindPiece\s*\(\s*true\s*\)/.test(body)) return false;
   // …and the screen behind it is really mounted (its field is one tap away).
   return /<FindPieceScreen\s/.test(masked);
+}
+
+/**
+ * THE FOLD'S ENTRY POINTS STILL OPEN THEIR DESTINATIONS (v45 slice 2).
+ *
+ * The fold retired band C's own "Search by title or composer" row, so the guard
+ * that used to prove THAT row existed (`findPieceEntryIsSearchRow`) has nothing
+ * left to read. What must still be true — brief §11.8 — is that the rows the fold
+ * MOVED into Discover are wired:
+ *   • `handleOpenFindPiece` really sets `showFindPiece` (the facet chips' tap);
+ *   • `handleBrowseLibraryFromModern` really navigates to the Library tab (the
+ *     free-library row's tap, not a dead row);
+ *   • the free-library row still renders, and `FindPieceScreen` is still mounted
+ *     behind the flag, so the screen every chip opens has a real field.
+ */
+export function fragmentEntryPointsAreWired(source: string): boolean {
+  const masked = maskComments(source);
+  const findDeclaration = masked.indexOf('const handleOpenFindPiece');
+  if (findDeclaration < 0) return false;
+  if (!/setShowFindPiece\s*\(\s*true\s*\)/.test(braceBlockFrom(masked, findDeclaration))) {
+    return false;
+  }
+  const libraryDeclaration = masked.indexOf('const handleBrowseLibraryFromModern');
+  if (libraryDeclaration < 0) return false;
+  if (!/navigate\(\s*'Library'\s*\)/.test(braceBlockFrom(masked, libraryDeclaration))) {
+    return false;
+  }
+  if (masked.indexOf('styles.browseLibraryRow') < 0) return false;
+  return /<FindPieceScreen\s/.test(masked);
+}
+
+/** The retired band C's own container slice, for the two legacy guards below.
+ *  Band `browse` is no longer a BandId, so `bandRegion` cannot take it. */
+function retiredBrowseRegion(source: string): string {
+  const masked = maskComments(source);
+  const at = masked.indexOf('BAND_TEST_IDS.browse');
+  return at < 0 ? '' : masked.slice(at, at + 3000);
 }
