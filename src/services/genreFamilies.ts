@@ -324,9 +324,18 @@ export function normalizeEra(raw: unknown): EraId | null {
  *     describe a slice as if it were the library;
  *   • no row carries a genre (a backend that has not shipped the field yet).
  * A count therefore always means "this many real rows", never a default.
+ *
+ * The row type is GENERIC over any row object, NOT the exported
+ * `CatalogGenreRow`: that interface carries an index signature
+ * (`[key: string]: unknown`), and a concrete interface — such as the app's
+ * `CatalogPiece` — is NOT assignable to a type with an index signature, which is
+ * a hard compile error at the real call site (`genreCountsStore.loadGenreCounts`
+ * hands in `CatalogPiece[]` straight from `/api/pieces`). Rows here are
+ * unvalidated wire objects and `genre` is the ONLY field ever read, so the
+ * parameter accepts any row object and reads `genre` defensively.
  */
-export function eraCountsFromPieces(
-  rows: readonly CatalogGenreRow[],
+export function eraCountsFromPieces<Row extends object>(
+  rows: readonly Row[],
   total: number,
 ): EraCounts | null {
   if (!Array.isArray(rows) || rows.length === 0) return null;
@@ -335,7 +344,8 @@ export function eraCountsFromPieces(
   const counts = emptyEraCounts();
   let tagged = 0;
   for (const row of rows) {
-    const era = normalizeEra(row ? row.genre : null);
+    const genre = row ? (row as { genre?: string | null }).genre : null;
+    const era = normalizeEra(genre);
     if (!era) continue;
     tagged++;
     counts[era] += 1;
