@@ -551,13 +551,46 @@ export function readerKeepsTheStickyFooter(screenSource: string): boolean {
   const scrollerEnd = src.indexOf('</ScrollView>');
   const footer = src.indexOf('style={styles.footer}');
   if (scrollerEnd < 0 || footer < 0 || footer < scrollerEnd) return false;
-  const footerBlock = src.slice(footer, footer + 2200);
+  // THE BLOCK IS THE FOOTER'S OWN ELEMENT, not the first 2200 characters after it
+  // (v44 slice C, PR #188). The old fixed window silently became a length contract:
+  // the fourth footer control — "Print / share as PDF" — pushed the honest free note
+  // from +~2050 to +2496 characters and the guard failed a footer that still carries
+  // every control and line it shipped with. Bounding the block by the footer's own
+  // closing tag keeps the same assertions and cannot be overrun by a long footer.
+  const footerBlock = jsxBlockAt(src, footer);
   if (footerBlock.indexOf('<ScrollView') >= 0) return false;
   if (footerBlock.indexOf('onPress={handleSave}') < 0) return false;
   if (footerBlock.indexOf('onPress={handleShare}') < 0) return false;
   if (footerBlock.indexOf('READER_SAVE_CTA') < 0) return false;
   if (footerBlock.indexOf('READER_SHARE_CTA') < 0) return false;
   return footerBlock.indexOf('READER_FREE_NOTE') >= 0;
+}
+
+/**
+ * THE JSX ELEMENT THAT OWNS `at`, from its opening `<` to its OWN closing tag.
+ * Comments are already masked by the caller, so the tag scan sees code only.
+ * Structural, not positional: a block cannot be overrun by adding a control to it,
+ * which is exactly how the footer guard above failed once (v44 slice C).
+ */
+function jsxBlockAt(src: string, at: number): string {
+  const start = src.lastIndexOf('<', at);
+  if (start < 0) return '';
+  let depth = 0;
+  let i = start;
+  while (i < src.length) {
+    const open = src.indexOf('<View', i);
+    const close = src.indexOf('</View>', i);
+    if (close < 0) break;
+    if (open >= 0 && open < close) {
+      depth += 1;
+      i = open + 5;
+      continue;
+    }
+    depth -= 1;
+    i = close + 7;
+    if (depth === 0) return src.slice(start, i);
+  }
+  return src.slice(start);
 }
 
 /**

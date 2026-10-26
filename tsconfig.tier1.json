@@ -196,6 +196,9 @@
     "scripts/buildStamp.test.ts",
     "scripts/v43UiWiring.test.ts",
     "src/services/heroSplit.ts",
-    "scripts/heroSplit.test.ts"
+    "scripts/heroSplit.test.ts",
+    "src/services/scorePdf.ts",
+    "src/services/v44PrintPdfContract.ts",
+    "scripts/scorePdf.test.ts"
   ]
 }

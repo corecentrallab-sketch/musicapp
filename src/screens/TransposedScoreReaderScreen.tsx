@@ -63,6 +63,14 @@ import {
 import { SCORE_SHARE_FAILED_HINT } from '../services/scoreShare';
 import { shareTransposedScore } from '../services/scoreShareDevice';
 import {
+  SCORE_PDF_BUSY_LINE,
+  SCORE_PDF_CTA,
+  SCORE_PDF_HINT,
+  SCORE_PDF_UNAVAILABLE_MESSAGE,
+  scorePdfHandedOverMessage,
+} from '../services/scorePdf';
+import { shareScorePdf } from '../services/scorePdfDevice';
+import {
   READER_KEY_CHIP_LABEL,
   READER_KEY_DECREASE_LABEL,
   READER_KEY_INCREASE_LABEL,
@@ -98,6 +106,16 @@ export const READER_SAVED_CTA = 'Saved to Library';
 export const READER_SHARE_CTA = 'Share transposed score';
 /** The share control while the sheet is opening. */
 export const READER_SHARING_LINE = 'Opening the share sheet…';
+/**
+ * THE PRINT / PDF CONTROL (v44 slice C, owner 10-24 checklist 4.1: "If I want to
+ * see the full score as transposed - or to print it out/share it out as pdf etc -
+ * it is not there"). The label is the ask in the owner's own terms; the words are
+ * shared with the builder (`services/scorePdf.ts`) so the button and the file can
+ * never describe two different things.
+ */
+export const READER_PDF_CTA = SCORE_PDF_CTA;
+/** What the control does, stated on the surface itself. */
+export const READER_PDF_HINT = SCORE_PDF_HINT;
 /** Read out when the reader opens, so the surface is not silent to a screen reader. */
 export const READER_ACCESSIBILITY_HINT = 'Full transposed score reader';
 
@@ -111,6 +129,8 @@ export const TransposedScoreReaderScreen: React.FC<Props> = ({ navigation, route
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [sharing, setSharing] = useState(false);
+  /** True while the PDF is being built, proved and handed over (v44 slice C). */
+  const [exportingPdf, setExportingPdf] = useState(false);
   /**
    * THE SCORE, THE KEY AND THE OFFSET THE USER IS LOOKING AT (UX round 1 step 3).
    * They start as the editor's params — the reader is still opened on the
@@ -229,6 +249,44 @@ export const TransposedScoreReaderScreen: React.FC<Props> = ({ navigation, route
       setSharing(false);
     }
   }, [abc, keyLabel, offset, sharing, title]);
+
+  /**
+   * PRINT / SHARE THE WHOLE SCORE AS A PDF (v44 slice C, owner 10-24 item 4.1).
+   *
+   * WHAT IT HANDS OVER. `abc` — the score THIS WINDOW IS SHOWING, in the key the
+   * user stepped to with the stepper — plus the catalogue title, the composer and
+   * the key label. It is the same variable the score on screen is rendered from,
+   * so there is no second source of truth and no "opened key" vs "chosen key"
+   * drift; and because the builder lays out every measure of the ABC it is given
+   * (`services/scorePdf.ts`), the PDF carries the WHOLE score — the ~4 bars the
+   * owner saw were a VIEWPORT (a WebView as tall as the phone), which a PDF
+   * simply does not have.
+   *
+   * The file is built, parsed back, written, read back off disk and only then
+   * handed to the system share sheet (where Android's own Print destination can
+   * take it) — an outage says why instead of looking dead.
+   */
+  const handleExportPdf = useCallback(async () => {
+    if (exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      const outcome = await shareScorePdf({
+        abc,
+        title,
+        keyLabel,
+        offset,
+      });
+      if (outcome.status === 'shared') {
+        Alert.alert('PDF', scorePdfHandedOverMessage(outcome.bars));
+      } else if (outcome.status === 'unavailable') {
+        Alert.alert('PDF', SCORE_PDF_UNAVAILABLE_MESSAGE);
+      } else if (outcome.message) {
+        Alert.alert('PDF', outcome.message);
+      }
+    } finally {
+      setExportingPdf(false);
+    }
+  }, [abc, exportingPdf, keyLabel, offset, title]);
 
   /** Leave the reader, with the guard already told that this pop is intended. */
   const leaveReader = useCallback(() => {
@@ -404,9 +462,31 @@ export const TransposedScoreReaderScreen: React.FC<Props> = ({ navigation, route
           </Text>
         </Pressable>
 
+        {/* THE PRINT / SHARE-AS-PDF CONTROL (v44 slice C, owner 10-24 item 4.1).
+            It sits with the other two actions, above the honest free note, and it
+            exports the score ON SCREEN — every bar, in the key on the chip. */}
+        <Pressable
+          style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
+          onPress={handleExportPdf}
+          disabled={exportingPdf}
+          accessibilityRole="button"
+          accessibilityLabel={READER_PDF_CTA}
+          accessibilityState={{ disabled: exportingPdf }}
+          testID="reader-print-pdf"
+        >
+          {exportingPdf ? (
+            <ActivityIndicator color={theme.accent} size="small" />
+          ) : (
+            <Ionicons name="print-outline" size={18} color={theme.accent} />
+          )}
+          <Text style={styles.secondaryBtnText}>
+            {exportingPdf ? SCORE_PDF_BUSY_LINE : READER_PDF_CTA}
+          </Text>
+        </Pressable>
+        <Text style={styles.pdfHint}>{READER_PDF_HINT}</Text>
+
         <Text style={styles.freeNote}>{READER_FREE_NOTE}</Text>
       </View>
-
       {/* THE BACK-OUT CONFIRM — a modal-overlay-STYLE surface, deliberately not an
           RN Modal element: this screen is a ROUTE and owns no modal element of its
           own (v39ReaderContract.readerIsARouteNotAModal), and the route's own
@@ -570,6 +650,12 @@ const baseStyles = StyleSheet.create({
     fontWeight: '700',
   },
   freeNote: {
+    color: '#8a8ab0',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  /** What the print / PDF control does — under the control, never in a tooltip. */
+  pdfHint: {
     color: '#8a8ab0',
     fontSize: 12,
     textAlign: 'center',
