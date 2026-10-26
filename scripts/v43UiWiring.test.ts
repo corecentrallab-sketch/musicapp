@@ -9,7 +9,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 import {
-  homeShowsTheBuildStamp,
+  homeCarriesNoBuildStamp,
   noScreenMountsAutoScrollUnconditionally,
   pdfAutoScrollIsGatedOnPageCount,
   scannedViewerKeepsItsHonestLine,
@@ -54,7 +54,11 @@ const scannedSource = read(SCANNED);
 
 console.log('\nv43 B1 — the build stamp is on screen');
 assertEq(settingsShowsTheBuildStamp(settingsSource), true, 'Settings → About renders the stamp from the live version + versionCode + the built commit');
-assertEq(homeShowsTheBuildStamp(homeSource), true, 'Home carries the same stamp in its footer');
+assertEq(
+  homeCarriesNoBuildStamp(homeSource),
+  true,
+  'v45: Home carries NO build stamp — Settings → About is the only surface',
+);
 
 console.log('\nv43 B2 — the PDF auto-scroll control is honest');
 assertEq(pdfAutoScrollIsGatedOnPageCount(pdfSource), true, 'the control renders only for a multi-page PDF; one page gets the honest line');
@@ -77,8 +81,15 @@ assertEq(settingsShowsTheBuildStamp(literalStamp), false, 'MUTATION: a hard-code
 const noTag = settingsSource.split('BUILD_STAMP_TAG').join('BUILD_TAG');
 assertEq(settingsShowsTheBuildStamp(noTag), false, 'MUTATION: a stamp with no accessibility tag FAILS settingsShowsTheBuildStamp');
 
-const noHomeStamp = homeSource.split('{buildStampLine(').join("{'NoteSnap'}");
-assertEq(homeShowsTheBuildStamp(noHomeStamp), false, 'MUTATION: a Home footer without the stamp FAILS homeShowsTheBuildStamp');
+// v45: the stamp is retired from Home, so the mutation runs the OTHER way — a
+// stamp sneaking back onto the front door must fail.
+const stampBackOnHome = homeSource + '\n<Text accessibilityLabel={BUILD_STAMP_TAG}>{buildStampLine({ sha: BUILD_SHA })}</Text>';
+assert(stampBackOnHome !== homeSource, 'mutation 3 put the stamp back on Home');
+assertEq(
+  homeCarriesNoBuildStamp(stampBackOnHome),
+  false,
+  'MUTATION: a build stamp sneaking back onto Home FAILS homeCarriesNoBuildStamp',
+);
 
 const ungated = pdfSource.replace('{pageCount >= 2 ? (', '{true ? (');
 assert(ungated !== pdfSource, 'mutation 4 un-gated the control');

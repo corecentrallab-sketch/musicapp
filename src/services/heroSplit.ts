@@ -90,6 +90,15 @@ export const SPLIT_CORE_WIDTH = 320;
  * dp, Android baseline, 412 dp screen (spec §1). `panelMinWidth`/`panelMinHeight`
  * are MINIMUMS, not fixed sizes: the panels are `flex: 1` inside the row and grow
  * with a 1.25× font scale instead of clipping the copy (spec §5 dynamic type).
+ *
+ * v45 (owner 10-26, "both hero buttons larger"): the pair goes 173 × 236 → the
+ * designer's ratified 173 × 320 dp at a 390 dp screen (+35 % height), radius
+ * 22 → 24, puck 96 → 100, title 16 → 22, body 12.5 → 13.5. WIDTH IS UNCHANGED
+ * and stays screen-bound: the spec's 173 dp on a 390 dp screen falls out of the
+ * existing clamp (`panelWidthForScreen` = (screen − 2×20 − 12) / 2), and the
+ * mock's 173 assumes a 16 dp page margin — moving Home's margin would ALSO move
+ * the v44 coach-mark bubble, which the owner froze (notes §4 element 6).
+ * The honest way to make the hero read bigger is HEIGHT, which is what changed.
  */
 export const SPLIT_GEOMETRY = {
   /** Page padding of the row (Home's own horizontal inset). */
@@ -97,11 +106,18 @@ export const SPLIT_GEOMETRY = {
   /** Gap between the two panels — the only thing that separates the peers. */
   gap: 12,
   panelMinWidth: 180,
-  panelMinHeight: 236,
-  radius: 22,
-  /** The emblem puck: 96 dp, never below 72 dp (spec §3). */
-  puck: 96,
-  puckMin: 72,
+  /** v45: 236 → 320 dp (+35 % height, designer notes §3 row 1). */
+  panelMinHeight: 320,
+  radius: 24,
+  /** The emblem puck: 100 dp (v45 mock's final value), never below 75 dp. */
+  puck: 100,
+  /** The floor is the same 75 % of the disc the spec always used (72/96). */
+  puckMin: 75,
+  /** v45 copy: title 22 bold / lh 1.14, body 13.5 / lh 1.34 (notes §7). */
+  titleSize: 22,
+  titleLineHeight: 25,
+  bodySize: 13.5,
+  bodyLineHeight: 18,
   /** Puck centre/top inset from the panel top. */
   puckTop: 26,
   /** The copy well: 16 dp side inset → 148 dp of text width on a 180 dp panel. */

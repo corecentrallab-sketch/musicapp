@@ -58,9 +58,49 @@ export const HERO_CTA_HUMMING = 'Recording your melody…';
 /** A recognition/hum request is in flight. */
 export const HERO_CTA_BUSY = 'Identifying…';
 
-/** The idle support line (unchanged owner-approved wording). */
+/**
+ * RETIRED FROM THE SCREEN in v45 (owner 10-26, designer notes §6 "DIES"): the
+ * 16-word idle sentence that sat under the pair. Kept as a constant only so the
+ * retirement is greppable — the status line now speaks the QUOTA
+ * (`heroStatusLine`), never a paragraph. `equalSplitHeroWired` and the front-door
+ * copy guards still scan for this symbol coming BACK onto the screen.
+ */
 export const HERO_SUPPORT_IDLE =
   'Hear a song you want to play? Tap to identify it and get the sheet music instantly.';
+
+/**
+ * THE FREE MONTHLY CAP the status line counts down (v45). It mirrors the
+ * backend's enforced default (`FREE_RECOGNITIONS_PER_MONTH` = 5 on
+ * /api/recognize) — it is NOT a new limit, just the number the door is honest
+ * about. Recognition itself is never paywalled (owner 10-08).
+ */
+export const FREE_MONTHLY_LIMIT = 5;
+
+/** Pro's status line: unlimited, and it never quotes the free counter. */
+export const HERO_STATUS_PRO = 'Unlimited listens';
+
+/**
+ * "5 free listens left" — the v45 status line under the hero (designer notes §4
+ * element 5). It counts DOWN from the enforced cap using the count the app
+ * really holds (`getRecognitionCount`, the same number the retired "(3/5 free
+ * recognitions)" printed), so the mock's wording and the app's actual
+ * remaining-listen value can never disagree.
+ */
+export function freeListensLeft(usedRecognitions: number): number {
+  const used = Number.isFinite(usedRecognitions)
+    ? Math.max(0, Math.floor(usedRecognitions))
+    : 0;
+  return Math.max(0, FREE_MONTHLY_LIMIT - used);
+}
+
+export function heroStatusLine(opts: {
+  isPro: boolean;
+  freeRecognitions: number;
+}): string {
+  if (opts.isPro) return HERO_STATUS_PRO;
+  const left = freeListensLeft(opts.freeRecognitions);
+  return left === 1 ? '1 free listen left' : `${left} free listens left`;
+}
 /** The listening support line. */
 export const HERO_SUPPORT_LISTENING =
   'Recording audio — move closer to the music source for best results.';
@@ -355,9 +395,8 @@ export function heroSupport(
     case 'hum-listening':
       return HUM_FALLBACK_HINT;
     default:
-      return opts.isPro
-        ? `${HERO_SUPPORT_IDLE} Unlimited recognitions.`
-        : `${HERO_SUPPORT_IDLE} (${opts.freeRecognitions}/5 free recognitions)`;
+      // v45: the idle line is the QUOTA, not the retired paragraph (notes §6).
+      return heroStatusLine(opts);
   }
 }
 
@@ -866,8 +905,17 @@ export function noMatchOffersNextStep(source: string): boolean {
  * mode-menu coming back.
  */
 export const FIND_ANY_SONG_CHIP_HANDLER = 'handleFindAnySong';
-/** The chip's own style marker — a chip, never the recognition core's button. */
-export const FIND_ANY_SONG_CHIP_STYLE = 'styles.findAnySongChip';
+/**
+ * The element's own style marker. v45: this is the full-width SEARCH BAR in the
+ * Discover band (designer notes §3 row 3) — it was the v33 pill-shaped chip
+ * (radius 999, no fill) before the owner's 10-26 "one search bar" call. The
+ * marker is re-pointed, not retired: the bar is still a bar of the SEARCH
+ * group, never the recognition core's button.
+ */
+export const FIND_A_SONG_BAR_STYLE = 'styles.findASongBar';
+/** The bar's own geometry, pinned so a refactor cannot quietly re-chip it. */
+export const FIND_A_SONG_BAR_MIN_HEIGHT = 56;
+export const FIND_A_SONG_BAR_RADIUS = 16;
 
 /**
  * The recording-identification claim the chip may NOT carry. The chip opens the
@@ -896,7 +944,7 @@ function elementFromTag(masked: string, marker: string): string {
 
 /** The chip copy in a source file: the module's own chip constants AND the
  *  rendered chip element, so a retyped label is caught as well as the shared one.
- *  Empty when the file has neither (existence is `findAnySongChipWired`'s job). */
+ *  Empty when the file has neither (existence is `findASongBarWired`'s job). */
 export function chipCopyRegion(source: string): string {
   const masked = maskComments(source);
   const parts: string[] = [];
@@ -906,7 +954,7 @@ export function chipCopyRegion(source: string): string {
   if (first >= 0 && last > first) {
     parts.push(masked.slice(first, last + lastMarker.length));
   }
-  const element = elementFromTag(masked, FIND_ANY_SONG_CHIP_STYLE);
+  const element = elementFromTag(masked, FIND_A_SONG_BAR_STYLE);
   if (element) parts.push(element);
   return parts.join('\n');
 }
@@ -926,37 +974,57 @@ export function chipDoesNotClaimRecordingRecognition(source: string): boolean {
   );
 }
 
+/** The `styles.<key>: { … }` declaration block for a style key. */
+function styleBlock(masked: string, styleKey: string): string {
+  const at = masked.indexOf(`${styleKey}: {`);
+  if (at < 0) return '';
+  return braceBlockFrom(masked, at);
+}
+
 /**
- * True when the front door really wires that chip:
+ * True when the front door really wires the "Find a song" SEARCH BAR (v45).
+ *
+ * This REPLACES `findAnySongChipWired` (v33 bundle B, owner 10-02): the element
+ * changed shape — a pill chip became the full-width 56 dp bar with the drawn
+ * magnifier (designer notes §3 row 3) — but its JOB, its copy source and its
+ * handler are identical, so the contract keeps the wiring half and now pins the
+ * bar half too:
  *
  *   1. it renders AFTER the hum entry (which itself renders after the hero
  *      button — the order `humEntryWired()` already requires), so the priority
  *      order of the door is unchanged;
  *   2. it is labelled and described from `frontDoorBands` (ONE source of copy);
- *   3. it is styled as a CHIP — never `styles.recognitionBtn`, never wired to the
- *      hero handler, so it cannot out-shout the recognition core;
+ *   3. it is styled as a BAR — never `styles.recognitionBtn`, never wired to the
+ *      hero handler, so it cannot out-shout the recognition core — and its style
+ *      block really carries the bar's 56 dp height and 16 dp radius, so a
+ *      "re-chip" (the pill, a 12 dp type row, a bare link) fails here;
  *   4. its handler body opens the destination `FIND_ANY_SONG_DESTINATION` names
- *      (`FindPieceScreen`, behind `setShowFindPiece(true)`) — a chip that renders
+ *      (`FindPieceScreen`, behind `setShowFindPiece(true)`) — a bar that renders
  *      and opens nothing is the dead-CTA class this app keeps getting bitten by.
  */
-export function findAnySongChipWired(source: string): boolean {
+export function findASongBarWired(source: string): boolean {
   const masked = maskComments(source);
   const heroAt = masked.indexOf(`onPress={${HERO_TAP_HANDLER}}`);
   const humAt = masked.indexOf(`onPress={${HUM_ENTRY_HANDLER}}`);
-  const chipAt = masked.indexOf(`onPress={${FIND_ANY_SONG_CHIP_HANDLER}}`);
-  if (heroAt < 0 || humAt < 0 || chipAt < 0) return false;
-  if (!(heroAt < humAt && humAt < chipAt)) return false;
+  const barAt = masked.indexOf(`onPress={${FIND_ANY_SONG_CHIP_HANDLER}}`);
+  if (heroAt < 0 || humAt < 0 || barAt < 0) return false;
+  if (!(heroAt < humAt && humAt < barAt)) return false;
 
-  const element = elementFromTag(masked, FIND_ANY_SONG_CHIP_STYLE);
+  const element = elementFromTag(masked, FIND_A_SONG_BAR_STYLE);
   if (!element) return false;
   if (element.indexOf(`onPress={${FIND_ANY_SONG_CHIP_HANDLER}}`) < 0) return false;
   // …rendering the module's copy BY REFERENCE (a retyped label would drift from
-  // the band model's chip entry, which is the whole point of one source of copy).
+  // the band model's entry, which is the whole point of one source of copy).
   if (element.indexOf('FIND_ANY_SONG_CHIP_LABEL') < 0) return false;
   if (element.indexOf('FIND_ANY_SONG_CHIP_ACCESSIBILITY_LABEL') < 0) return false;
-  // A chip, not the recognition core's button, and never the hero's handler.
+  // A search bar, not the recognition core's button, and never the hero's handler.
   if (element.indexOf('styles.recognitionBtn') >= 0) return false;
   if (element.indexOf(`onPress={${HERO_TAP_HANDLER}}`) >= 0) return false;
+  // …and it is a BAR, not a chip: the numbers live in one place and are pinned.
+  const bar = styleBlock(masked, FIND_A_SONG_BAR_STYLE.replace('styles.', ''));
+  if (!bar) return false;
+  if (!new RegExp(`minHeight:\\s*${FIND_A_SONG_BAR_MIN_HEIGHT}\\b`).test(bar)) return false;
+  if (!new RegExp(`borderRadius:\\s*${FIND_A_SONG_BAR_RADIUS}\\b`).test(bar)) return false;
 
   // The handler's OWN declaration (not `handleFindAnySongFromCard`, the result
   // card's modern bridge, which lives above it).

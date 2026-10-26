@@ -69,7 +69,6 @@ import {
 import {
   FIND_PIECE_ENTRY_HINT,
   FIND_PIECE_ENTRY_LABEL,
-  HUM_FALLBACK_LIBRARY_NOTE,
   HOME_SPLIT_HUM_A11Y,
   HOME_SPLIT_HUM_TIP,
   HOME_SPLIT_HUM_TITLE,
@@ -102,7 +101,7 @@ import {
   splitPuckState,
   splitShouldShowTip,
 } from '../services/heroSplit';
-// The front door's BAND MODEL and the "Find any song" chip's one source of copy
+// The front door's BAND MODEL and the "Find a song" bar's one source of copy
 // (re-flow bundle D + B, owner build-go 10-02). The band containers below render
 // from these names, and src/services/frontDoorBands.ts + scripts/frontDoorBands.test.ts
 // assert the order, the one-meaning-per-entry rule and the zero-promise rule
@@ -197,9 +196,6 @@ import { getTodayChallenge } from '../services/dailyChallenge';
 import { featuredPieceLibraryState } from '../services/sampleBadge';
 import { resolvePieceAbc } from '../services/pieceAbc';
 // v43 item B1 — the build stamp (version + versionCode + the commit built).
-import Constants from 'expo-constants';
-import { BUILD_STAMP_TAG, buildStampLine } from '../services/buildStamp';
-import { BUILD_SHA } from '../services/buildSha';
 import type {
   WeeklyGoal,
   DailyChallengePiece,
@@ -223,8 +219,6 @@ const RETRY_DELAY_MS = 300;
 export const HomeScreen: React.FC = () => {
   const { styles, theme } = useThemedStyles(baseStyles);
   /** v43 item B1 — the live version + versionCode, for the footer build stamp. */
-  const appVersion = Constants.expoConfig?.version ?? null;
-  const appVersionCode = Constants.expoConfig?.android?.versionCode ?? null;
   // Tab-navigation handle (used to jump to Settings → Pro upgrade from the
   // quota-exhausted modal).
   const navigation =
@@ -1211,13 +1205,13 @@ export const HomeScreen: React.FC = () => {
     handlePracticeTodayTap();
   }, [handlePracticeTodayTap]);
 
-  // ── BAND B/A: "Find any song" chip (re-flow bundle B, owner 10-02) ──
-  // The compact way into the find-a-song SEARCH, sitting beside the hum row so a
-  // musician who can neither play the audio nor hum it is one tap from typing a
-  // title. It reuses the EXISTING `showFindPiece` flag and the existing
+  // ── BAND A/Discover: the "Find a song" SEARCH BAR (bundle B → v45) ──
+  // The full-width SEARCH BAR (v45: 56 dp, radius 16, "Find a song") in the
+  // Discover band, so a musician who can neither play the audio nor hum it is one
+  // tap from typing a title. It reuses the EXISTING `showFindPiece` flag and the existing
   // `FindPieceScreen` mount — no second search surface, no new box — and it is
   // deliberately NOT the hero handler (the one big button stays the only primary
-  // CTA; frontDoor.findAnySongChipWired() asserts both halves).
+  // CTA; frontDoor.findASongBarWired() asserts both halves).
   const handleFindAnySong = useCallback(() => {
     setShowFindPiece(true);
   }, []);
@@ -1460,7 +1454,7 @@ export const HomeScreen: React.FC = () => {
             The user-test failure this replaces: the navy `#16213e` hum card with
             a teal outline read as INFORMATION, not as a BUTTON. The fix is
             structural, not verbal — TWO PEER PANELS of identical shape, size,
-            fill weight and affordance (180 × 236 dp, radius 22, gap 12), so hum
+            fill weight and affordance (180 × 320 dp, radius 24, gap 12), so hum
             can never read as a sub-paragraph of Listen:
 
               · LISTEN (rose #F4586F → #C92A46) — the money-path door, still left,
@@ -1544,16 +1538,19 @@ export const HomeScreen: React.FC = () => {
             </Animated.View>
           )}
 
-          {/* The honest support line: the free-recognition count, or what the
-              current state is doing. Every state has words (frontDoor.heroSupport). */}
+          {/* THE ONE STATUS LINE under the pair (v45, designer notes §4 element 5):
+              "5 free listens left" — 11.5 dp, centred, and driven by the REAL
+              quota (freeRecognitions from getRecognitionCount + the enforced
+              monthly cap in frontDoor.FREE_MONTHLY_LIMIT), never a literal.
+              Every front-door state keeps words (frontDoor.heroSupport), so the
+              screen is never a wordless spinner — but the idle state no longer
+              prints the retired 16-word HERO_SUPPORT_IDLE sentence, and the
+              BETA NOTE has MOVED off the front door (notes §6: it now renders
+              where the limit actually bites — the recognition no-match card in
+              components/RecognitionResultView.tsx and Discover's free-library
+              row below). 37 words of prose under the hero → 4. */}
           <Text style={styles.splitSupportLine}>
             {heroSupport(hero, { isPro, freeRecognitions })}
-          </Text>
-
-          {/* Honest beta note — the recognition library is small and growing.
-              In hum mode it says what the hum fallback can actually do. */}
-          <Text style={styles.tier1BetaNote}>
-            {humFallback ? HUM_FALLBACK_LIBRARY_NOTE : FRONT_DOOR_BETA_NOTE}
           </Text>
 
           {/* Demo button — dev-only shortcut that skips microphone */}
@@ -1579,7 +1576,7 @@ export const HomeScreen: React.FC = () => {
             tsconfig.tier1.json never includes the screens. */}
 
         {/* ══ DISCOVER BAND (v33 §E + §F3b, owner 10-04) ══
-            The "Find any song" search entry has its OWN band now, directly under
+            The "Find a song" search bar has its OWN band now, directly under
             the Listen/Hum pair — it was inside band A beside the hum row, which
             the owner's device pass read as "does not fit the flow there". One
             entry, one job: open the real search field (FindPieceScreen), which is
@@ -1589,14 +1586,28 @@ export const HomeScreen: React.FC = () => {
         <View style={styles.band} testID={BAND_TEST_IDS.discover}>
           <Text style={styles.bandTitle}>{BAND_TITLES.discover}</Text>
           <Text style={styles.discoverNote}>{DISCOVER_BAND_NOTE}</Text>
+          {/* v45 (owner 10-26, designer notes §3 row 3 + §7): the v33 chip is a
+              full-width SEARCH BAR — 56 dp tall, radius 16, card fill + a 1 dp
+              hairline, a drawn magnifier at the left and a chevron at the right,
+              labelled "Find a song". It is the SAME wiring as the chip it
+              replaces: handleFindAnySong → setShowFindPiece(true) → the existing
+              FindPieceScreen, whose field mounts with autoFocus, so "one tap to
+              type" is preserved exactly. It also becomes Discover's own door
+              (the mock's "one search bar"), which is why the band's chip row is
+              gone. Slice 2 folds band C's duplicate search row into this bar. */}
           <TouchableOpacity
-            style={styles.findAnySongChip}
+            style={styles.findASongBar}
             onPress={handleFindAnySong}
             activeOpacity={0.6}
             accessibilityRole="search"
             accessibilityLabel={FIND_ANY_SONG_CHIP_ACCESSIBILITY_LABEL}
           >
-            <Text style={styles.findAnySongChipText}>{FIND_ANY_SONG_CHIP_LABEL}</Text>
+            <View style={styles.findASongBarIcon}>
+              <View style={styles.findASongBarLens} />
+              <View style={styles.findASongBarHandle} />
+            </View>
+            <Text style={styles.findASongBarLabel}>{FIND_ANY_SONG_CHIP_LABEL}</Text>
+            <Text style={styles.findASongBarChevron}>›</Text>
           </TouchableOpacity>
         </View>
 
@@ -1744,6 +1755,13 @@ export const HomeScreen: React.FC = () => {
             <View style={styles.browseLibraryInfo}>
               <Text style={styles.browseLibraryTitle}>{BROWSE_LIBRARY_LABEL}</Text>
               <Text style={styles.browseLibraryHint}>{BROWSE_LIBRARY_HINT}</Text>
+              {/* The honest library-size note, RELOCATED here by v45 (designer
+                  notes §6 "moves"): it left the hero, where it told a first-time
+                  user the library was small before they had tapped anything,
+                  and it now renders where a musician is actually choosing to
+                  browse the free scores. Same constant, moved render — and the
+                  same line is on the recognition no-match card. */}
+              <Text style={styles.browseLibraryBetaNote}>{FRONT_DOOR_BETA_NOTE}</Text>
             </View>
             <Text style={styles.browseLibraryChevron}>›</Text>
           </TouchableOpacity>
@@ -1782,18 +1800,15 @@ export const HomeScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* v43 item B1 — THE BUILD STAMP, in the smallest type on the screen. It
-            answers the one question a tester cannot otherwise answer: is the
-            build I am holding the build I was told to test? Settings → About
-            shows the same line; this one is here so it is visible without
-            opening anything. */}
-        <Text
-          style={styles.buildStamp}
-          accessibilityLabel={BUILD_STAMP_TAG}
-          selectable
-        >
-          {buildStampLine({ version: appVersion, versionCode: appVersionCode, sha: BUILD_SHA })}
-        </Text>
+        {/* v45 (owner 10-26, designer notes §3 row 4): THE BUILD STAMP IS OFF
+            HOME. It was v43 item B1's footer line; the front door is now the
+            smallest content area in the app and a version string in its footer
+            was one of the things the owner read as clutter. Settings → About
+            renders the SAME live line (SettingsScreen.tsx, guarded by
+            v43UiContract.settingsShowsTheBuildStamp), and that is the one
+            surface a tester is told to read (step 0 of every device pass).
+            The retirement is guarded from the other side — v43UiContract
+            .homeCarriesNoBuildStamp fails if a stamp sneaks back on Home. */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
     </View>
@@ -1987,14 +2002,6 @@ const baseStyles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  tier1BetaNote: {
-    color: '#8a8aa3',
-    fontSize: 11,
-    lineHeight: 16,
-    textAlign: 'center',
-    marginTop: 10,
-    marginBottom: 2,
-  },
 
   // Recording indicator
   recordingIndicator: {
@@ -2089,24 +2096,60 @@ const baseStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  // The "Find any song" chip — the LIGHTEST tappable thing on the door: no fill,
-  // a hairline border, smaller type than the hero CTA, and never
-  // styles.recognitionBtn. This is the owner's weight rule (§B.4) in pixels.
-  // v33 §E: it now renders in the DISCOVER band, not inside the Listen/Hum block.
-  findAnySongChip: {
+  // THE SEARCH BAR (v45, designer notes §7): 358 × 56 dp at a 390 dp screen,
+  // radius 16, CARD fill + 1 dp CARD_LINE hairline, the magnifier 20 dp at x+26,
+  // the label 15 dp at x+48 and the chevron 20 dp in from the right edge.
+  // It replaced the v33 "Find any song" CHIP (radius 999, no fill, 12 dp type):
+  // same destination, same handler, a real bar the eye can find — the mock's
+  // whole point. Both colours are existing palette literals, so the light-theme
+  // remap repaints it with no new token.
+  findASongBar: {
+    minHeight: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 999,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#0f3460',
-    backgroundColor: 'transparent',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    backgroundColor: '#16213e',
+    paddingHorizontal: 26,
   },
-  findAnySongChipText: {
-    color: '#a0a0b8',
-    fontSize: 12,
+  findASongBarIcon: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  // The drawn magnifier: a 13 dp lens ring + a 6 dp handle at 45° (no icon font,
+  // no new asset, nothing to go missing on a device).
+  findASongBarLens: {
+    width: 13,
+    height: 13,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#a0a0b8',
+  },
+  findASongBarHandle: {
+    position: 'absolute',
+    width: 6,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: '#a0a0b8',
+    right: 0,
+    bottom: 3,
+    transform: [{ rotate: '45deg' }],
+  },
+  findASongBarLabel: {
+    flex: 1,
+    color: '#eaeaff',
+    fontSize: 15,
     fontWeight: '600',
+  },
+  findASongBarChevron: {
+    color: '#a0a0b8',
+    fontSize: 22,
+    fontWeight: '700',
+    marginLeft: 8,
   },
   // Band B — ONE card, one destination (owner 10-02).
   // ── Today's piece — ONE CARD (v41 item 4 · designer spec §1) ──────────────
@@ -2233,18 +2276,15 @@ const baseStyles = StyleSheet.create({
     fontWeight: '700',
     marginLeft: 8,
   },
+  // The relocated beta note (v45): small and quiet, under the row's own hint.
+  browseLibraryBetaNote: {
+    color: '#6a6a8a',
+    fontSize: 10.5,
+    lineHeight: 15,
+    marginTop: 4,
+  },
 
   bottomSpacer: {
     height: 60,
-  },
-  /* v43 item B1 — the build stamp. Quiet enough to never compete with the
-     content, selectable so a tester can copy it into a report. */
-  buildStamp: {
-    fontSize: 11,
-    color: '#6a6a8a',
-    lineHeight: 16,
-    textAlign: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 18,
   },
 });

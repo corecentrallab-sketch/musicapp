@@ -4,10 +4,11 @@
  * THE PROBLEM IT SOLVES. Every owner checklist so far has had a silent failure
  * mode: the tester is not running the build they were told to test (a stale Play
  * closed-test install, a build that never finished uploading). Nothing in the app
- * identified itself, so the only evidence was the tester's memory. From v43 the
- * Settings → About row and the Home footer both render `buildStampLine(...)`, and
- * step 0 of every checklist is "the stamp must read the version you were told to
- * test".
+ * identified itself, so the only evidence was the tester's memory. From v43 BOTH
+ * the Settings → About row and the Home footer rendered `buildStampLine(...)`;
+ * v45 (owner 10-26) retired the Home footer copy, so **Settings → About is the
+ * one surface** that renders it and step 0 of every checklist is "Settings →
+ * About must read the version you were told to test".
  *
  * THE SHAPE IS FIXED, ON PURPOSE:
  *

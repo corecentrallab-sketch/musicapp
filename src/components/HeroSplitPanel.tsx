@@ -307,7 +307,7 @@ export function HeroSplitPanel({
                 <View style={[styles.chevronBar, styles.chevronDown]} />
               </View>
 
-              {/* The emblem puck: 96 dp, 26 dp from the panel top (spec §1 §3). */}
+              {/* The emblem puck: 100 dp (v45), 26 dp from the panel top (spec §1 §3). */}
               <View style={styles.puckWell}>
                 {puckState === 'listening' && <SonarRings size={SPLIT_GEOMETRY.puck} />}
                 <View
@@ -469,17 +469,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPLIT_GEOMETRY.copyInset,
     paddingTop: 10,
   },
+  // v45: title 22 / lh 25 (1.14) and body 13.5 / lh 18 (1.34) — the designer's
+  // mock's final values, read from SPLIT_GEOMETRY so the gate pins the numbers.
   title: {
     color: SPLIT_TEXT.title,
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: SPLIT_GEOMETRY.titleSize,
+    lineHeight: SPLIT_GEOMETRY.titleLineHeight,
     fontWeight: '700',
     textAlign: 'center',
   },
   body: {
     color: SPLIT_TEXT.body,
-    fontSize: 12.5,
-    lineHeight: 17,
+    fontSize: SPLIT_GEOMETRY.bodySize,
+    lineHeight: SPLIT_GEOMETRY.bodyLineHeight,
     marginTop: 6,
     textAlign: 'center',
   },

@@ -605,7 +605,7 @@ assertEq(
 assertEq(
   searchHasItsOwnDiscoverBand(homeSource),
   true,
-  'the "Find any song" field left the Listen/Hum block for its own Discover band, wired to the search',
+  'the "Find a song" search bar left the Listen/Hum block for its own Discover band, wired to the search',
 );
 
 // MUTATION 29 (v44 equal split): the Listen panel rewired to a dead handler.
@@ -617,7 +617,7 @@ assertEq(
   'MUTATION: a Listen panel that opens nothing FAILS the peer-panel contract',
 );
 // MUTATION 30: the hum door demoted to a chip instead of the peer panel.
-const chipHumV44 = homeSource.replace('style={styles.humEntryBtn}', 'style={styles.findAnySongChip}');
+const chipHumV44 = homeSource.replace('style={styles.humEntryBtn}', 'style={styles.findASongBar}');
 assert(chipHumV44 !== homeSource, 'the chip-hum mutation changed the real Home screen');
 assertEq(
   humIsTheHerosSiblingCard(chipHumV44),
