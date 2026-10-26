@@ -108,11 +108,18 @@ function main(): void {
   // ── 1. THE SPEC'S NUMBERS ────────────────────────────────────────────────
   console.log('\nspec §1/§2 — the numbers the equal split is made of');
   assertEq(SPLIT_GEOMETRY.panelMinWidth, 180, 'panel min width is 180 dp');
-  assertEq(SPLIT_GEOMETRY.panelMinHeight, 236, 'panel min height is 236 dp');
-  assertEq(SPLIT_GEOMETRY.radius, 22, 'panel radius is 22');
+  // v45 (owner 10-26, "both hero buttons larger"): 236 → 320 dp, radius 22 → 24,
+  // puck 96 → 100, title 16 → 22, body 12.5 → 13.5. The designer's mock is the
+  // source of truth (V45-HOME-NOTES §3 row 1 + §7), NOT the older v44 numbers.
+  assertEq(SPLIT_GEOMETRY.panelMinHeight, 320, 'panel min height is 320 dp (v45, +35 % on 236)');
+  assertEq(SPLIT_GEOMETRY.radius, 24, 'panel radius is 24');
   assertEq(SPLIT_GEOMETRY.gap, 12, 'the peers are separated by exactly 12 dp');
-  assertEq(SPLIT_GEOMETRY.puck, 96, 'the emblem puck renders at 96 dp');
-  assertEq(SPLIT_GEOMETRY.puckMin, 72, 'the puck may never be smaller than 72 dp');
+  assertEq(SPLIT_GEOMETRY.puck, 100, 'the emblem puck renders at 100 dp (v45 mock final)');
+  assertEq(SPLIT_GEOMETRY.puckMin, 75, 'the puck may never be smaller than 75 dp');
+  assertEq(SPLIT_GEOMETRY.titleSize, 22, 'the panel title is 22 dp bold (v45)');
+  assertEq(SPLIT_GEOMETRY.titleLineHeight, 25, 'the title line height is 25 (22 × 1.14)');
+  assertEq(SPLIT_GEOMETRY.bodySize, 13.5, 'the panel body is 13.5 dp (v45)');
+  assertEq(SPLIT_GEOMETRY.bodyLineHeight, 18, 'the body line height is 18 (13.5 × 1.34)');
   assertEq(SPLIT_GEOMETRY.puckTop, 26, 'the puck sits 26 dp from the panel top');
   assertEq(SPLIT_GEOMETRY.copyInset, 16, 'the copy well is inset 16 dp (148 dp wide)');
   assertEq(SPLIT_GEOMETRY.chevronRight, 19, 'chevron is 19 dp in from the right');
@@ -122,7 +129,8 @@ function main(): void {
   assertEq(SPLIT_GEOMETRY.chevronStroke, 2.2, 'chevron stroke is 2.2');
   // The two panels are ALWAYS equal: same function, so same width on every screen.
   // SPEC §1 table: "Screen / page padding — 412 dp wide, paddingHorizontal: 20";
-  // "Hero row — gap 12"; "Panel box — 180 × 236 dp each (flex: 1 inside the row)".
+  // "Hero row — gap 12"; "Panel box — 180 dp wide each (flex: 1 inside the row)";
+  // v45 raised the HEIGHT to 320 dp, the width stays screen-bound.
   // The arithmetic the spec implies: (412 − 2×20 − 12) / 2 = 180. (This assertion
   // used to read 182, which fits NO reading of the spec: 2×182 + 12 + 2×20 = 416,
   // i.e. 4 dp wider than the page itself.)
@@ -337,7 +345,7 @@ function main(): void {
   assertEq(
     splitPanelPressIsSpec(panel),
     true,
-    'the panel is a real button with the pressed delta, capped copy and a 236 dp floor',
+    'the panel is a real button with the pressed delta, capped copy and a 320 dp floor',
   );
   assertEq(
     splitTipIsOneTimeAndSafe(home, tip, panel),

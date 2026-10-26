@@ -112,6 +112,12 @@ import {
 // 09-22 hum → modern bridge). The strings come from the modules that own them so
 // the card, the screen and the tier1 gate read the SAME words.
 import { HUM_FALLBACK_BUTTON, HUM_SECONDARY_CTA } from '../services/frontDoor';
+// The honest library-size note, MOVED here by v45 (designer notes §6 "moves"):
+// it left the Home hero, where it told a first-time user the library was small
+// before they had tapped anything, and it now renders on the surface where the
+// limit actually bites — the recognition no-match card. Same constant, moved
+// render; the free-library row on Discover renders the same line.
+import { FRONT_DOOR_BETA_NOTE } from '../services/frontDoorBands';
 import { HUM_TO_MODERN_BLURB, HUM_TO_MODERN_CTA } from '../services/humBridge';
 // V26 honest capture feedback (owner 09-25): WHY this pass found nothing. A tiny
 // capture says so and is retry-first; a real listen that is simply not in our
@@ -371,6 +377,9 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
             <Text style={styles.noMatchEmoji}>🔍</Text>
             <Text style={styles.cardTitle}>{copy.title}</Text>
             <Text style={styles.noMatchText}>{copy.body}</Text>
+            {/* v45: the beta note lives HERE now — a miss is the one moment the
+                library's real size is the thing the user needs to know. */}
+            <Text style={styles.noMatchBetaNote}>{FRONT_DOOR_BETA_NOTE}</Text>
             {captureLine ? <Text style={styles.captureLine}>{captureLine}</Text> : null}
             <View style={styles.buttonRow}>
               <TouchableOpacity style={styles.secondaryBtn} onPress={onClose}>
@@ -855,6 +864,13 @@ const baseStyles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 21,
     marginBottom: 20,
+  },
+  noMatchBetaNote: {
+    color: '#8a8aa3',
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+    marginTop: 10,
   },
   noMatchText: {
     fontSize: 14,

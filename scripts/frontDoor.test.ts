@@ -54,6 +54,9 @@ import {
   heroStartFailureSurfaced,
   heroStaysIdentifyFirst,
   heroState,
+  HERO_STATUS_PRO,
+  HERO_SUPPORT_IDLE,
+  heroStatusLine,
   heroSupport,
   heroTapAction,
   heroTitle,
@@ -70,9 +73,9 @@ import {
   captureCopyIsHonest,
   humOnlyCopyRetired,
   FIND_ANY_SONG_CHIP_HANDLER,
-  FIND_ANY_SONG_CHIP_STYLE,
+  FIND_A_SONG_BAR_STYLE,
   chipDoesNotClaimRecordingRecognition,
-  findAnySongChipWired,
+  findASongBarWired,
   findPieceEntryIsSearchRow,
 } from '../src/services/frontDoor';
 import {
@@ -187,9 +190,36 @@ function copyTests(): void {
   const idle = heroSupport('idle', { isPro: false, freeRecognitions: 3 });
   const pro = heroSupport('idle', { isPro: true, freeRecognitions: 0 });
   const busy = heroSupport('busy', { isPro: false, freeRecognitions: 0 });
-  assert(idle.includes('3/5 free recognitions'), 'the free tier quotes its cap');
-  assert(pro.includes('Unlimited recognitions'), 'Pro reads as unlimited');
-  assert(!pro.includes('/5 free'), 'Pro never shows the free-tier counter');
+  // v45 (designer notes §4 element 5 "5 free listens left"): the idle line counts
+  // the REAL remaining listens down from the enforced cap — 3 used of 5 → 2 left —
+  // and it no longer prints the retired 16-word HERO_SUPPORT_IDLE paragraph.
+  assertEq(idle, '2 free listens left', 'the free tier counts down the real remaining listens');
+  assertEq(
+    heroSupport('idle', { isPro: false, freeRecognitions: 0 }),
+    '5 free listens left',
+    'a fresh install reads exactly the mock\'s "5 free listens left"',
+  );
+  assertEq(
+    heroSupport('idle', { isPro: false, freeRecognitions: 4 }),
+    '1 free listen left',
+    'the last listen is singular',
+  );
+  assertEq(
+    heroSupport('idle', { isPro: false, freeRecognitions: 9 }),
+    '0 free listens left',
+    'the count never goes negative',
+  );
+  assertEq(pro, HERO_STATUS_PRO, 'Pro reads as unlimited');
+  assertEq(
+    heroStatusLine({ isPro: true, freeRecognitions: 3 }),
+    HERO_STATUS_PRO,
+    'the status line\'s Pro branch never quotes the free counter',
+  );
+  assert(
+    idle.indexOf(HERO_SUPPORT_IDLE) < 0,
+    'the retired 16-word idle sentence is NOT the status line any more',
+  );
+  assert(!pro.includes('free listen'), 'Pro never shows the free-tier counter');
   assert(!!busy && busy.length > 10, 'the in-flight state has words');
   assert(
     busy !== idle,
@@ -1409,7 +1439,7 @@ function rivalHeroMutationTests(): void {
   );
 }
 
-// ─── the "Find any song" chip + the band-C search row (bundles B + D) ───
+// ─── the "Find a song" search bar + the band-C search row (bundles B + D) ───
 
 /**
  * Bundle B's chip and bundle D's search row, on the REAL front door. Both are one
@@ -1423,7 +1453,7 @@ function rivalHeroMutationTests(): void {
  * blurb is the negative fixture.
  */
 function findAnySongTests(): void {
-  console.log('\nthe front door\'s "Find any song" chip (bundle B)');
+  console.log('\nthe front door\'s "Find a song" search bar (bundle B → v45)');
 
   const home = readAppFile('src/screens/HomeScreen.tsx');
   const copyModule = readAppFile('src/services/frontDoorBands.ts');
@@ -1441,9 +1471,9 @@ function findAnySongTests(): void {
   );
 
   assertEq(
-    findAnySongChipWired(home),
+    findASongBarWired(home),
     true,
-    'the chip renders AFTER the hum entry, is styled as a chip, and opens FindPieceScreen',
+    'the bar renders AFTER the hum entry, carries the bar geometry, and opens FindPieceScreen',
   );
   assertEq(
     hasSingleHeroCta(home),
@@ -1456,7 +1486,7 @@ function findAnySongTests(): void {
     'the chip did not disturb the hum entry (humEntryWired stays true)',
   );
   assert(
-    home.indexOf(FIND_ANY_SONG_CHIP_STYLE) > 0 && home.indexOf(FIND_ANY_SONG_CHIP_HANDLER) > 0,
+    home.indexOf(FIND_A_SONG_BAR_STYLE) > 0 && home.indexOf(FIND_ANY_SONG_CHIP_HANDLER) > 0,
     'the real chip carries the contract\'s style marker and handler name',
   );
 
@@ -1495,9 +1525,9 @@ function findAnySongTests(): void {
   );
   assert(deadChip !== home, 'the chip mutation changed the real source');
   assertEq(
-    findAnySongChipWired(deadChip),
+    findASongBarWired(deadChip),
     false,
-    'MUTATION: deleting the chip\'s onPress FAILS findAnySongChipWired',
+    'MUTATION: deleting the bar\'s onPress FAILS findASongBarWired',
   );
   assertEq(
     hasSingleHeroCta(deadChip),
@@ -1511,7 +1541,7 @@ function findAnySongTests(): void {
   );
   assert(heroChip !== home, 'the hero-chip mutation changed the real source');
   assertEq(
-    findAnySongChipWired(heroChip),
+    findASongBarWired(heroChip),
     false,
     'MUTATION: a chip wired to the hero handler FAILS (the chip is not a hero)',
   );
@@ -1522,7 +1552,7 @@ function findAnySongTests(): void {
   );
   assert(focusedChip !== home, 'the weight mutation changed the real source');
   assertEq(
-    findAnySongChipWired(focusedChip),
+    findASongBarWired(focusedChip),
     false,
     'MUTATION: a chip wearing the recognition core\'s style FAILS (it must not out-shout the hero)',
   );

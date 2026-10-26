@@ -63,7 +63,7 @@ import {
 import {
   HOME_SPLIT_HUM_TITLE,
   chipDoesNotClaimRecordingRecognition,
-  findAnySongChipWired,
+  findASongBarWired,
   findPieceEntryIsSearchRow,
 } from '../src/services/frontDoor';
 import { HUM_TO_MODERN_BLURB } from '../src/services/humBridge';
@@ -137,9 +137,13 @@ const WITHOUT_SCORE = { title: 'Für Elise', sheetMusicUrl: null };
 function chipCopyTests(): void {
   console.log('\nthe "Find any song" chip says what it opens');
 
+  // v45 (owner 10-26): the label is `Find a song` — the designer's SearchBar
+  // copy, and the chip's "any" claim retired with the chip itself. The HOME
+  // PROMISE subtitle keeps its own "Find any song — classical to today's hits"
+  // verbatim (frontDoor.HOME_PROMISE_ALL_GENRES); this is the ELEMENT's label.
   assert(
-    FIND_ANY_SONG_CHIP_LABEL.indexOf('Find any song') >= 0,
-    'the chip is the owner-approved "Find any song" affordance',
+    FIND_ANY_SONG_CHIP_LABEL === 'Find a song',
+    'the search bar is labelled exactly "Find a song" (v45)',
   );
   assert(
     /title or artist/i.test(FIND_ANY_SONG_CHIP_HINT),
@@ -675,7 +679,7 @@ function liveScanTests(): void {
   console.log('\nthe chip is wired to the real search (bundle B)');
 
   assertEq(
-    findAnySongChipWired(home),
+    findASongBarWired(home),
     true,
     'the real chip renders after the hum row, from the module copy, and opens the search',
   );
@@ -708,9 +712,9 @@ function liveScanTests(): void {
   const chipDead = home.replace('onPress={handleFindAnySong}', 'onPress={undefined}');
   assert(chipDead !== home, 'the chip mutation changed the real source');
   assertEq(
-    findAnySongChipWired(chipDead),
+    findASongBarWired(chipDead),
     false,
-    'MUTATION: a chip that renders but is not wired FAILS findAnySongChipWired',
+    'MUTATION: a search bar that renders but is not wired FAILS findASongBarWired',
   );
 
   // ── MUTATION 2: the chip is promoted to the hero handler (a second hero) ──
@@ -720,7 +724,7 @@ function liveScanTests(): void {
   );
   assert(chipHero !== home, 'the promotion mutation changed the real source');
   assertEq(
-    findAnySongChipWired(chipHero),
+    findASongBarWired(chipHero),
     false,
     'MUTATION: a chip wired to the hero handler FAILS (the chip must not be a hero)',
   );

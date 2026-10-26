@@ -27,7 +27,7 @@
  * scripts/frontDoorBands.test.ts check the real HomeScreen against them.
  *
  * IMPORT/EXPORT NOTE (no cycle at load time): frontDoor.ts imports the chip's
- * copy constants from here so its `findAnySongChipWired()` guard can compare the
+ * copy constants from here so its `findASongBarWired()` guard can compare the
  * screen against the ONE label, and this module imports the front door's existing
  * hero/hum/search strings from there so the band model reads them rather than
  * retyping them. Every one of those imports is used INSIDE a function, never in a
@@ -53,14 +53,16 @@ import {
   HOME_SPLIT_LISTEN_TITLE,
 } from './frontDoor';
 
-// ─────────────────── the "Find any song" chip (bundle B) ───────────────────
+// ─────────────── the "Find a song" search bar (bundle B → v45) ───────────────
 
 /**
- * The chip that sits BESIDE the hum row on the front door (owner sign-off (b):
- * a low-weight "Find any song" chip beside the hum row). It is the compact way
- * into the find-a-song search, which is the door's own money path: a real text
- * field, the internal free catalog, and the "Official sheet music" retailer
- * cards in EVERY query state (PR #142).
+ * The SEARCH BAR in the Discover band on the front door. It began as the v33
+ * "chip" (owner sign-off (b): a low-weight "Find any song" chip beside the hum
+ * row) and the owner's v45 call (10-26) turned it into the single, full-width
+ * bar labelled `Find a song` — one search entry on Home, and Discover's door.
+ * It is the compact way into the find-a-song search, which is the door's own
+ * money path: a real text field, the internal free catalog, and the "Official
+ * sheet music" retailer cards in EVERY query state (PR #142).
  *
  * HONEST LIMIT (spec §B.1): this chip opens the TITLE/ARTIST SEARCH, not the
  * recording door (`ModernSearchScreen`, which has its own recorder). It must
@@ -68,13 +70,13 @@ import {
  * HUM_TO_MODERN_BLURB / the modern door. `chipDoesNotClaimRecordingRecognition()`
  * freezes that, with the blurb itself as the negative fixture.
  */
-export const FIND_ANY_SONG_CHIP_LABEL = '🔎 Find any song';
+export const FIND_ANY_SONG_CHIP_LABEL = 'Find a song';
 /** The supporting line inside the chip: what the search actually holds. */
 export const FIND_ANY_SONG_CHIP_HINT =
   'Search by title or artist — free scores, or the official sheet music';
 /** What a screen reader hears for the chip (identity + real destination). */
 export const FIND_ANY_SONG_CHIP_ACCESSIBILITY_LABEL =
-  'Find any song — search by title or artist for free scores or the official sheet music';
+  'Find a song — search by title or artist for free scores or the official sheet music';
 
 /** The screens the chip/rows may open. `find-piece` = FindPieceScreen. */
 export type FindAnySongDestination = 'find-piece';
@@ -789,10 +791,10 @@ export function bandOrderIsIdentifyDiscoverTodayBrowse(source: string): boolean 
   if (a.indexOf('styles.humEntryBtn') < 0) return false;
   if (a.indexOf('onPress={handleHumEntry}') < a.indexOf('onPress={handleHeroTap}')) return false;
   // … and the SEARCH entry is NOT: it lives in the Discover band (owner 10-04).
-  if (a.indexOf('styles.findAnySongChip') >= 0) return false;
+  if (a.indexOf('styles.findASongBar') >= 0) return false;
   const d = bandRegion(source, 'discover');
   if (d.length < 40) return false;
-  if (d.indexOf('styles.findAnySongChip') < 0) return false;
+  if (d.indexOf('styles.findASongBar') < 0) return false;
   if (d.indexOf('onPress={handleFindAnySong}') < 0) return false;
 
   // Band B: one card, one tap.

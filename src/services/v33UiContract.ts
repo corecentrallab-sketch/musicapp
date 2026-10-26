@@ -531,8 +531,9 @@ export function humIsTheHerosSiblingCard(homeSource: string): boolean {
 /**
  * The search field is OUT of the Listen/Hum block and has its OWN Discover band
  * (owner 10-04: the search bar under hum/whistle "does not fit the flow there").
- * Band A may not carry the chip; the Discover band must carry it, labelled from
- * the band model and wired to the real search.
+ * Band A may not carry it; the Discover band must carry it, labelled from the
+ * band model and wired to the real search. v45: the element is the full-width
+ * SEARCH BAR (`styles.findASongBar`, 56 dp, radius 16) rather than the v33 chip.
  *
  * `homeSource` is src/screens/HomeScreen.tsx.
  */
@@ -540,8 +541,8 @@ export function searchHasItsOwnDiscoverBand(homeSource: string): boolean {
   const bandA = bandRegion(homeSource, 'identify');
   const discover = bandRegion(homeSource, 'discover');
   if (!bandA || !discover) return false;
-  if (bandA.indexOf('styles.findAnySongChip') >= 0) return false;
-  if (discover.indexOf('style={styles.findAnySongChip}') < 0) return false;
+  if (bandA.indexOf('styles.findASongBar') >= 0) return false;
+  if (discover.indexOf('style={styles.findASongBar}') < 0) return false;
   if (discover.indexOf('onPress={handleFindAnySong}') < 0) return false;
   if (discover.indexOf('FIND_ANY_SONG_CHIP_LABEL') < 0) return false;
   if (discover.indexOf('BAND_TITLES.discover') < 0) return false;
