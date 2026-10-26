@@ -44,7 +44,7 @@ import {
   bandFacets,
   bandFacetsAreBackedByRealContent,
   bandOrderFromSource,
-  bandOrderIsIdentifyDiscoverTodayBrowse,
+  bandOrderIsIdentifyDiscoverToday,
   bandRegion,
   guitarCatalogIsSurfaced,
   guitarContentAvailable,
@@ -193,16 +193,20 @@ function bandModelTests(): void {
     challenge: WITH_SCORE,
     retention: { currentDays: 3, weekCurrent: 2, weekTarget: 5 },
   });
-  assertEq(bands.length, 4, 'the door has exactly four bands (v33 §E added Discover)');
+  assertEq(bands.length, 3, 'the door has exactly THREE bands (v45 slice 2 retired band C)');
   assertEq(
     bands.map((b) => b.id).join('|'),
-    'identify|discover|today|browse',
+    'identify|discover|today',
     'the bands are ordered A → Discover → B → C',
   );
   assertEq(BAND_TITLES.identify, null, 'band A carries no heading (the hero is self-evident)');
   assertEq(BAND_TITLES.discover, 'Discover', 'the search band is "Discover"');
   assertEq(BAND_TITLES.today, 'Today', 'band B is "Today"');
-  assertEq(BAND_TITLES.browse, 'Browse & keep going', 'band C is "browse + keep going"');
+  assertEq(
+    Object.keys(BAND_TITLES).join('|'),
+    'identify|discover|today',
+    'the retired band C carries no heading any more (owner 10-26)',
+  );
   assertEq(BAND_CONTAINER_STYLE, 'styles.band', 'the containers share one style marker');
 
   // ── band A ──
@@ -240,8 +244,14 @@ function bandModelTests(): void {
 
   // ── the Discover band ──
   const d = itemsOf(bands, 'discover');
-  assertEq(d.length, 1, 'the Discover band is exactly one entry');
-  assertEq(d[0]?.id, 'find-any-song', 'and that entry is the find-any-song search');
+  // v45 slice 2: Discover is the door's one BROWSE surface too, so it carries the
+  // bar first and then the rows the fold moved up out of band C.
+  assertEq(d[0]?.id, 'find-any-song', 'Discover leads with the find-a-song search');
+  assertEq(
+    d.length,
+    4,
+    'Discover = the bar + the two facets + the free-library row (guitar stays off)',
+  );
   assertEq(d[0]?.destination, 'find-piece', 'the search entry lands on the search');
   assertEq(d[0]?.label, FIND_ANY_SONG_CHIP_LABEL, 'the search entry renders the module label');
   const beta = a.find((i) => i.id === 'beta-note');
@@ -260,27 +270,32 @@ function bandModelTests(): void {
     'the card is the one practice job on the door',
   );
 
-  // ── band C ──
-  const c = itemsOf(bands, 'browse');
-  assertEq(c[0]?.id, 'search-row', 'band C leads with the search row');
-  assertEq(c[0]?.destination, 'find-piece', 'the search row opens the real search');
+  // ── the fold: band C's rows live in Discover, its chips live in Settings ──
+  const c = d;
+  assert(
+    c.some((i) => i.id === 'facet-any-song'),
+    'the money facet (any song → official sheet music) moved into Discover',
+  );
   assert(
     c.some((i) => i.destination === 'library'),
-    'band C has the "browse the free library" row',
+    'the "browse the free library" row moved into Discover',
   );
   assert(
-    c.some((i) => i.destination === 'medals'),
-    'band C keeps the medals entry (as a chip)',
+    !bands.some((band) => band.id === ('browse' as string)),
+    'band C is not a band any more',
   );
-  assert(
-    c.some((i) => i.destination === 'practice-week'),
-    'band C keeps "This Week" (as a chip)',
+  for (const band of bands) {
+    for (const item of band.items) {
+      assert(
+        item.id !== 'chip-achievements' && item.id !== 'chip-practice-week',
+        'the retention entries are Settings rows now, not Home chips',
+      );
+    }
+  }
+  const settingsChips = retentionChips({ currentDays: 3 }).filter(
+    (chip) => chip.where === 'settings',
   );
-  assertEq(
-    c.filter((i) => i.destination === null).length,
-    1,
-    'the only destination-less band-C chip is the streak STATE',
-  );
+  assertEq(settingsChips.length, 3, 'the three chips live in Settings (owner 10-26)');
 
   // Every entry that has a destination carries an accessibility label; every
   // entry that has none says so in words (no silent, unlabelled chip).
@@ -365,7 +380,7 @@ function chipAndFacetTests(): void {
   for (const chip of sameCard) {
     assertEq(chip.destination, null, `${chip.id} is STATE — it promises nothing`);
   }
-  const browse = chips.filter((c) => c.where === 'browse');
+  const browse = chips.filter((c) => c.where === 'settings');
   assertEq(browse.length, 3, 'band C has three small chips');
   assertEq(
     browse.filter((c) => c.destination === null).length,
@@ -453,8 +468,8 @@ const PREFIX_BANDS: FrontDoorBand[] = [
     ],
   },
   {
-    id: 'browse',
-    title: 'Browse & keep going',
+    id: 'discover',
+    title: 'Discover',
     items: [
       { id: 'search-row', kind: 'row', label: 'Search by title or composer', accessibilityLabel: 'x', destination: 'find-piece', entryGroup: 'search' },
     ],
@@ -509,7 +524,7 @@ function fixtureTests(): void {
   // Two CARDS on one destination (the audit's "one card, two meanings"): band B
   // keeps its single card, and a second card in band C claims the same landing.
   const twoWays: FrontDoorBand[] = FIXED_BANDS.map((band) =>
-    band.id === 'browse'
+    band.id === 'discover'
       ? {
           ...band,
           items: [
@@ -527,7 +542,7 @@ function fixtureTests(): void {
 
   // An undeclared destination repeat ACROSS bands (only the search may repeat).
   const crossBand: FrontDoorBand[] = FIXED_BANDS.map((band) =>
-    band.id === 'identify' || band.id === 'browse'
+    band.id === 'identify' || band.id === 'discover'
       ? {
           ...band,
           items: [
@@ -648,11 +663,11 @@ function liveScanTests(): void {
 
   assertEq(
     bandOrderFromSource(home).join('|'),
-    'identify|discover|today|browse',
+    'identify|discover|today',
     'the real Home renders the four band containers in A → Discover → B → C order',
   );
   assertEq(
-    bandOrderIsIdentifyDiscoverTodayBrowse(home),
+    bandOrderIsIdentifyDiscoverToday(home),
     true,
     'band A holds the hero + the hum sibling card, Discover owns the search, band B its one card, band C its rows',
   );
@@ -783,12 +798,26 @@ function liveScanTests(): void {
   );
 
   // ── MUTATION 6: the band containers are re-ordered ──
-  const lostBand = home.replace('testID={BAND_TEST_IDS.browse}', 'testID={undefined}');
-  assert(lostBand !== home, 'the band-order mutation changed the real source');
+  // ── MUTATION 6a: band C comes BACK (a fourth band container) ──
+  const browseBack = home.replace(
+    '<View style={styles.band} testID={BAND_TEST_IDS.today}>',
+    '<View style={styles.band} testID={BAND_TEST_IDS.browse}></View>\n' +
+      '        <View style={styles.band} testID={BAND_TEST_IDS.today}>',
+  );
+  assert(browseBack !== home, 'the browse-back mutation changed the real source');
   assertEq(
-    bandOrderIsIdentifyDiscoverTodayBrowse(lostBand),
+    bandOrderIsIdentifyDiscoverToday(browseBack),
     false,
-    'MUTATION: a missing band container FAILS the order contract',
+    'MUTATION: re-adding the retired band C FAILS the order contract',
+  );
+
+  // ── MUTATION 6b: the "Find a song" bar is DROPPED (Discover loses its search) ──
+  const barGone = home.split('style={styles.findASongBar}').join('style={styles.bandChip}');
+  assert(barGone !== home, 'the bar-drop mutation changed the real source');
+  assertEq(
+    bandOrderIsIdentifyDiscoverToday(barGone),
+    false,
+    'MUTATION: dropping the Find-a-song bar FAILS the order contract',
   );
 
   // ── MUTATION 7: the guitar facet is switched on while its content is unwired ──

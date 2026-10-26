@@ -29,6 +29,8 @@ import {
   SETTINGS_PRO_TITLE,
   SETTINGS_PRIVACY_URL,
   SETTINGS_RENDERED_ROLES,
+  SETTINGS_RETENTION_HEADER,
+  SETTINGS_RETENTION_ROWS,
   SETTINGS_ROLES,
   SETTINGS_ROWS,
   SETTINGS_SPEC,
@@ -41,10 +43,12 @@ import {
   faqDialogBody,
   microphoneAccessLabel,
   noiseFilterValueLabel,
+  settingsClosedSetKeys,
   settingsGroupsAreCards,
   settingsHasGroupsInOrder,
   settingsHasNoAccountSection,
   settingsHasNoDeadRows,
+  settingsHasRetentionSection,
   settingsHeadersPrecedeTheirRows,
   settingsProRowIsWired,
   settingsRowGeometry,
@@ -253,13 +257,38 @@ for (const mode of [DARK_THEME, LIGHT_THEME]) {
 console.log('\n§3 NO DEAD ROWS — each row reaches a destination that exists');
 assertEq(
   specRowTitles(settings),
-  SETTINGS_ROWS.map((row) => row.title),
+  settingsClosedSetKeys(),
   'the screen renders exactly the closed set, in order, once each',
 );
 assert(settingsRowsAreTheClosedSet(settings), 'the rendered copy matches the spec’s copy (no drift, no extra row)');
 assert(settingsHasNoDeadRows(settings), 'every row is either wired or a declared honest VALUE row');
-assertEq(SETTINGS_VALUE_ONLY_ROWS, ['noiseFilter', 'autoScroll'], 'two rows are honest values, not controls');
+assertEq(
+  SETTINGS_VALUE_ONLY_ROWS,
+  ['noiseFilter', 'autoScroll', 'streak'],
+  'three rows are honest values, not controls (the streak joins them in v45 slice 2)',
+);
 assert(settingsRowsReachRealDestinations(settings), 'the destinations greped for are all present in the screen');
+// ═══════════ v45 SLICE 2 · "YOUR PRACTICE" (owner call 10-26) ═══════════
+// Home's retired "Browse & keep going" band closed with three retention chips.
+// The owner did not delete them: they are Settings rows now — the streak as STATE,
+// and the two chips as real taps into screens THIS surface mounts. The block is
+// APPENDED after the §3 groups, so the four spec cards stay exactly four.
+console.log('\nv45 SLICE 2 — the retention block Home handed to Settings');
+assertEq(SETTINGS_RETENTION_HEADER, 'Your practice', 'the block keeps its own name');
+assertEq(
+  SETTINGS_RETENTION_ROWS.map((row) => row.titleRef ?? row.title),
+  ['Current streak', 'MEDALS_CHIP_LABEL', 'WEEK_CHIP_LABEL'],
+  'streak, achievements, this week — in that order',
+);
+assert(
+  settingsClosedSetKeys().slice(0, SETTINGS_ROWS.length).join('|') ===
+    SETTINGS_ROWS.map((row) => row.title).join('|'),
+  'the §3 four-group set is UNCHANGED — the block is appended after it, never woven in',
+);
+assert(
+  settingsHasRetentionSection(settings),
+  'the block renders below Support and both rows open a screen this surface mounts',
+);
 assert(
   appTsx.indexOf('name="CloudSync"') >= 0,
   'the Cloud Sync screen the cloud rows open is really registered in App.tsx',
@@ -425,6 +454,23 @@ probe(
   'the microphone row loses the settings page it opens',
   settings.split('Linking.openSettings()').join("Linking.canOpenURL('x')"),
   settingsRowsReachRealDestinations,
+);
+// v45 slice 2 bite proof: the retention block is what makes Home's retired chips
+// still reachable. Each mutation restores the defect, and the detector goes red.
+probe(
+  'the "Your practice" block vanishes from Settings (Home’s chips are orphaned)',
+  settings.replace(`>Your practice</Text>`, '>Practice</Text>'),
+  settingsHasRetentionSection,
+);
+probe(
+  'the achievements row stops opening the medals screen (a dead retention row)',
+  settings.replace('onPress={handleOpenAchievements}', ''),
+  settingsHasRetentionSection,
+);
+probe(
+  'the achievements row retypes the medals copy instead of the module’s constant',
+  settings.replace('sub={ACHIEVEMENTS_ENTRY_HINT}', 'sub="The medals you have earned"'),
+  settingsRowsAreTheClosedSet,
 );
 
 console.log('\n§3 ALL CONTRACTS — the whole surface in one verdict');

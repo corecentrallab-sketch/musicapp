@@ -574,31 +574,26 @@ export function shareCardRendersMedal(source: string): boolean {
 }
 
 /**
- * Home carries a QUIET achievements entry: below the one-button front door (the
- * hero stays the first and only primary action) and it renders the shared copy.
+ * THE QUIET ACHIEVEMENTS ENTRY — SETTINGS, since v45 slice 2 (OWNER CALL 10-26).
+ * The 🏅 Achievements chip closed Home's retired "Browse & keep going" band, and
+ * the owner moved the entry into Settings instead of dropping it. Same contract —
+ * ONE quiet row, the module's copy, a REAL destination, never a competing primary
+ * action — asserted against SettingsScreen. (The name is kept so the suite's
+ * history reads straight; the SURFACE parameter is SettingsScreen.tsx.)
  */
 export function homeHasQuietAchievementsEntry(source: string): boolean {
   const masked = maskComments(source);
   if (masked.indexOf(`from './AchievementsScreen'`) < 0) return false;
-  if (masked.indexOf('ACHIEVEMENTS_ENTRY_LABEL') < 0) return false;
-  if (masked.indexOf('achievementsSummaryLine(') < 0) return false;
-  const tag = elementWithMarker(masked, 'styles.achievementsCard');
-  if (!/onPress=\{handleOpenAchievements\}/.test(tag)) return false;
-  // The front door still renders, and the entry sits AFTER it — never above the
-  // hero, never a competing primary CTA. The hero's OWN anchor is whichever
-  // front door Home ships: v43's round card (`styles.recognitionCard`) or, since
-  // the v44 equal split, the rose LISTEN panel (`styles.recognitionBtn`, the peer
-  // that carries onPress={handleHeroTap}). Keying on the v43 card alone made this
-  // guard silently un-meetable when the split landed — the entry had nothing left
-  // to sit below. Whichever anchor is present is the reference point; with
-  // neither, there is no hero to sit under and the entry is not quiet by default.
-  const heroCard = masked.indexOf('styles.recognitionCard');
-  const heroIndex = heroCard >= 0 ? heroCard : masked.indexOf('styles.recognitionBtn');
-  const entryIndex = masked.indexOf('styles.achievementsCard');
-  if (heroIndex < 0 || entryIndex < 0) return false;
-  if (entryIndex < heroIndex) return false;
-  if (!masked.includes('onPress={handleHeroTap}')) return false;
-  return true;
+  // The row's copy comes from THIS module (one entry, never retyped).
+  if (masked.indexOf('ACHIEVEMENTS_ENTRY_HINT') < 0) return false;
+  if (masked.indexOf('MEDALS_CHIP_LABEL') < 0) return false;
+  // A row on the retention card, wired to the screen's own handler …
+  if (masked.indexOf('styles.retentionCard') < 0) return false;
+  if (masked.indexOf('onPress={handleOpenAchievements}') < 0) return false;
+  // … whose handler really arms the screen (a row that opens nothing is a dead end).
+  const declaration = masked.indexOf('const handleOpenAchievements');
+  if (declaration < 0) return false;
+  return /setShowAchievements\(\s*true\s*\)/.test(masked.slice(declaration, declaration + 300));
 }
 
 /** Home can actually OPEN the medals screen (state + early return with BACK). */

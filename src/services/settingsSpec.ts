@@ -69,13 +69,27 @@ export type SettingsRowId =
   | 'privacy'
   | 'about';
 
+/** The v45 slice-2 block's row ids (owner call 10-26 — Home's retention chips). */
+export type SettingsRetentionRowId = 'streak' | 'medals' | 'week';
+
 export interface SettingsRowCopy {
-  id: SettingsRowId;
+  id: SettingsRowId | SettingsRetentionRowId;
   title: string;
   /** Empty when the row has no subtitle (the spec then centres the title). */
   sub: string;
-  /** The group the row belongs to (index into SETTINGS_GROUP_TITLES). */
+  /**
+   * The group the row belongs to (index into SETTINGS_GROUP_TITLES). The v45
+   * retention rows use 4 — their own card, AFTER the four spec groups.
+   */
   group: number;
+  /**
+   * v45 slice 2 (owner 10-26): when set, the screen renders `title={REF}` and the
+   * copy lives in ANOTHER module (`services/frontDoorBands`) — the guard pins the
+   * IDENTIFIER, never a second copy of the string, so the door's chip label and
+   * this row can never drift apart. `title` then holds the identifier too.
+   */
+  titleRef?: string;
+  subRef?: string;
 }
 
 /**
@@ -115,10 +129,69 @@ export const SETTINGS_ROWS: readonly SettingsRowCopy[] = [
   { id: 'about', title: 'About NoteSnap', sub: '', group: 3 },
 ];
 
+/**
+ * v45 SLICE 2 (OWNER CALL 10-26) — "YOUR PRACTICE", the block that took over the
+ * retention that used to close Home's retired "Browse & keep going" band:
+ *
+ *     Current streak (a VALUE) · 🏅 Achievements · 📋 This Week
+ *
+ * It is deliberately NOT a §3 spec group: it keeps its own v45 card
+ * (`styles.retentionCard`) and is APPENDED after Support, so the whole surface =
+ * the §3 closed set FOLLOWED BY these three rows. Two of the three titles are
+ * rendered from the identifiers `services/frontDoorBands` owns (`titleRef`), which
+ * is why the guard compares `{MEDALS_CHIP_LABEL}` rather than a copy of the label.
+ */
+export const SETTINGS_RETENTION_HEADER = 'Your practice';
+export const SETTINGS_RETENTION_SUB = 'Your streak, your medals and this week.';
+
+export const SETTINGS_RETENTION_ROWS: readonly SettingsRowCopy[] = [
+  {
+    id: 'streak',
+    title: 'Current streak',
+    sub: 'Days in a row you have practised',
+    group: 4,
+  },
+  {
+    id: 'medals',
+    title: 'MEDALS_CHIP_LABEL',
+    sub: 'ACHIEVEMENTS_ENTRY_HINT',
+    group: 4,
+    titleRef: 'MEDALS_CHIP_LABEL',
+    subRef: 'ACHIEVEMENTS_ENTRY_HINT',
+  },
+  {
+    id: 'week',
+    title: 'WEEK_CHIP_LABEL',
+    sub: 'The days you practised this week',
+    group: 4,
+    titleRef: 'WEEK_CHIP_LABEL',
+  },
+];
+
+/** Every row the surface renders, in source order: §3 groups, then the v45 block. */
+export function allSettingsRows(): SettingsRowCopy[] {
+  return [...SETTINGS_ROWS, ...SETTINGS_RETENTION_ROWS];
+}
+
+/**
+ * The key a rendered row must carry: its literal title, or `{IDENT}` when the copy
+ * is an identifier another module owns (a `titleRef` row).
+ */
+export function settingsRowKey(row: SettingsRowCopy): string {
+  return row.titleRef ? `{${row.titleRef}}` : row.title;
+}
+
+/** The closed set as the guard compares it — literals and `{IDENT}` keys, in order. */
+export function settingsClosedSetKeys(): string[] {
+  return allSettingsRows().map(settingsRowKey);
+}
+
 /** The rows the spec promises are an HONEST VALUE, not a control. */
-export const SETTINGS_VALUE_ONLY_ROWS: readonly SettingsRowId[] = [
+export const SETTINGS_VALUE_ONLY_ROWS: readonly (SettingsRowId | SettingsRetentionRowId)[] = [
   'noiseFilter',
   'autoScroll',
+  // v45 slice 2: the streak is STATE — visible, but nothing to press.
+  'streak',
 ];
 
 /**
@@ -354,8 +427,12 @@ export function faqDialogBody(): string {
 
 // ═══════════════════════ §3 · the detectors (source scans) ═══════════════════════
 
-/** The rows the screen renders through `<SpecRow …>` — title order, from source. */
-const SPEC_ROW_TITLE = /<SpecRow\b[\s\S]*?title="([^"]+)"/g;
+/**
+ * A row's title INSIDE its own block: a literal (`title="Theme"`) or an identifier
+ * (`title={MEDALS_CHIP_LABEL}`, v45 slice 2 — the copy lives in frontDoorBands).
+ * Group 1 = literal, group 2 = identifier.
+ */
+const SPEC_ROW_TITLE = /title=(?:"([^"]*)"|\{\s*([A-Za-z_$][\w$]*)\s*\})/;
 
 /** Every `<SpecRow>` block in the screen source (comments masked). */
 export function specRowBlocks(settingsSource: string): string[] {
@@ -377,16 +454,17 @@ export function specRowBlocks(settingsSource: string): string[] {
   });
 }
 
-/** The titles of the rows the screen renders, in order. */
+/**
+ * The titles of the rows the screen renders, in order — each row's OWN title, read
+ * from its own `<SpecRow>` block so one row can never inherit its neighbour's: a
+ * literal as-is, or `{IDENT}` when the row renders another module's identifier.
+ */
 export function specRowTitles(settingsSource: string): string[] {
-  const text = maskSourceComments(settingsSource);
-  const titles: string[] = [];
-  let match = SPEC_ROW_TITLE.exec(text);
-  while (match) {
-    titles.push(match[1]);
-    match = SPEC_ROW_TITLE.exec(text);
-  }
-  return titles;
+  return specRowBlocks(settingsSource).map((block) => {
+    const match = SPEC_ROW_TITLE.exec(block);
+    if (match === null) return '';
+    return match[1] !== undefined ? match[1] : `{${match[2]}}`;
+  });
 }
 
 /** The four headers appear as rendered section headers, IN THE SPEC'S ORDER. */
@@ -446,18 +524,25 @@ export function settingsProRowIsWired(settingsSource: string): boolean {
   return text.indexOf('handleUpgrade') >= 0;
 }
 
-/** The closed set: exactly these rows, in this order, each rendered once. */
+/**
+ * The closed set: exactly these rows, in this order, each rendered once — the §3
+ * groups FOLLOWED BY the v45 slice-2 "Your practice" block.
+ */
 export function settingsRowsAreTheClosedSet(settingsSource: string): boolean {
   const rendered = specRowTitles(settingsSource);
-  const expected = SETTINGS_ROWS.map((row) => row.title);
+  const expected = settingsClosedSetKeys();
   if (JSON.stringify(rendered) !== JSON.stringify(expected)) return false;
-  // …and the copy in the screen is the copy in this module (no drift).
+  // …and the copy in the screen is the copy in this module (no drift). A `titleRef`
+  // / `subRef` row proves the IDENTIFIER is rendered; the value is pinned by the
+  // module that owns it, which is the point of never retyping it here.
   const text = maskSourceComments(settingsSource);
-  return SETTINGS_ROWS.every(
-    (row) =>
-      text.indexOf(`title="${row.title}"`) >= 0 &&
-      (row.sub === '' || text.indexOf(`sub="${row.sub}"`) >= 0)
-  );
+  return allSettingsRows().every((row) => {
+    if (text.indexOf(row.titleRef ? `title={${row.titleRef}}` : `title="${row.title}"`) < 0) {
+      return false;
+    }
+    if (row.subRef) return text.indexOf(`sub={${row.subRef}}`) >= 0;
+    return row.sub === '' || text.indexOf(`sub="${row.sub}"`) >= 0;
+  });
 }
 
 /**
@@ -469,14 +554,14 @@ export function settingsRowsAreTheClosedSet(settingsSource: string): boolean {
 export function settingsHasNoDeadRows(settingsSource: string): boolean {
   const blocks = specRowBlocks(settingsSource);
   if (blocks.length === 0) return false;
-  const valueOnly = SETTINGS_VALUE_ONLY_ROWS.map((id) => {
-    const row = SETTINGS_ROWS.find((entry) => entry.id === id);
-    return row ? row.title : id;
-  });
+  const valueOnly = allSettingsRows()
+    .filter((row) => SETTINGS_VALUE_ONLY_ROWS.indexOf(row.id) >= 0)
+    .map(settingsRowKey);
   for (const block of blocks) {
-    const title = /title="([^"]+)"/.exec(block);
-    if (!title) return false;
-    const isValueOnly = valueOnly.indexOf(title[1]) >= 0;
+    const title = SPEC_ROW_TITLE.exec(block);
+    if (title === null) return false;
+    const key = title[1] !== undefined ? title[1] : `{${title[2]}}`;
+    const isValueOnly = valueOnly.indexOf(key) >= 0;
     const hasOnPress = /onPress=\{(?!\s*(?:undefined|null)\s*\})/.test(block);
     if (isValueOnly && hasOnPress) return false;
     if (!isValueOnly && !hasOnPress) return false;
@@ -605,6 +690,50 @@ export function settingsFootnoteIsOnce(settingsSource: string): boolean {
   return text.indexOf(marker, at + marker.length) < 0;
 }
 
+/**
+ * v45 SLICE 2 — the "Your practice" block really is ON this surface, BELOW the §3
+ * groups, and both of its rows open screens this screen mounts itself:
+ *
+ *   • the header + its one subtitle line render (their own card, styles.retentionCard);
+ *   • the three rows are the LAST three the surface renders (appended, never woven
+ *     into a §3 group, so the four spec cards stay exactly four);
+ *   • the chip labels come from `services/frontDoorBands` and the medals subtitle
+ *     from `services/medals` — both imported, never retyped;
+ *   • `handleOpenAchievements` / `handleOpenPracticeWeek` really arm their screens
+ *     (a row that opens nothing is the dead end this block could have been).
+ */
+export function settingsHasRetentionSection(settingsSource: string): boolean {
+  const text = maskSourceComments(settingsSource);
+  if (text.indexOf(`>${SETTINGS_RETENTION_HEADER}</Text>`) < 0) return false;
+  if (text.indexOf(SETTINGS_RETENTION_SUB) < 0) return false;
+  if (text.indexOf('styles.retentionCard') < 0) return false;
+  if (text.indexOf(`from '../services/frontDoorBands'`) < 0) return false;
+  if (text.indexOf(`from '../services/medals'`) < 0) return false;
+  // Appended: the header sits BELOW the last §3 group's header.
+  const headerAt = text.indexOf(`>${SETTINGS_RETENTION_HEADER}</Text>`);
+  const supportAt = text.indexOf('>Support</Text>');
+  if (supportAt < 0 || headerAt < supportAt) return false;
+  // …and its three rows are the tail of the rendered order.
+  const mine = SETTINGS_RETENTION_ROWS.map(settingsRowKey);
+  const rendered = specRowTitles(settingsSource);
+  if (JSON.stringify(rendered.slice(-mine.length)) !== JSON.stringify(mine)) return false;
+  // Both rows land on a screen this surface owns — the ROW really taps it…
+  if (text.indexOf('onPress={handleOpenAchievements}') < 0) return false;
+  if (text.indexOf('onPress={handleOpenPracticeWeek}') < 0) return false;
+  // …through handlers that actually arm those screens.
+  const opens = (name: string, setter: string): boolean => {
+    const declaration = text.indexOf(`const ${name}`);
+    if (declaration < 0) return false;
+    return new RegExp(`${setter}\\(\\s*true\\s*\\)`).test(
+      text.slice(declaration, declaration + 300),
+    );
+  };
+  return (
+    opens('handleOpenAchievements', 'setShowAchievements') &&
+    opens('handleOpenPracticeWeek', 'setShowPracticeWeek')
+  );
+}
+
 /** Everything the §3 surface must satisfy, in one call. */
 export function settingsSurfaceContracts(settingsSource: string): boolean {
   return (
@@ -617,6 +746,7 @@ export function settingsSurfaceContracts(settingsSource: string): boolean {
     settingsRowsReachRealDestinations(settingsSource) &&
     settingsRowGeometry(settingsSource) &&
     settingsGroupsAreCards(settingsSource) &&
+    settingsHasRetentionSection(settingsSource) &&
     settingsSpecHasNoHexColors(settingsSource) &&
     settingsVersionIsLive(settingsSource) &&
     settingsFootnoteIsOnce(settingsSource)

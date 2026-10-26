@@ -591,6 +591,10 @@ function liveScanTests(): void {
   const store = readAppFile('src/services/medalStore.ts');
   const screen = readAppFile('src/screens/AchievementsScreen.tsx');
   const home = readAppFile('src/screens/HomeScreen.tsx');
+  // v45 slice 2 (owner call 10-26): the quiet achievements entry lives in
+  // Settings now — band C left Home, so the entry contract is asserted on the
+  // surface that actually carries it.
+  const settings = readAppFile('src/screens/SettingsScreen.tsx');
   const shareCard = readAppFile('src/components/ShareCard.tsx');
   const toast = readAppFile('src/components/BadgeToast.tsx');
   const pieceDetail = readAppFile('src/screens/PieceDetailScreen.tsx');
@@ -646,9 +650,9 @@ function liveScanTests(): void {
   console.log('\nHome: the front door stays the hero');
 
   assertEq(
-    homeHasQuietAchievementsEntry(home),
+    homeHasQuietAchievementsEntry(settings),
     true,
-    'the achievements entry is quiet, wired, and sits BELOW the one-button front door',
+    'the achievements entry is quiet, wired, and sits BELOW Home in the Settings retention card',
   );
   // The ordering rule has to BITE, in BOTH front-door shapes. It did not before
   // v44: ENTRY_ABOVE_HERO_FIXTURE was declared and never asserted, and the guard
@@ -677,7 +681,11 @@ function liveScanTests(): void {
     home.indexOf('styles.recognitionCard') < 0,
     'Home ships the v44 split hero — the quiet entry\'s anchor really is styles.recognitionBtn',
   );
-  assertEq(homeOpensAchievementsScreen(home), true, 'Home opens the medals screen (BACK included)');
+  assertEq(
+    homeOpensAchievementsScreen(settings),
+    true,
+    'Settings opens the medals screen (BACK included)',
+  );
   assertEq(
     hasSingleHeroCta(home),
     true,
