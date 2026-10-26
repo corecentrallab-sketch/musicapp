@@ -45,6 +45,18 @@
  * difficulty_label is derived from the catalog's 1-10 grade, and
  * sheet_music_available / sheet_music_url are computed from the actual row —
  * never invented.
+ *
+ * `genre` (v45 slice 3a, owner all-genres scope 2026-10-26): every piece object
+ * from BOTH endpoints now carries `genre: string | null` — the era bucket
+ * stored on `pieces.genre` (Renaissance / Baroque / Classical / Romantic /
+ * Impressionist / Modern), null when the row has none. It is additive, so older
+ * app builds keep working. The five style families the Discover surface shows
+ * (classical; early jazz & blues; folk & traditional; patriotic & holiday;
+ * vaudeville/opera/parlor) are a CLIENT-side taxonomy layered over these eras —
+ * this API deliberately does not store or return a family, because the family a
+ * piece belongs to is a presentation decision that will keep changing, while
+ * the era is a fact about the piece. Both SELECTs share `PIECE_COLUMNS`, so the
+ * list and the detail endpoint can no longer disagree about which fields exist.
  */
 import { sql } from "~/db";
 import { difficultyLabel } from "./daily-challenge-handler";
@@ -69,16 +81,35 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const INT_RE = /^\d+$/;
 
 /** Shape of a pieces row as selected by the shared catalog queries. */
-interface PieceRow {
+export interface PieceRow {
   id: string;
   title: string;
   composer: string;
   catalog: string | null;
+  genre: string | null;
   difficulty: number | null;
   is_public_domain: boolean | null;
   sheet_music_url: string | null;
   album_art_url: string | null;
 }
+
+/**
+ * The columns both catalog queries select, in one place so the list and the
+ * detail endpoint can never drift apart again.
+ *
+ * `p.genre` was missing here until v45 slice 3a: the column has existed on
+ * `pieces` all along and is already read by the daily-challenge, matching and
+ * landmark-matching services, but the public catalog API simply never selected
+ * it — so the app had no way to build a genre surface from /api/pieces. It is
+ * the ERA granularity stored in the database (Renaissance / Baroque / Classical
+ * / Romantic / Impressionist / Modern), NOT one of the five public style
+ * families the Discover surface groups them into: that mapping is a client-side
+ * taxonomy (owner 2026-10-26), so this API must never pre-bake it and the DB
+ * keeps eras. Nullable — a row with no era is served as `genre: null`, never
+ * invented.
+ */
+export const PIECE_COLUMNS =
+  "p.id, p.title, p.composer, p.catalog, p.genre, p.difficulty, p.is_public_domain, p.sheet_music_url, p.album_art_url";
 
 /** Shape of a sheet_music_sources row (curated arrangements for a piece). */
 interface SheetSourceRow {
@@ -158,13 +189,16 @@ function foldedParam(index: number, fold: boolean): string {
 }
 
 /** Map a DB row to the public piece shape shared by list and detail endpoints. */
-function serializePiece(row: PieceRow): Record<string, unknown> {
+export function serializePiece(row: PieceRow): Record<string, unknown> {
   const sheetAvailable = !!row.sheet_music_url && row.sheet_music_url !== "";
   return {
     id: row.id,
     title: row.title,
     composer: row.composer,
     catalog: row.catalog ?? null,
+    // Era bucket (v45 slice 3a). Additive field: older clients ignore it, and
+    // the five-family grouping is the app's job, never this API's.
+    genre: row.genre ?? null,
     difficulty: row.difficulty ?? null,
     difficulty_label: difficultyLabel(row.difficulty),
     is_public_domain: !!row.is_public_domain,
@@ -356,8 +390,7 @@ export async function handleCatalogList(req: Request): Promise<Response> {
     const total = countRows[0]?.total ?? 0;
 
     const rows = (await sql().query(
-      `SELECT p.id, p.title, p.composer, p.catalog, p.difficulty,
-              p.is_public_domain, p.sheet_music_url, p.album_art_url
+      `SELECT ${PIECE_COLUMNS}
        FROM pieces p
        WHERE ${whereSql}
        ORDER BY p.title, p.id
@@ -396,8 +429,7 @@ export async function handleCatalogDetail(req: Request): Promise<Response> {
 
   try {
     const rows = (await sql().query(
-      `SELECT p.id, p.title, p.composer, p.catalog, p.difficulty,
-              p.is_public_domain, p.sheet_music_url, p.album_art_url
+      `SELECT ${PIECE_COLUMNS}
        FROM pieces p
        WHERE p.id = $1 AND p.is_public_domain = true`,
       [id],
