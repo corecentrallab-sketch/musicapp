@@ -459,6 +459,54 @@ export async function searchPieces(
 }
 
 /**
+ * GET /api/pieces?limit=&offset= — ONE page of the catalog, for a caller that
+ * needs the whole library rather than a search (v45 slice 3b: the Discover
+ * style counts are derived from real rows, and a single page capped at 50 can
+ * never describe a 536-piece catalog honestly).
+ *
+ * Same failure contract as `searchPieces`: a thrown Error carries
+ * SEARCH_ERROR_MESSAGE so the caller can degrade to "no counts" instead of
+ * showing a wrong number. The offset is appended here rather than added to
+ * `buildSearchPath` so that helper's tested shape (and every existing caller of
+ * it) is untouched.
+ */
+export async function searchPiecePage(
+  query: string,
+  limit: number = CATALOG_SEARCH_LIMIT,
+  offset: number = 0,
+): Promise<CatalogSearchResponse> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  const safeOffset =
+    Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0;
+  const path = `${buildSearchPath(query, limit)}${
+    safeOffset > 0 ? `&offset=${safeOffset}` : ''
+  }`;
+  try {
+    const response = await fetch(`${BASE_URL}${path}`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(SEARCH_ERROR_MESSAGE);
+    let json: unknown;
+    try {
+      json = await response.json();
+    } catch {
+      throw new Error(SEARCH_ERROR_MESSAGE);
+    }
+    const parsed = parseCatalogSearchResponse(json);
+    if (!parsed) throw new Error(SEARCH_ERROR_MESSAGE);
+    return parsed;
+  } catch (err) {
+    if (err instanceof Error && err.message === SEARCH_ERROR_MESSAGE) throw err;
+    throw new Error(SEARCH_ERROR_MESSAGE);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
  * Start a Stripe Checkout session for the given plan (price id) and device.
  * Returns the hosted checkout URL to open in a browser.
  */

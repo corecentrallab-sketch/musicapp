@@ -492,6 +492,13 @@ export interface CatalogPiece {
   id: string;
   title: string;
   composer: string;
+  /**
+   * The catalog's era tag (e.g. "Baroque", "Romantic"), or null when the row
+   * carries none. OPTIONAL on purpose (v45 slice 3b): the field is served by
+   * /api/pieces only once the backend's 3a slice is live, so every reader must
+   * treat "absent" exactly like "null" — never default it to a value.
+   */
+  genre?: string | null;
   /** Catalog number (e.g. "WoO 59", "BWV 971"), or null when unknown. */
   catalog: string | null;
   /** Raw catalog grade 1-10, or null when the catalog has none. */
