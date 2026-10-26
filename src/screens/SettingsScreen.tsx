@@ -93,6 +93,10 @@ import {
   WEEK_CHIP_LABEL,
   streakChipCopy,
 } from '../services/frontDoorBands';
+// The achievements row's subtitle is the medals module's OWN copy — never retyped
+// here (medals.homeHasQuietAchievementsEntry asserts that, and it is why the row
+// carries ACHIEVEMENTS_ENTRY_HINT rather than a lookalike string).
+import { ACHIEVEMENTS_ENTRY_HINT } from '../services/medals';
 import { getDisplayStreakLocal } from '../services/reinforcementStore';
 import { useEffect } from 'react';
 import { getNotificationEnabled, setNotificationEnabled, getProState, saveProState, type ProState } from '../services/storage';
@@ -1160,7 +1164,7 @@ export const SettingsScreen: React.FC = () => {
             styles={styles}
             palette={palette}
             title={MEDALS_CHIP_LABEL}
-            sub="The medals you have earned"
+            sub={ACHIEVEMENTS_ENTRY_HINT}
             onPress={handleOpenAchievements}
             hint="Opens your achievements and medals"
             chevron
