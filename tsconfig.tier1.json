@@ -204,6 +204,8 @@
     "scripts/genreFamilies.test.ts",
     "src/services/scanClassify.ts",
     "src/services/scanBatchContract.ts",
-    "scripts/scanBatch.test.ts"
+    "scripts/scanBatch.test.ts",
+    "src/services/v45PdfEditorContract.ts",
+    "scripts/v45PdfEditor.test.ts"
   ]
 }
