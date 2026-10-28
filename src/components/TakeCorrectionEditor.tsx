@@ -153,6 +153,16 @@ import { TakeSendToSheet } from './TakeSendToSheet';
 import type { TakePdfChord } from '../services/takeNotationPdf';
 import { TAKE_STAFF_CLEANED_INK, TAKE_STAFF_PAPER } from './TakeStaffCard';
 import type { SavedCaptureTake } from '../services/midiExport';
+/**
+ * THE LYRIC SHEET (v45 slice 6, owner THREE-WAY LYRICS SCOPE 2026-10-26). The
+ * card is `components/LyricsSheetCard` and its words come from the ONE pure model
+ * (`services/lyricsSheet`) — this page types no lyric copy of its own — with the
+ * write going through the one store seam (`services/lyricsStore`) so the words
+ * read back are exactly the words written for this take.
+ */
+import { LyricsSheetCard } from './LyricsSheetCard';
+import { LYRICS_NEEDS_SAVED_TAKE_LINE } from '../services/lyricsSheet';
+import { loadTakeLyrics, saveTakeLyrics } from '../services/lyricsStore';
 
 /** The one-line coach tip on the surface (brief §5 — no false claims). */
 export const EDITOR_COACH_TIP =
@@ -299,6 +309,23 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
   const [freeChord, setFreeChord] = useState('');
   const [saving, setSaving] = useState<TakeSaveMode | null>(null);
   const [saveLine, setSaveLine] = useState<string | null>(null);
+  /**
+   * THE LYRIC SHEET (v45 slice 6, owner THREE-WAY LYRICS SCOPE 10-26). The user's
+   * OWN words for THIS take — their rendition, distinct from any underlying
+   * copyright — typed here and kept with the take on the device. `lyricsText` is
+   * the ONLY thing the card can show, so no words can reach the surface from
+   * anywhere else; `lyricsLine` carries the store's own honest sentence back
+   * (saved / removed / could not save), never a swallowed write.
+   *
+   * `lyricsHoldRef` exists for one honest reason: if a write fails at the moment
+   * a History row appears, the re-load below must NOT wipe words the user just
+   * typed — a failed save that also deletes the text would be worse than the
+   * failure. It holds the text across that single re-load, then clears.
+   */
+  const [lyricsText, setLyricsText] = useState('');
+  const [lyricsLine, setLyricsLine] = useState<string | null>(null);
+  const [lyricsSaving, setLyricsSaving] = useState(false);
+  const lyricsHoldRef = useRef<string | null>(null);
   /**
    * SENDING THE CORRECTED TAKE OFF THE DEVICE (v37 item 6, backlog d2e9e2c5,
    * owner v36 ask item 6). The owner needs the .mid on a desktop; this page is
@@ -660,6 +687,60 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
     apply(snapTakeToScale(stateRef.current, derived.key));
   }, [apply, derived.key]);
 
+  /**
+   * READ THE USER'S OWN WORDS BACK WHEN THE PAGE OPENS (v45 slice 6). The words
+   * belong to the take's History row, so the read is keyed on that row: open a
+   * different take and a different sheet is loaded. A closed page holds nothing.
+   *
+   * If the words could not be written a moment ago (see `lyricsHoldRef`), the
+   * text the user typed wins over the store for this one read — the failure is
+   * reported, but it never costs the user their words.
+   */
+  useEffect(() => {
+    let alive = true;
+    if (!visible) {
+      setLyricsText('');
+      setLyricsLine(null);
+      lyricsHoldRef.current = null;
+      return () => {
+        alive = false;
+      };
+    }
+    setLyricsLine(null);
+    void loadTakeLyrics(rowId)
+      .then((saved) => {
+        if (!alive) return;
+        const held = lyricsHoldRef.current;
+        lyricsHoldRef.current = null;
+        setLyricsText(held !== null ? held : saved);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [visible, rowId]);
+
+  /**
+   * WRITE THE USER'S OWN WORDS (v45 slice 6). One seam, one outcome sentence: the
+   * store says what happened (saved / removed / could not save) and this page
+   * shows exactly that. Emptying the field removes the words rather than storing
+   * a blank record. Words typed before the take had a row are not lost — the save
+   * bar carries them onto the row that appears (see `doSave`).
+   */
+  const saveWords = useCallback(async () => {
+    if (lyricsSaving) return;
+    if (!rowId) {
+      setLyricsLine(LYRICS_NEEDS_SAVED_TAKE_LINE);
+      return;
+    }
+    setLyricsSaving(true);
+    const result = await saveTakeLyrics(rowId, lyricsText);
+    setLyricsSaving(false);
+    if (!result.ok) lyricsHoldRef.current = lyricsText;
+    setLyricsLine(result.message);
+    if (result.ok && result.cleared) setLyricsText('');
+  }, [lyricsSaving, lyricsText, rowId]);
+
   const doSave = useCallback(
     async (mode: TakeSaveMode) => {
       if (saving) return;
@@ -671,6 +752,17 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
         audioUri: audioUri ?? null,
         mode,
       });
+      /**
+       * THE WORDS TRAVEL WITH THE TAKE (v45 slice 6). A take that had no History
+       * row when the user typed their lyrics gets one here — so the words are
+       * written onto THAT row, through the same store seam, before the page
+       * reports the save. Nothing typed is dropped on the way to History.
+       */
+      if (result.ok && result.rowId && lyricsText.trim().length > 0) {
+        const words = await saveTakeLyrics(result.rowId, lyricsText);
+        if (!words.ok) lyricsHoldRef.current = lyricsText;
+        setLyricsLine(words.message);
+      }
       setSaving(null);
       setSaveLine(result.line);
       if (result.ok) onSaved?.(derived.take, mode, result.rowId);
@@ -679,7 +771,7 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
         setSaveLine(`${result.line}`);
       }
     },
-    [audioUri, derived.take, onSaved, rowId, saving],
+    [audioUri, derived.take, lyricsText, onSaved, rowId, saving],
   );
 
   /**
@@ -1280,6 +1372,25 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
               the user is editing, and the read-only original take has its own two
               listen rows above. */}
           {editable ? <TakePreviewSection preview={preview} /> : null}
+
+          {/* 7b. YOUR WORDS (v45 slice 6, owner THREE-WAY LYRICS SCOPE 10-26).
+              The third legal source, made visible: the words the user typed for
+              THEIR OWN take — their rendition, shown back with their tune. The
+              words are the page's own state (`setLyricsText`), read from and
+              written to the take's History row through the one store seam, and
+              the card is offered a write only when there is a row to hold them.
+              Nothing on this panel reaches a network, an audio file or a lyrics
+              database: it is text the user typed, saved on this device, and it is
+              never called the publisher's words (LYRICS_NOT_OFFICIAL_LINE). */}
+          <LyricsSheetCard
+            kind="take"
+            value={lyricsText}
+            onChangeText={setLyricsText}
+            onSave={() => void saveWords()}
+            saving={lyricsSaving}
+            canSave={!!rowId}
+            line={lyricsLine}
+          />
 
           {/* 8. SEND THE TAKE OFF THE DEVICE (v37 item 6). The owner has no MIDI
               hardware, so the ONLY way they can open this take on a desktop is a

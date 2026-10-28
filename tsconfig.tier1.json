@@ -206,6 +206,9 @@
     "src/services/scanBatchContract.ts",
     "scripts/scanBatch.test.ts",
     "src/services/v45PdfEditorContract.ts",
-    "scripts/v45PdfEditor.test.ts"
+    "scripts/v45PdfEditor.test.ts",
+    "src/services/lyricsSheet.ts",
+    "src/services/v45LyricsContract.ts",
+    "scripts/v45Lyrics.test.ts"
   ]
 }
