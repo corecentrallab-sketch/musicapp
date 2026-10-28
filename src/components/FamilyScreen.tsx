@@ -44,8 +44,18 @@ export interface FamilyScreenProps {
   eraCounts: EraCounts | null;
   /** Back to whoever opened this screen (its header chevron and Android BACK). */
   onClose: () => void;
-  /** "Browse what is free now" → the Library tab. */
-  onBrowseLibrary: () => void;
+  /**
+   * "Browse what is free now" → the FREE SCORES browse on the Discover surface
+   * (the catalog list), NOT the personal Library tab.
+   *
+   * v46 defect (owner 10-28): this row was handed HomeScreen's
+   * `navigate('Library')`, so a user asking for the free public-domain scores was
+   * dropped into their own saved library — a different screen holding none of
+   * what the row promises. The handler the Discover surface passes now clears the
+   * family and the query and lands on the catalog list in place; this screen only
+   * renders the row and calls it, so the destination is decided in ONE place.
+   */
+  onBrowseFreeScores: () => void;
 }
 
 export const FamilyScreen: React.FC<FamilyScreenProps> = ({
@@ -53,7 +63,7 @@ export const FamilyScreen: React.FC<FamilyScreenProps> = ({
   freeCount,
   eraCounts,
   onClose,
-  onBrowseLibrary,
+  onBrowseFreeScores,
 }) => {
   const { styles } = useThemedStyles(baseStyles);
   // The retailer URL the user tapped. Tap-driven only: this is the ONLY writer,
@@ -146,7 +156,7 @@ export const FamilyScreen: React.FC<FamilyScreenProps> = ({
               key={row.kind}
               style={[styles.row, isMoney ? styles.moneyRow : styles.freeRow]}
               activeOpacity={0.7}
-              onPress={() => (isMoney && url ? handleOpenRetailer(url) : onBrowseLibrary())}
+              onPress={() => (isMoney && url ? handleOpenRetailer(url) : onBrowseFreeScores())}
               accessibilityRole="button"
               accessibilityLabel={`${row.label} — ${row.hint}`}
               testID={isMoney ? 'family-money-row' : 'family-free-row'}

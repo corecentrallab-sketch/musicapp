@@ -150,19 +150,19 @@ interface FindPieceScreenProps {
   /** The way out of a lookup the app started: back to the scan, in control. */
   onDismissAutoSearch?: () => void;
   /**
-   * v46 CORRECTIVE — THE DISCOVER SURFACE'S FREE-LIBRARY ROW.
+   * v46 DEFECT FIX (owner 10-28) — "Browse what is free now" STAYS IN DISCOVER.
    *
-   * The "📚 Browse the free library" row moved here from Home with the rest of
-   * Discover. Its destination used to be a handler Home owned; the screen now
-   * takes it as a prop so the row keeps the SAME destination (the Library tab)
-   * without this screen importing navigation. When a caller passes nothing the
-   * row falls back to `onClose` — the library is the caller's own screen in that
-   * case (LibraryScreen mounts this screen), so the row still lands somewhere
-   * real and never becomes a dead tap.
-   */
-  onBrowseLibrary?: () => void;
-  /**
-   * v46 CORRECTIVE — whether this mount is a DISCOVER surface at all.
+   * The row lives on this screen (the Discover surface) and used to be handed a
+   * caller-owned handler that closed the search and ran `navigation.navigate(
+   * 'Library')` — so asking for the free public-domain scores landed the user in
+   * their own saved library, a screen holding none of them. The destination is
+   * this screen's OWN browse state (an empty query, which loads the catalog's
+   * first page = the free scores), so the row now needs no injected handler at
+   * all: `handleBrowseFreeScores` clears the family/query and scrolls that list
+   * into view. There is deliberately NO `onBrowseLibrary` prop any more — a caller
+   * cannot re-point the free-scores lever at a non-free-scores surface.
+   *
+   * ── v46 CORRECTIVE — whether this mount is a DISCOVER surface at all ──
    *
    * Default TRUE (omit it): the Home door's hand-off, where the design says
    * Discover = this screen. Pass FALSE to get the plain search screen.
@@ -181,7 +181,6 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
   initialQuery,
   autoSearchNotice,
   onDismissAutoSearch,
-  onBrowseLibrary,
   showDiscover = true,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
@@ -412,20 +411,56 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
     setSelectedFamily(id);
   }, []);
 
-  // "Browse what is free now" — the family screen's lever AND the Discover
-  // free-library row → the Library tab, the same destination the modern
-  // interstitial's free-library lever uses. Closing the family screen first keeps
-  // exactly one in-place flow mounted at a time.
-  const handleBrowseLibrary = useCallback(() => {
+  // ── THE FREE-SCORES LANDING (v46 defect fix, owner 10-28) ──
+  // The catalog list inside the one results scroller. Its laid-out y is the
+  // landing point for "Browse what is free now": on the browse state the
+  // Discover block (tiles, chips, money rows) sits ABOVE it, so scrolling to the
+  // top would leave the user looking at the same tiles they just left. The y is
+  // MEASURED (onLayout) rather than computed from style constants, so it stays
+  // right on every screen size.
+  const resultsScrollRef = useRef<ScrollView>(null);
+  const freeListYRef = useRef(0);
+  const pendingFreeListScrollRef = useRef(false);
+  const scrollToFreeList = useCallback(() => {
+    resultsScrollRef.current?.scrollTo({
+      y: Math.max(0, freeListYRef.current - 8),
+      animated: true,
+    });
+  }, []);
+  // The list's own layout: remember where it starts, and consume a pending
+  // free-scores jump (the family screen's row sets it, because the list is
+  // unmounted while that screen is open and re-lays-out when it closes).
+  const handleFreeListLayout = useCallback(
+    (event: { nativeEvent: { layout: { y: number } } }) => {
+      freeListYRef.current = event.nativeEvent.layout.y;
+      if (pendingFreeListScrollRef.current) {
+        pendingFreeListScrollRef.current = false;
+        scrollToFreeList();
+      }
+    },
+    [scrollToFreeList],
+  );
+
+  // "Browse what is free now" — THE FREE SCORES, IN PLACE (v46 defect fix,
+  // owner 10-28). The two lever sites (the Discover free-library row and the
+  // family screen's free row) both land on the catalog's own browse state: this
+  // screen with NO family open and NO query, which is the free public-domain
+  // list, scrolled into view.
+  //
+  // What it must never do again: call a caller-injected handler. In v46 that
+  // handler was HomeScreen's `navigation.navigate('Library')`, so the row
+  // promised free scores and delivered the user's personal library. There is no
+  // prop that can restore that — the destination is decided here, once.
+  const handleBrowseFreeScores = useCallback(() => {
+    pendingFreeListScrollRef.current = true;
     setSelectedFamily(null);
-    if (onBrowseLibrary) {
-      onBrowseLibrary();
-      return;
-    }
-    // No destination was handed in (LibraryScreen's own mount): the library IS
-    // the caller, so closing lands the user exactly there — never a dead tap.
-    onClose();
-  }, [onBrowseLibrary, onClose]);
+    handleClearQuery();
+    // Already on the browse state (the Discover row, with no family open): the
+    // list is laid out, so go there now. When the family screen is what called
+    // us the list is not mounted yet; its own onLayout consumes the pending flag
+    // and scrolls the moment it is laid out (no timer, no guessing).
+    scrollToFreeList();
+  }, [handleClearQuery, scrollToFreeList]);
 
   /**
    * THE MONEY FACET ON THE DISCOVER SURFACE (v46).
@@ -551,7 +586,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
         freeCount={familyCounts ? familyCounts.total : null}
         eraCounts={familyCounts ? familyCounts.eras : null}
         onClose={() => setSelectedFamily(null)}
-        onBrowseLibrary={handleBrowseLibrary}
+        onBrowseFreeScores={handleBrowseFreeScores}
       />
     );
   }
@@ -699,6 +734,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
           no-match sentence and are always one swipe away — on no-match, while the
           catalog loads, and on error alike. */}
       <ScrollView
+        ref={resultsScrollRef}
         style={styles.resultsScroll}
         contentContainerStyle={styles.resultsContent}
         keyboardShouldPersistTaps="handled"
@@ -771,7 +807,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
                 be dropped on the way into Discover. */}
             <TouchableOpacity
               style={styles.browseLibraryRow}
-              onPress={handleBrowseLibrary}
+              onPress={handleBrowseFreeScores}
               activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel={BROWSE_LIBRARY_ACCESSIBILITY_LABEL}
@@ -832,7 +868,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
         ) : null}
 
         {status === 'ready' ? (
-          <View>
+          <View onLayout={handleFreeListLayout} testID="free-scores-list">
             {header.length > 0 ? (
               <Text style={styles.listHeader}>{header}</Text>
             ) : null}

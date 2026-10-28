@@ -61,6 +61,22 @@ export const CAPTURE_HINT =
   'Hum, whistle or sing your melody — around 12 seconds is plenty.';
 /** The stop action: what it does, not just "stop". */
 export const STOP_CTA_LABEL = 'Stop & review take';
+/**
+ * THE STOP'S OWN LINE (v46 defect fix, owner 10-28).
+ *
+ * The owner's device pass: "once you provide the small sound sample the recording
+ * stays open sampling ambient noise". The STOP existed but sat at the bottom of
+ * the window's scroller, under the meter and the "when you stop" card, so on a
+ * phone it was below the fold and the live meter read as a microphone that could
+ * not be switched off. Two things follow, and both are contract, not styling:
+ *   • the stop is DOCKED — it renders outside the scroller, always on screen
+ *     (MelodyCaptureWindow's `stopDock`, guarded by v46DefectSweep);
+ *   • it says what it does in facts: ends the take and releases the mic, and the
+ *     take is kept (auto-save). Never "pause", never "cancel", never a promise
+ *     that the sound is deleted.
+ */
+export const STOP_CTA_HINT =
+  'Ends the take and switches the microphone off. Your melody is kept.';
 /** Shown while the finished take is decoded and tracked. */
 export const ANALYSING_LINE = 'Writing your melody down…';
 export const ANALYSING_SUBLINE = 'Reading the take note by note';
