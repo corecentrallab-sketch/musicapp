@@ -531,9 +531,20 @@ export function humIsTheHerosSiblingCard(homeSource: string): boolean {
 /**
  * The search field is OUT of the Listen/Hum block and has its OWN Discover band
  * (owner 10-04: the search bar under hum/whistle "does not fit the flow there").
- * Band A may not carry it; the Discover band must carry it, labelled from the
- * band model and wired to the real search. v45: the element is the full-width
- * SEARCH BAR (`styles.findASongBar`, 56 dp, radius 16) rather than the v33 chip.
+ * Band A may not carry it; the Discover band must carry it, wired to the real
+ * search. v45: the element is the full-width SEARCH BAR
+ * (`styles.findASongBar`, 56 dp, radius 16) rather than the v33 chip.
+ *
+ * REWRITTEN FOR v46 (the corrective). The band used to ALSO have to carry a
+ * heading (`BAND_TITLES.discover`) and an honest note (`DISCOVER_BAND_NOTE`),
+ * because it held the whole folded browse block. The browse block (family tiles,
+ * facet chips, free-library row) now lives on the Discover surface —
+ * src/screens/FindPieceScreen.tsx (see services/v46DiscoverHosting.ts) — so the
+ * band on Home is an unlabelled container holding exactly ONE thing: the bar.
+ * The contract that still bites is the one the owner actually asked for: the
+ * search entry is in its OWN band, band A does not carry it, and it is wired to
+ * the real search rather than being a decorative field. The retired heading/note
+ * are asserted ABSENT, so a v45-shaped band cannot creep back onto the door.
  *
  * `homeSource` is src/screens/HomeScreen.tsx.
  */
@@ -545,9 +556,12 @@ export function searchHasItsOwnDiscoverBand(homeSource: string): boolean {
   if (discover.indexOf('style={styles.findASongBar}') < 0) return false;
   if (discover.indexOf('onPress={handleFindAnySong}') < 0) return false;
   if (discover.indexOf('FIND_ANY_SONG_CHIP_LABEL') < 0) return false;
-  if (discover.indexOf('BAND_TITLES.discover') < 0) return false;
-  // The band's own honest line: search is a destination, not a promise.
-  if (discover.indexOf('DISCOVER_BAND_NOTE') < 0) return false;
+  // v46: the band holds the BAR, not the folded browse block. The heading and the
+  // note left with the fold's rows; a band that carries them again is the old
+  // one-page door coming back.
+  const masked = maskComments(homeSource);
+  if (masked.indexOf('BAND_TITLES.discover') >= 0) return false;
+  if (masked.indexOf('DISCOVER_BAND_NOTE') >= 0) return false;
   return true;
 }
 

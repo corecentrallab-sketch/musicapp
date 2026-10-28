@@ -1347,8 +1347,8 @@ function devAffordanceTests(): void {
   );
 
   const closedHandler = home.replace(
-    /const handleOpenFindPiece = useCallback\(\(\) => \{\n\s*setShowFindPiece\(true\);\n\s*\}, \[\]\);/,
-    'const handleOpenFindPiece = useCallback(() => {}, []);',
+    /const handleFindAnySong = useCallback\(\(\) => \{\n\s*setShowFindPiece\(true\);\n\s*\}, \[\]\);/,
+    'const handleFindAnySong = useCallback(() => {}, []);',
   );
   assert(closedHandler !== home, 'the open-handler mutation fixture changed the real handler');
   assertEq(
@@ -1408,7 +1408,10 @@ function rivalHeroMutationTests(): void {
   );
 
   // Defect 2: a SECOND hero — the search entry promoted back to the hero handler.
-  const twoHeroes = home.replace('onPress={handleOpenFindPiece}', 'onPress={handleHeroTap}');
+  // v46: the door's search entry is the "Find a song" bar (the band-C row and its
+  // `handleOpenFindPiece` tap travelled into the Discover surface), so the bar is
+  // what gets promoted here.
+  const twoHeroes = home.replace('onPress={handleFindAnySong}', 'onPress={handleHeroTap}');
   assert(twoHeroes !== home, 'the second-hero mutation fixture changed the real source');
   assertEq(
     hasSingleHeroCta(twoHeroes),
@@ -1458,8 +1461,15 @@ function findAnySongTests(): void {
 
   const home = readAppFile('src/screens/HomeScreen.tsx');
   const copyModule = readAppFile('src/services/frontDoorBands.ts');
+  // v46 corrective: the fold's rows live on the Discover surface now, so the
+  // contract below has to be given its host as well as the door.
+  const findPieceSource = readAppFile('src/screens/FindPieceScreen.tsx');
   assert(home.length > 5000, `read HomeScreen.tsx (${home.length} chars)`);
   assert(copyModule.length > 5000, `read frontDoorBands.ts (${copyModule.length} chars)`);
+  assert(
+    findPieceSource.length > 4000,
+    `read FindPieceScreen.tsx (${findPieceSource.length} chars)`,
+  );
 
   // The chip's copy lives in ONE module, and Home renders it from there.
   assert(
@@ -1561,7 +1571,7 @@ function findAnySongTests(): void {
   console.log('\nband C\'s search row still lands on the real field');
 
   assertEq(
-    findPieceEntryIsSearchRow(home),
+    findPieceEntryIsSearchRow(home, findPieceSource),
     true,
     'the band-C row reads as a search entry and opens the screen behind a real field',
   );
@@ -1578,23 +1588,51 @@ function findAnySongTests(): void {
 
   // v45 slice 2: band C is retired, so the classification mutation is now the
   // FREE-LIBRARY row losing its landing — a row that renders and opens nothing.
-  const libraryDead = home.replace("    navigation.navigate('Library');\n", '');
+  // v46: the row lives on FindPieceScreen and its landing is the handler Home
+  // hands it (`handleBrowseLibraryFromDiscover`), so that is what the mutation
+  // strips — NOT the modern interstitial's own copy of the same navigation.
+  const libraryDead = home.replace(
+    /(const handleBrowseLibraryFromDiscover = useCallback\(\(\) => \{\s*setShowFindPiece\(false\);)\s*navigation\.navigate\('Library'\);/,
+    '$1',
+  );
   assert(libraryDead !== home, 'the library-row mutation changed the real source');
   assertEq(
-    fragmentEntryPointsAreWired(libraryDead),
+    fragmentEntryPointsAreWired(libraryDead, findPieceSource),
     false,
     'MUTATION: a free-library row that opens nothing FAILS the fold contract',
   );
-
-  const rowDead = home.replace(
-    /const handleOpenFindPiece = useCallback\(\(\) => \{\n\s*setShowFindPiece\(true\);\n\s*\}, \[\]\);/,
-    'const handleOpenFindPiece = useCallback(() => {}, []);',
+  // The row is still on the Discover surface, but nothing is handed in to land
+  // on — same defect, seen from the door's side of the prop.
+  const propDropped = home.replace(
+    'onBrowseLibrary={handleBrowseLibraryFromDiscover}',
+    'onBrowseLibrary={undefined}',
   );
-  assert(rowDead !== home, 'the row-handler mutation changed the real handler');
+  assert(propDropped !== home, 'the prop-drop mutation changed the real mount');
   assertEq(
-    findPieceEntryIsSearchRow(rowDead),
+    fragmentEntryPointsAreWired(propDropped, findPieceSource),
     false,
-    'MUTATION: a search row whose handler never opens the screen FAILS (a dead row)',
+    'MUTATION: dropping the free-library destination prop FAILS the fold contract',
+  );
+
+  // The chips' own host: a chip row rendered with no destination is the dead-CTA
+  // class this contract exists for.
+  const chipDead = findPieceSource.replace(
+    'onPress={() => handleFacetChip(facet.id)}',
+    'onPress={undefined}',
+  );
+  assert(chipDead !== findPieceSource, 'the dead-chip mutation changed the real Discover surface');
+  assertEq(
+    fragmentEntryPointsAreWired(home, chipDead),
+    false,
+    'MUTATION: a facet chip with no destination FAILS the fold contract (a dead chip)',
+  );
+  // …and a money facet that no longer reaches the licensed search is a dead END.
+  const moneyDead = findPieceSource.replace(/sheetMusicDirectSearchUrl\(/g, 'someBuilder(');
+  assert(moneyDead !== findPieceSource, 'the money-dead mutation changed the Discover surface');
+  assertEq(
+    fragmentEntryPointsAreWired(home, moneyDead),
+    false,
+    'MUTATION: the money facet leaving the SMD search FAILS the fold contract',
   );
 }
 

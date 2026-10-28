@@ -796,28 +796,37 @@ export function bandRegion(source: string, id: BandId): string {
 }
 
 /**
- * BAND ORDER + BAND IDENTITY, on the REAL screen source (v45 slice 2 rewrite).
+ * BAND ORDER + BAND IDENTITY, on the REAL screen source (v45 slice 2 rewrite,
+ * re-pointed for v46).
  *
- * Three band containers render in the order A → Discover → Today, and nothing
- * else renders as a band:
+ * Three band containers render on the DOOR in the order A → Discover → Today,
+ * and nothing else renders as a band:
  *   • band A holds the one hero button and the hum SIBLING CARD, and NOT the
  *     search entry — the search field is not inside the Listen/Hum block;
- *   • the Discover band holds the door's ONE search entry (the "Find a song"
- *     bar) AND everything the fold moved into it: the facet chips (free
- *     classical / any song → official sheet music, both wired to the search),
- *     the free-library row (→ the Library tab) and the honest beta note that
- *     renders under that row;
+ *   • the Discover band on the door holds the door's ONE search entry (the
+ *     "Find a song" bar) and NOTHING ELSE — v46 moved the folded browse block
+ *     off the door onto the Discover surface (src/screens/FindPieceScreen.tsx),
+ *     which is what "Home and Discover are one page" was about;
  *   • band B ("Today") holds its one card.
+ *
+ * The fold's rows are NOT deleted, they MOVED, so this guard now reads BOTH
+ * files: `homeSource` for the door's bands, `discoverSource` (FindPieceScreen)
+ * for the facet chips (free classical / any song → official sheet music), the
+ * free-library row (→ the Library tab) and the honest beta note under that row.
+ * A row that vanished from both is still a failure — that half survives intact.
  *
  * The two negative halves are the point of the rewrite: NO retired band C (no
  * `BAND_TEST_IDS.browse` container, no "Browse & keep going" heading, no
  * `styles.findPieceBtn` row) and NO second search entry anywhere on the door
- * (the bar is the only one). A band shell that renders nothing is not a band,
- * and a fold that quietly deletes a row instead of moving it fails here.
+ * (the bar is the only one), plus — v46 — NO browse block back on the door
+ * itself (the door's Discover region may not carry the chips or the row).
  */
-export function bandOrderIsIdentifyDiscoverToday(source: string): boolean {
-  const masked = maskComments(source);
-  const order = bandOrderFromSource(source);
+export function bandOrderIsIdentifyDiscoverToday(
+  homeSource: string,
+  discoverSource: string,
+): boolean {
+  const masked = maskComments(homeSource);
+  const order = bandOrderFromSource(homeSource);
   if (order.length !== BAND_ORDER.length) return false;
   if (order.join('|') !== BAND_ORDER.join('|')) return false;
 
@@ -827,7 +836,7 @@ export function bandOrderIsIdentifyDiscoverToday(source: string): boolean {
   if (masked.indexOf('styles.findPieceBtn') >= 0) return false;
 
   // ── band A ──
-  const a = bandRegion(source, 'identify');
+  const a = bandRegion(homeSource, 'identify');
   if (!a) return false;
   // The hero button lives in band A …
   if (a.indexOf('styles.recognitionBtn') < 0) return false;
@@ -843,28 +852,41 @@ export function bandOrderIsIdentifyDiscoverToday(source: string): boolean {
   // … and the SEARCH entry is NOT: it lives in the Discover band (owner 10-04).
   if (a.indexOf('styles.findASongBar') >= 0) return false;
 
-  // ── the Discover band: the ONE search entry + the rows the fold moved here ──
-  const d = bandRegion(source, 'discover');
+  // ── the Discover band ON THE DOOR: the ONE search entry, and nothing else ──
+  const d = bandRegion(homeSource, 'discover');
   if (d.length < 40) return false;
   if (d.indexOf('styles.findASongBar') < 0) return false;
   if (d.indexOf('onPress={handleFindAnySong}') < 0) return false;
-  // The facet chips (the money facet included) — wired to the search screen.
-  if (d.indexOf('styles.bandChip') < 0) return false;
-  if (d.indexOf('onPress={handleOpenFindPiece}') < 0) return false;
-  if (d.indexOf('facets.map(') < 0) return false;
+  // v46: the folded browse block is NOT on the door any more — the chips and the
+  // free-library row belong to the Discover surface (asserted below), so a band
+  // that carries them again is the one-page door coming back.
+  if (d.indexOf('styles.bandChip') >= 0) return false;
+  if (d.indexOf('facets.map(') >= 0) return false;
+  if (d.indexOf('styles.browseLibraryRow') >= 0) return false;
+  if (d.indexOf('{FRONT_DOOR_BETA_NOTE}') >= 0) return false;
+
+  // ── …and the rows the fold moved are STILL WIRED, on their new host ──
+  // The host must be the real Discover surface, not any file that happens to
+  // carry the strings: the hosting half is guarded by v46DiscoverHosting.
+  const discover = maskComments(discoverSource);
+  if (discover.length < 4000) return false;
+  // The facet chips (the money facet included) — every chip has a destination.
+  if (discover.indexOf('styles.bandChip') < 0) return false;
+  if (discover.indexOf('facets.map(') < 0) return false;
+  if (discover.indexOf('onPress={() => handleFacetChip(facet.id)}') < 0) return false;
   // The free-library row …
-  if (d.indexOf('styles.browseLibraryRow') < 0) return false;
-  if (d.indexOf('onPress={handleBrowseLibraryFromModern}') < 0) return false;
-  // … carrying the honest library note WITH it (it left band A in slice 1 and
-  // may not be dropped on the way up into Discover).
-  if (d.indexOf('{FRONT_DOOR_BETA_NOTE}') < 0) return false;
+  if (discover.indexOf('styles.browseLibraryRow') < 0) return false;
+  if (discover.indexOf('onPress={handleBrowseLibrary}') < 0) return false;
+  // … carrying the honest library note WITH it (it left band A in v45 slice 1 and
+  // may not be dropped on the way into Discover).
+  if (discover.indexOf('{FRONT_DOOR_BETA_NOTE}') < 0) return false;
 
   // ── one search entry on the whole door, never two ──
   const barOpenings = (masked.match(/style=\{styles\.findASongBar\}/g) ?? []).length;
   if (barOpenings !== 1) return false;
 
   // ── band B: one card, one tap ──
-  const b = bandRegion(source, 'today');
+  const b = bandRegion(homeSource, 'today');
   if (b.length < 40) return false;
   if (b.indexOf('styles.todayCard') < 0) return false;
   return true;
