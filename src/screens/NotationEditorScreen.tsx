@@ -56,6 +56,15 @@ import {
   isSampleScore,
   transposedCopyTitle,
 } from '../services/transposedScore';
+import {
+  SCORE_PDF_BUSY_LINE,
+  SCORE_PDF_CTA,
+  SCORE_PDF_EMPTY_MESSAGE,
+  SCORE_PDF_HINT,
+  SCORE_PDF_UNAVAILABLE_MESSAGE,
+  scorePdfHandedOverMessage,
+} from '../services/scorePdf';
+import { shareScorePdf } from '../services/scorePdfDevice';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NotationEditor'>;
 
@@ -74,6 +83,17 @@ const SCORE_STAFF_MIN_HEIGHT = 240;
  * guard over the entry point asserts the same words the user sees.
  */
 export const READER_OPEN_LABEL = 'View full score';
+
+/**
+ * THE PRINT / SHARE-AS-PDF CONTROL, HERE IN THE EDITOR (v45 slice 5; owner
+ * 10-24 item 4.1 via the v44 on-device pass: "PDF only in the reader, not the
+ * editor"). The WORDS are the builder's own (`services/scorePdf.ts`), the same
+ * constants the reader footer renders, so the two surfaces cannot describe one
+ * file two different ways and the copy is never re-typed here.
+ */
+export const EDITOR_PDF_CTA = SCORE_PDF_CTA;
+/** What the control does, stated under it — the same honest sentence as the reader. */
+export const EDITOR_PDF_HINT = SCORE_PDF_HINT;
 
 /** Simple AbcScore wrapper used for a library-loaded (already-transposed) copy. */
 function scoreFromAbc(abc: string, title: string): AbcScore {
@@ -103,6 +123,8 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  /** True while the PDF is being built, proved and handed over (v45 slice 5). */
+  const [exportingPdf, setExportingPdf] = useState(false);
   /**
    * THE ABC THIS EDITOR LOADED (v37 item 2, backlog a3a6da0c). Held — not
    * recomputed — because transposition is not invertible to look at: the user
@@ -247,6 +269,53 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
       isSample: isSampleScore(transposedAbc),
     });
   }, [keyLabels, navigation, offset, selected, transposedAbc]);
+
+  /**
+   * PRINT / SHARE THE SCORE AS A PDF, FROM THE EDITOR (v45 slice 5; owner 10-24
+   * item 4.1 via the v44 on-device pass: "PDF only in the reader, not the
+   * editor").
+   *
+   * WHAT IT HANDS OVER, AND WHY THAT IS THE WHOLE SCORE. `transposedAbc` — the
+   * SAME memo the staff above renders and the same text `handleOpenReader`
+   * navigates to, so the editor has one source of truth and no "opened score" vs
+   * "score on screen" drift. It is deliberately NOT the original/loaded ABC
+   * (`sourceAbc`, `selected.abc`): the user has been stepping the key, and this
+   * control must print the key they are reading — the PDF builder lays out every
+   * measure of the ABC it is given (`services/scorePdf.ts`), so the file carries
+   * every bar, not a plain export of the piece as it was opened. `keyLabel:
+   * keyLabels.to` and `offset` travel with it so the page header and the file
+   * name say the key the score is actually in.
+   *
+   * The busy state, the outcome branches and the sentences are the READER's
+   * (services/scorePdf.ts + the same Alert titles), so the two surfaces behave
+   * identically: building → proved → handed to the system share sheet, and an
+   * outage says why instead of looking dead. Pure local export: no network, no
+   * retailer, no URL of any kind, and nothing is paywalled.
+   */
+  const handleExportPdf = useCallback(async () => {
+    if (exportingPdf) return;
+    if (!selected) return;
+    setExportingPdf(true);
+    try {
+      const outcome = await shareScorePdf({
+        abc: transposedAbc,
+        title: selected.title,
+        keyLabel: keyLabels.to,
+        offset,
+      });
+      if (outcome.status === 'shared') {
+        Alert.alert('PDF', scorePdfHandedOverMessage(outcome.bars));
+      } else if (outcome.status === 'empty') {
+        Alert.alert('PDF', SCORE_PDF_EMPTY_MESSAGE);
+      } else if (outcome.status === 'unavailable') {
+        Alert.alert('PDF', SCORE_PDF_UNAVAILABLE_MESSAGE);
+      } else if (outcome.message) {
+        Alert.alert('PDF', outcome.message);
+      }
+    } finally {
+      setExportingPdf(false);
+    }
+  }, [exportingPdf, keyLabels, offset, selected, transposedAbc]);
 
   const handleSave = useCallback(async () => {
     if (!selected) return;
@@ -485,6 +554,34 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
           <Ionicons name="expand-outline" size={16} color={theme.accent} />
           <Text style={styles.readerBtnText}>{READER_OPEN_LABEL}</Text>
         </Pressable>
+
+        {/* PRINT / SHARE AS PDF, WITHOUT LEAVING THE EDITOR (v45 slice 5). The
+            reader footer has carried this since v44; the owner's on-device pass
+            found the editor — where the transposing actually happens — had no
+            such control. It sits directly under "View full score" because it is
+            the same score, exported instead of opened, and it exports
+            `transposedAbc`: the whole piece in the key on the chip above, not an
+            excerpt and not the key the piece was opened in. No edition claim, no
+            retailer, no link — a local file handed to the system share sheet. */}
+        <Pressable
+          style={({ pressed }) => [styles.pdfBtn, pressed && styles.pdfBtnPressed]}
+          onPress={handleExportPdf}
+          disabled={exportingPdf}
+          accessibilityRole="button"
+          accessibilityLabel={EDITOR_PDF_CTA}
+          accessibilityState={{ disabled: exportingPdf }}
+          testID="notation-editor-print-pdf"
+        >
+          {exportingPdf ? (
+            <ActivityIndicator size="small" color={theme.accent} />
+          ) : (
+            <Ionicons name="print-outline" size={16} color={theme.accent} />
+          )}
+          <Text style={styles.pdfBtnText}>
+            {exportingPdf ? SCORE_PDF_BUSY_LINE : EDITOR_PDF_CTA}
+          </Text>
+        </Pressable>
+        <Text style={styles.pdfHint}>{EDITOR_PDF_HINT}</Text>
       </View>
 
       {/* Save transposed copy */}
@@ -779,6 +876,34 @@ const baseStyles = StyleSheet.create({
     color: '#e94560',
     fontSize: 14,
     fontWeight: '700',
+  },
+  /** The print / share-as-PDF control (v45 slice 5) — the reader's secondary shape. */
+  pdfBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 8,
+    backgroundColor: '#16213e',
+    borderColor: '#0f3460',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  pdfBtnPressed: {
+    opacity: 0.8,
+  },
+  pdfBtnText: {
+    color: '#e94560',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  /** What that control does — under the control, never in a tooltip. */
+  pdfHint: {
+    color: '#8a8ab0',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
   },
   saveBtn: {
     flexDirection: 'row',
