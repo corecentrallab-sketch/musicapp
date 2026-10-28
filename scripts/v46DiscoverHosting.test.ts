@@ -91,6 +91,12 @@ function maskedHits(source: string, markers: readonly string[]): string[] {
   return markers.filter((marker) => masked.indexOf(marker) >= 0);
 }
 
+/** The markers a source is MISSING (the (b) direction: content must be there). */
+function missingFrom(source: string, markers: readonly string[]): string[] {
+  const masked = maskSource(source);
+  return markers.filter((marker) => masked.indexOf(marker) < 0);
+}
+
 /** The door's Discover band container, as it really renders (mutation anchor). */
 const HOME_DISCOVER_BAND = '<View style={styles.band} testID={BAND_TEST_IDS.discover}>';
 
@@ -191,8 +197,8 @@ function liveScanTests(): void {
   const homeHits = maskedHits(home, HOME_BANNED_MARKERS);
   assertEq(homeHits.join(', '), '',
     'the door carries NO browse-block CODE (comments are masked and allowed)');
-  const findHits = maskedHits(findPiece, DISCOVER_CONTENT_MARKERS);
-  assertEq(findHits.join(', '), '',
+  const findMissing = missingFrom(findPiece, DISCOVER_CONTENT_MARKERS);
+  assertEq(findMissing.join(', '), '',
     'the Discover surface carries EVERY browse-block marker');
 
   assertEq(homeIsMinimalVariantA(home), true, '(a) the shipped Home is minimal Variant A');
@@ -248,7 +254,7 @@ function mutationProbes(): void {
     false,
     'MUTATION (ii): deleting <DiscoverStyles from FindPieceScreen FAILS (b)',
   );
-  assert(maskedHits(noGrid, DISCOVER_CONTENT_MARKERS).indexOf('<DiscoverStyles') >= 0,
+  assert(missingFrom(noGrid, DISCOVER_CONTENT_MARKERS).indexOf('<DiscoverStyles') >= 0,
     'MUTATION (ii) trips on the exact missing marker: <DiscoverStyles');
 
   // ── (iii) the facet chip row + the free-library copy come back to the door ──
