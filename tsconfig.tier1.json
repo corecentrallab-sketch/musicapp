@@ -213,6 +213,8 @@
     "src/services/v46DiscoverHosting.ts",
     "scripts/v46DiscoverHosting.test.ts",
     "src/services/v46DefectSweep.ts",
-    "scripts/v46DefectSweep.test.ts"
+    "scripts/v46DefectSweep.test.ts",
+    "src/services/v46RedLineRail.ts",
+    "scripts/v46RedLineRail.test.ts"
   ]
 }

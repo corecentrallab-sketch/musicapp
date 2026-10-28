@@ -388,7 +388,17 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
         )}
       </View>
 
-      {/* Action buttons */}
+      {/* Action buttons — the page's TWO stacked-on-a-row CTAs (open the score,
+          share). ⚠️ THIS ROW HOLDS EXACTLY THOSE TWO `flex: 1` CONTROLS AND
+          NOTHING ELSE. A third block whose width is intrinsic (a card, or a line
+          of hint text that does not wrap) does not shrink — it takes its
+          max-content width, which squeezes both `flex: 1` buttons down to their
+          padding minimum and pushes the Share button off the right edge of the
+          screen. That is the owner's v46 red bar: the accent-filled "🎵 View
+          Sheet Music" button collapsed to its 16dp×2 padding (a 32dp-wide red
+          pill down the left of an opened piece, label clipped to nothing) while
+          its height stretched to the row's tallest child. Full-width blocks
+          STACK BELOW this row. Guarded by services/v46RedLineRail.ts. */}
       <View style={styles.actions}>
         {piece.sheetMusicUrl ? (
           <TouchableOpacity
@@ -469,18 +479,6 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           </View>
         )}
 
-        {/* ── SAVE TO LIBRARY (v37 item 4) ──
-            The free hosted score this page is offering, kept on the device. The
-            URL handed over is `piece.sheetMusicUrl` — never a re-derived or
-            guessed edition — and the component's own gate means a piece with no
-            score renders no control at all (the dead-button rule). */}
-        <SaveToLibraryButton
-          pieceId={piece.id}
-          title={piece.title}
-          composer={piece.composer ?? null}
-          scoreUrl={piece.sheetMusicUrl ?? null}
-        />
-
         <TouchableOpacity
           style={[styles.shareBtn, sharing && styles.shareBtnDisabled]}
           onPress={handleShare}
@@ -491,6 +489,28 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* -- SAVE TO LIBRARY (v37 item 4) --
+          The free hosted score this page is offering, kept on the device. The
+          URL handed over is `piece.sheetMusicUrl` - never a re-derived or
+          guessed edition - and the component's own gate means a piece with no
+          score renders no control at all (the dead-button rule).
+
+          OUTSIDE the action row above, on purpose (v46 red-bar fix). This block
+          is `alignSelf: 'stretch'` around ONE line of plain hint text, so as a
+          ROW child it claimed that line's ~380dp max-content width: the two
+          `flex: 1` CTAs beside it were squeezed to their 16dp x 2 padding - the
+          accent-filled "View Sheet Music" button became the owner's 32dp red
+          pill down the left of the open piece, its label clipped to nothing - and
+          the Share button was pushed off the right edge of the screen entirely.
+          As its own block the hint WRAPS inside the page's 20dp padding and both
+          CTAs keep their half of the row. Guarded by services/v46RedLineRail.ts. */}
+      <SaveToLibraryButton
+        pieceId={piece.id}
+        title={piece.title}
+        composer={piece.composer ?? null}
+        scoreUrl={piece.sheetMusicUrl ?? null}
+      />
 
       {/* ── THE NEXT REAL PATHS (rendered only in the honest state above) ──
           The same condition the card's final arm uses, so the words and the
