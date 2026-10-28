@@ -107,15 +107,8 @@ import {
 import {
   BAND_TEST_IDS,
   BAND_TITLES,
-  BROWSE_LIBRARY_ACCESSIBILITY_LABEL,
-  BROWSE_LIBRARY_HINT,
-  BROWSE_LIBRARY_LABEL,
-  DISCOVER_BAND_NOTE,
   FIND_ANY_SONG_CHIP_ACCESSIBILITY_LABEL,
   FIND_ANY_SONG_CHIP_LABEL,
-  FRONT_DOOR_BETA_NOTE,
-  FRONT_DOOR_FACET_FLAGS,
-  bandFacets,
   todayCardAccessibilityLabel,
 } from '../services/frontDoorBands';
 import {
@@ -123,17 +116,20 @@ import {
   TODAYS_PIECE_NO_PIECE_LINE,
   TODAYS_PIECE_NO_PIECE_TITLE,
 } from '../services/uxrV41Contract';
-// ── v45 slice 3b: THE FIVE STYLE FAMILIES (owner-ratified all-genres scope) ──
-// Discover renders BROWSE BY STYLE from the family table in
-// services/genreFamilies.ts (never a classical-only grid), every tile opens the
-// FamilyScreen, and the counts come from the real catalog via genreCountsStore.
-// The surface itself is components/DiscoverStyles.tsx so this screen only wires
-// it; familyTilesAreBackedByRealContent() reads THIS file's source to prove the
-// tiles, the tap and the family-screen mount are all really here.
-import { DiscoverStyles } from '../components/DiscoverStyles';
-import { FamilyScreen } from '../components/FamilyScreen';
-import { DISCOVER_LAYOUT, type EraCounts, type FamilyId } from '../services/genreFamilies';
-import { loadGenreCounts } from '../services/genreCountsStore';
+// ── v46 CORRECTIVE: THE FIVE STYLE FAMILIES ARE NOT THIS SCREEN'S ────────────
+// v45 slice 3b put BROWSE BY STYLE, the family grid, the money facet chips and
+// the free-library row INSIDE Home's ScrollView, so the owner's device pass read
+// the door as "home and discover are on one page". The ratified design says Home
+// stays MINIMAL (hero, quota line, Find-a-song bar, Today's piece, tab bar) and
+// Discover is FindPieceScreen EXTENDED (design sheet, §4: "Discover (=
+// FindPieceScreen, extended)"; V45-HOME-NOTES.md:199).
+//
+// So this screen imports NONE of it any more — no DiscoverStyles, no
+// FamilyScreen, no family table, no genre counts. The grid, the chips and the
+// library row live in src/screens/FindPieceScreen.tsx, reached by the one
+// "Find a song" bar below. The hosting is guarded in BOTH directions by
+// src/services/v46DiscoverHosting.ts: it fails if the grid/heading/money rows
+// come back here, and it fails if the search screen loses them.
 // The categories a result is allowed to claim — never a hardcoded genre.
 import { PUBLIC_DOMAIN_GENRE } from '../services/resultGenre';
 // The PD-library cross-check on the modern route (owner 09-25, build #3): a
@@ -274,15 +270,11 @@ export const HomeScreen: React.FC = () => {
   const [showModernSearch, setShowModernSearch] = useState(false);
   // "Find a piece" — catalog search by title/composer (no mic involved).
   const [showFindPiece, setShowFindPiece] = useState(false);
-  // ── v45 slice 3b: the Discover style surface's real numbers ──
-  // `familyCounts` starts null and stays null if the catalog cannot be read, so
-  // every count on the tiles is OPTIONAL by construction: no data → no numbers.
-  const [familyCounts, setFamilyCounts] = useState<{
-    total: number;
-    eras: EraCounts | null;
-  } | null>(null);
-  // The family whose screen is open, or null. One in-place flow, one family.
-  const [selectedFamily, setSelectedFamily] = useState<FamilyId | null>(null);
+  // ── v46 CORRECTIVE: NO FAMILY STATE ON HOME ──
+  // `familyCounts` and `selectedFamily` (v45 slice 3b) moved to
+  // src/screens/FindPieceScreen.tsx together with the grid that reads them. Home
+  // renders no tile, so it needs no count and no open-family flag: the door is
+  // minimal by construction, not by a conditional.
 
   // ── Medals (owner-approved 08-25 retention build) ──
   // Only the freshly-earned medal shown as a NON-BLOCKING toast stays on Home:
@@ -333,20 +325,9 @@ export const HomeScreen: React.FC = () => {
   }, []);
 
   // ── The Discover style surface's REAL numbers (v45 slice 3b) ──
-  // One fire-and-forget walk of the catalog, cached for the session by
-  // services/genreCountsStore. It NEVER blocks the door and never fails loudly:
-  // no data means the tiles and the era chips render their names without counts,
-  // which is exactly what a backend that has not shipped `genre` yet produces.
-  useEffect(() => {
-    let alive = true;
-    void loadGenreCounts().then((counts) => {
-      if (!alive || !counts) return;
-      setFamilyCounts({ total: counts.total, eras: counts.eras });
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  // RETIRED FROM HOME (v46): the catalog walk that feeds the family tiles and
+  // their era counts now lives in FindPieceScreen, where the tiles render. Home
+  // fetches nothing for a surface it no longer owns.
 
   /**
    * The one medal check Home makes. `checkAndAwardMedals` is idempotent — a medal
@@ -1065,9 +1046,9 @@ export const HomeScreen: React.FC = () => {
   // search by title/composer — no microphone involved, so it also works for a
   // learner who just knows the name of the piece and hasn't got the music
   // playing (or can't hum it). ──
-  const handleOpenFindPiece = useCallback(() => {
-    setShowFindPiece(true);
-  }, []);
+  // v46: `handleOpenFindPiece` (the facet chips' old tap) is GONE with the chips.
+  // The ONE remaining way into the search screen from Home is the "Find a song"
+  // bar's `handleFindAnySong` below — one search entry on the whole door.
 
   // ── The medal SHARE card (owner-approved 08-25) ──
   /** Open the achievement card for the medal that just unlocked. */
@@ -1145,6 +1126,16 @@ export const HomeScreen: React.FC = () => {
     navigation.navigate('Library');
   }, [navigation]);
 
+  // ── v46 CORRECTIVE: the Discover surface's free-library row ──
+  // The row moved into FindPieceScreen with the rest of Discover, so the screen
+  // takes the destination as a prop. It closes the in-place search flow BEFORE
+  // switching tabs, so returning to the Home tab lands on the door (never on a
+  // half-open search) — the same one-flow-at-a-time rule every other door keeps.
+  const handleBrowseLibraryFromDiscover = useCallback(() => {
+    setShowFindPiece(false);
+    navigation.navigate('Library');
+  }, [navigation]);
+
   // From the modern interstitial: the find-a-song SEARCH for a match the backend
   // could NOT link to a licensed retailer (§E.2 row 2, bundle E). It reuses the
   // EXISTING `showFindPiece` flag and the EXISTING `FindPieceScreen` mount — one
@@ -1217,22 +1208,10 @@ export const HomeScreen: React.FC = () => {
     setShowFindPiece(true);
   }, []);
 
-  // ── v45 slice 3b: every family tile opens its family screen ──
-  // ONE handler for all five tiles, carrying the family id from the table — a
-  // tile is never a no-op and never opens something generic. The screen decides
-  // what an empty family resolves to (money path first, free library under it),
-  // so this handler cannot disagree with the design.
-  const handleOpenFamily = useCallback((id: FamilyId) => {
-    setSelectedFamily(id);
-  }, []);
-
-  // "Browse what is free now" on a family screen → the Library tab, the same
-  // destination the modern interstitial's free-library lever uses. Closing the
-  // family screen first keeps exactly one in-place flow mounted at a time.
-  const handleBrowseLibraryFromFamily = useCallback(() => {
-    setSelectedFamily(null);
-    navigation.navigate('Library');
-  }, [navigation]);
+  // ── v46 CORRECTIVE: the family tiles are not Home's ──
+  // `handleOpenFamily` and `handleBrowseLibraryFromFamily` moved to
+  // src/screens/FindPieceScreen.tsx with the grid and the family-screen mount they
+  // serve. Home keeps no handler for a screen it cannot reach.
 
   // ── Permission denied state ──
   if (recorder.error && !recorder.isRecording) {
@@ -1266,7 +1245,8 @@ export const HomeScreen: React.FC = () => {
   // keyboard is absent (frontDoorBands.guitarContentAvailable is false until a
   // screen surfaces the audited PD guitar batch), and an absent facet is the
   // honest answer: no "coming soon" chip, ever.
-  const facets = bandFacets(FRONT_DOOR_FACET_FLAGS);
+  // v46: the `facets` list moved to src/screens/FindPieceScreen.tsx with the chip
+  // row that renders it. Home evaluates no facet and renders no chip.
 
   // Positive framing only (owner rule, 2026-09-17): the streak line celebrates
   // what the streak is, it never threatens the user with losing it. The card
@@ -1295,27 +1275,24 @@ export const HomeScreen: React.FC = () => {
     );
   }
   // Catalog search by name — its own full-screen flow, no recorder.
+  // v46: this IS the Discover surface (design: "Discover = FindPieceScreen,
+  // extended"), so the free-library row inside it is handed the same Library
+  // destination the row had on the door.
   if (showFindPiece) {
-    return <FindPieceScreen onClose={() => setShowFindPiece(false)} />;
-  }
-
-  // ── v45 slice 3b: THE FAMILY SCREEN (one of the five style families) ──
-  // The destination of EVERY Discover style tile. Rendered in place, exactly
-  // like the other full-screen flows above, and it owns its own BACK handling
-  // (FamilyScreen → useHardwareBack) so a hardware BACK returns HERE, never out
-  // of the app. Its first row is the money path for a family with no free
-  // scores; the free library is always the row beneath it.
-  if (selectedFamily) {
     return (
-      <FamilyScreen
-        family={selectedFamily}
-        freeCount={familyCounts ? familyCounts.total : null}
-        eraCounts={familyCounts ? familyCounts.eras : null}
-        onClose={() => setSelectedFamily(null)}
-        onBrowseLibrary={handleBrowseLibraryFromFamily}
+      <FindPieceScreen
+        onClose={() => setShowFindPiece(false)}
+        onBrowseLibrary={handleBrowseLibraryFromDiscover}
       />
     );
   }
+
+  // ── v46 CORRECTIVE: THE FAMILY SCREEN IS NOT MOUNTED HERE ──
+  // v45 slice 3b mounted FamilyScreen as one of Home's in-place flows. The tiles
+  // that open it now live on the Discover surface, so the mount moved with them
+  // into src/screens/FindPieceScreen.tsx (it keeps its own hardware-BACK handling
+  // there, exactly as it had here). Nothing about the money path changed: an
+  // empty family's screen still leads with its live official-editions search.
 
   // NOTE (v45 slice 2, owner 10-26): the practice-week view and the achievements
   // screen are not Home's in-place flows any more — Settings mounts BOTH behind
@@ -1585,26 +1562,41 @@ export const HomeScreen: React.FC = () => {
             babel pre-flight caught and the tier-1 tsc run could not, because
             tsconfig.tier1.json never includes the screens. */}
 
-        {/* ══ DISCOVER BAND (v33 §E + §F3b, owner 10-04) ══
-            The "Find a song" search bar has its OWN band now, directly under
-            the Listen/Hum pair — it was inside band A beside the hum row, which
-            the owner's device pass read as "does not fit the flow there". One
-            entry, one job: open the real search field (FindPieceScreen), which is
-            the app's money path (free scores + the official sheet music). Search
-            is therefore reachable WITHOUT entering the hum flow, and the
-            Listen/Hum block contains only the two listening doors. */}
+        {/* ══ THE ONE SEARCH BAR — HOME'S DOOR TO DISCOVER (v45 Variant A; v46 corrective) ══
+            It sat inside band A beside the hum row, which the owner's device pass
+            read as "does not fit the flow there" (v33 §E), so it has its own band
+            directly under the Listen/Hum pair: one entry, one job. It opens the
+            real search field (FindPieceScreen), which is the app's money path
+            (free scores + the official sheet music), so search is reachable
+            WITHOUT entering the hum flow.
+
+            v46 CORRECTIVE — WHAT IS *NOT* HERE ANY MORE. The band used to carry a
+            heading and its honest note, then BROWSE BY STYLE (the five family
+            tiles), the money facet chips and the free-library row. That put the
+            Discover surface INSIDE Home and the owner saw exactly that on device
+            ("home and discover are on one page"). The ratified design keeps Home
+            to eight elements — wordmark, subtitle, section label, hero pair,
+            quota line, this bar, Today's piece, tabs — and Discover is
+            FindPieceScreen EXTENDED (V45-HOME-NOTES.md:199). So the heading, the
+            note, the grid, the chips and the row all MOVED to
+            src/screens/FindPieceScreen.tsx, one tap away behind this bar.
+
+            The empty band container stays, unlabelled, for two reasons: it keeps
+            the bar's own spacing, and `BAND_TEST_IDS.discover` is how
+            services/frontDoorBands.ts proves the door's band ORDER
+            (identify → discover → today). It renders a bar and nothing else —
+            src/services/v46DiscoverHosting.ts fails the gate if any Discover
+            content comes back inside it. */}
         <View style={styles.band} testID={BAND_TEST_IDS.discover}>
-          <Text style={styles.bandTitle}>{BAND_TITLES.discover}</Text>
-          <Text style={styles.discoverNote}>{DISCOVER_BAND_NOTE}</Text>
           {/* v45 (owner 10-26, designer notes §3 row 3 + §7): the v33 chip is a
               full-width SEARCH BAR — 56 dp tall, radius 16, card fill + a 1 dp
               hairline, a drawn magnifier at the left and a chevron at the right,
               labelled "Find a song". It is the SAME wiring as the chip it
               replaces: handleFindAnySong → setShowFindPiece(true) → the existing
               FindPieceScreen, whose field mounts with autoFocus, so "one tap to
-              type" is preserved exactly. It also becomes Discover's own door
-              (the mock's "one search bar"), which is why the band's chip row is
-              gone. Slice 2 folds band C's duplicate search row into this bar. */}
+              type" is preserved exactly. It is also Discover's own door (the
+              mock's "one search bar"), and v46 makes it the ONLY one: the facet
+              chips that also opened this screen travelled INTO it. */}
           <TouchableOpacity
             style={styles.findASongBar}
             onPress={handleFindAnySong}
@@ -1619,83 +1611,7 @@ export const HomeScreen: React.FC = () => {
             <Text style={styles.findASongBarLabel}>{FIND_ANY_SONG_CHIP_LABEL}</Text>
             <Text style={styles.findASongBarChevron}>›</Text>
           </TouchableOpacity>
-
-          {/* ── BROWSE BY STYLE — THE FIVE STYLE FAMILIES (v45 slice 3b) ─────
-              Owner-ratified all-genres scope (10-26): the app is for music
-              enthusiasts and the library is public domain, so Discover shows
-              all five families — Classical · Early Jazz & Blues · Folk &
-              Traditional · Patriotic & Holiday · Vaudeville, Opera & Parlor —
-              and NEVER a classical-only grid. The six catalogue eras are chips
-              INSIDE the Classical tile (hero-classical layout), not peers of the
-              families. Four families hold no free scores today; their tiles look
-              exactly like a populated one, say "Official sheet music", and open
-              a family screen whose first row is the live official-editions
-              search (money path) with the free library one row below it. No
-              toast, no grey-out, no no-op tile — every family resolves.
-              Counts are rendered only when genreCountsStore derived them from
-              real rows; with no data the tiles show names and no numbers. */}
-          <DiscoverStyles
-            layout={DISCOVER_LAYOUT}
-            freeCount={familyCounts ? familyCounts.total : null}
-            eraCounts={familyCounts ? familyCounts.eras : null}
-            onOpenFamily={handleOpenFamily}
-          />
-
-          {/* ── THE BAND-C FOLD (v45 slice 2, owner 10-26) ──
-              Band C ("Browse & keep going") is GONE as a band. Everything in it
-              that was not a second search entry moved up here into Discover, so
-              nothing that was reachable became unreachable:
-                · the facet chips (🎼 Free classical & public-domain, 🛒 Any song
-                  → official sheet music) — the money facet included;
-                · the free-library row and, travelling WITH it, the honest beta
-                  note that renders under that row;
-              and the ONE thing that did die is band C's own "Search by title or
-              composer" row: the bar above opens exactly the same screen, and the
-              owner's 10-26 call is ONE search entry on the whole door.
-              The three retention chips that closed band C — the streak state,
-              🏅 Achievements and 📋 This Week — are SETTINGS entries now (the
-              "Your practice" group), never a Home chip. */}
-          {facets.length > 0 && (
-            <View style={styles.bandChipRow}>
-              {facets.map((facet) => (
-                <TouchableOpacity
-                  key={facet.id}
-                  style={styles.bandChip}
-                  onPress={handleOpenFindPiece}
-                  activeOpacity={0.6}
-                  accessibilityRole="button"
-                  accessibilityLabel={facet.label}
-                >
-                  <Text style={styles.bandChipText}>{facet.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* The free library — the hook (free content earns the trust the paid
-              paths live on). Same destination the modern interstitial's own
-              "browse the free library" lever uses: handleBrowseLibraryFromModern
-              → the Library tab. */}
-          <TouchableOpacity
-            style={styles.browseLibraryRow}
-            onPress={handleBrowseLibraryFromModern}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={BROWSE_LIBRARY_ACCESSIBILITY_LABEL}
-          >
-            <Text style={styles.browseLibraryEmoji}>📚</Text>
-            <View style={styles.browseLibraryInfo}>
-              <Text style={styles.browseLibraryTitle}>{BROWSE_LIBRARY_LABEL}</Text>
-              <Text style={styles.browseLibraryHint}>{BROWSE_LIBRARY_HINT}</Text>
-              {/* The honest library-size note travels WITH this row: it left the
-                  hero in slice 1 and may not be dropped on the way up into
-                  Discover. Same constant, same render. */}
-              <Text style={styles.browseLibraryBetaNote}>{FRONT_DOOR_BETA_NOTE}</Text>
-            </View>
-            <Text style={styles.browseLibraryChevron}>›</Text>
-          </TouchableOpacity>
         </View>
-
 
         {/* ══ BAND B — TODAY ══ (re-flow bundle D, owner 10-02)
             ONE card, ONE destination every day. It replaces four overlapping
@@ -1948,12 +1864,6 @@ const baseStyles = StyleSheet.create({
   // teach line under it are GONE — the hum door is the right-hand PEER panel
   // above, painted by src/components/HeroSplitPanel.tsx. `humEntryBtn` is now
   // nothing but that panel's slot; the contract marker name is kept on purpose.
-  discoverNote: {
-    fontSize: 12,
-    color: '#a0a0b8',
-    marginBottom: 10,
-  },
-
   // Recording indicator
   recordingIndicator: {
     width: 16,
@@ -2018,27 +1928,8 @@ const baseStyles = StyleSheet.create({
   // A wrapping row of small chips / entries. flexWrap matters: the hum label is
   // long on purpose (it names all three capture modes) and must reflow rather
   // than clip on a 360dp screen.
-  bandChipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
-  },
-  bandChip: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  // A chip that is also a tap (the band-C "This Week" chip).
-  bandChipText: {
-    color: '#a0a0b8',
-    fontSize: 12,
-    fontWeight: '600',
-  },
+  // v46: `bandChipRow` / `bandChip` / `bandChipText` moved to FindPieceScreen with
+  // the facet chips that used them (Discover is not Home's surface any more).
   // THE SEARCH BAR (v45, designer notes §7): 358 × 56 dp at a 390 dp screen,
   // radius 16, CARD fill + 1 dp CARD_LINE hairline, the magnifier 20 dp at x+26,
   // the label 15 dp at x+48 and the chevron 20 dp in from the right edge.
@@ -2184,48 +2075,9 @@ const baseStyles = StyleSheet.create({
   },
   // Band C's free-library row — a row, not a chip: it is the hook the paid paths
   // live on, so it keeps the quiet card treatment the medals entry no longer uses.
-  browseLibraryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#16213e',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginTop: 10,
-    minHeight: 56,
-  },
-  browseLibraryEmoji: {
-    fontSize: 20,
-    marginRight: 12,
-  },
-  browseLibraryInfo: {
-    flex: 1,
-  },
-  browseLibraryTitle: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  browseLibraryHint: {
-    color: '#a0a0b8',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  browseLibraryChevron: {
-    color: '#4ecdc4',
-    fontSize: 22,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  // The relocated beta note (v45): small and quiet, under the row's own hint.
-  browseLibraryBetaNote: {
-    color: '#6a6a8a',
-    fontSize: 10.5,
-    lineHeight: 15,
-    marginTop: 4,
-  },
+  // v46: the row (and its emoji / info / title / hint / chevron / beta-note
+  // styles) MOVED to src/screens/FindPieceScreen.tsx with the Discover surface it
+  // belongs to. Home renders no library row; the Library tab is in the tab bar.
 
   bottomSpacer: {
     height: 60,

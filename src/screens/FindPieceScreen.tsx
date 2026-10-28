@@ -75,8 +75,36 @@ import { queryVariants, rankFuzzyMatches, retryNoticeLine, SUBSTITUTE_MIN_SCORE 
 import {
   EXTERNAL_NO_MATCH_HINT,
   externalSearchSection,
+  sheetMusicDirectSearchUrl,
 } from '../services/searchExternal';
 import { SearchExternalSection } from '../components/SearchExternalSection';
+// ── v46 CORRECTIVE: THIS SCREEN **IS** DISCOVER ──────────────────────────────
+// The ratified v45 design puts the genre surface HERE, not on Home: "Home
+// (minimal) → Discover (five families + money rows) → family screen", and
+// V45-HOME-NOTES.md:199 spells Discover out as "FindPieceScreen, extended" —
+// title row, search field, BROWSE BY STYLE, the five family tiles, then the money
+// rows ("Any song — official sheet music", "Browse the free library").
+//
+// v45 slice 3b shipped that block inside HomeScreen's ScrollView instead, so the
+// owner's device pass read the door as "home and discover are on one page". It
+// moved here in v46, handlers, real counts and family-screen mount included.
+// Everything rendered below still comes from services/genreFamilies.ts (pure,
+// tier1-tested) — this screen wires it and invents no copy, no count and no URL.
+// The hosting is guarded in BOTH directions by services/v46DiscoverHosting.ts:
+// the gate fails if these markers come back to HomeScreen, AND it fails if this
+// screen loses the grid, the money chips or the family-screen mount.
+import { DiscoverStyles } from '../components/DiscoverStyles';
+import { FamilyScreen } from '../components/FamilyScreen';
+import { DISCOVER_LAYOUT, type EraCounts, type FamilyId } from '../services/genreFamilies';
+import { loadGenreCounts } from '../services/genreCountsStore';
+import {
+  BROWSE_LIBRARY_ACCESSIBILITY_LABEL,
+  BROWSE_LIBRARY_HINT,
+  BROWSE_LIBRARY_LABEL,
+  FRONT_DOOR_BETA_NOTE,
+  bandFacets,
+  FRONT_DOOR_FACET_FLAGS,
+} from '../services/frontDoorBands';
 // v43 ITEM C4 — THE CAMERA DOOR IS GONE FROM THIS SCREEN (owner decision 10-20).
 // The app has ONE way to photograph a score: Library "+" → Add Music → Scan
 // score, which saves the pages to the library AND resolves a cover's title. The
@@ -121,6 +149,31 @@ interface FindPieceScreenProps {
   autoSearchNotice?: { headline: string; dismissLabel: string } | null;
   /** The way out of a lookup the app started: back to the scan, in control. */
   onDismissAutoSearch?: () => void;
+  /**
+   * v46 CORRECTIVE — THE DISCOVER SURFACE'S FREE-LIBRARY ROW.
+   *
+   * The "📚 Browse the free library" row moved here from Home with the rest of
+   * Discover. Its destination used to be a handler Home owned; the screen now
+   * takes it as a prop so the row keeps the SAME destination (the Library tab)
+   * without this screen importing navigation. When a caller passes nothing the
+   * row falls back to `onClose` — the library is the caller's own screen in that
+   * case (LibraryScreen mounts this screen), so the row still lands somewhere
+   * real and never becomes a dead tap.
+   */
+  onBrowseLibrary?: () => void;
+  /**
+   * v46 CORRECTIVE — whether this mount is a DISCOVER surface at all.
+   *
+   * Default TRUE (omit it): the Home door's hand-off, where the design says
+   * Discover = this screen. Pass FALSE to get the plain search screen.
+   *
+   * The scan / OCR flows do not need to pass anything and are not disturbed:
+   * they hand in a query (`initialQuery` and, when the app started the lookup,
+   * `autoSearchNotice`), and the Discover block only renders on an EMPTY query —
+   * the browse state. A query means the user is searching, so the results (and
+   * the retailer section that always accompanies them) get the screen.
+   */
+  showDiscover?: boolean;
 }
 
 export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
@@ -128,6 +181,8 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
   initialQuery,
   autoSearchNotice,
   onDismissAutoSearch,
+  onBrowseLibrary,
+  showDiscover = true,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   /**
@@ -179,6 +234,23 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
   // Guards against a stale response replacing newer results.
   const searchRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
+  // v46: the field's own ref, so a Discover money row can put the cursor in it
+  // when there is nothing to search yet (no invented query, no store redirect).
+  const searchInputRef = useRef<TextInput>(null);
+
+  // ── v46 CORRECTIVE: the Discover surface's real numbers (moved from Home) ──
+  // `familyCounts` starts null and stays null if the catalog cannot be read, so
+  // every count on a tile is OPTIONAL by construction: no data → no numbers.
+  const [familyCounts, setFamilyCounts] = useState<{
+    total: number;
+    eras: EraCounts | null;
+  } | null>(null);
+  // The family whose screen is open, or null. One in-place flow, one family.
+  const [selectedFamily, setSelectedFamily] = useState<FamilyId | null>(null);
+  // The facet chips whose backing content exists today (the guitar facet stays
+  // OFF: frontDoorBands.guitarContentAvailable is false until a screen surfaces
+  // the audited PD guitar batch — an absent facet beats a "coming soon" chip).
+  const facets = bandFacets(FRONT_DOOR_FACET_FLAGS);
 
   // Debounced catalog search: one request per settled query.
   useEffect(() => {
@@ -315,6 +387,90 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
     setRetailerUrl(null);
   }, []);
 
+  // ── v46 CORRECTIVE: the Discover style surface's REAL numbers ──
+  // One fire-and-forget walk of the catalog, cached for the session by
+  // services/genreCountsStore. It NEVER blocks the screen and never fails loudly:
+  // no data means the tiles and the era chips render their names without counts,
+  // which is exactly what a backend that has not shipped `genre` yet produces.
+  useEffect(() => {
+    let alive = true;
+    void loadGenreCounts().then((counts) => {
+      if (!alive || !counts) return;
+      setFamilyCounts({ total: counts.total, eras: counts.eras });
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // ── v46 CORRECTIVE: every family tile opens its family screen ──
+  // ONE handler for all five tiles, carrying the family id from the table — a
+  // tile is never a no-op and never opens something generic. The screen decides
+  // what an empty family resolves to (money path first, free library under it),
+  // so this handler cannot disagree with the design.
+  const handleOpenFamily = useCallback((id: FamilyId) => {
+    setSelectedFamily(id);
+  }, []);
+
+  // "Browse what is free now" — the family screen's lever AND the Discover
+  // free-library row → the Library tab, the same destination the modern
+  // interstitial's free-library lever uses. Closing the family screen first keeps
+  // exactly one in-place flow mounted at a time.
+  const handleBrowseLibrary = useCallback(() => {
+    setSelectedFamily(null);
+    if (onBrowseLibrary) {
+      onBrowseLibrary();
+      return;
+    }
+    // No destination was handed in (LibraryScreen's own mount): the library IS
+    // the caller, so closing lands the user exactly there — never a dead tap.
+    onClose();
+  }, [onBrowseLibrary, onClose]);
+
+  /**
+   * THE MONEY FACET ON THE DISCOVER SURFACE (v46).
+   *
+   * "🛒 Any song → official sheet music" used to be a chip that opened THIS
+   * screen from Home. The screen hosts it now, so the chip does the job the
+   * door's tap used to do — put the user one tap from the licensed search:
+   *   • a query is typed → the retailer's OWN search for those words opens in the
+   *     in-app shell, built by services/searchExternal's affiliate builder (SMD,
+   *     67650) — the same URL the results-section card carries, never a
+   *     hand-written one, and never with a recording/ISRC code;
+   *   • nothing is typed yet → no invented query and no store redirect: the cursor
+   *     goes in the field, and typing anything produces the retailer section.
+   */
+  const handleOpenAnySongOfficial = useCallback(() => {
+    const url = sheetMusicDirectSearchUrl(query);
+    if (!url) {
+      searchInputRef.current?.focus();
+      return;
+    }
+    handleOpenRetailer(url);
+  }, [query, handleOpenRetailer]);
+
+  /** The free facet: back to the free public-domain browse (clears the query). */
+  const handleBrowseFreeCatalog = useCallback(() => {
+    handleClearQuery();
+    searchInputRef.current?.focus();
+  }, [handleClearQuery]);
+
+  /**
+   * ONE dispatch for the chip row, so every chip has a real destination: the
+   * money facet runs the licensed search, every other facet returns to the free
+   * catalog browse. No chip is decorative and none is a no-op.
+   */
+  const handleFacetChip = useCallback(
+    (id: string) => {
+      if (id === 'any-song') {
+        handleOpenAnySongOfficial();
+        return;
+      }
+      handleBrowseFreeCatalog();
+    },
+    [handleOpenAnySongOfficial, handleBrowseFreeCatalog],
+  );
+
   /**
    * The external half of the results — a licensed-retailer search for whatever
    * the user typed. SIMPLE dependency on the query (and the internal match count,
@@ -381,6 +537,25 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
     return <PieceDetailScreen piece={showDetail} onBack={handleCloseDetail} />;
   }
 
+  // ── v46 CORRECTIVE: THE FAMILY SCREEN (one of the five style families) ──
+  // Moved here from HomeScreen with the tiles that open it. It is the destination
+  // of EVERY Discover style tile, rendered in place exactly like the piece page
+  // above, and it owns its own BACK handling (FamilyScreen → useHardwareBack) so
+  // a hardware BACK returns to this search screen, never out of the app. Its
+  // first row is the money path for a family with no free scores; the free
+  // library is always the row beneath it.
+  if (selectedFamily) {
+    return (
+      <FamilyScreen
+        family={selectedFamily}
+        freeCount={familyCounts ? familyCounts.total : null}
+        eraCounts={familyCounts ? familyCounts.eras : null}
+        onClose={() => setSelectedFamily(null)}
+        onBrowseLibrary={handleBrowseLibrary}
+      />
+    );
+  }
+
   const header = resultsHeaderText(total, query, pieces.length);
 
   return (
@@ -428,6 +603,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
 
         <Text style={styles.searchIcon}>🔎</Text>
         <TextInput
+          ref={searchInputRef}
           style={styles.searchInput}
           value={query}
           // EDITING NEVER SEARCHES BY ITSELF WHILE A READ IS PENDING (v42 fix D):
@@ -527,6 +703,90 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
         contentContainerStyle={styles.resultsContent}
         keyboardShouldPersistTaps="handled"
       >
+        {/* ── v46 CORRECTIVE: THE DISCOVER SURFACE (BROWSE BY STYLE + money rows) ──
+            This block lived inside HomeScreen's ScrollView in v45, which put the
+            Discover surface on the door and is exactly what the owner saw on
+            device ("home and discover are on one page"). The ratified design is
+            "Home (minimal) → Discover (five families + money rows) → family
+            screen", with Discover = THIS screen extended (V45-HOME-NOTES.md:64 and
+            :199), so the block renders here, after the search field and BEFORE any
+            result row, as the first child of the one results scroller.
+
+            WHY THE SCROLLER AND NOT A FIXED BLOCK ABOVE IT: the tiles, the era
+            chips and the two money rows are taller than the space left under the
+            field on a 390 dp phone. Fixed above the scroller they would squeeze
+            the results (and the retailer cards under them) into a sliver; here
+            they scroll away naturally and the money path is never pushed off a
+            screen that cannot scroll (the v41 rule that put the retailers in this
+            same scroller).
+
+            WHEN IT SHOWS: only on the BROWSE state (`showDiscover` and an empty
+            query). A typed query means the user is searching, so the results and
+            the retailer section get the screen — and the scan/OCR flows always
+            hand in words, so their lookup flow is untouched. */}
+        {showDiscover && !prefillPending && query.trim().length === 0 ? (
+          <View style={styles.discoverBlock}>
+            {/* BROWSE BY STYLE: the five style families, from the table in
+                services/genreFamilies.ts — never a classical-only grid. Four
+                families hold no free scores today; their tiles look exactly like a
+                populated one, say "Official sheet music", and open a family screen
+                whose first row is the live official-editions search (money path)
+                with the free library one row below it. No toast, no grey-out, no
+                no-op tile — every family resolves. Counts render only when
+                genreCountsStore derived them from real rows. */}
+            <DiscoverStyles
+              layout={DISCOVER_LAYOUT}
+              freeCount={familyCounts ? familyCounts.total : null}
+              eraCounts={familyCounts ? familyCounts.eras : null}
+              onOpenFamily={handleOpenFamily}
+            />
+
+            {/* The facet chips the band-C fold moved to Discover (v45 slice 2),
+                money facet included. Two are live today; the guitar facet stays
+                off until a screen surfaces the audited PD guitar batch. Each chip
+                has a REAL destination (the money one runs the licensed search for
+                the typed words, the rest return to the free catalog browse) — the
+                S2 rule is that money rows survive, not that they merely render. */}
+            {facets.length > 0 ? (
+              <View style={styles.bandChipRow}>
+                {facets.map((facet) => (
+                  <TouchableOpacity
+                    key={facet.id}
+                    style={styles.bandChip}
+                    onPress={() => handleFacetChip(facet.id)}
+                    activeOpacity={0.6}
+                    accessibilityRole="button"
+                    accessibilityLabel={facet.label}
+                  >
+                    <Text style={styles.bandChipText}>{facet.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+
+            {/* The free library — the hook (free content earns the trust the paid
+                paths live on). Same destination the modern interstitial's own
+                "browse the free library" lever uses. The honest library-size note
+                travels WITH this row: it left the hero in v45 slice 1 and may not
+                be dropped on the way into Discover. */}
+            <TouchableOpacity
+              style={styles.browseLibraryRow}
+              onPress={handleBrowseLibrary}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={BROWSE_LIBRARY_ACCESSIBILITY_LABEL}
+            >
+              <Text style={styles.browseLibraryEmoji}>📚</Text>
+              <View style={styles.browseLibraryInfo}>
+                <Text style={styles.browseLibraryTitle}>{BROWSE_LIBRARY_LABEL}</Text>
+                <Text style={styles.browseLibraryHint}>{BROWSE_LIBRARY_HINT}</Text>
+                <Text style={styles.browseLibraryBetaNote}>{FRONT_DOOR_BETA_NOTE}</Text>
+              </View>
+              <Text style={styles.browseLibraryChevron}>›</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {status === 'prefill' ? (
           <View style={styles.stateBlock}>
             <Text style={styles.emptyEmoji}>✍️</Text>
@@ -618,6 +878,80 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
 };
 
 const baseStyles = StyleSheet.create({
+  // ── v46 CORRECTIVE: the Discover surface's styles ──
+  // Carried over VERBATIM from HomeScreen's StyleSheet, where the block used to
+  // render. Every colour is an existing palette literal, so the light-theme
+  // remap repaints them with no new token.
+  discoverBlock: {
+    width: '100%',
+  },
+  // A wrapping row of small chips: the facet labels are long on purpose and must
+  // reflow rather than clip on a 360 dp screen.
+  bandChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  bandChip: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  bandChipText: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  // The free-library row — a row, not a chip: it is the hook the paid paths live
+  // on, so it keeps the quiet card treatment.
+  browseLibraryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#16213e',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 10,
+    minHeight: 56,
+  },
+  browseLibraryEmoji: {
+    fontSize: 20,
+    marginRight: 12,
+  },
+  browseLibraryInfo: {
+    flex: 1,
+  },
+  browseLibraryTitle: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  browseLibraryHint: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  browseLibraryChevron: {
+    color: '#4ecdc4',
+    fontSize: 22,
+    fontWeight: '700',
+    marginLeft: 8,
+  },
+  // The relocated beta note: small and quiet, under the row's own hint.
+  browseLibraryBetaNote: {
+    color: '#6a6a8a',
+    fontSize: 10.5,
+    lineHeight: 15,
+    marginTop: 4,
+  },
+
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
