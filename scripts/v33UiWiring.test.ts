@@ -607,6 +607,21 @@ assertEq(
   true,
   'the "Find a song" search bar left the Listen/Hum block for its own Discover band, wired to the search',
 );
+// MUTATION 28b (v46 corrective): the v45 labelled band comes back — the band
+// heading and its honest note returned to the door's Discover region, which is
+// the one-page door the owner reported. The rewritten predicate must bite.
+const v45BandBack = homeSource.replace(
+  '<View style={styles.band} testID={BAND_TEST_IDS.discover}>',
+  '<View style={styles.band} testID={BAND_TEST_IDS.discover}>\n' +
+    '          <Text style={styles.bandTitle}>{BAND_TITLES.discover}</Text>\n' +
+    '          <Text style={styles.bandNote}>{DISCOVER_BAND_NOTE}</Text>',
+);
+assert(v45BandBack !== homeSource, 'the v45-band mutation changed the real Home screen');
+assertEq(
+  searchHasItsOwnDiscoverBand(v45BandBack),
+  false,
+  'MUTATION: the retired Discover heading + note back on the door FAIL the rewritten contract',
+);
 
 // MUTATION 29 (v44 equal split): the Listen panel rewired to a dead handler.
 const deadListenPanel = homeSource.replace('onPress={handleHeroTap}', 'onPress={handleHeroTapRemoved}');

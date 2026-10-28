@@ -500,14 +500,34 @@ export function familyScreenModel(
 
 // ───────────────────── the wiring guard (source scan) ──────────────────────
 
+/**
+ * THE FILE THE DISCOVER SURFACE LIVES IN (v46 corrective).
+ *
+ * v45 slice 3b rendered the tiles inside HomeScreen's Discover band, which put
+ * Home and Discover on ONE page — the thing the owner saw on device. The ratified
+ * design is "Home (minimal) → Discover (five families + money rows) → family
+ * screen", with Discover = FindPieceScreen extended (V45-HOME-NOTES.md:64, :199).
+ * So the tiles, the tap and the family-screen mount live in FindPieceScreen and
+ * NOWHERE ELSE. The guard reads this path, and any bundle that claims a
+ * different host fails (see `discoverPath` below) — re-pointing the scan back at
+ * Home cannot silently pass.
+ */
+export const DISCOVER_SOURCE_FILE = 'src/screens/FindPieceScreen.tsx';
+
 /** The sources the guard reads: the Discover surface and the family screen. */
 export interface DiscoverSourceBundle {
-  /** HomeScreen.tsx — the Discover band that renders the tiles. */
+  /** src/screens/FindPieceScreen.tsx — the Discover surface that renders the tiles. */
   discover: string;
   /** components/FamilyScreen.tsx — the pushed family screen. */
   familyScreen: string;
   /** components/DiscoverStyles.tsx — the tile grid itself. */
   tiles?: string;
+  /**
+   * The path `discover` was read from. Optional for fixture callers, but when it
+   * IS supplied it must be `DISCOVER_SOURCE_FILE` — the hosting is part of the
+   * contract, not an accident of which file a test happened to open.
+   */
+  discoverPath?: string;
 }
 
 /** Markers the Discover surface must render — the tiles, the tap, the screen. */
@@ -563,7 +583,8 @@ export function everyFamilyResolves(families: readonly GenreFamily[] = GENRE_FAM
  *     `everyFamilyResolves`) — incl. the mutation "set one family's `q` to ''";
  *   • every layout stops rendering all five families;
  *   • the Discover surface stops rendering the tile grid, the tap handler or
- *     the family screen mount;
+ *     the family screen mount — or that surface is no longer FindPieceScreen
+ *     (`DISCOVER_SOURCE_FILE`), i.e. the grid crept back onto Home;
  *   • the family screen stops rendering the money row from the model, mounts no
  *     purchase shell, or renders the free row ABOVE the money row.
  *
@@ -572,6 +593,11 @@ export function everyFamilyResolves(families: readonly GenreFamily[] = GENRE_FAM
  */
 export function familyTilesAreBackedByRealContent(bundle: DiscoverSourceBundle): boolean {
   if (!everyFamilyResolves()) return false;
+  // THE HOSTING IS PART OF THE CONTRACT (v46): the grid lives on the Discover
+  // surface, so a bundle read from any other file is not evidence.
+  if (typeof bundle.discoverPath === 'string' && bundle.discoverPath !== DISCOVER_SOURCE_FILE) {
+    return false;
+  }
   const layouts: DiscoverLayout[] = ['hero-classical', 'equal'];
   for (const layout of layouts) {
     const rows = discoverFamilyRows(layout);

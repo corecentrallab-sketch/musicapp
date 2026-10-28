@@ -2,7 +2,8 @@
  * Tests for THE FIVE STYLE FAMILIES (v45 slice 3b) —
  * src/services/genreFamilies.ts, plus the REAL Discover surface and family
  * screen it is wired into (components/DiscoverStyles.tsx,
- * components/FamilyScreen.tsx, screens/HomeScreen.tsx).
+ * components/FamilyScreen.tsx, screens/FindPieceScreen.tsx — where Discover
+ * lives since the v46 corrective).
  *
  * Owner-ratified all-genres scope, 2026-10-26: "the app is for music
  * enthusiasts, and we use the public domain" — so Discover shows FIVE style
@@ -32,6 +33,7 @@
  */
 import {
   DISCOVER_LAYOUT,
+  DISCOVER_SOURCE_FILE,
   DISCOVER_STYLE_LABEL,
   DISCOVER_WIRING_MARKERS,
   ERA_CHIPS,
@@ -419,25 +421,32 @@ function layoutAndScreenTests(): void {
 function liveScanTests(): void {
   console.log('\nLIVE SCAN — the REAL Discover surface and family screen');
 
-  const home = readAppFile('src/screens/HomeScreen.tsx');
+  // v46 corrective: the Discover surface is src/screens/FindPieceScreen.tsx, not
+  // Home's Discover band (that hosting is what the owner saw as "home and
+  // discover are on one page"; see services/v46DiscoverHosting.ts).
+  const discover = readAppFile(DISCOVER_SOURCE_FILE);
   const familyScreen = readAppFile('src/components/FamilyScreen.tsx');
   const tiles = readAppFile('src/components/DiscoverStyles.tsx');
 
   // FLOORS: a broken walk must not pass vacuously.
-  assert(home.length > 5000, `HomeScreen really read (${home.length} chars)`);
+  assert(discover.length > 4000, `FindPieceScreen really read (${discover.length} chars)`);
   assert(familyScreen.length > 2000, `FamilyScreen really read (${familyScreen.length} chars)`);
   assert(tiles.length > 1000, `DiscoverStyles really read (${tiles.length} chars)`);
-  assert(home.indexOf('BAND_TEST_IDS.discover') >= 0, 'HomeScreen carries the Discover band');
   assert(
-    home.indexOf('<DiscoverStyles') >= 0,
-    'the Discover band really mounts the style tiles',
+    discover.indexOf('<DiscoverStyles') >= 0,
+    'the Discover surface really mounts the style tiles',
   );
 
-  const bundle = { discover: home, familyScreen, tiles };
+  const bundle = { discover, familyScreen, tiles, discoverPath: DISCOVER_SOURCE_FILE };
   assert(familyTilesAreBackedByRealContent(bundle), 'the shipped wiring passes the guard');
+  // THE HOSTING HALF: a bundle read from anywhere else is not evidence.
+  assert(
+    !familyTilesAreBackedByRealContent({ ...bundle, discoverPath: 'src/screens/HomeScreen.tsx' }),
+    'PROBE: a bundle claiming Home as the Discover host FAILS the guard',
+  );
 
   for (const marker of DISCOVER_WIRING_MARKERS) {
-    assert(home.indexOf(marker) >= 0, `Discover wiring marker present: ${marker}`);
+    assert(discover.indexOf(marker) >= 0, `Discover wiring marker present: ${marker}`);
   }
   for (const marker of FAMILY_SCREEN_MARKERS) {
     assert(familyScreen.indexOf(marker) >= 0, `family screen marker present: ${marker}`);
@@ -464,15 +473,15 @@ function liveScanTests(): void {
 
   console.log('\nMUTATION PROBES on the REAL source (the guard must bite)');
   // 1. the tile grid unmounted from Discover
-  const noTiles = home.replace(/DiscoverStyles/g, 'SomeOtherBlock');
+  const noTiles = discover.replace(/DiscoverStyles/g, 'SomeOtherBlock');
   assert(!familyTilesAreBackedByRealContent({ ...bundle, discover: noTiles }),
     'PROBE: removing the tile grid from Discover fails the guard');
   // 2. the family screen unmounted
-  const noFamilyScreen = home.replace('<FamilyScreen', '<SomeOtherScreen');
+  const noFamilyScreen = discover.replace('<FamilyScreen', '<SomeOtherScreen');
   assert(!familyTilesAreBackedByRealContent({ ...bundle, discover: noFamilyScreen }),
     'PROBE: removing the family-screen mount fails the guard');
   // 3. the tap detached from the family handler
-  const noHandler = home.replace('onOpenFamily={handleOpenFamily}', 'onOpenFamily={() => {}}');
+  const noHandler = discover.replace('onOpenFamily={handleOpenFamily}', 'onOpenFamily={() => {}}');
   assert(!familyTilesAreBackedByRealContent({ ...bundle, discover: noHandler }),
     'PROBE: detaching the tile tap from handleOpenFamily fails the guard');
   // 4. the money row renamed on the family screen (ordering cannot be proven)
@@ -492,10 +501,10 @@ function liveScanTests(): void {
   assert(!everyFamilyResolves([GENRE_FAMILIES[0], { ...deadFamily, q: '' }, ...GENRE_FAMILIES.slice(2)]),
     'PROBE: setting one empty family’s q to empty fails the guard');
   // 8. A COMMENTED-OUT tile block must not satisfy the scan
-  const tileStart = home.indexOf('<DiscoverStyles');
-  const tileEnd = home.indexOf('/>', tileStart) + 2;
+  const tileStart = discover.indexOf('<DiscoverStyles');
+  const tileEnd = discover.indexOf('/>', tileStart) + 2;
   const commented =
-    home.slice(0, tileStart) + '/* ' + home.slice(tileStart, tileEnd) + ' */' + home.slice(tileEnd);
+    discover.slice(0, tileStart) + '/* ' + discover.slice(tileStart, tileEnd) + ' */' + discover.slice(tileEnd);
   assert(maskSource(commented).indexOf('<DiscoverStyles') < 0,
     'PROBE: the commented-out block really is masked out');
   assert(!familyTilesAreBackedByRealContent({ ...bundle, discover: commented }),

@@ -667,9 +667,37 @@ function liveScanTests(): void {
     'the real Home renders the four band containers in A → Discover → B → C order',
   );
   assertEq(
-    bandOrderIsIdentifyDiscoverToday(home),
+    bandOrderIsIdentifyDiscoverToday(home, findPiece),
     true,
     'band A holds the hero + the hum sibling card, Discover owns the search, band B its one card, band C its rows',
+  );
+
+  // v46: the fold's rows are asserted on their NEW host (FindPieceScreen), so the
+  // guard reads two files and BOTH halves have to bite.
+  const chipsOffHost = findPiece.replace('facets.map(', 'someRows.map(');
+  assert(chipsOffHost !== findPiece, 'the chips-off-host mutation changed the real Discover surface');
+  assertEq(
+    bandOrderIsIdentifyDiscoverToday(home, chipsOffHost),
+    false,
+    'MUTATION: the facet chips leaving the Discover surface FAILS the fold contract',
+  );
+  const freeRowOffHost = findPiece.replace('styles.browseLibraryRow', 'styles.someRow');
+  assert(freeRowOffHost !== findPiece, 'the free-row mutation changed the real Discover surface');
+  assertEq(
+    bandOrderIsIdentifyDiscoverToday(home, freeRowOffHost),
+    false,
+    'MUTATION: the free-library row leaving the Discover surface FAILS the fold contract',
+  );
+  const chipsBackOnDoor = home.replace(
+    '<View style={styles.band} testID={BAND_TEST_IDS.discover}>',
+    '<View style={styles.band} testID={BAND_TEST_IDS.discover}>\n' +
+      '          {facets.map((facet) => null)}',
+  );
+  assert(chipsBackOnDoor !== home, 'the chips-back mutation changed the real Home source');
+  assertEq(
+    bandOrderIsIdentifyDiscoverToday(chipsBackOnDoor, findPiece),
+    false,
+    'MUTATION: the chips back inside the door\'s Discover band FAILS the fold contract',
   );
   assertEq(
     oneMeaningPerCard(home),
@@ -709,7 +737,7 @@ function liveScanTests(): void {
     'the chip COPY module does not claim it either',
   );
   assertEq(
-    findPieceEntryIsSearchRow(home),
+    findPieceEntryIsSearchRow(home, findPiece),
     true,
     'band C\'s search row reads as a search entry and opens the real field',
   );
@@ -806,7 +834,7 @@ function liveScanTests(): void {
   );
   assert(browseBack !== home, 'the browse-back mutation changed the real source');
   assertEq(
-    bandOrderIsIdentifyDiscoverToday(browseBack),
+    bandOrderIsIdentifyDiscoverToday(browseBack, findPiece),
     false,
     'MUTATION: re-adding the retired band C FAILS the order contract',
   );
@@ -815,7 +843,7 @@ function liveScanTests(): void {
   const barGone = home.split('style={styles.findASongBar}').join('style={styles.bandChip}');
   assert(barGone !== home, 'the bar-drop mutation changed the real source');
   assertEq(
-    bandOrderIsIdentifyDiscoverToday(barGone),
+    bandOrderIsIdentifyDiscoverToday(barGone, findPiece),
     false,
     'MUTATION: dropping the Find-a-song bar FAILS the order contract',
   );
@@ -850,16 +878,24 @@ function liveScanTests(): void {
     'no screen surfaces the PD guitar batch today',
   );
 
-  // ── MUTATION 8: band C's search row loses its landing ──
-  const rowDead = home.replace(
-    /const handleOpenFindPiece = useCallback\(\(\) => \{\n\s*setShowFindPiece\(true\);\n\s*\}, \[\]\);/,
-    'const handleOpenFindPiece = useCallback(() => {}, []);',
+  // ── MUTATION 8: the fold's rows lose their landing (v46: on their new host) ──
+  // Band C's search row is retired; what replaced it is the facet chip row + the
+  // free-library row on the Discover surface. A chip that renders with no
+  // destination, or a row whose destination prop is dropped, is the dead row.
+  const rowDead = findPiece.replace(
+    'onPress={() => handleFacetChip(facet.id)}',
+    'onPress={undefined}',
   );
-  assert(rowDead !== home, 'the search-row mutation changed the real handler');
+  assert(rowDead !== findPiece, 'the search-row mutation changed the real Discover surface');
   assertEq(
-    findPieceEntryIsSearchRow(rowDead),
+    findPieceEntryIsSearchRow(home, rowDead),
     false,
     'MUTATION: a search row whose handler never opens the screen FAILS (a dead row)',
+  );
+  assertEq(
+    findPieceEntryIsSearchRow(home, findPiece),
+    true,
+    'the untouched Discover surface passes (the mutation proved the guard, not a fixture)',
   );
 }
 

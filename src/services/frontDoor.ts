@@ -698,13 +698,11 @@ export function findPieceIsSearchEntry(source: string): boolean {
   // geometry/wiring is pinned by `findASongBarWired`). The row checks below still
   // hold for any surface that renders the row.
   const masked = maskComments(source);
-  // v45 slice 2: the ROW that carried this contract is retired on the real screen
-  // (styles.findPieceBtn is gone); the "Find a song" bar is the door's search entry
-  // there. On such a surface the contract is the BAR plus the facet chips that
-  // still open the same screen — a bar that keeps its wiring while its chips were
-  // promoted to the hero handler is exactly the "second hero" this must catch.
+  // v46: the facet chips that used to carry `handleOpenFindPiece` here travelled
+  // INTO the Discover surface with the browse block, so the door's search entry is
+  // the BAR and nothing else. The "second hero" this contract exists to catch is
+  // still caught: `findASongBarWired` fails when the bar wears the hero handler.
   if (masked.indexOf('styles.findPieceBtn') < 0) {
-    if (!/onPress=\{handleOpenFindPiece\}/.test(masked)) return false;
     return findASongBarWired(source);
   }
   if (masked.indexOf('FIND_PIECE_ENTRY_LABEL') < 0) return false;
@@ -723,11 +721,18 @@ export function findPieceIsSearchEntry(source: string): boolean {
  * (owner 10-01: internal library + "Official sheet music" retailers), because
  * that section is reached through this one entry — the front door must not
  * quietly detach it.
+ *
+ * v46: the door's entry is the "Find a song" bar, whose handler is
+ * `handleFindAnySong`; the retired band-C row's `handleOpenFindPiece` is gone from
+ * Home. Either handler is accepted, but whichever one the door actually has must
+ * really set the flag — the dead-CTA half is what this asserts.
  */
 export function findPieceOpensScreen(source: string): boolean {
   const masked = maskComments(source);
   if (!/import\s*\{[^}]*\bFindPieceScreen\b/.test(masked)) return false;
-  const declaration = masked.indexOf('const handleOpenFindPiece');
+  const rowHandler = masked.indexOf('const handleOpenFindPiece = useCallback');
+  const barHandler = masked.indexOf('const handleFindAnySong = useCallback');
+  const declaration = rowHandler >= 0 ? rowHandler : barHandler;
   if (declaration < 0) return false;
   const body = braceBlockFrom(masked, declaration);
   if (!/setShowFindPiece\s*\(\s*true\s*\)/.test(body)) return false;
@@ -1055,13 +1060,14 @@ export function findASongBarWired(source: string): boolean {
  * band C, and the whole point of the re-flow is that a musician who knows the
  * piece's name is ONE tap from typing it.
  */
-export function findPieceEntryIsSearchRow(source: string): boolean {
+export function findPieceEntryIsSearchRow(source: string, discoverSource: string): boolean {
   const masked = maskComments(source);
   const band = retiredBrowseRegion(source);
   if (!band) {
     // v45 slice 2: the row is retired; the rows that REPLACED its job (the facet
-    // chips + the free-library row, now inside Discover) carry the contract.
-    return fragmentEntryPointsAreWired(source);
+    // chips + the free-library row) carry the contract — and since v46 they live
+    // on the Discover surface, so the host source has to come with the call.
+    return fragmentEntryPointsAreWired(source, discoverSource);
   }
   if (band.indexOf('styles.findPieceBtn') < 0) return false;
   if (band.indexOf('onPress={handleOpenFindPiece}') < 0) return false;
@@ -1076,32 +1082,56 @@ export function findPieceEntryIsSearchRow(source: string): boolean {
 }
 
 /**
- * THE FOLD'S ENTRY POINTS STILL OPEN THEIR DESTINATIONS (v45 slice 2).
+ * THE FOLD'S ENTRY POINTS STILL OPEN THEIR DESTINATIONS (v45 slice 2, re-pointed
+ * for the v46 corrective).
  *
  * The fold retired band C's own "Search by title or composer" row, so the guard
  * that used to prove THAT row existed (`findPieceEntryIsSearchRow`) has nothing
  * left to read. What must still be true — brief §11.8 — is that the rows the fold
- * MOVED into Discover are wired:
- *   • `handleOpenFindPiece` really sets `showFindPiece` (the facet chips' tap);
- *   • `handleBrowseLibraryFromModern` really navigates to the Library tab (the
- *     free-library row's tap, not a dead row);
- *   • the free-library row still renders, and `FindPieceScreen` is still mounted
- *     behind the flag, so the screen every chip opens has a real field.
+ * MOVED are wired, and v46 moved them one screen further (off the door onto the
+ * Discover surface, src/screens/FindPieceScreen.tsx, because Home and Discover
+ * sat on one page):
+ *   • the facet chips still render and every chip has a REAL destination —
+ *     `handleFacetChip(facet.id)`, whose money arm builds the licensed search
+ *     with `sheetMusicDirectSearchUrl(...)` and opens it via `handleOpenRetailer`
+ *     (a chip that renders and does nothing is the dead-CTA class);
+ *   • the free-library row still renders on that surface and its tap still
+ *     reaches the Library tab — through the `onBrowseLibrary` prop Home hands the
+ *     screen, back to `handleBrowseLibraryFromDiscover` and `navigate('Library')`;
+ *   • `FindPieceScreen` is still mounted by Home (behind `showFindPiece`), so the
+ *     surface every chip and the bar open has a real field.
+ *
+ * `source` is src/screens/HomeScreen.tsx; `discoverSource` is
+ * src/screens/FindPieceScreen.tsx. The discover source is REQUIRED: the rows no
+ * longer exist on the door, so a caller that cannot name their host cannot prove
+ * they are wired — an empty source fails rather than passing vacuously.
  */
-export function fragmentEntryPointsAreWired(source: string): boolean {
+export function fragmentEntryPointsAreWired(source: string, discoverSource: string): boolean {
   const masked = maskComments(source);
-  const findDeclaration = masked.indexOf('const handleOpenFindPiece');
-  if (findDeclaration < 0) return false;
-  if (!/setShowFindPiece\s*\(\s*true\s*\)/.test(braceBlockFrom(masked, findDeclaration))) {
-    return false;
-  }
-  const libraryDeclaration = masked.indexOf('const handleBrowseLibraryFromModern');
+  // The free-library row's destination, on the door: its own handler (it closes
+  // the in-place search flow, then switches tabs) …
+  const libraryDeclaration = masked.indexOf('const handleBrowseLibraryFromDiscover');
   if (libraryDeclaration < 0) return false;
   if (!/navigate\(\s*'Library'\s*\)/.test(braceBlockFrom(masked, libraryDeclaration))) {
     return false;
   }
-  if (masked.indexOf('styles.browseLibraryRow') < 0) return false;
-  return /<FindPieceScreen\s/.test(masked);
+  // … handed to the Discover surface as a prop, on a screen Home really mounts.
+  if (!/<FindPieceScreen\s/.test(masked)) return false;
+  if (masked.indexOf('onBrowseLibrary={handleBrowseLibraryFromDiscover}') < 0) return false;
+
+  // The new host: the chips and the row, each wired to something real.
+  const discover = maskComments(discoverSource);
+  if (discover.length < 4000) return false;
+  if (discover.indexOf('facets.map(') < 0) return false;
+  if (discover.indexOf('onPress={() => handleFacetChip(facet.id)}') < 0) return false;
+  // The money facet's arm — the licensed search, never a hand-written URL.
+  if (discover.indexOf('sheetMusicDirectSearchUrl(') < 0) return false;
+  if (discover.indexOf('handleOpenRetailer(') < 0) return false;
+  // The free-library row + the handler the prop lands in.
+  if (discover.indexOf('styles.browseLibraryRow') < 0) return false;
+  if (discover.indexOf('onPress={handleBrowseLibrary}') < 0) return false;
+  if (discover.indexOf('onBrowseLibrary()') < 0) return false;
+  return true;
 }
 
 /** The retired band C's own container slice, for the two legacy guards below.
