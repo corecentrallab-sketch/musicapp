@@ -68,7 +68,12 @@ export const DISCOVER_CONTENT_MARKERS: readonly string[] = [
   'handleFacetChip(',
   // the free-library row + the honest library note travelling with it
   'styles.browseLibraryRow',
-  'onPress={handleBrowseLibrary}',
+  // v46 DEFECT FIX (owner 10-28): the row's tap is the surface's OWN handler —
+  // it no longer calls a prop the host provides. The measured defect: Home handed
+  // `onBrowseLibrary` = `navigate('Library')`, so "Browse what is free now" opened
+  // the user's personal library. services/v46DefectSweep.ts guards that in full
+  // (no prop left, the handler decides the destination, the list has a testID).
+  'onPress={handleBrowseFreeScores}',
   '{FRONT_DOOR_BETA_NOTE}',
   // the money facet's arm: the licensed search, built by the affiliate builder
   'sheetMusicDirectSearchUrl(',
@@ -82,10 +87,12 @@ export const DISCOVER_CONTENT_MARKERS: readonly string[] = [
  * Home's CODE is the one-page door coming back.
  *
  * Not banned, because they are legitimately Home's: `<FindPieceScreen` (the mount
- * of the surface, one tap away), `onBrowseLibrary={...}` (the prop Home hands it),
- * `styles.findASongBar` + `handleFindAnySong` (the door's one search entry) and
- * the `handleBrowseLibraryFromDiscover` / `handleSearchForItFromModern` handlers
- * that OPEN or FEED Discover. Moving the block never meant unplugging the door.
+ * of the surface, one tap away), `styles.findASongBar` + `handleFindAnySong` (the
+ * door's one search entry) and the `handleBrowseLibraryFromModern` /
+ * `handleSearchForItFromModern` handlers that OPEN or FEED the modern-song card.
+ * Moving the block never meant unplugging the door. (The Discover free-library row
+ * is deliberately NOT among them: since the v46 defect fix the door hands the
+ * surface no destination at all — see services/v46DefectSweep.ts.)
  */
 export const HOME_BANNED_MARKERS: readonly string[] = [
   '<DiscoverStyles',

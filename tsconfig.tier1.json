@@ -211,6 +211,8 @@
     "src/services/v45LyricsContract.ts",
     "scripts/v45Lyrics.test.ts",
     "src/services/v46DiscoverHosting.ts",
-    "scripts/v46DiscoverHosting.test.ts"
+    "scripts/v46DiscoverHosting.test.ts",
+    "src/services/v46DefectSweep.ts",
+    "scripts/v46DefectSweep.test.ts"
   ]
 }

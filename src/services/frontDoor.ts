@@ -1083,7 +1083,7 @@ export function findPieceEntryIsSearchRow(source: string, discoverSource: string
 
 /**
  * THE FOLD'S ENTRY POINTS STILL OPEN THEIR DESTINATIONS (v45 slice 2, re-pointed
- * for the v46 corrective).
+ * for the v46 corrective, and re-pointed AGAIN by the v46 defect fix 10-28).
  *
  * The fold retired band C's own "Search by title or composer" row, so the guard
  * that used to prove THAT row existed (`findPieceEntryIsSearchRow`) has nothing
@@ -1095,9 +1095,14 @@ export function findPieceEntryIsSearchRow(source: string, discoverSource: string
  *     `handleFacetChip(facet.id)`, whose money arm builds the licensed search
  *     with `sheetMusicDirectSearchUrl(...)` and opens it via `handleOpenRetailer`
  *     (a chip that renders and does nothing is the dead-CTA class);
- *   • the free-library row still renders on that surface and its tap still
- *     reaches the Library tab — through the `onBrowseLibrary` prop Home hands the
- *     screen, back to `handleBrowseLibraryFromDiscover` and `navigate('Library')`;
+ *   • the free-scores row still renders on that surface and its tap reaches the
+ *     free catalog list through the surface's OWN `handleBrowseFreeScores`
+ *     (`scrollToFreeList()`). Before the v46 defect fix (owner 10-28) this row
+ *     called a prop the HOST supplied, and Home supplied `navigate('Library')` —
+ *     so a user asking for the free public-domain scores was dropped into their
+ *     personal library. The prop is gone: the door now hands the surface NO
+ *     destination at all, which is what this function asserts from the door's
+ *     side (the surface's own side is services/v46DefectSweep.ts);
  *   • `FindPieceScreen` is still mounted by Home (behind `showFindPiece`), so the
  *     surface every chip and the bar open has a real field.
  *
@@ -1108,16 +1113,18 @@ export function findPieceEntryIsSearchRow(source: string, discoverSource: string
  */
 export function fragmentEntryPointsAreWired(source: string, discoverSource: string): boolean {
   const masked = maskComments(source);
-  // The free-library row's destination, on the door: its own handler (it closes
-  // the in-place search flow, then switches tabs) …
-  const libraryDeclaration = masked.indexOf('const handleBrowseLibraryFromDiscover');
-  if (libraryDeclaration < 0) return false;
-  if (!/navigate\(\s*'Library'\s*\)/.test(braceBlockFrom(masked, libraryDeclaration))) {
-    return false;
-  }
-  // … handed to the Discover surface as a prop, on a screen Home really mounts.
+  // The surface Home rules is mounted, one tap away …
   if (!/<FindPieceScreen\s/.test(masked)) return false;
-  if (masked.indexOf('onBrowseLibrary={handleBrowseLibraryFromDiscover}') < 0) return false;
+  // … and the door hands it NO destination prop. The handler that used to decide
+  // the free row's destination — and sent it to the personal Library tab — is gone
+  // from the door's code entirely.
+  if (masked.indexOf('handleBrowseLibraryFromDiscover') >= 0) return false;
+  const mountAt = masked.indexOf('<FindPieceScreen');
+  const mountEnd = masked.indexOf('/>', mountAt);
+  if (mountEnd < 0) return false;
+  const mount = masked.slice(mountAt, mountEnd + 2);
+  if (mount.length > 1200) return false;
+  if (mount.indexOf('onBrowseLibrary') >= 0) return false;
 
   // The new host: the chips and the row, each wired to something real.
   const discover = maskComments(discoverSource);
@@ -1127,10 +1134,11 @@ export function fragmentEntryPointsAreWired(source: string, discoverSource: stri
   // The money facet's arm — the licensed search, never a hand-written URL.
   if (discover.indexOf('sheetMusicDirectSearchUrl(') < 0) return false;
   if (discover.indexOf('handleOpenRetailer(') < 0) return false;
-  // The free-library row + the handler the prop lands in.
+  // The free-scores row, its own handler, and the landing that handler reaches.
   if (discover.indexOf('styles.browseLibraryRow') < 0) return false;
-  if (discover.indexOf('onPress={handleBrowseLibrary}') < 0) return false;
-  if (discover.indexOf('onBrowseLibrary()') < 0) return false;
+  if (discover.indexOf('onPress={handleBrowseFreeScores}') < 0) return false;
+  if (discover.indexOf('const handleBrowseFreeScores') < 0) return false;
+  if (discover.indexOf('scrollToFreeList()') < 0) return false;
   return true;
 }
 

@@ -1588,30 +1588,30 @@ function findAnySongTests(): void {
 
   // v45 slice 2: band C is retired, so the classification mutation is now the
   // FREE-LIBRARY row losing its landing — a row that renders and opens nothing.
-  // v46: the row lives on FindPieceScreen and its landing is the handler Home
-  // hands it (`handleBrowseLibraryFromDiscover`), so that is what the mutation
-  // strips — NOT the modern interstitial's own copy of the same navigation.
-  const libraryDead = home.replace(
-    /(const handleBrowseLibraryFromDiscover = useCallback\(\(\) => \{\s*setShowFindPiece\(false\);)\s*navigation\.navigate\('Library'\);/,
-    '$1',
+  // v46 DEFECT FIX (owner 10-28): the landing is decided ON the Discover surface
+  // (`handleBrowseFreeScores` → `scrollToFreeList()`), and the door hands the
+  // surface NO destination at all, so the mutation runs from BOTH sides.
+  const libraryDead = findPieceSource.split('scrollToFreeList()').join('void 0');
+  assert(
+    libraryDead !== findPieceSource,
+    'the free-scores-row mutation changed the real Discover surface',
   );
-  assert(libraryDead !== home, 'the library-row mutation changed the real source');
   assertEq(
-    fragmentEntryPointsAreWired(libraryDead, findPieceSource),
+    fragmentEntryPointsAreWired(home, libraryDead),
     false,
-    'MUTATION: a free-library row that opens nothing FAILS the fold contract',
+    'MUTATION: a free-scores row that never reaches the catalog list FAILS the fold contract',
   );
-  // The row is still on the Discover surface, but nothing is handed in to land
-  // on — same defect, seen from the door's side of the prop.
-  const propDropped = home.replace(
-    'onBrowseLibrary={handleBrowseLibraryFromDiscover}',
-    'onBrowseLibrary={undefined}',
+  // The door taking the destination back — the exact defect: it hands the surface
+  // a prop that decides where "Browse what is free now" goes.
+  const propReAdded = home.replace(
+    '<FindPieceScreen onClose={() => setShowFindPiece(false)} />',
+    '<FindPieceScreen onClose={() => setShowFindPiece(false)} onBrowseLibrary={() => {}} />',
   );
-  assert(propDropped !== home, 'the prop-drop mutation changed the real mount');
+  assert(propReAdded !== home, 'the re-point mutation changed the real mount');
   assertEq(
-    fragmentEntryPointsAreWired(propDropped, findPieceSource),
+    fragmentEntryPointsAreWired(propReAdded, findPieceSource),
     false,
-    'MUTATION: dropping the free-library destination prop FAILS the fold contract',
+    'MUTATION: the door handing the free-scores destination back FAILS the fold contract',
   );
 
   // The chips' own host: a chip row rendered with no destination is the dead-CTA
