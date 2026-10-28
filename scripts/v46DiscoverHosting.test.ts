@@ -137,10 +137,13 @@ function markerListTests(): void {
       `the banned list forbids ${required}`);
   }
   // The door's OWN furniture is not banned — moving the block never unplugged it.
+  // (`onBrowseLibrary={handleBrowseLibraryFromModern}` is the MODERN-SONG card's
+  // destination, a different offer; the Explore free-scores row no longer takes a
+  // prop at all since the v46 defect fix — see services/v46DefectSweep.ts.)
   for (const allowed of [
     'styles.findASongBar',
     'handleFindAnySong',
-    'onBrowseLibrary={handleBrowseLibraryFromDiscover}',
+    'onBrowseLibrary={handleBrowseLibraryFromModern}',
     '<FindPieceScreen',
   ]) {
     assert(HOME_BANNED_MARKERS.indexOf(allowed) < 0,

@@ -876,7 +876,11 @@ export function bandOrderIsIdentifyDiscoverToday(
   if (discover.indexOf('onPress={() => handleFacetChip(facet.id)}') < 0) return false;
   // The free-library row …
   if (discover.indexOf('styles.browseLibraryRow') < 0) return false;
-  if (discover.indexOf('onPress={handleBrowseLibrary}') < 0) return false;
+  // … whose tap is the surface's OWN handler (v46 defect fix, owner 10-28: the row
+  // used to call a prop the host supplied, and Home's prop was "open the personal
+  // Library"; the destination is now decided inside FindPieceScreen — the full
+  // contract lives in services/v46DefectSweep.ts).
+  if (discover.indexOf('onPress={handleBrowseFreeScores}') < 0) return false;
   // … carrying the honest library note WITH it (it left band A in v45 slice 1 and
   // may not be dropped on the way into Discover).
   if (discover.indexOf('{FRONT_DOOR_BETA_NOTE}') < 0) return false;

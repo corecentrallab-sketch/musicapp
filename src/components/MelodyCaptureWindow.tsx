@@ -79,6 +79,7 @@ import {
   RECORD_ANOTHER_CTA,
   SAVED_CHIP_HINT,
   SAVED_CHIP_LABEL,
+  STOP_CTA_HINT,
   STOP_CTA_LABEL,
   SUGGESTED_CHORDS_LABEL,
   TAKE_HEADING,
@@ -201,6 +202,13 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
       </View>
 
       {recording ? (
+        /* v46 DEFECT FIX (owner 10-28): THE STOP IS DOCKED, NOT SCROLLED.
+           The live face is a scroller (meter → note strip → "when you stop"),
+           and the stop control used to be its LAST child — under the fold on a
+           phone, so the owner saw a meter sampling ambient noise and no way to
+           end the take. The scroll region now ends after the hint and the stop
+           renders in its own footer OUTSIDE it, always on screen. */
+        <>
         <ScrollView contentContainerStyle={styles.liveStage}>
           <View style={styles.liveRow}>
             <View style={styles.liveBadge}>
@@ -265,11 +273,24 @@ export const MelodyCaptureWindow: React.FC<MelodyCaptureWindowProps> = ({
 
           <Text style={styles.recordingLine}>{text.recordingLine}</Text>
           <Text style={styles.hint}>{text.hint}</Text>
-
-          <TouchableOpacity style={styles.stopBtn} onPress={onStop} activeOpacity={0.8}>
+        </ScrollView>
+        {/* THE DOCKED STOP — the one control that ends the take. It names what it
+            does (ends the take, releases the mic, keeps the melody) and it is
+            never below the fold. */}
+        <View style={styles.stopDock}>
+          <TouchableOpacity
+            style={styles.stopBtn}
+            onPress={onStop}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={STOP_CTA_LABEL}
+            testID="capture-window-stop"
+          >
             <Text style={styles.stopBtnText}>{STOP_CTA_LABEL}</Text>
           </TouchableOpacity>
-        </ScrollView>
+          <Text style={styles.stopHint}>{STOP_CTA_HINT}</Text>
+        </View>
+        </>
       ) : (
         <ScrollView contentContainerStyle={styles.reviewStage}>
           {analysing && (
@@ -575,8 +596,25 @@ const baseStyles = StyleSheet.create({
   whenText: { color: '#c0c0d0', fontSize: 13, lineHeight: 19, flexShrink: 1 },
   recordingLine: { color: '#ff8fa3', fontSize: 14, fontWeight: '700', marginTop: 18 },
   hint: { color: '#a0a0b8', fontSize: 13, textAlign: 'center', marginTop: 6 },
+  // The dock: a footer OUTSIDE the recording scroller, so the stop can never be
+  // pushed below the fold by the meter, the note strip or the "when you stop"
+  // card (v46 defect fix, owner 10-28).
+  stopDock: {
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 18,
+    borderTopWidth: 1,
+    borderTopColor: '#0f3460',
+    backgroundColor: '#12122b',
+  },
+  stopHint: {
+    color: '#a0a0b8',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+    marginTop: 8,
+  },
   stopBtn: {
-    marginTop: 24,
     backgroundColor: '#e94560',
     borderRadius: 16,
     paddingVertical: 18,

@@ -1126,15 +1126,16 @@ export const HomeScreen: React.FC = () => {
     navigation.navigate('Library');
   }, [navigation]);
 
-  // ── v46 CORRECTIVE: the Discover surface's free-library row ──
-  // The row moved into FindPieceScreen with the rest of Discover, so the screen
-  // takes the destination as a prop. It closes the in-place search flow BEFORE
-  // switching tabs, so returning to the Home tab lands on the door (never on a
-  // half-open search) — the same one-flow-at-a-time rule every other door keeps.
-  const handleBrowseLibraryFromDiscover = useCallback(() => {
-    setShowFindPiece(false);
-    navigation.navigate('Library');
-  }, [navigation]);
+  // ── v46 DEFECT FIX (owner 10-28): THE DISCOVER FREE-LIBRARY ROW IS NOT
+  // ROUTED FROM HERE ANY MORE ──
+  // v45/v46 handed FindPieceScreen `onBrowseLibrary={() => { close; navigate(
+  // 'Library') }}`, so "Browse what is free now" on the Discover surface opened
+  // the user's PERSONAL library instead of the free public-domain scores. The
+  // destination now lives in the Discover surface itself (its own browse state),
+  // which is both correct and unbreakable from here: there is no prop left for a
+  // host to re-point. The modern interstitial's own free-library lever below is a
+  // DIFFERENT destination (the Library tab is what that card offers) and is
+  // unchanged.
 
   // From the modern interstitial: the find-a-song SEARCH for a match the backend
   // could NOT link to a licensed retailer (§E.2 row 2, bundle E). It reuses the
@@ -1280,10 +1281,7 @@ export const HomeScreen: React.FC = () => {
   // destination the row had on the door.
   if (showFindPiece) {
     return (
-      <FindPieceScreen
-        onClose={() => setShowFindPiece(false)}
-        onBrowseLibrary={handleBrowseLibraryFromDiscover}
-      />
+      <FindPieceScreen onClose={() => setShowFindPiece(false)} />
     );
   }
 
