@@ -1,6 +1,7 @@
 /**
  * PracticeVideoSendToSheet.tsx — THE PRACTICE-VIDEO EXPORT SURFACE (owner GO
- * 10-10, decision 5; backlog a49fbe2d; design brief §4.4).
+ * 10-10, decision 5; backlog a49fbe2d; design brief §4.4; extended in v47 part B
+ * with the clip + label step, owner GO 10-28).
  *
  * THE SAME ROUTE AS v37's SEND-TO, WITH THE VIDEO ADDED. Three pieces, one
  * surface:
@@ -15,13 +16,22 @@
  *   • PLAIN SUMMARY — text, the honest fallback when the platform cannot attach a
  *     file.
  *
+ * THE CLIP + LABEL STEP (v47 part B, item 2). `TakeClipTagEditor` sits above the
+ * destinations: the user picks a window on the video's clock and a few words for
+ * the teacher. BOTH members of the pair are then derived from that ONE window by
+ * `trimmedSendPair` — the video member carries the window, the take member IS the
+ * window (its notes rebased to the window's start) — so a clipped PDF can never
+ * travel beside an unlabelled video, and the PDF's clock is the window's clock,
+ * which is what the teacher hears when they start the video at the window.
+ *
  * EVERY LINE ON THE SURFACE IS THE TRUTH ABOUT STAGE 1 (decision 5): the pair
  * line says the video has no notes drawn on it yet, and `SEND_TO_HONESTY` — reused
  * verbatim — says everything leaves through the user's own device.
  *
  * NO DEAD AREAS: the destinations come from `videoSendActions`, which returns
  * nothing for a record with neither a video nor a take, so this sheet is only ever
- * opened where something can really be sent.
+ * opened where something can really be sent. A window that holds no notes offers no
+ * PDF and no MIDI and says why — the video and the summary still go.
  */
 import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useMemo, useState } from 'react';
@@ -37,9 +47,11 @@ import {
   type VideoSendRecord,
 } from '../services/videoSendTo';
 import { SEND_TO_HONESTY } from '../services/takeSendTo';
-import { MIDI_EXPORT_BUSY_LABEL } from '../services/midiExport';
+import { MIDI_EXPORT_BUSY_LABEL, type SavedCaptureTake } from '../services/midiExport';
 import { exportTakePdfFromTake } from '../services/takeSendDevice';
 import { sendPracticeSummary, sendPracticeVideo } from '../services/videoSendDevice';
+import { TRIM_NO_NOTES_LINE, trimmedSendPair, type TakeTrimSpan } from '../services/takeClipTag';
+import { TakeClipTagEditor } from './TakeClipTagEditor';
 import type { TakePdfChord } from '../services/takeNotationPdf';
 
 export interface PracticeVideoSendToSheetProps {
@@ -47,31 +59,68 @@ export interface PracticeVideoSendToSheetProps {
   visible: boolean;
   /** The filmed take and its video ref — the pair this sheet exports. */
   record: VideoSendRecord;
+  /** The stored clip window on the video's clock (null = the whole take). */
+  trimSpan?: TakeTrimSpan | null;
+  /** The video's own length — the clip editor's outer bound. */
+  durationSec?: number;
   /** The take's suggested chords, printed above the staff in the PDF. */
   chords?: ReadonlyArray<TakePdfChord> | null;
   /** A title for the file name and the share dialog. */
   title?: string | null;
-  /** The editor's EXISTING MIDI export (one path, not two). */
-  onSendMidi: () => void | Promise<void>;
+  /** The editor's EXISTING MIDI export (one path, not two) — handed the window. */
+  onSendMidi: (take: SavedCaptureTake | null) => void | Promise<void>;
   /** True while that export is encoding — the surface must not double-fire it. */
   midiBusy: boolean;
   /** The export's own outcome sentence ('' until it has run). */
   midiLine: string | null;
+  /** The playback surface persists the clip on the row. */
+  onSpanChange?: (span: TakeTrimSpan | null) => void;
+  /** …and the label on the take. */
+  onNoteChange?: (note: string) => void;
+  /** The label write's own outcome sentence. */
+  noteLine?: string | null;
+  /** True while the label write is in flight. */
+  noteBusy?: boolean;
   onClose: () => void;
 }
 
 export const PracticeVideoSendToSheet: React.FC<PracticeVideoSendToSheetProps> = ({
   visible,
   record,
+  trimSpan = null,
+  durationSec = 0,
   chords,
   title,
   onSendMidi,
   midiBusy,
   midiLine,
+  onSpanChange,
+  onNoteChange,
+  noteLine,
+  noteBusy,
   onClose,
 }) => {
   const { styles } = useThemedStyles(baseStyles);
-  const actions = useMemo(() => videoSendActions(record), [record]);
+  /**
+   * THE ONE DERIVATION (v47 part B): both members of the pair come out of this
+   * single call, from the single window the user picked.
+   */
+  const pair = useMemo(
+    () =>
+      trimmedSendPair({
+        ref: record?.video ?? null,
+        take: record?.take ?? null,
+        span: trimSpan,
+        note: record?.note ?? null,
+        title,
+      }),
+    [record, title, trimSpan],
+  );
+  const sendRecord = useMemo<VideoSendRecord>(
+    () => ({ video: pair.video, take: pair.take, note: pair.note }),
+    [pair],
+  );
+  const actions = useMemo(() => videoSendActions(sendRecord), [sendRecord]);
   const [busy, setBusy] = useState<VideoSendKind | null>(null);
   /** The outcome sentence per destination — a swallowed result is a dead button. */
   const [lines, setLines] = useState<Partial<Record<VideoSendKind, string>>>({});
@@ -80,24 +129,25 @@ export const PracticeVideoSendToSheet: React.FC<PracticeVideoSendToSheetProps> =
     async (kind: VideoSendKind) => {
       if (busy) return;
       if (kind === 'midi') {
-        // The editor's own export; its outcome line comes back through `midiLine`.
-        await onSendMidi();
+        // The editor's own export, handed the WINDOW's take; its outcome line
+        // comes back through `midiLine`.
+        await onSendMidi(pair.take);
         return;
       }
       setBusy(kind);
       try {
         const outcome =
           kind === 'video'
-            ? await sendPracticeVideo(record, { title })
+            ? await sendPracticeVideo(sendRecord, { title: pair.title, trimSpan: pair.span })
             : kind === 'pdf'
-              ? await exportTakePdfFromTake(record.take, { title, chords })
-              : await sendPracticeSummary(record, { title });
+              ? await exportTakePdfFromTake(pair.take, { title: pair.takeTitle, chords })
+              : await sendPracticeSummary(sendRecord, { title: pair.title, trimSpan: pair.span });
         setLines((current) => ({ ...current, [kind]: outcome.message }));
       } finally {
         setBusy(null);
       }
     },
-    [busy, chords, onSendMidi, record, title],
+    [busy, chords, onSendMidi, pair, sendRecord],
   );
 
   return (
@@ -118,6 +168,22 @@ export const PracticeVideoSendToSheet: React.FC<PracticeVideoSendToSheetProps> =
         <ScrollView style={styles.page} contentContainerStyle={styles.body}>
           <Text style={styles.pairLine}>{VIDEO_SEND_PAIR_LINE}</Text>
           <Text style={styles.honest}>{SEND_TO_HONESTY}</Text>
+
+          {/* THE CLIP + LABEL STEP (v47 part B, item 2) — mounted here, on the
+              path the user actually sends from. */}
+          <TakeClipTagEditor
+            durationSec={durationSec}
+            span={trimSpan}
+            note={record?.note ?? null}
+            onSpanChange={onSpanChange ?? (() => undefined)}
+            onNoteChange={onNoteChange ?? (() => undefined)}
+            noteLine={noteLine}
+            noteBusy={noteBusy}
+          />
+
+          {pair.spanLine ? <Text style={styles.line}>{pair.spanLine}</Text> : null}
+          {pair.noteLine ? <Text style={styles.line}>{pair.noteLine}</Text> : null}
+          {pair.spanHasNoNotes ? <Text style={styles.honest}>{TRIM_NO_NOTES_LINE}</Text> : null}
 
           {actions.length === 0 ? (
             <Text style={styles.honest}>{VIDEO_SEND_EMPTY_LINE}</Text>

@@ -46,6 +46,7 @@ import {
   videoMimeByExt,
   videoUtiByExt,
 } from './practiceVideoRef';
+import { trimSpanLabel, type TakeTrimSpan } from './takeClipTag';
 
 /** What a practice-video send did, with the sentence the surface renders. */
 export interface VideoSendOutcome {
@@ -68,6 +69,13 @@ export interface VideoSendDeps {
 
 export interface VideoSendOptions {
   title?: string | null;
+  /**
+   * THE ONE CLIP WINDOW (v47 part B, item 2) both members of the pair came from.
+   * The video file cannot be cut on the device (no media engine), so the window
+   * rides the share dialog's title and the summary; the take-side files ARE the
+   * window (`takeClipTag.trimmedSendPair`).
+   */
+  trimSpan?: TakeTrimSpan | null;
   deps?: VideoSendDeps;
 }
 
@@ -143,7 +151,15 @@ export async function sendPracticeVideo(
   try {
     const share = deps.shareFile ?? sharePracticeVideo;
     const uri = video.uri;
-    const status = (await share(uri, opts.title ?? 'Your practice video', videoMimeByExt(uri), videoUtiByExt(uri))) ?? 'shared';
+    /**
+     * THE WINDOW RIDES THE TITLE (v47 part B). The .mp4 is the user's file and this
+     * app has no media engine to cut it, so the clip is carried on the video member
+     * itself: the dialog the user sees names the window they picked.
+     */
+    const spanLabel = trimSpanLabel(opts.trimSpan);
+    const dialogTitle =
+      opts.title ?? (spanLabel ? `Your practice video — ${spanLabel}` : 'Your practice video');
+    const status = (await share(uri, dialogTitle, videoMimeByExt(uri), videoUtiByExt(uri))) ?? 'shared';
     return {
       status: status === 'dismissed' ? 'dismissed' : 'shared',
       kind: 'video',
@@ -173,7 +189,7 @@ export async function sendPracticeSummary(
     return { status: 'failed', kind: 'summary', message: VIDEO_SEND_EMPTY_LINE };
   }
   const title = opts.title ?? 'My practice take';
-  const text = `${videoSummaryText(rec, { title })}\n\n${SEND_TO_HONESTY}`;
+  const text = `${videoSummaryText(rec, { title, trimSpan: opts.trimSpan })}\n\n${SEND_TO_HONESTY}`;
   try {
     const share = deps.shareText ?? sharePracticeSummary;
     const status = (await share(title, text)) ?? 'shared';

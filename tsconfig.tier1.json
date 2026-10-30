@@ -219,6 +219,11 @@
     "src/services/v47ScoreReaderPresets.ts",
     "scripts/v47ScoreReaderPresets.test.ts",
     "src/services/v47FamilyAffiliateQuery.ts",
-    "scripts/v47FamilyAffiliateQuery.test.ts"
+    "scripts/v47FamilyAffiliateQuery.test.ts",
+    "src/services/videoCompare.ts",
+    "src/services/takeClipTag.ts",
+    "src/services/v47PartBContract.ts",
+    "scripts/v47TakeCompare.test.ts",
+    "scripts/v47TrimTag.test.ts"
   ]
 }

@@ -37,6 +37,7 @@ import {
   practiceVideoIsUsable,
   type PracticeVideoRef,
 } from './practiceVideoRef';
+import { tagLineFor, trimSpanLabel, type TakeTrimSpan } from './takeClipTag';
 import { midiName } from './takeSendTo';
 
 /** The button on the playback surface that opens this sheet. */
@@ -71,6 +72,13 @@ export const VIDEO_SEND_MIDI_HINT =
 export interface VideoSendRecord {
   video?: PracticeVideoRef | null;
   take?: SavedCaptureTake | null;
+  /**
+   * THE TAKE'S OWN LABEL (v47 part B, item 2). The same local text the History
+   * card keeps (`takeNote`), carried to the teacher on every member of the pair.
+   * Null/absent on every take filmed before this feature — and then every line
+   * below is exactly what it was before, so an older take's summary is unchanged.
+   */
+  note?: string | null;
 }
 
 export type VideoSendKind = 'video' | 'pdf' | 'midi' | 'summary';
@@ -161,12 +169,14 @@ export function videoSummaryHeadline(rec: VideoSendRecord | null | undefined): s
 
 /**
  * THE PLAIN SUMMARY, shared when the platform cannot attach a file. It carries the
- * take's own facts, the pair line and the honesty line — and it claims nothing
- * about the video's picture. `maxNotes` bounds the note names it prints.
+ * take's own facts, the take's label, the clip's window (v47 part B), the pair line
+ * and the honesty line — and it claims nothing about the video's picture.
+ * `maxNotes` bounds the note names it prints; `trimSpan` is the ONE window both
+ * members of the pair were derived from (`takeClipTag.trimmedSendPair`).
  */
 export function videoSummaryText(
   rec: VideoSendRecord | null | undefined,
-  opts: { title?: string | null; maxNotes?: number } = {},
+  opts: { title?: string | null; maxNotes?: number; trimSpan?: TakeTrimSpan | null } = {},
 ): string {
   const title = (opts.title ?? '').trim() || 'My practice take';
   const take = rec?.take ?? null;
@@ -177,10 +187,15 @@ export function videoSummaryText(
     .slice(0, max)
     .map((note) => midiName(Number(note.midi)));
   const more = notes.length > shown.length ? `, … (${notes.length - shown.length} more)` : '';
+  /** The take's own label — its own line, and only when it has one. */
+  const noteLine = tagLineFor(rec?.note);
+  const spanLabel = trimSpanLabel(opts.trimSpan);
   return [
     `${title} — sent from NoteSnap`,
     videoSummaryHeadline(rec),
+    ...(noteLine ? [noteLine] : []),
     shown.length > 0 ? `Notes: ${shown.join(', ')}${more}` : 'No notes were read from this take.',
+    ...(spanLabel ? [`Clip: ${spanLabel} of the video — the video goes whole, the PDF and MIDI are your take from that window.`] : []),
     VIDEO_SEND_PAIR_LINE,
     SEND_TO_HONESTY,
   ].join('\n');

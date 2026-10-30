@@ -29,6 +29,7 @@
  * practiceVideoStore.ts, which is NOT tier1-compiled for exactly that reason).
  */
 import type { SavedCaptureTake } from './midiExport';
+import type { TakeTrimSpan } from './takeClipTag';
 
 /** DECISION 3 — the cap on one practice video (seconds). */
 export const PRACTICE_VIDEO_MAX_SECONDS = 180;
@@ -126,6 +127,13 @@ export interface PracticeVideoRef {
    * then prints VIDEO_SEPARATE_TAKE_LINE instead of pretending they are one take.
    */
   pairedSeparately?: boolean;
+  /**
+   * ADDITIVE (v47 part B, item 2): the CLIP the user picked for the send pair, on
+   * the VIDEO's clock (services/takeClipTag.ts). Absent = the whole take, which is
+   * exactly how every row filmed before this feature behaves — the span is read by
+   * `trimmedSendPair`, and nothing else in the app depends on it.
+   */
+  trim?: TakeTrimSpan | null;
 }
 
 /** What we know the moment the two captures are stopped. */

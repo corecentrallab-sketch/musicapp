@@ -95,10 +95,25 @@ import {
   PRACTICE_VIDEO_NOT_KEPT_LINE,
   attachPracticeVideo,
   deletePracticeVideo,
+  listPracticeVideoRows,
   loadPracticeVideoRow,
   persistPracticeVideo,
   savePracticeVideoRow,
 } from '../services/practiceVideoStore';
+// THE TAKE'S OWN LABEL (v47 part B, item 2): the same local text the History card
+// keeps, saved through the melody store's own note write — one label per take.
+import { updatePersonalMelodyNote } from '../services/melodyStore';
+import { normaliseTakeNote } from '../services/takeNotes';
+import {
+  TAKE_TAG_CLEARED_LINE,
+  TAKE_TAG_FAILED_LINE,
+  TAKE_TAG_SAVED_LINE,
+  normaliseTrimSpan,
+  trimPlaybackShouldPause,
+  trimSpanLabel,
+  type TakeTrimSpan,
+} from '../services/takeClipTag';
+import { COMPARE_CTA, COMPARE_LEFT_LABEL, COMPARE_RIGHT_LABEL } from '../services/videoCompare';
 import {
   VIDEO_MISSING_LINE,
   VIDEO_NOTES_DROPPED_LINE,
@@ -128,6 +143,7 @@ import {
 import { OVERLAY_LANE_HEIGHT } from '../components/VideoOverlayLane';
 import { VideoOverlayLane } from '../components/VideoOverlayLane';
 import { PracticeVideoSendToSheet } from '../components/PracticeVideoSendToSheet';
+import { PracticeVideoCompare, type CompareTakeSide } from '../components/PracticeVideoCompare';
 import { TakeStaffCard } from '../components/TakeStaffCard';
 // THE FULL-SCREEN READING WINDOW (v43 fix batch, slice 3, item E7). The row's
 // staff is card-width inside a scrolling page; this screen hands the shared
@@ -164,6 +180,8 @@ interface PracticeTakeRow {
   take: SavedCaptureTake | null;
   ref: PracticeVideoRef | null;
   audioUri: string | null;
+  /** The take's own local label (v47 part B) — null on an older take. */
+  takeNote: string | null;
 }
 
 /**
@@ -232,6 +250,18 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   const [clockMs, setClockMs] = useState(0);
   const [offsetMs, setOffsetMs] = useState(0);
   const [deletedLine, setDeletedLine] = useState<string | null>(null);
+  /**
+   * ── v47 PART B STATE ────────────────────────────────────────────────────────
+   * `compareOpen` / `otherSide` are the side-by-side surface and the SECOND take it
+   * puts beside this one (loaded from History, never invented); `trimSpan` is the
+   * clip window stored on the row; `noteLine`/`noteBusy` are the label write's own
+   * outcome, so a failed save is never silent.
+   */
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [otherSide, setOtherSide] = useState<CompareTakeSide | null>(null);
+  const [trimSpan, setTrimSpan] = useState<TakeTrimSpan | null>(null);
+  const [noteLine, setNoteLine] = useState<string | null>(null);
+  const [noteBusy, setNoteBusy] = useState(false);
 
   /**
    * DECISION 1's STAMPS. Each capture stamp is taken at the moment its recorder
@@ -320,6 +350,15 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       const duration = Number.isFinite(at.durationMillis) ? Number(at.durationMillis) : 0;
       // A finished video starts again rather than appearing to do nothing.
       if (duration > 0 && position >= duration - 250) await player.setPositionAsync(0);
+      /**
+       * THE CLIP APPLIES TO THE VIDEO TOO (v47 part B). With a window stored, play
+       * starts at the window's first frame (and the status handler stops it at the
+       * window's end), so what the user watches is the window they are about to
+       * send — the same window the PDF and MIDI are built from.
+       */
+      if (trimSpan && position < trimSpan.startSec * 1000) {
+        await player.setPositionAsync(Math.round(trimSpan.startSec * 1000));
+      }
       await playWithAudioFocus(() => player.playAsync(), {
         source: 'take-playback',
         reason: 'clip-load',
@@ -334,7 +373,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     } finally {
       setVideoBusy(false);
     }
-  }, [row, videoBusy, videoPlaying]);
+  }, [row, trimSpan, videoBusy, videoPlaying]);
 
   // ── PLAYBACK: read the row we were opened for ────────────────────────────────
   useEffect(() => {
@@ -357,8 +396,12 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         take: stored.capture ?? null,
         ref,
         audioUri: stored.personalMelody?.audioUri ?? null,
+        takeNote: normaliseTakeNote(stored.takeNote),
       });
       setOffsetMs(Math.round(Number(ref?.audioOffsetMs) || 0));
+      // The stored clip window (v47 part B) — absent on every older row, which
+      // reads back as "the whole take" and changes nothing.
+      setTrimSpan(normaliseTrimSpan(ref?.trim ?? null, Math.max(0, Number(ref?.durationSec) || 0)));
       // The row is in hand: this is the playback surface, stated in the phase
       // machine rather than left to a separate flag (v39 fix 3).
       setPhase('playback');
@@ -522,6 +565,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         take,
         ref,
         audioUri: audioUriRef.current,
+        takeNote: null,
       };
       setRow(nextRow);
       setOffsetMs(Math.round(Number(ref?.audioOffsetMs) || 0));
@@ -649,17 +693,26 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     void applyOffset(computed);
   }, [applyOffset, clockMs, take]);
 
-  const shareTakeAsMidi = useCallback(async () => {
-    if (!take || take.notes.length === 0) return;
-    setMidiBusy(true);
-    setMidiLine(null);
-    try {
-      const result = await exportCaptureMidiFromTake(take, { title: row?.title });
-      setMidiLine(result.message);
-    } finally {
-      setMidiBusy(false);
-    }
-  }, [row?.title, take]);
+  /**
+   * THE ONE MIDI EXPORT (v47 part B). The send sheet hands in the WINDOW's take so
+   * the .mid matches the PDF and the video's window; with no window it is exactly
+   * the take the surface already exported.
+   */
+  const shareTakeAsMidi = useCallback(
+    async (windowTake?: SavedCaptureTake | null) => {
+      const target = windowTake ?? take;
+      if (!target || target.notes.length === 0) return;
+      setMidiBusy(true);
+      setMidiLine(null);
+      try {
+        const result = await exportCaptureMidiFromTake(target, { title: row?.title });
+        setMidiLine(result.message);
+      } finally {
+        setMidiBusy(false);
+      }
+    },
+    [row?.title, take],
+  );
 
   const handleDeleteVideo = useCallback(async () => {
     if (!row) return;
@@ -676,6 +729,90 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     // The CORRECTED take is the single source of truth the overlay reads.
     setRow((current) => (current ? { ...current, take: corrected } : current));
   }, []);
+
+  /**
+   * ── v47 PART B, ITEM 1: OPEN THE SIDE-BY-SIDE COMPARISON ────────────────────
+   *
+   * The second take comes from the user's OWN History (`listPracticeVideoRows`),
+   * never from a placeholder, and the first take is this row's own corrected take
+   * and video. When there is no other filmed take the surface is still opened —
+   * with the honest one-take line and the way to film a second — so the button can
+   * never be a dead end (owner 09-28). Nothing here reads the network: both sides
+   * are local files, which is what makes the comparison work in airplane mode.
+   */
+  const openCompare = useCallback(async () => {
+    const rows = await listPracticeVideoRows(row?.rowId ?? null);
+    const other = rows[0] ?? null;
+    setOtherSide(
+      other
+        ? {
+            label: COMPARE_RIGHT_LABEL,
+            ref: other.practiceVideo ?? null,
+            take: other.capture ?? null,
+            note: normaliseTakeNote(other.takeNote),
+          }
+        : null,
+    );
+    setCompareOpen(true);
+  }, [row?.rowId]);
+
+  /** The one-take path out of the comparison: film a second take. */
+  const handleRecordSecond = useCallback(() => {
+    setCompareOpen(false);
+    handleRecordAgain();
+  }, [handleRecordAgain]);
+
+  /**
+   * ── v47 PART B, ITEM 2: THE CLIP ────────────────────────────────────────────
+   *
+   * The window is stored on the row's practice-video block (it is a window on the
+   * VIDEO's clock, so it belongs with the video). Every member of the send pair is
+   * derived from this one value in `trimmedSendPair`, so the PDF, the MIDI and the
+   * video can never describe different windows.
+   */
+  const handleSpanChange = useCallback(
+    async (next: TakeTrimSpan | null) => {
+      if (!row) return;
+      const bounded = normaliseTrimSpan(next, Math.max(0, Number(row.ref?.durationSec) || 0));
+      setTrimSpan(bounded);
+      if (practiceVideoIsUsable(row.ref)) {
+        const updated: PracticeVideoRef = { ...(row.ref as PracticeVideoRef), trim: bounded };
+        setRow({ ...row, ref: updated });
+        await attachPracticeVideo(row.rowId, updated);
+      }
+    },
+    [row],
+  );
+
+  /**
+   * ── v47 PART B, ITEM 2: THE LABEL ───────────────────────────────────────────
+   *
+   * The label IS the take's own local text (`takeNote`, services/takeNotes.ts) —
+   * the same field the History card edits — saved through the melody store's own
+   * write so there is one label per take and nothing is ever generated. A failed
+   * write says so and leaves the take untouched.
+   */
+  const handleNoteChange = useCallback(
+    async (next: string) => {
+      if (!row) return;
+      const cleaned = normaliseTakeNote(next);
+      setNoteBusy(true);
+      try {
+        const ok = await updatePersonalMelodyNote(row.rowId, cleaned);
+        if (!ok) {
+          setNoteLine(TAKE_TAG_FAILED_LINE);
+          return;
+        }
+        setRow((current) => (current ? { ...current, takeNote: cleaned } : current));
+        setNoteLine(cleaned ? TAKE_TAG_SAVED_LINE : TAKE_TAG_CLEARED_LINE);
+      } catch {
+        setNoteLine(TAKE_TAG_FAILED_LINE);
+      } finally {
+        setNoteBusy(false);
+      }
+    },
+    [row],
+  );
 
   // ── RENDER ─────────────────────────────────────────────────────────────────
   // ONE mode test, off the phase machine (v39 fix 3): `playback` is the phase a
@@ -711,6 +848,18 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 onPlaybackStatusUpdate={(status) => {
                   const position = (status as { positionMillis?: number }).positionMillis;
                   if (typeof position === 'number' && Number.isFinite(position)) setClockMs(position);
+                  /**
+                   * THE CLIP'S END STOPS THE PLAYER (v47 part B). The window the user
+                   * sends is the window they watch, so the video pauses there instead
+                   * of playing on past it.
+                   */
+                  if (
+                    typeof position === 'number' &&
+                    trimPlaybackShouldPause(position, trimSpan) &&
+                    (status as { isPlaying?: boolean }).isPlaying === true
+                  ) {
+                    void videoRef.current?.pauseAsync().catch(() => undefined);
+                  }
                   // The button mirrors the PLAYER's own state, never our hope.
                   const playing = (status as { isPlaying?: boolean }).isPlaying === true;
                   setVideoPlaying((current) => (current === playing ? current : playing));
@@ -755,6 +904,10 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
             <Text style={styles.meta}>
               {videoSizeLine(Math.max(0, Number(ref.durationSec) || 0), ref.sizeBytes ?? null)}
             </Text>
+          ) : null}
+          {/* THE CLIP (v47 part B): what the send pair covers, in one line. */}
+          {trimSpanLabel(trimSpan) ? (
+            <Text style={styles.meta}>{`Clip: ${trimSpanLabel(trimSpan)}`}</Text>
           ) : null}
 
           {/* THE OVERLAY: the CORRECTED take's notes and chords, on the video clock. */}
@@ -857,6 +1010,15 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
           >
             <Text style={styles.primaryBtnText}>{'Send to…'}</Text>
           </TouchableOpacity>
+          {/* ── v47 PART B, ITEM 1: the side-by-side comparison ──────────────── */}
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            onPress={() => void openCompare()}
+            accessibilityRole="button"
+            accessibilityLabel={COMPARE_CTA}
+          >
+            <Text style={styles.secondaryBtnText}>{COMPARE_CTA}</Text>
+          </TouchableOpacity>
           {practiceVideoIsUsable(ref) ? (
             <TouchableOpacity style={styles.secondaryBtn} onPress={() => void handleDeleteVideo()}>
               <Text style={styles.secondaryBtnText}>{'Delete the video'}</Text>
@@ -882,12 +1044,29 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         />
         <PracticeVideoSendToSheet
           visible={sendOpen}
-          record={{ video: ref, take }}
+          record={{ video: ref, take, note: row?.takeNote ?? null }}
+          trimSpan={trimSpan}
+          durationSec={Math.max(0, Number(ref?.durationSec) || 0)}
           title={row?.title ?? PRACTICE_VIDEO_ROW_TITLE}
           onSendMidi={shareTakeAsMidi}
           midiBusy={midiBusy}
           midiLine={midiLine}
+          onSpanChange={(next) => void handleSpanChange(next)}
+          onNoteChange={(next) => void handleNoteChange(next)}
+          noteLine={noteLine}
+          noteBusy={noteBusy}
           onClose={() => setSendOpen(false)}
+        />
+        {/* ── v47 PART B, ITEM 1: TWO TAKES, SIDE BY SIDE ──────────────────────
+            Mounted HERE, on the playback path the user walks, and handed this
+            row's own video ref + corrected take plus the second take read from
+            History. Both are local files, so the comparison needs no network. */}
+        <PracticeVideoCompare
+          visible={compareOpen}
+          left={{ label: COMPARE_LEFT_LABEL, ref: row?.ref ?? null, take, note: row?.takeNote ?? null }}
+          right={otherSide}
+          onRecordSecond={handleRecordSecond}
+          onClose={() => setCompareOpen(false)}
         />
       </View>
     );
