@@ -143,11 +143,12 @@ export const BRAND_FILL_ROLES: readonly (keyof ThemeTokens)[] = [
 /**
  * Style keys whose white label sits on a fill the sheet's OWN background cannot
  * reveal (the fill is applied by a parent element, or by a sibling key whose name
- * is unrelated). Three, named explicitly: the Settings plan badge, the scan
- * screen's Done button and the metronome's beat orb.
+ * is unrelated). Two, named explicitly: the scan screen's Done button and the
+ * metronome's beat orb. (The Settings plan badge — `bestValueText` — was the third
+ * until v47.1 Part A removed the badge: with no savings to point at, the claim was
+ * unsupported.)
  */
 export const ON_FILL_TEXT_KEYS: readonly string[] = [
-  'bestValueText',
   'doneLabel',
   'orbBeatNumber',
 ];

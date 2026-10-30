@@ -166,19 +166,23 @@ assertEq(
 );
 
 console.log('\n§3 GEOMETRY — the spec’s numbers, named once');
-assertEq(SETTINGS_SPEC.rowHeight, 52, 'a row is 52 dp');
+// v47.1 Part A: the row and Pro heights are FLOORS, not fixed heights, and the
+// sub's hard right-100 dp cap is gone (the copy flexes; the value is measured).
+assertEq(SETTINGS_SPEC.rowMinHeight, 52, 'a row’s FLOOR is 52 dp (never a fixed height)');
+assertEq(SETTINGS_SPEC.rowPadY, 10, 'a row carries 10 dp of vertical padding, so it can grow');
 assertEq(SETTINGS_SPEC.rowInset, 32, 'the row’s text is inset x32');
 assertEq(SETTINGS_SPEC.rowTitleSize, 15, 'row title 15 dp');
 assertEq(SETTINGS_SPEC.rowSubSize, 11, 'row sub 11 dp');
 assertEq(SETTINGS_SPEC.rowValueSize, 13, 'row value 13 dp');
-assertEq(SETTINGS_SPEC.subRightCap, 100, 'the sub is capped at right-100 dp');
+assertEq(SETTINGS_SPEC.rowValueGap, 12, 'the value sits 12 dp from the copy — a MEASURED gap, not a 100 dp reservation');
 assertEq(SETTINGS_SPEC.headerSize, 11, 'header 11 dp');
 assertEq(SETTINGS_SPEC.headerAbove, 20, '20 dp above a header');
 assertEq(SETTINGS_SPEC.headerBelow, 18, '18 dp below a header');
 assertEq(SETTINGS_SPEC.cardRadius, 16, 'cards r16');
 assertEq(SETTINGS_SPEC.cardGap, 20, 'cards 20 dp apart');
 assertEq(SETTINGS_SPEC.cardBorderWidth, 1, 'cards carry a 1 dp CARD_LINE border');
-assertEq(SETTINGS_SPEC.proHeight, 62, 'the Pro row is 62 dp');
+assertEq(SETTINGS_SPEC.proMinHeight, 62, 'the Pro row’s FLOOR is 62 dp (never a fixed height)');
+assertEq(SETTINGS_SPEC.proPadY, 12, 'the Pro row carries 12 dp of vertical padding, so it can grow');
 assertEq(SETTINGS_SPEC.proTitleSize, 16, 'the Pro title is 16 dp');
 assertEq(SETTINGS_SPEC.proSubSize, 12, 'the Pro sub is 12 dp');
 assertEq(SETTINGS_SPEC.toggleWidth, 38, 'a toggle would be 38 × 22 (no row owns one yet)');
@@ -425,8 +429,21 @@ probe(
   settingsHeadersPrecedeTheirRows,
 );
 probe(
-  'the row height drifts from the spec',
-  settings.replace('  specRow: {\n    height: 52,', '  specRow: {\n    height: 48,'),
+  'the row FLOOR drifts from the spec',
+  settings.replace('  specRow: {\n    minHeight: 52,', '  specRow: {\n    minHeight: 40,'),
+  settingsRowGeometry,
+);
+probe(
+  'a fixed height comes back on a text row (the v47.1 class)',
+  settings.replace('  specRow: {\n    minHeight: 52,', '  specRow: {\n    height: 52,'),
+  settingsRowGeometry,
+);
+probe(
+  'the sub reserves a hard right pad again (the v47.1 defect)',
+  settings.replace(
+    'specRowCopy: { flex: 1, minWidth: 0 },',
+    'specRowCopy: { flex: 1, paddingRight: 100 },',
+  ),
   settingsRowGeometry,
 );
 probe(

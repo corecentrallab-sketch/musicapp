@@ -206,7 +206,7 @@ assertEq(resolveThemeMode('light'), 'light', 'the resolver still honours a store
 assertEq(themeFor('nonsense').background, DARK_THEME.background, 'an unknown stored value still lands on dark');
 assert(THEME_HONEST_NOTE.indexOf('whole app') > 0, 'the Settings copy now says the choice is app-wide');
 assert(THEME_HONEST_NOTE.indexOf('rest of the app keeps its dark styling') < 0, 'the stale v33 scope note is gone');
-assertEq(ON_FILL_TEXT_KEYS.length, 3, 'exactly the three named on-fill labels are excepted');
+assertEq(ON_FILL_TEXT_KEYS.length, 2, 'exactly the two named on-fill labels are excepted (the Settings badge left in v47.1 A)');
 assert(labelSitsOnDarkFill('heroBtnText', sheet), 'labelSitsOnDarkFill sees a brand fill');
 assert(!labelSitsOnDarkFill('label', sheet), 'a label on a plain surface is not on a fill');
 assertEq(lightRoleFor('#ffffff', 'backgroundColor'), 'surface', 'white as a FILL is a surface, white as a GLYPH is text');
