@@ -11,8 +11,11 @@
  *   • THE COPY (verbatim from the spec, except the version number, which is read
  *     live from the app config — the frame's "0.1.32" is stale by construction).
  *   • THE GEOMETRY (52 dp rows inset x32, r16 cards, 20 dp apart, 11 dp caps
- *     headers 20 above / 18 below, sub capped at right-100 dp, 38×22 toggle,
- *     13 dp value, 11.5 dp footnote).
+ *     headers 20 above / 18 below, 38×22 toggle, 13 dp value, 11.5 dp footnote).
+ *     v47.1 Part A: the row/pro heights are FLOORS (`minHeight`) plus vertical
+ *     padding, never a fixed `height`, and the sub's old right-100 dp cap is gone
+ *     — the copy block flexes and the trailing value is measured (see
+ *     services/v471SettingsFit.ts, which enforces the shape).
  *   • THE ROLE MAP: the designer's roles (CARD, LINE, CARD_LINE, SUB, TXT, HUM,
  *     LISTEN, SOFTFILL, PILL_ON, DIM) are NOT new colours — each one is an
  *     existing `theme.ts` role, so both themes are a token swap and nothing else.
@@ -234,20 +237,29 @@ export const SETTINGS_SPEC = {
   headerSize: 11,
   headerAbove: 20,
   headerBelow: 18,
-  /** The Pro row: 358 × 62, r16, CARD + 1 dp LISTEN border. */
-  proHeight: 62,
+  /**
+   * The Pro row: a 62 dp FLOOR (never a fixed height — the row grows with the OS
+   * font scale), r16, CARD + 1 dp LISTEN border.
+   */
+  proMinHeight: 62,
+  proPadY: 12,
   proRadius: 16,
   proBorderWidth: 1,
   proTitleSize: 16,
   proSubSize: 12,
-  /** One row style everywhere: 52 dp, inset x32, title 15, sub 11, value 13. */
-  rowHeight: 52,
+  /** One row style everywhere: a 52 dp FLOOR, inset x32, title 15, sub 11, value 13. */
+  rowMinHeight: 52,
+  rowPadY: 10,
   rowInset: 32,
   rowTitleSize: 15,
   rowSubSize: 11,
   rowValueSize: 13,
-  /** The sub copy can never run under the value column. */
-  subRightCap: 100,
+  /**
+   * The gap between the flexing copy block and the trailing value. The v47 defect
+   * reserved a HARD 100 dp here (`paddingRight: 100`) instead of measuring the
+   * value, which clipped the copy the moment the text scaled up.
+   */
+  rowValueGap: 12,
   /** The toggle: 38 × 22 (r11). */
   toggleWidth: 38,
   toggleHeight: 22,
@@ -590,24 +602,42 @@ export function settingsRowsReachRealDestinations(settingsSource: string): boole
   return destinations.every((needle) => text.indexOf(needle) >= 0);
 }
 
-/** One row style everywhere: the spec's geometry, read out of the StyleSheet. */
+/**
+ * One row style everywhere: the spec's geometry, read out of the StyleSheet.
+ *
+ * v47.1 Part A — the FIT half of the geometry. The rows that hold text carry a
+ * `minHeight` FLOOR plus vertical padding and NO fixed `height`, and the copy
+ * block flexes with no hard `paddingRight`. `settingsRowGeometry` asserts that
+ * shape; services/v471SettingsFit.ts asserts it as a class over every text row.
+ */
 export function settingsRowGeometry(settingsSource: string): boolean {
   const spec = SETTINGS_SPEC;
   const need = (style: string, prop: string, value: string): boolean =>
     settingsStyleValue(settingsSource, style, prop) === value;
   return [
-    need('specRow', 'height', String(spec.rowHeight)),
+    // ── the floors (no fixed heights on text rows) ──
+    need('specRow', 'minHeight', String(spec.rowMinHeight)),
+    need('specRow', 'paddingVertical', String(spec.rowPadY)),
+    settingsStyleValue(settingsSource, 'specRow', 'height') === null,
+    need('proRow', 'minHeight', String(spec.proMinHeight)),
+    need('proRow', 'paddingVertical', String(spec.proPadY)),
+    settingsStyleValue(settingsSource, 'proRow', 'height') === null,
+    // ── the flexing copy block, and a MEASURED trailing value ──
+    need('specRowCopy', 'flex', '1'),
+    need('specRowCopy', 'minWidth', '0'),
+    settingsStyleValue(settingsSource, 'specRowCopy', 'paddingRight') === null,
+    need('specRowValue', 'marginLeft', String(spec.rowValueGap)),
+    need('specRowValue', 'flexShrink', '1'),
+    // ── the type and the surrounding chrome ──
     need('specRow', 'paddingLeft', String(spec.rowInset - spec.screenInset)),
     need('specRowTitle', 'fontSize', String(spec.rowTitleSize)),
     need('specRowSub', 'fontSize', String(spec.rowSubSize)),
     need('specRowValue', 'fontSize', String(spec.rowValueSize)),
-    need('specRowCopy', 'paddingRight', String(spec.subRightCap)),
     need('specHeader', 'fontSize', String(spec.headerSize)),
     need('specHeader', 'marginTop', String(spec.headerAbove)),
     need('specHeader', 'marginBottom', String(spec.headerBelow)),
     need('specGroup', 'borderRadius', String(spec.cardRadius)),
     need('specGroup', 'marginBottom', String(spec.cardGap)),
-    need('proRow', 'height', String(spec.proHeight)),
     need('proRow', 'borderRadius', String(spec.proRadius)),
     need('proTitle', 'fontSize', String(spec.proTitleSize)),
     need('proSub', 'fontSize', String(spec.proSubSize)),

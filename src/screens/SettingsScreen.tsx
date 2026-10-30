@@ -52,11 +52,16 @@
  *   1. Tap a plan → POST /api/create-checkout-session with the device id
  *   2. Open the returned Stripe Checkout URL in a browser
  *   3. On return, poll GET /api/entitlement until the webhook grants Pro
- *   4. Persist the Pro state locally and show the active-plan UI
+ *   4. Persist the Pro state locally and show the unlocked-plan UI
  *
- * NOTE (pre-launch, owner 09-22 Option B): the in-app checkout is known-broken
- * until the post-launch fix, so the Pro row's honest job is to stay the entry it
- * is today — it opens the plan cards, and the cards do what they already did.
+ * v47.1 Part A — THE MONEY DATA LIVES IN services/v471PlanPrices (owner 10-30).
+ * The cards used to hardcode three Stripe price IDs that no longer existed on the
+ * live account ("No such price" → a "Checkout Error" alert on EVERY upgrade tap)
+ * and to sell a billing model the account does not have. All three live prices are
+ * `type: one_time`, so the copy says ONE-TIME and never "/mo", "monthly", "yearly",
+ * "subscription" or a trial. The price IDs, the tier names, the price labels, the
+ * CTA and the post-purchase line are imported from that module; the guard suite
+ * scans the same strings this screen renders.
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -216,50 +221,32 @@ import { BUILD_STAMP_TAG, buildStampLine } from '../services/buildStamp';
 import { BUILD_SHA } from '../services/buildSha';
 import { providerConnected } from '../services/cloudSync';
 
-// Owner-account Stripe price IDs (USD). These are public identifiers passed to
-// our own API — the API is what creates the Checkout session on the owner's
-// Stripe account, so money always lands in the right place.
-type Plan = {
-  id: string;
-  name: string;
-  price: string;
-  feature: string;
-  savings?: string;
-  highlight?: boolean;
-};
-const PLANS: Plan[] = [
-  {
-    id: 'price_1U3SEFBbnDObsY4ujb2zxBSs', // NoteSnap Pro — Monthly $4.99
-    name: 'Pro Monthly',
-    price: '$4.99 / month',
-    feature:
-      '✓ Unlimited recognitions\n✓ Grade/difficulty levels\n✓ Advanced recommendations\n✓ Custom app skins\n✓ Cloud sync & sharing\n✓ No ads anywhere',
-  },
-  {
-    id: 'price_1U3SEKBbnDObsY4usDGDFNPQ', // NoteSnap Pro — Yearly $39.99
-    name: 'Pro Yearly',
-    price: '$39.99 / year',
-    savings: 'Save 33% vs monthly',
-    feature: 'All Pro features, billed annually.',
-    highlight: true,
-  },
-  {
-    id: 'price_1U3SEKBbnDObsY4uVrnJDIyg', // NoteSnap Family/Teacher $9.99
-    name: 'Family / Teacher',
-    price: '$9.99 / month',
-    feature:
-      '✓ Up to 5 accounts\n✓ Shared History libraries\n✓ All Pro features included\n✓ Perfect for families & music teachers',
-  },
-];
+// ── v47.1 Part A · THE PLAN CARDS' MONEY DATA (owner 10-30) ────────────────────
+// The price IDs, the tier names, the price labels, the CTA and the post-purchase
+// line are NOT declared here: they live in services/v471PlanPrices, which the
+// tier1 guard suite scans. Three dead IDs used to be hardcoded here and were gone
+// from the live Stripe account ("No such price" on every upgrade tap), and the
+// copy sold a monthly/yearly plan the account does not have — all three live
+// prices are one_time. Rendering the module's strings is what keeps the screen and
+// the guard on the same text.
+import {
+  BILLING_NOTES,
+  LIVE_PRICES,
+  PLAN_CTA_LABEL,
+  PLAN_SECTION_SUBTITLE,
+  PURCHASE_DONE_BODY,
+  PURCHASE_DONE_TITLE,
+} from '../services/v471PlanPrices';
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_MS = 30000;
 
-const PLAN_LABELS: Record<string, string> = {
-  'pro-monthly': 'NoteSnap Pro',
-  'pro-yearly': 'NoteSnap Pro',
-  family: 'NoteSnap Family',
-};
+/**
+ * The entitlement API's plan id, shown as a name. Deliberately a PREFIX match: the
+ * server owns those ids, and none of them is copy the user should read.
+ */
+const planDisplayName = (plan: string): string =>
+  plan.indexOf('family') >= 0 ? 'NoteSnap Family' : 'NoteSnap Pro';
 
 /**
  * THE LIVE MICROPHONE PERMISSION (spec §3 row 1). Read, never requested: opening
@@ -700,7 +687,9 @@ export const SettingsScreen: React.FC = () => {
         }
       }
       if (pro) {
-        Alert.alert('Welcome to Pro!', 'Your subscription is active. Enjoy unlimited recognitions.');
+        // A PURCHASE, not a subscription: the live prices are one_time, so nothing
+        // here may claim a plan is "active" or that anything will renew.
+        Alert.alert(PURCHASE_DONE_TITLE, PURCHASE_DONE_BODY);
       }
     } catch (err) {
       const message =
@@ -711,7 +700,7 @@ export const SettingsScreen: React.FC = () => {
     }
   }, [refreshEntitlement]);
 
-  const planLabel = proState.plan ? PLAN_LABELS[proState.plan] ?? 'NoteSnap Pro' : null;
+  const planLabel = proState.plan ? planDisplayName(proState.plan) : null;
 
   // ── THE §3 ROWS' DESTINATIONS (v43 slice 2) — every one of them exists ──
   /** The Pro row: opens the plans/checkout cards that already live below. */
@@ -834,13 +823,10 @@ export const SettingsScreen: React.FC = () => {
                   <Text style={[styles.planStatus, themed.muted]}>
                     {proState.isPro
                       ? 'Unlimited recognitions'
-                      : '5 recognitions / month'}
+                      : '5 recognitions a month'}
                   </Text>
-                  {proState.isPro && proState.currentPeriodEnd && (
-                    <Text style={styles.planRenews}>
-                      Renews {new Date(proState.currentPeriodEnd).toLocaleDateString()}
-                    </Text>
-                  )}
+                  {/* v47.1 Part A: the old "Renews <date>" line is gone. The live
+                      prices are one_time — nothing renews, so nothing may say so. */}
                 </>
               )}
             </View>
@@ -851,29 +837,22 @@ export const SettingsScreen: React.FC = () => {
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, themed.title]}>Upgrade</Text>
               <Text style={[styles.sectionSubtitle, themed.subtitle]}>
-                You're on the free plan — 5 recognitions/month.{'\n'}
-                Upgrade anytime for unlimited access.
+                {PLAN_SECTION_SUBTITLE}
               </Text>
 
-              {PLANS.map((plan) => (
+              {LIVE_PRICES.map((plan) => (
                 <TouchableOpacity
                   key={plan.id}
                   style={[styles.upgradeCard, themed.card, plan.highlight && styles.upgradeCardHighlight]}
                   onPress={() => handleUpgrade(plan.id)}
                   disabled={loadingPlan !== null}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${plan.name}, ${plan.priceLabel}`}
                 >
-                  {plan.highlight && (
-                    <View style={styles.bestValueBadge}>
-                      <Text style={styles.bestValueText}>BEST VALUE</Text>
-                    </View>
-                  )}
                   <View style={styles.upgradeInfo}>
                     <Text style={[styles.upgradeName, themed.strong]}>{plan.name}</Text>
-                    <Text style={[styles.upgradePrice, themed.muted]}>{plan.price}</Text>
-                    {plan.savings && (
-                      <Text style={styles.upgradeSavings}>{plan.savings}</Text>
-                    )}
+                    <Text style={[styles.upgradePrice, themed.muted]}>{plan.priceLabel}</Text>
                     <Text style={[styles.upgradeFeature, themed.muted]}>{plan.feature}</Text>
                   </View>
                   {loadingPlan === plan.id ? (
@@ -881,7 +860,7 @@ export const SettingsScreen: React.FC = () => {
                   ) : (
                     <View style={[styles.upgradeBtn, plan.highlight && styles.upgradeBtnPrimary]}>
                       <Text style={[styles.upgradeBtnText, plan.highlight && styles.upgradeBtnTextPrimary]}>
-                        Subscribe
+                        {PLAN_CTA_LABEL}
                       </Text>
                     </View>
                   )}
@@ -894,12 +873,11 @@ export const SettingsScreen: React.FC = () => {
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, themed.title]}>Billing</Text>
             <View style={[styles.infoCard, themed.card]}>
-              <Text style={[styles.infoText, themed.muted]}>
-                • Cancel anytime — one tap, no hassle{'\n'}
-                • Free plan available with 5 recognitions/month{'\n'}
-                • No commitments — you're in control{'\n'}
-                • Payment processed securely by Stripe
-              </Text>
+              {BILLING_NOTES.map((note) => (
+                <Text key={note} style={[styles.infoText, themed.muted]}>
+                  • {note}
+                </Text>
+              ))}
             </View>
           </View>
         </>
@@ -1407,11 +1385,11 @@ const SpecRow: React.FC<SpecRowProps> = ({
   const content = (
     <>
       <View style={styles.specRowCopy}>
-        <Text style={[styles.specRowTitle, { color: palette.TXT }]} numberOfLines={1}>
+        <Text style={[styles.specRowTitle, { color: palette.TXT }]}>
           {title}
         </Text>
         {sub ? (
-          <Text style={[styles.specRowSub, { color: palette.SUB }]} numberOfLines={1}>
+          <Text style={[styles.specRowSub, { color: palette.SUB }]}>
             {sub}
           </Text>
         ) : null}
@@ -1462,9 +1440,12 @@ const baseStyles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 40,
   },
-  // The Pro row: 358 × 62, r16, 1 dp LISTEN edge.
+  // The Pro row: a 62 dp FLOOR, r16, 1 dp LISTEN edge. v47.1 Part A — it was a
+  // fixed `height: 62`, which clipped the 16/700 title + 12 sub the moment the OS
+  // font scale went up (the owner's "jammed in" box). A floor plus vertical
+  // padding lets the row GROW instead.
   proRow: {
-    height: 62,
+    minHeight: 62,
     borderRadius: 16,
     borderWidth: 1,
     flexDirection: 'row',
@@ -1472,14 +1453,19 @@ const baseStyles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingLeft: 16,
     paddingRight: 12,
+    paddingVertical: 12,
   },
-  proCopy: { flex: 1, paddingRight: 8 },
+  // The copy FLEXES; the pill beside it is measured (flexShrink: 0), so no side
+  // reserves space the other may not need.
+  proCopy: { flex: 1, minWidth: 0 },
   proTitle: { fontSize: 16, fontWeight: '700' },
   proSub: { fontSize: 12, marginTop: 2 },
   proCta: {
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
+    flexShrink: 0,
+    marginLeft: 8,
   },
   proCtaText: { fontSize: 13, fontWeight: '700' },
   // The section header: 11 dp caps bold, 20 above / 18 below, indent x16.
@@ -1509,18 +1495,26 @@ const baseStyles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 20,
   },
-  // ONE row style: 52 dp, inset x32, title 15 / sub 11 / value 13.
+  // ONE row style: a 52 dp FLOOR (never a fixed height — v47.1 Part A: it was
+  // `height: 52`, which clipped the 15/700 title + 11 sub at a raised font scale),
+  // inset x32, title 15 / sub 11 / value 13.
   specRow: {
-    height: 52,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: 16,
     paddingRight: 10,
+    paddingVertical: 10,
   },
-  specRowCopy: { flex: 1, paddingRight: 100 },
+  // The copy flexes; the trailing value is MEASURED. The v47 defect was
+  // `{ flex: 1, paddingRight: 100 }` — a hard 100 dp reserved for a value that may
+  // be short or absent, which is what clipped the copy.
+  specRowCopy: { flex: 1, minWidth: 0 },
   specRowTitle: { fontSize: 15, fontWeight: '700' },
   specRowSub: { fontSize: 11, marginTop: 2 },
-  specRowValue: { fontSize: 13, fontWeight: '700', marginRight: 6 },
+  // A short trailing state label: it may shrink and ellipsize rather than push the
+  // title out of the row.
+  specRowValue: { fontSize: 13, fontWeight: '700', marginLeft: 12, flexShrink: 1 },
   // The Theme row's in-place choice (the existing Dark/Light binding).
   specThemePanel: {
     borderRadius: 16,
@@ -1626,12 +1620,8 @@ const baseStyles = StyleSheet.create({
     fontSize: 14,
     color: '#a0a0b8',
   },
-  planRenews: {
-    fontSize: 13,
-    color: '#4ecdc4',
-    marginTop: 6,
-    fontWeight: '600',
-  },
+  // v47.1 Part A: `planRenews` is gone — a one-time purchase has no renewal date,
+  // so the screen has no style for one either.
 
   // Upgrade Cards
   upgradeCard: {
@@ -1648,22 +1638,13 @@ const baseStyles = StyleSheet.create({
     borderColor: '#e94560',
     borderWidth: 2,
   },
-  bestValueBadge: {
-    position: 'absolute',
-    top: -10,
-    right: 16,
-    backgroundColor: '#e94560',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-  },
-  bestValueText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '800',
-  },
+  // v47.1 Part A: `bestValueBadge`/`bestValueText` are gone with the "BEST VALUE"
+  // badge — with no savings to point at, the claim was unsupported (and the
+  // "Save 33% vs monthly" line it sat above compared against a plan that does not
+  // exist on the account).
   upgradeInfo: {
     flex: 1,
+    minWidth: 0,
     marginRight: 12,
   },
   upgradeName: {
@@ -1678,12 +1659,6 @@ const baseStyles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 2,
   },
-  upgradeSavings: {
-    fontSize: 13,
-    color: '#4ecdc4',
-    fontWeight: '600',
-    marginBottom: 6,
-  },
   upgradeFeature: {
     fontSize: 13,
     color: '#a0a0b8',
@@ -1696,6 +1671,10 @@ const baseStyles = StyleSheet.create({
     paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: '#e94560',
+    // The CTA is the measured side of the row: the copy beside it flexes and the
+    // card GROWS vertically at a raised font scale (no fixed height anywhere here).
+    flexShrink: 0,
+    alignSelf: 'center',
   },
   upgradeBtnPrimary: {
     backgroundColor: '#e94560',

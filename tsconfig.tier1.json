@@ -224,6 +224,10 @@
     "src/services/takeClipTag.ts",
     "src/services/v47PartBContract.ts",
     "scripts/v47TakeCompare.test.ts",
-    "scripts/v47TrimTag.test.ts"
+    "scripts/v47TrimTag.test.ts",
+    "src/services/v471PlanPrices.ts",
+    "src/services/v471SettingsFit.ts",
+    "scripts/v471PlanPrices.test.ts",
+    "scripts/v471SettingsFit.test.ts"
   ]
 }
