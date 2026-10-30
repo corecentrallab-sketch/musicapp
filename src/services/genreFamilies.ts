@@ -93,6 +93,32 @@ export interface GenreFamily {
  * THE TABLE (copy deck: v45-design/07, verbatim `name` fields; `q` values are
  * the four style searches live-probed 2026-10-26 — ragtime / sea shanty /
  * christmas carol / vaudeville — plus classical for the populated family).
+ *
+ * ── D0 (v47): THE QUERY IS NOT JUST COPY — IT IS THE COMMISSION ─────────────
+ * A `q` value is fed verbatim to `sheetMusicDirectSearchUrl()` and becomes the
+ * family screen's money row. Sheet Music Direct treats a query that EXACTLY
+ * matches one of its own taxonomy terms as a synonym: it 30x-redirects to its
+ * canonical `/genre/…` or `/artist/…` page and **does not carry `tid` or
+ * `affiliateId` across**. The page still loads with real results, so the route
+ * looks perfectly healthy on a device while earning nothing (v47 audit §1.1b).
+ *
+ * Measured 2026-10-28 with `curl -L -w url_effective` on the real builder URL:
+ *   • `ragtime`         → /genre/ragtime            (no params)  — LOST the id
+ *   • `sea shanty`      → /artist/sea-shanty        (no params)  — LOST the id
+ *   • `christmas carol` → /artist/christmas-carol   (no params)  — LOST the id
+ *   • `classical piano` → /Search.aspx?…&tid=67650&affiliateId=67650 — KEPT
+ *   • `vaudeville`      → /Search.aspx?…&tid=67650&affiliateId=67650 — KEPT
+ *
+ * So the three taxonomy-exact phrases are disambiguated into a real search
+ * phrase (same style, still the family's own words) and stay on `/Search.aspx`:
+ *   • `ragtime sheet music`          → 222 results, affiliate kept
+ *   • `sea shanty song`              → 94 results,  affiliate kept
+ *   • `christmas carol sheet music`  → 630 results, affiliate kept
+ * `classical piano` and `vaudeville` are already healthy — DO NOT "tidy" them
+ * into bare genre words. The rule, held by
+ * `src/services/v47FamilyAffiliateQuery.ts` (tier1): no family query may be a
+ * bare single-word taxonomy term, and every family URL must still carry both
+ * affiliate parameters.
  */
 export const GENRE_FAMILIES: readonly GenreFamily[] = [
   {
@@ -108,7 +134,7 @@ export const GENRE_FAMILIES: readonly GenreFamily[] = [
     id: 'early-jazz-blues',
     name: 'Early Jazz & Blues',
     subtitle: 'Early blues, ragtime and dixieland jazz',
-    q: 'ragtime',
+    q: 'ragtime sheet music',
     backedBy: 'the official-editions search (Sheet Music Direct affiliate link)',
     destination: 'family-screen',
     content: 'none',
@@ -117,7 +143,7 @@ export const GENRE_FAMILIES: readonly GenreFamily[] = [
     id: 'folk-traditional',
     name: 'Folk & Traditional',
     subtitle: 'Ballads, sea shanties, spirituals and regional folk tunes',
-    q: 'sea shanty',
+    q: 'sea shanty song',
     backedBy: 'the official-editions search (Sheet Music Direct affiliate link)',
     destination: 'family-screen',
     content: 'none',
@@ -126,7 +152,7 @@ export const GENRE_FAMILIES: readonly GenreFamily[] = [
     id: 'patriotic-holiday',
     name: 'Patriotic & Holiday',
     subtitle: 'Carols, historical hymns and patriotic anthems',
-    q: 'christmas carol',
+    q: 'christmas carol sheet music',
     backedBy: 'the official-editions search (Sheet Music Direct affiliate link)',
     destination: 'family-screen',
     content: 'none',

@@ -261,8 +261,18 @@ function moneyPathTests(): void {
   }
 
   console.log('\nTHE EMPTY FAMILIES still carry the four style searches');
+  // v47 / D0: the three phrases that exactly matched an SMD taxonomy term were
+  // disambiguated (`ragtime` → `ragtime sheet music`, `sea shanty` →
+  // `sea shanty song`, `christmas carol` → `christmas carol sheet music`) because
+  // SMD redirected them to /genre/ or /artist/ pages and dropped the affiliate
+  // id. `vaudeville` already kept it. The rule behind these strings is guarded by
+  // scripts/v47FamilyAffiliateQuery.test.ts.
   const searches = familiesOnMoneyPath().map((family) => family.q).join(' | ');
-  assertEq(searches, 'ragtime | sea shanty | christmas carol | vaudeville', 'the four style phrases');
+  assertEq(
+    searches,
+    'ragtime sheet music | sea shanty song | christmas carol sheet music | vaudeville',
+    'the four style phrases (D0-fixed: no bare SMD taxonomy term)',
+  );
 }
 
 // ─── 3. counts derived from real rows ───────────────────────────

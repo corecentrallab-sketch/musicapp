@@ -639,6 +639,7 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           onClose={handleCloseScoreViewer}
           audioSource={scoreAudio.source}
           audioLabel={scoreAudio.label}
+          itemId={piece.id}
         />
       )}
 

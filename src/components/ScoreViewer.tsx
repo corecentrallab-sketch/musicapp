@@ -38,6 +38,16 @@ import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { ScorePlayer } from './ScorePlayer';
 import { AutoScrollControl } from './AutoScrollControl';
 import { useAutoScroll, type AutoScrollStatus } from '../hooks/useAutoScroll';
+// PAGE-TURNER SPEED PRESETS + PER-PIECE MEMORY (v47, audit defect D1). The
+// presets were already built, stored and guarded — the only thing missing was
+// HOSTING: this viewer rendered the shared control but never supplied
+// `speedProfiles`, so `AutoScrollControl` skipped the preset row entirely and the
+// score reader had no per-piece memory. Settings meanwhile told the user "Per
+// piece — set it in the score reader" (settingsSpec AUTO_SCROLL_HONEST_SUB) —
+// copy pointing at a control that was not on that surface. Same hook, same store,
+// same key as the PDF reader (PdfViewerScreen) so the two readers behave
+// identically; free, no paywall (plan 10-08: utilities free through launch).
+import { usePageTurnSpeed } from '../hooks/usePageTurnSpeed';
 import { buildSheetViewerHtml, sheetThemeScript } from '../services/sheetViewerHtml';
 import {
   AUTO_TURN_TOGGLE_LABEL,
@@ -71,6 +81,16 @@ interface ScoreViewerProps {
   audioSource?: ScoreAudioSource | null;
   /** Short honest descriptor for the audio (e.g. "Score audio" / "Preview"). */
   audioLabel?: string;
+  /**
+   * The piece's stable identity — the key the page-turner SPEED PRESETS are
+   * remembered under (services/pageTurnSpeedStore, ONE AsyncStorage key, the same
+   * one the PDF reader writes). Every host already holds it: the piece page's
+   * `piece.id`, Home's Today's Piece `dailyChallenge.id`, and a recognition
+   * match's `piece_id`. Optional so a viewer opened for something with no
+   * identity still works — it then simply has no memory (`itemId ?? null`), which
+   * is the honest behaviour: an unknown piece never inherits another's speed.
+   */
+  itemId?: string | null;
 }
 
 export const ScoreViewer: React.FC<ScoreViewerProps> = ({
@@ -80,6 +100,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
   onClose,
   audioSource,
   audioLabel,
+  itemId,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   const [loading, setLoading] = useState(true);
@@ -124,6 +145,14 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
     stop: stopAutoScroll,
     secondsPerPage,
   } = autoScroll;
+
+  // SPEED PRESETS + PER-PIECE MEMORY (v47 D1) — the SAME call shape as the PDF
+  // reader (`PdfViewerScreen: usePageTurnSpeed(itemId, autoScroll)`), so a piece
+  // opened here comes back at the speed it was left on and a piece never read
+  // before opens at the engine's defaults. Nothing new is invented here: the
+  // presets, the per-piece map and the debounced write-back are the shipped
+  // v39 feature; this is only its missing host.
+  const speedProfiles = usePageTurnSpeed(itemId ?? null, autoScroll);
 
   // A tap on the page asks the viewer to decide (the document's tap zones post
   // {type:'tapPage'} and turn nothing themselves):
@@ -374,11 +403,15 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
         ) : null}
 
         {/* Auto page-turn (BPM-linked). Collapsible so it costs the sheet no
-            space until the user wants it; always visible while running. */}
+            space until the user wants it; always visible while running.
+            `speedProfiles` is what renders the preset row (AutoScrollControl
+            skips it when absent) — v47 D1: the score reader hosts the same
+            presets and per-piece memory as the PDF reader. */}
         {showAutoTurnBar && (
           <AutoScrollControl
             autoScroll={autoScroll}
             disabled={pageInfo.total < 2}
+            speedProfiles={speedProfiles}
           />
         )}
 

@@ -215,6 +215,10 @@
     "src/services/v46DefectSweep.ts",
     "scripts/v46DefectSweep.test.ts",
     "src/services/v46RedLineRail.ts",
-    "scripts/v46RedLineRail.test.ts"
+    "scripts/v46RedLineRail.test.ts",
+    "src/services/v47ScoreReaderPresets.ts",
+    "scripts/v47ScoreReaderPresets.test.ts",
+    "src/services/v47FamilyAffiliateQuery.ts",
+    "scripts/v47FamilyAffiliateQuery.test.ts"
   ]
 }

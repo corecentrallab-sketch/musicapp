@@ -1383,6 +1383,7 @@ export const HomeScreen: React.FC = () => {
           title={dailyChallenge.title}
           composer={dailyChallenge.composer}
           onClose={() => setShowScoreViewer(false)}
+          itemId={dailyChallenge.id}
         />
       )}
 
