@@ -29,6 +29,7 @@ import {
   handleNewsletterUnsubscribe,
 } from "./src/services/newsletter-handler";
 import { handleExport } from "./src/services/export-handler";
+import { handleEvents } from "./src/services/events-handler";
 
 // Pinned, NOT read from the environment. The published preview URL
 // (<label>.<PUBLIC_SITE_DOMAIN>) is reverse-proxied to 0.0.0.0:3000 inside the
@@ -151,6 +152,13 @@ for (let attempt = 1; ; attempt++) {
         }
         if (pathname === "/api/export" && req.method === "POST") {
           return handleExport(req);
+        }
+        // Anonymous product events (v47.2) — routed on PATH ONLY so the handler
+        // owns its method answers (405 / 204 / 400 / 413 / 429), exactly as it
+        // does on Vercel. Kept here too so the Bun dev entry and production can
+        // never disagree about whether the endpoint exists.
+        if (pathname === "/api/events") {
+          return handleEvents(req);
         }
 
         // --- Static file serving ---
