@@ -31,6 +31,7 @@ import {
   PRACTICE_VIDEO_DIR_NAME,
   PRACTICE_VIDEO_ROW_TITLE,
   practiceVideoFileName,
+  practiceVideoIsUsable,
   type PracticeVideoRef,
 } from './practiceVideoRef';
 import type { SavedCaptureTake } from './midiExport';
@@ -195,5 +196,36 @@ export async function loadPracticeVideoRow(rowId: string): Promise<SavedPiece | 
     return history.find((piece) => piece.id === rowId) ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * THE OTHER FILMED TAKES (v47 part B, item 1). The comparison surface needs a
+ * second take to put beside the one the user is watching, and the only place one
+ * exists is History — so this reads the rows that really carry a practice-video
+ * file, newest first, skipping the row being watched.
+ *
+ * It never invents a take and never returns a row whose video block is empty: an
+ * unusable block would open a comparison column with nothing in it, which is the
+ * dead area the release gate forbids (owner 09-28). A device with no other filmed
+ * take gets an empty list, and the surface then says so and offers to film one.
+ */
+export async function listPracticeVideoRows(excludeRowId?: string | null): Promise<SavedPiece[]> {
+  try {
+    const history = await getRecognitionHistory();
+    return history
+      .filter(
+        (piece) =>
+          !!piece &&
+          piece.id !== excludeRowId &&
+          practiceVideoIsUsable(piece.practiceVideo ?? null),
+      )
+      .sort((a, b) => {
+        const left = String(a?.practiceVideo?.filmedAt ?? '');
+        const right = String(b?.practiceVideo?.filmedAt ?? '');
+        return right.localeCompare(left);
+      });
+  } catch {
+    return [];
   }
 }
