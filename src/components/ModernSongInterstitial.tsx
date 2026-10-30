@@ -267,15 +267,27 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
               </Text>
 
               {canBuy ? (
-                <TouchableOpacity
-                  style={styles.buyBtn}
-                  onPress={() => setRetailerUrl(match.retailerUrl!)}
-                >
-                  <Text style={styles.buyBtnText}>
-                    🛒 Get the Official Sheet Music
-                  </Text>
+                <>
+                  {/* THE purchase pressable: its children are the button's own
+                      label and nothing else. The disclosure is a SIBLING below
+                      it (v47.1 Part B, disclosure placement): a legal line inside
+                      the pressable becomes part of the tap target — tapping the
+                      small print bought — and part of the accessible name, so a
+                      screen reader read the commission line out as the button.
+                      Same shape as RecognitionResultView / OfficialEditionsCta. */}
+                  <TouchableOpacity
+                    style={styles.buyBtn}
+                    onPress={() => setRetailerUrl(match.retailerUrl!)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Get the official sheet music"
+                    accessibilityHint="Opens the licensed retailer page inside NoteSnap"
+                  >
+                    <Text style={styles.buyBtnText}>
+                      🛒 Get the Official Sheet Music
+                    </Text>
+                  </TouchableOpacity>
                   <Text style={styles.affiliateDisclosure}>{AFFILIATE_DISCLOSURE}</Text>
-                </TouchableOpacity>
+                </>
               ) : (
                 /* No licensed link came back for this song. The static
                    "coming back later" box is gone (bundle C, owner 10-02): a box

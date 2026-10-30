@@ -477,6 +477,271 @@ function parseGuardTests(): void {
   }
 }
 
+/**
+ * DISCLOSURE PLACEMENT GUARD — the class the string scan cannot see.
+ *
+ * WHY IT EXISTS: `affiliateSurfaceScan` proves the line is RENDERED on every
+ * affiliate surface. It cannot tell WHERE. So four surfaces shipped with the
+ * `<Text>{AFFILIATE_DISCLOSURE}</Text>` nested INSIDE the purchase pressable:
+ * the legal microcopy became part of the buy tap target (tapping the small print
+ * opened the retailer) and part of the button's accessible name (a screen reader
+ * read the commission line out as the button label). Every gate stayed green,
+ * because "the disclosure renders on this surface" was true in all four files.
+ *
+ * WHAT IT DOES: parses each surface that renders BOTH a purchase pressable and
+ * the disclosure with the repo's own TypeScript in TSX mode and asserts, per
+ * disclosure element:
+ *   1. its PARENT is not a pressable (TouchableOpacity, Pressable, Touchable…,
+ *      Button);
+ *   2. its immediately preceding JSX sibling IS a pressable — i.e. the line sits
+ *      directly under the button, in the same visual block, not hoisted to a
+ *      footer and not inside the button;
+ *   3. NO pressable ancestor opens a retailer/purchase destination (tapping the
+ *      line can never buy);
+ *   4. pressable ANCESTORS: zero on every surface, except the one documented
+ *      exception — the History row CARD, which is itself the press that opens
+ *      the piece page. The line stays inside that card (it belongs to the row's
+ *      buy button) and that card never opens a retailer, which rule 3 proves.
+ * A textual scan cannot express any of this: the pre-fix files and the fixed
+ * files contain the identical `<Text …>{AFFILIATE_DISCLOSURE}</Text>` line.
+ */
+const DISCLOSURE_PLACEMENT_SURFACES = [
+  'src/components/OfficialEditionsCta.tsx',
+  'src/components/RecognitionResultView.tsx',
+  'src/components/ModernSongInterstitial.tsx',
+  'src/screens/HistoryScreen.tsx',
+  'src/screens/PieceDetailScreen.tsx',
+];
+
+/** The one surface whose disclosure legitimately has a pressable ancestor. */
+const DISCLOSURE_PRESSABLE_ANCESTOR_ALLOWANCE: Record<string, string> = {
+  'src/screens/HistoryScreen.tsx':
+    'the History row CARD is the press that opens the piece page; the line belongs to the row',
+};
+
+/** Every primitive that makes its subtree a tap target. */
+const PRESSABLE_TAGS = [
+  'TouchableOpacity',
+  'TouchableHighlight',
+  'TouchableWithoutFeedback',
+  'TouchableNativeFeedback',
+  'Pressable',
+  'Button',
+];
+
+/** What a pressable must NOT do if it encloses the disclosure. */
+const RETAILER_OPENER =
+  /setPurchaseWebUrl|setPurchaseShellTitle|setRetailerUrl|openInAppPurchase|rowPurchaseUrl|sheetCardUrl|purchaseUrl|retailerUrl|familyAffiliateUrl|sheetMusicDirectSearchUrl|onOpen\(/;
+
+interface DisclosureHit {
+  /** JSX tag of the disclosure element (`Text`). */
+  tag: string;
+  /** JSX tag of the parent, or `<>` for a fragment. */
+  parentTag: string;
+  /** Parent is a pressable → the defect. */
+  parentIsPressable: boolean;
+  /** The immediately preceding JSX sibling is a pressable → correct shape. */
+  followsAPressable: boolean;
+  /** Tag + attributes of every pressable ancestor. */
+  pressableAncestors: { tag: string; attrs: string }[];
+  /** Pressable ancestors whose handler opens a retailer → the defect. */
+  retailerAncestors: string[];
+}
+
+function jsxTagOf(ts: any, node: any): string {
+  if (ts.isJsxFragment(node)) return '<>';
+  const opening = ts.isJsxElement(node) ? node.openingElement : node;
+  const name = opening.tagName;
+  if (!name) return '?';
+  return ts.isIdentifier(name) ? name.text : name.getText();
+}
+
+function jsxOpeningAttrs(ts: any, node: any): string {
+  if (ts.isJsxFragment(node)) return '';
+  const opening = ts.isJsxElement(node) ? node.openingElement : node;
+  const attrs = opening.attributes;
+  if (!attrs) return '';
+  return attrs.properties.map((p: any) => p.getText()).join(' ');
+}
+
+function isPressableJsx(ts: any, node: any): boolean {
+  if (!node || ts.isJsxFragment(node)) return false;
+  return PRESSABLE_TAGS.indexOf(jsxTagOf(ts, node)) >= 0;
+}
+
+/** The previous JSX ELEMENT sibling (whitespace/text nodes skipped). */
+function previousElementSibling(ts: any, parent: any, node: any): any {
+  if (!parent || ts.isJsxSelfClosingElement(parent)) return null;
+  const kids: any[] = parent.children ?? [];
+  let prev: any = null;
+  for (const kid of kids) {
+    if (kid === node) return prev;
+    if (
+      ts.isJsxElement(kid) ||
+      ts.isJsxSelfClosingElement(kid) ||
+      ts.isJsxFragment(kid)
+    ) {
+      prev = kid;
+    }
+  }
+  return null;
+}
+
+/** Every `<Text …>{AFFILIATE_DISCLOSURE}</Text>` in one source, with context. */
+function auditDisclosurePlacement(ts: any, source: string, fileName: string): DisclosureHit[] {
+  const sf = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const hits: DisclosureHit[] = [];
+  const walk = (node: any, parent: any, ancestors: any[]): void => {
+    const isJsxNode =
+      ts.isJsxElement(node) || ts.isJsxFragment(node) || ts.isJsxSelfClosingElement(node);
+    if (ts.isJsxElement(node)) {
+      const renders = (node.children ?? []).some(
+        (c: any) =>
+          ts.isJsxExpression(c) &&
+          c.expression &&
+          ts.isIdentifier(c.expression) &&
+          c.expression.text === 'AFFILIATE_DISCLOSURE',
+      );
+      if (renders) {
+        const pressables = ancestors.filter((a: any) => isPressableJsx(ts, a));
+        hits.push({
+          tag: jsxTagOf(ts, node),
+          parentTag: parent ? jsxTagOf(ts, parent) : '(root)',
+          parentIsPressable: isPressableJsx(ts, parent),
+          followsAPressable: isPressableJsx(ts, previousElementSibling(ts, parent, node)),
+          pressableAncestors: pressables.map((p: any) => ({
+            tag: jsxTagOf(ts, p),
+            attrs: jsxOpeningAttrs(ts, p),
+          })),
+          retailerAncestors: pressables
+            .filter((p: any) => RETAILER_OPENER.test(jsxOpeningAttrs(ts, p)))
+            .map((p: any) => jsxTagOf(ts, p)),
+        });
+      }
+    }
+    const nextParent = isJsxNode ? node : parent;
+    const nextAncestors = isJsxNode ? ancestors.concat([node]) : ancestors;
+    ts.forEachChild(node, (child: any) => walk(child, nextParent, nextAncestors));
+  };
+  walk(sf, null, []);
+  return hits;
+}
+
+function disclosurePlacementTests(): void {
+  console.log('\n── DISCLOSURE PLACEMENT: outside the pressable, directly under it');
+  const ts = typescriptModule();
+  for (const rel of DISCLOSURE_PLACEMENT_SURFACES) {
+    const source = readSrc(rel);
+    assert(source.length > 1500, `${rel} was really read (${source.length} chars)`);
+    const hits = auditDisclosurePlacement(ts, source, rel);
+    assertEq(hits.length, 1, `${rel} renders the disclosure exactly once`);
+    if (hits.length === 0) continue;
+    const hit = hits[0];
+    assert(
+      !hit.parentIsPressable,
+      `${rel}: the disclosure is NOT a child of a pressable (parent is <${hit.parentTag}>)`,
+    );
+    assert(
+      hit.followsAPressable,
+      `${rel}: it sits directly under the purchase button (previous sibling is a pressable)`,
+    );
+    assertEq(
+      hit.retailerAncestors.join(', '),
+      '',
+      `${rel}: tapping the disclosure cannot open the retailer (no retailer pressable ancestor)`,
+    );
+    const allowance = DISCLOSURE_PRESSABLE_ANCESTOR_ALLOWANCE[rel];
+    if (allowance === undefined) {
+      assertEq(
+        hit.pressableAncestors.map((p) => p.tag).join(', '),
+        '',
+        `${rel}: the disclosure is outside EVERY pressable`,
+      );
+    } else {
+      assertEq(
+        hit.pressableAncestors.length,
+        1,
+        `${rel}: exactly ONE pressable ancestor, the documented ${allowance}`,
+      );
+      assert(
+        /handleRowTap/.test(hit.pressableAncestors[0]?.attrs ?? ''),
+        `${rel}: that ancestor is the row card's own press (handleRowTap), not the buy button`,
+      );
+    }
+  }
+
+  // ── PROBES: the defect shapes must be caught, on synthetic sources ──
+  const nestedInBuyButton = [
+    'const C = () => (',
+    '  <TouchableOpacity',
+    '    style={styles.buyBtn}',
+    '    onPress={() => setPurchaseWebUrl(rowPurchaseUrl)}',
+    '  >',
+    '    <Text style={styles.buyBtnText}>Buy</Text>',
+    '    <Text style={styles.sheetDisclosure}>{AFFILIATE_DISCLOSURE}</Text>',
+    '  </TouchableOpacity>',
+    ');',
+  ].join('\n');
+  const nestedHits = auditDisclosurePlacement(ts, nestedInBuyButton, 'probe-nested.tsx');
+  assertEq(nestedHits.length, 1, 'probe: the nested disclosure was found');
+  assert(
+    nestedHits[0].parentIsPressable === true,
+    'probe: a disclosure whose parent is a pressable is a DEFECT (this is the bug that shipped)',
+  );
+  assert(
+    nestedHits[0].retailerAncestors.length === 1,
+    'probe: …and its pressable ancestor really opens the retailer (tap-the-small-print-buys)',
+  );
+  assert(
+    nestedHits[0].followsAPressable === false,
+    'probe: …and it does NOT follow a button as a sibling',
+  );
+
+  const hoistedToFooter = [
+    'const C = () => (',
+    '  <View>',
+    '    <TouchableOpacity onPress={() => setPurchaseWebUrl(u)}>',
+    '      <Text>Buy</Text>',
+    '    </TouchableOpacity>',
+    '    <View><Text>footer</Text></View>',
+    '    <Text>{AFFILIATE_DISCLOSURE}</Text>',
+    '  </View>',
+    ');',
+  ].join('\n');
+  const hoisted = auditDisclosurePlacement(ts, hoistedToFooter, 'probe-hoisted.tsx');
+  assert(
+    hoisted.length === 1 && hoisted[0].parentIsPressable === false,
+    'probe: a hoisted disclosure is outside the pressable',
+  );
+  assert(
+    hoisted[0].followsAPressable === false,
+    'probe: …but it is REFUSED, because it no longer sits directly under the button',
+  );
+
+  // The correct shape (a sibling after the button) passes both rules.
+  const correct = [
+    'const C = () => (',
+    '  <View>',
+    '    <TouchableOpacity onPress={() => setPurchaseWebUrl(u)}>',
+    '      <Text>Buy</Text>',
+    '    </TouchableOpacity>',
+    '    <Text>{AFFILIATE_DISCLOSURE}</Text>',
+    '  </View>',
+    ');',
+  ].join('\n');
+  const ok = auditDisclosurePlacement(ts, correct, 'probe-correct.tsx');
+  assert(
+    ok.length === 1 && !ok[0].parentIsPressable && ok[0].followsAPressable,
+    'probe: the correct shape (sibling directly under the button) passes',
+  );
+}
+
 // ─── run ────────────────────────────────────────────────────────
 function main(): void {
   console.log('v47.1 Part B items 1-3 — the money CTA, its pre-fill, its disclosure');
@@ -487,6 +752,7 @@ function main(): void {
   hostingTests();
   disclosureTests();
   parseGuardTests();
+  disclosurePlacementTests();
   console.log(`\n${passes} passed, ${failures} failed\n`);
   process.exit(failures === 0 ? 0 : 1);
 }

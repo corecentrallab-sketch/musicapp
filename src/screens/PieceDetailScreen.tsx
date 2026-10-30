@@ -432,42 +432,50 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
              (title — official sheet music, then composer/artist · genre) and the
              WHOLE CARD is one press: no interstitial, no confirmation, straight
              to the retailer's page for that song inside our app shell. */
-          <TouchableOpacity
-            style={styles.sheetCardBtn}
-            onPress={() => openInAppPurchase(sheetCardUrl)}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel={`Open the official sheet music for ${piece.title}`}
-            accessibilityHint="Opens the licensed retailer page for this song"
-          >
-            <Text style={styles.sheetCardTitle}>{sheetCard.title}</Text>
-            {sheetCard.subtitle ? (
-              <Text style={styles.sheetCardSubtitle}>{sheetCard.subtitle}</Text>
-            ) : null}
-            <Text style={styles.sheetCardCta}>
-              Tap to open the official sheet music →
-            </Text>
+          /* v47.1 Part B (disclosure placement): the card is the purchase
+             pressable, so the disclosure is its SIBLING below it — not a child.
+             Inside the card it was part of the buy tap target (tapping the small
+             print opened the retailer). The wrapper is ONE column child of the
+             action row, so the row still holds exactly two `flex: 1` blocks and
+             the v46 red-bar arithmetic is untouched. */
+          <View style={styles.sheetCardCol}>
+            <TouchableOpacity
+              style={styles.sheetCardBtn}
+              onPress={() => openInAppPurchase(sheetCardUrl)}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={`Open the official sheet music for ${piece.title}`}
+              accessibilityHint="Opens the licensed retailer page for this song"
+            >
+              <Text style={styles.sheetCardTitle}>{sheetCard.title}</Text>
+              {sheetCard.subtitle ? (
+                <Text style={styles.sheetCardSubtitle}>{sheetCard.subtitle}</Text>
+              ) : null}
+              <Text style={styles.sheetCardCta}>
+                Tap to open the official sheet music →
+              </Text>
+              {/* The secondary retailer exists ONLY when it is a different page
+                  (owner-approved "Try Musicnotes" secondary CTA). A nested
+                  Touchable wins the responder, so this never triggers the card's
+                  own press. */}
+              {secondaryPurchaseLink ? (
+                <TouchableOpacity
+                  style={styles.sheetCardSecondary}
+                  onPress={() => openInAppPurchase(secondaryPurchaseLink)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Try Musicnotes for ${piece.title}`}
+                >
+                  <Text style={styles.sheetCardSecondaryText}>
+                    🎼 Try Musicnotes
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </TouchableOpacity>
             {/* v47.1 Part B item 3: this card IS an affiliate action, so the
-                disclosure travels with it — inside the card, so it adds no new
-                child to the two-CTA row (v46 red-bar contract). */}
+                disclosure travels with it — directly under it, outside the
+                pressable, in the same visual block. */}
             <Text style={styles.sheetCardDisclosure}>{AFFILIATE_DISCLOSURE}</Text>
-            {/* The secondary retailer exists ONLY when it is a different page
-                (owner-approved "Try Musicnotes" secondary CTA). A nested
-                Touchable wins the responder, so this never triggers the card's
-                own press. */}
-            {secondaryPurchaseLink ? (
-              <TouchableOpacity
-                style={styles.sheetCardSecondary}
-                onPress={() => openInAppPurchase(secondaryPurchaseLink)}
-                accessibilityRole="button"
-                accessibilityLabel={`Try Musicnotes for ${piece.title}`}
-              >
-                <Text style={styles.sheetCardSecondaryText}>
-                  🎼 Try Musicnotes
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-          </TouchableOpacity>
+          </View>
         ) : (
           /* THE HONEST FALLBACK (§E zero-promise, bundle E). We hold no score we
              may host for this piece, so the page says exactly that — and the real
@@ -789,8 +797,16 @@ const baseStyles = StyleSheet.create({
   },
   leverBtnText: { color: '#4ecdc4', fontSize: 14, fontWeight: '700' },
   leverBtnHint: { color: '#a0a0b8', fontSize: 12, marginTop: 3, lineHeight: 17 },
-  sheetCardBtn: {
+  /* v47.1 Part B: the card + its disclosure are ONE column block in the action
+     row, so the row still halves between two `flex: 1` children. The card itself
+     stretches inside that column instead of carrying `flex: 1` — a `flex: 1`
+     child of an auto-height column resolves to a 0 basis and would clip the card
+     (the same arithmetic that produced the v46 red bar, in the other axis). */
+  sheetCardCol: {
     flex: 1,
+  },
+  sheetCardBtn: {
+    alignSelf: 'stretch',
     backgroundColor: '#0f3460',
     borderRadius: 14,
     padding: 14,
