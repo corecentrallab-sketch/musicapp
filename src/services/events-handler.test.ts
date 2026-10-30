@@ -329,7 +329,50 @@ describe("events: the rate limit is bounded and honest about being best-effort",
 });
 
 describe("events: HOSTED, not merely wired (the v46 lesson)", () => {
-  const ROUTE = 'pathname === "/api/events"';
+  const ROUTE = "/api/events";
+  const CONDITION = 'pathname === "/api/events"';
+
+  /**
+   * Pull out the `if (...) { ... }` block whose condition mentions
+   * `pathname === "<routePath>"`, brace-matched to its real end.
+   *
+   * A plain "does the file contain the string" check is NOT enough — the first
+   * version of this guard passed with the route disabled as
+   * `if (false && pathname === "/api/events")`, because both the condition text
+   * and the handler call were still present. Mutation-probing that exact edit is
+   * what turned this into a condition + body check.
+   */
+  function routeBlock(
+    source: string,
+    routePath: string,
+  ): { condition: string; body: string } | null {
+    const lines = source.split("\n");
+    const header = `pathname === "${routePath}"`;
+    const idx = lines.findIndex(
+      (line) => line.includes("if (") && line.includes(header),
+    );
+    if (idx === -1) return null;
+    const headerLine = lines[idx];
+    const open = headerLine.indexOf("{", headerLine.indexOf("if ("));
+    if (open === -1) return null;
+    const condition = headerLine
+      .slice(headerLine.indexOf("if (") + 4, open)
+      .trim()
+      .replace(/\)$/, "")
+      .trim();
+    let depth = 0;
+    let body = "";
+    for (let i = idx; i < lines.length; i++) {
+      const line = i === idx ? lines[i].slice(open) : lines[i];
+      for (const ch of line) {
+        if (ch === "{") depth++;
+        else if (ch === "}") depth--;
+      }
+      if (i > idx) body += `${lines[i]}\n`;
+      if (depth <= 0) break;
+    }
+    return { condition, body };
+  }
 
   test("vercel-entry.ts imports the handler", () => {
     expect(read("vercel-entry.ts")).toContain(
@@ -337,26 +380,35 @@ describe("events: HOSTED, not merely wired (the v46 lesson)", () => {
     );
   });
 
-  test("vercel-entry.ts routes /api/events and CALLS handleEvents", () => {
-    const source = read("vercel-entry.ts");
-    const at = source.indexOf(ROUTE);
-    expect(at).toBeGreaterThan(-1);
-    // The route block itself must call the handler — a route that exists but
-    // falls through to SSR is the exact v46 failure mode.
-    expect(source.slice(at, at + 400)).toContain("handleEvents(webReq)");
+  test("vercel-entry.ts routes /api/events, calls the handler, and cannot fall through", () => {
+    const block = routeBlock(read("vercel-entry.ts"), ROUTE);
+    expect(block).not.toBeNull();
+    if (!block) return;
+    // The condition must be the path test ALONE — no `false &&`, no `||`, no
+    // flag that could switch the endpoint off in production while every unit
+    // test stays green.
+    expect(block.condition).toBe(CONDITION);
+    // It must actually CALL the handler (a route that exists but does nothing
+    // is the exact v46 failure mode)…
+    expect(block.body).toContain("handleEvents(webReq)");
+    // …and it must return, so a request can never reach the SSR handler below.
+    expect(block.body).toContain("return;");
   });
 
   test("the /api/events route sits BEFORE the SSR fallthrough", () => {
     const source = read("vercel-entry.ts");
-    expect(source.indexOf(ROUTE)).toBeLessThan(source.indexOf("fetchHandler.fetch("));
+    expect(source.indexOf(CONDITION)).toBeGreaterThan(-1);
+    expect(source.indexOf(CONDITION)).toBeLessThan(source.indexOf("fetchHandler.fetch("));
   });
 
   test("serve.ts (the Bun dev entry) routes /api/events too, so dev and prod agree", () => {
     const source = read("serve.ts");
-    const at = source.indexOf(ROUTE);
-    expect(at).toBeGreaterThan(-1);
-    expect(source.slice(at, at + 200)).toContain("handleEvents(req)");
-    expect(source.indexOf(ROUTE)).toBeLessThan(source.indexOf("SSR handler"));
+    const block = routeBlock(source, ROUTE);
+    expect(block).not.toBeNull();
+    if (!block) return;
+    expect(block.condition).toBe(CONDITION);
+    expect(block.body).toContain("handleEvents(req)");
+    expect(source.indexOf(CONDITION)).toBeLessThan(source.indexOf("SSR handler"));
   });
 
   test("the migration script creates the table, both indexes, and no PII columns", () => {
