@@ -32,9 +32,11 @@ import {
   LIVE_PRICE_IDS,
   PLAN_CTA_LABEL,
   PLAN_SECTION_SUBTITLE,
+  PRO_COMPLETE_TIER_NAME,
   PURCHASE_DONE_BODY,
   PURCHASE_DONE_TITLE,
   billingCopyViolations,
+  completeTierNameIsOwnerChoice,
   deadPriceIdsIn,
   livePriceSetIsTheStripeAccount,
   planCopyIsHonest,
@@ -170,7 +172,7 @@ function liveTableTests(): void {
   assertEq(
     LIVE_PRICE_IDS[1],
     'price_1TwbqHReFDEYPfXjLTbo7zgH',
-    'full library tier = price_1TwbqHReFDEYPfXjLTbo7zgH ($39.99 AUD)',
+    'NoteSnap Pro — Complete = price_1TwbqHReFDEYPfXjLTbo7zgH ($39.99 AUD)',
   );
   assertEq(
     LIVE_PRICE_IDS[2],
@@ -178,7 +180,7 @@ function liveTableTests(): void {
     'Family / Teacher = price_1TwbqHReFDEYPfXj0oIi8bGt ($9.99 AUD)',
   );
   assertEq(LIVE_PRICES[0].amountAud, 4.99, 'the Pro price is $4.99');
-  assertEq(LIVE_PRICES[1].amountAud, 39.99, 'the full library tier price is $39.99');
+  assertEq(LIVE_PRICES[1].amountAud, 39.99, 'the NoteSnap Pro — Complete price is $39.99');
   assertEq(LIVE_PRICES[2].amountAud, 9.99, 'the Family / Teacher price is $9.99');
 
   // The tier NAMES describe the tier, never a billing period.
@@ -200,6 +202,30 @@ function liveTableTests(): void {
     LIVE_PRICES[1].name.indexOf('year') < 0,
     true,
     'the $39.99 tier is NOT labelled as a year of anything',
+  );
+
+  // THE OWNER'S LABEL, PINNED EXACTLY (ruling 2026-10-30): the $39.99 one-time tier
+  // is "NoteSnap Pro — Complete" — em dash, no period, no savings claim. The string
+  // is asserted here as a LITERAL so a reword in the module cannot pass silently.
+  assertEq(
+    PRO_COMPLETE_TIER_NAME,
+    'NoteSnap Pro — Complete',
+    'the $39.99 tier name is exactly "NoteSnap Pro — Complete" (owner 10-30)',
+  );
+  assertEq(
+    LIVE_PRICES[1].name,
+    'NoteSnap Pro — Complete',
+    'the card renders that exact name (LIVE_PRICES[1].name)',
+  );
+  assertEq(
+    completeTierNameIsOwnerChoice(),
+    true,
+    'completeTierNameIsOwnerChoice() agrees the $39.99 tier carries the owner’s name',
+  );
+  assertEq(
+    /\b(month|year|annual|save|subscription)\b/i.test(LIVE_PRICES[1].name),
+    false,
+    'the $39.99 tier name carries no period word and no savings claim',
   );
 }
 
@@ -335,6 +361,28 @@ function liveScanTests(): void {
   for (let i = 0; i < declared.length; i += 1) {
     assertEq(declared[i], LIVE_PRICE_IDS[i], `declared id ${i + 1} is the live ID`);
   }
+
+  // THE LABEL HAS ONE OWNER (owner ruling 2026-10-30): exactly ONE src/ file carries
+  // the $39.99 tier name, and it is the module the cards render from. A second,
+  // hardcoded copy on the screen — the class of bug this release exists for — fails
+  // here, and so does a leftover of the old wording.
+  const owners = files.filter(
+    (file) =>
+      readAppFile(file.slice(repoRoot().length + 1)).indexOf('NoteSnap Pro — Complete') >= 0,
+  );
+  assertEq(owners.length, 1, `exactly one src/ file carries the tier label (${owners.join(', ')})`);
+  assert(
+    owners.length === 1 && /v471PlanPrices\.ts$/.test(owners[0]),
+    'that one owner is src/services/v471PlanPrices.ts',
+  );
+  const stale = files.filter((file) =>
+    /full library tier/i.test(readAppFile(file.slice(repoRoot().length + 1))),
+  );
+  assertEq(
+    stale.length,
+    0,
+    `no src/ file still says "full library tier" (${stale.join(', ') || 'clean'})`,
+  );
 }
 
 // ─── 5. hosting ───────────────────────────────────────────────
@@ -468,6 +516,21 @@ function mutationProbes(): void {
     ),
     false,
     'PROBE: a "free trial" line on a one-time price fails the copy guard',
+  );
+
+  // (j) the $39.99 tier drifts back to the pre-ruling wording.
+  const relabelled = LIVE_PRICES.map((price) =>
+    price.key === 'proFull' ? { ...price, name: 'NoteSnap Pro — full library tier' } : price,
+  );
+  assertEq(
+    completeTierNameIsOwnerChoice(relabelled as typeof LIVE_PRICES),
+    false,
+    'PROBE: the $39.99 tier relabelled "full library tier" fails the owner-label guard',
+  );
+  assertEq(
+    completeTierNameIsOwnerChoice(),
+    true,
+    'PROBE: the owner’s real label still passes after the probe',
   );
 
   // The real bytes still pass after every probe.

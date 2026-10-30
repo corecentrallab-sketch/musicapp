@@ -20,7 +20,7 @@
  * `type: one_time`, `has_more: false`; there is NO recurring price on the account):
  *
  *   price_1TwbqHReFDEYPfXjxq8vMcdV   $4.99 AUD   NoteSnap Pro
- *   price_1TwbqHReFDEYPfXjLTbo7zgH   $39.99 AUD  NoteSnap Pro — full library tier
+ *   price_1TwbqHReFDEYPfXjLTbo7zgH   $39.99 AUD  NoteSnap Pro — Complete
  *   price_1TwbqHReFDEYPfXj0oIi8bGt   $9.99 AUD   Family / Teacher
  *
  * THE STRIPE-SIDE PRODUCT NAMES still say "Monthly"/"Yearly" and the $4.99 product
@@ -52,6 +52,15 @@ export type LivePrice = {
 };
 
 /**
+ * THE $39.99 TIER'S NAME, AS THE OWNER CHOSE IT (ruling 2026-10-30, matching the
+ * Stripe product copy): "NoteSnap Pro — Complete". One literal, one owner — the
+ * table below reads THIS constant and SettingsScreen renders the table, so the
+ * label cannot be retyped anywhere else. A one-time charge has no year attached,
+ * so the name carries no billing period and no savings claim.
+ */
+export const PRO_COMPLETE_TIER_NAME = 'NoteSnap Pro — Complete';
+
+/**
  * THE THREE LIVE PRICES. Exactly these, in this order, and nothing else: the
  * account holds three active one-time prices and no recurring one.
  */
@@ -70,10 +79,10 @@ export const LIVE_PRICES: readonly LivePrice[] = [
     key: 'proFull',
     id: 'price_1TwbqHReFDEYPfXjLTbo7zgH',
     amountAud: 39.99,
-    name: 'NoteSnap Pro — full library tier',
+    name: PRO_COMPLETE_TIER_NAME,
     priceLabel: '$39.99 AUD — one-time',
     feature:
-      '✓ Everything in NoteSnap Pro\n✓ Full library tier\n✓ One payment, nothing recurs',
+      '✓ Everything in NoteSnap Pro\n✓ The complete library\n✓ One payment, nothing recurs',
     highlight: true,
   },
   {
@@ -230,6 +239,27 @@ export function livePriceSetIsTheStripeAccount(prices: readonly LivePrice[] = LI
   return expected.every(
     (want, at) => prices[at].id === want.id && prices[at].amountAud === want.amount,
   );
+}
+
+/**
+ * THE $39.99 TIER CARRIES THE OWNER'S CHOSEN NAME, exactly (ruling 2026-10-30).
+ * Kept as a function over the table so a suite can mutate a copy and watch this
+ * guard fail — a name that drifts back to an older wording is a copy decision
+ * made by nobody, and the owner's wording is the one that ships.
+ */
+export function completeTierNameIsOwnerChoice(prices: readonly LivePrice[] = LIVE_PRICES): boolean {
+  if (prices.length !== 3) return false;
+  const tier = prices[1];
+  if (tier.key !== 'proFull') return false;
+  // Deliberately the LITERAL, not PRO_COMPLETE_TIER_NAME: a guard that compares the
+  // table against the same constant it is supposed to police moves its own
+  // goalposts when that constant is edited. Proved by mutation on 10-30 — the
+  // constant-reading version stayed green while the card still carried the
+  // pre-ruling wording. (The old wording is not spelled out here: the suite's
+  // src/ scan reads raw bytes, so even a comment mentioning it fails the gate.)
+  if (tier.name !== 'NoteSnap Pro — Complete') return false;
+  // The name itself may never imply a billing period (one-time charge, no year).
+  return billingCopyViolations([tier.name]).length === 0;
 }
 
 /**
