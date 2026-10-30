@@ -494,6 +494,7 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
             title={selectedMatch?.title ?? topMatch.title}
             composer={selectedMatch?.composer ?? topMatch.composer}
             onClose={() => setShowScoreViewer(false)}
+            itemId={selectedMatch?.piece_id ?? topMatch.piece_id}
           />
         )}
         {/* The retailer page, opened on top of this card — the SAME overlay
