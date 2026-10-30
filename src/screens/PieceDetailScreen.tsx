@@ -38,6 +38,8 @@ import { refreshStreakNudge } from '../services/notifications';
 import {
   resolveShareCardPreviewData,
   sharePreviewAccessibilityLabel,
+  SHARE_BASE_HOST,
+  SHARE_BASE_URL,
 } from '../services/shareCardShare';
 import { scoreAudioDecision } from '../services/scoreAudioSource';
 // THE zero-promise fallback copy (§E, bundle E): the honest no-score line and the
@@ -53,8 +55,13 @@ import {
 // The licensed-retailer SEARCH for a work's printed edition (owner Q2, ratified
 // 10-02): the URL builder is searchExternal.ts — the one module allowed to build a
 // retailer search link — and the block below opens it in THIS page's in-app shell.
-import { externalSearchSection } from '../services/searchExternal';
-import { SearchExternalSection } from '../components/SearchExternalSection';
+// v47.1 Part B (items 1-3): the unscored page's money action is the
+// OfficialEditionsCta block — ONE full-width primary CTA (pre-filled with this
+// row's own composer + title), its disclosure line, and nothing beside it. It
+// replaces the generic title-only SearchExternalSection here, because one page
+// carries exactly one purchase action (owner 10-01, "duplicate CTA box").
+import { OfficialEditionsCta } from '../components/OfficialEditionsCta';
+import { AFFILIATE_DISCLOSURE } from '../services/v471bMoneyCta';
 // SAVE TO LIBRARY (v37 item 4, backlog d9d458bb, owner ask 9): the piece page's
 // own hosted score — `piece.sheetMusicUrl`, the SAME field "View Sheet Music"
 // opens — goes into the app's existing on-device library, so the piece the user
@@ -169,13 +176,11 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
     [piece]
   );
   /**
-   * The licensed-retailer SEARCH for this work's printed edition (owner Q2; §E.5
-   * — the money path this bundle UNBLOCKS). Built by searchExternal.ts; the `1`
-   * internal match is the piece in hand, so the section uses its honest
-   * "also available from licensed retailers" subtitle rather than the
-   * "not in our free library" one.
+   * The unscored page's money action is resolved INSIDE `OfficialEditionsCta`
+   * from this row's own composer + title (services/v471bMoneyCta.ts), so the
+   * screen passes the row through and never builds a query of its own — one
+   * builder, one affiliate check, no second literal to drift.
    */
-  const printedArrangementSearch = externalSearchSection(piece.title, 1);
 
   useEffect(() => {
     if (!showScoreViewer) return;
@@ -326,7 +331,11 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
   const handleShare = useCallback(async () => {
     setSharing(true);
     try {
-      const shareMessage = `I just played "${piece.title}" by ${piece.composer} on NoteSnap! 🎹\n\nDiscover sheet music for any song: [notesnap.app]`;
+      // v47.1 Part B / D3: the share sentence carries the URL the app can
+      // actually serve — the ONE constant in services/shareCardShare.ts. The old
+      // literal pointed at a parked host whose TLS handshake fails, so every
+      // shared sentence was a dead link (and a poisoned "share sends" metric).
+      const shareMessage = `I just played "${piece.title}" by ${piece.composer} on NoteSnap! 🎹\n\nDiscover sheet music for any song: ${SHARE_BASE_URL}`;
 
       if (Platform.OS === 'web') {
         // Web fallback — copy to clipboard concept
@@ -438,6 +447,10 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
             <Text style={styles.sheetCardCta}>
               Tap to open the official sheet music →
             </Text>
+            {/* v47.1 Part B item 3: this card IS an affiliate action, so the
+                disclosure travels with it — inside the card, so it adds no new
+                child to the two-CTA row (v46 red-bar contract). */}
+            <Text style={styles.sheetCardDisclosure}>{AFFILIATE_DISCLOSURE}</Text>
             {/* The secondary retailer exists ONLY when it is a different page
                 (owner-approved "Try Musicnotes" secondary CTA). A nested
                 Touchable wins the responder, so this never triggers the card's
@@ -527,8 +540,14 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           only when the page holds no purchase card at all. */}
       {showsHonestNoScoreState ? (
         <View>
-          <SearchExternalSection
-            section={printedArrangementSearch}
+          {/* ONE full-width primary money CTA, its own block, nothing on the row
+              with it. Label + destination come from the row: the licensed page
+              when the catalog carries one, otherwise "Search Official Published
+              Editions" pre-filled with this row's composer + title. */}
+          <OfficialEditionsCta
+            title={piece.title}
+            composer={piece.composer}
+            purchaseUrl={purchaseUrl}
             onOpen={openInAppPurchase}
           />
           {onHumIt || onFindPiece ? (
@@ -609,7 +628,7 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
           <Text style={styles.shareCardTagline}>
             I just played this on NoteSnap 🎹
           </Text>
-          <Text style={styles.shareCardApp}>notesnap.app</Text>
+          <Text style={styles.shareCardApp}>{SHARE_BASE_HOST}</Text>
         </View>
         <Text style={styles.shareCardCta}>Tap to open the share card →</Text>
       </TouchableOpacity>
@@ -793,6 +812,13 @@ const baseStyles = StyleSheet.create({
     color: '#4ecdc4',
     fontSize: 12,
     fontWeight: '700',
+  },
+  // The affiliate disclosure that rides INSIDE the sheet-music card (v47.1 B/3).
+  sheetCardDisclosure: {
+    color: '#8a8aa3',
+    fontSize: 10,
+    lineHeight: 14,
+    marginTop: 6,
   },
   sheetCardSecondary: {
     marginTop: 10,

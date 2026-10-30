@@ -35,6 +35,7 @@ import {
 // for one page — the rule this re-flow exists to enforce — so the dedupe lives in
 // the money-path module, where the primary/secondary order is already owned.
 import { modernSecondaryRetailerUrl } from '../services/purchaseCta';
+import { AFFILIATE_DISCLOSURE } from '../services/v471bMoneyCta';
 // The category a recognized modern song may claim. It is never a catalog number
 // and never the word the app used to print for a song it had not identified as
 // a library piece — the label comes from the module that owns these strings.
@@ -273,6 +274,7 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
                   <Text style={styles.buyBtnText}>
                     🛒 Get the Official Sheet Music
                   </Text>
+                  <Text style={styles.affiliateDisclosure}>{AFFILIATE_DISCLOSURE}</Text>
                 </TouchableOpacity>
               ) : (
                 /* No licensed link came back for this song. The static
@@ -372,6 +374,7 @@ export const ModernSongInterstitial: React.FC<ModernSongInterstitialProps> = ({
 };
 
 const baseStyles = StyleSheet.create({
+  affiliateDisclosure: { fontSize: 11, color: '#8a8aa3', lineHeight: 15, marginTop: 8 },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.85)',

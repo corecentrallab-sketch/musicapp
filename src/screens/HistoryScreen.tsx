@@ -60,6 +60,7 @@ import { PracticeWeekScreen } from './PracticeWeekScreen';
 // mounted here, so BACK returns to History.
 import { PurchaseWebView } from '../components/PurchaseWebView';
 import { primaryPurchaseUrl } from '../services/purchaseCta';
+import { AFFILIATE_DISCLOSURE } from '../services/v471bMoneyCta';
 import { exportCaptureMidiFromTake } from '../services/captureMidiExport';
 import {
   MIDI_EXPORT_BUSY_LABEL,
@@ -587,6 +588,8 @@ export const HistoryScreen: React.FC = () => {
               accessibilityHint="Opens the licensed retailer page inside NoteSnap"
             >
               <Text style={styles.sheetBtnText}>🛒 Get sheet music</Text>
+              {/* v47.1 Part B item 3: this row's action IS the affiliate path. */}
+              <Text style={styles.sheetDisclosure}>{AFFILIATE_DISCLOSURE}</Text>
             </TouchableOpacity>
           ) : null}
           {/* A row saved from a hum/whistle/sing capture carries the user's OWN
@@ -1002,6 +1005,7 @@ export const HistoryScreen: React.FC = () => {
 };
 
 const baseStyles = StyleSheet.create({
+  sheetDisclosure: { fontSize: 10, color: '#8a8aa3', lineHeight: 14, marginTop: 6 },
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

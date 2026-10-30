@@ -64,6 +64,7 @@ import { PurchaseWebView } from './PurchaseWebView';
 // the page the primary CTA already opens, so this card can never render two taps
 // to one page.
 import { recognitionPurchaseUrl, resultSecondaryOfferUrl } from '../services/purchaseCta';
+import { AFFILIATE_DISCLOSURE } from '../services/v471bMoneyCta';
 // The category a result card is allowed to claim. A match without a catalog
 // number (every modern song) used to fall through to the literal "Classical" —
 // and the catalog NUMBER was printed in the genre slot on a library piece.
@@ -599,6 +600,7 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
                       🛒 Get the Official Sheet Music
                     </Text>
                   </TouchableOpacity>
+                  <Text style={styles.affiliateDisclosure}>{AFFILIATE_DISCLOSURE}</Text>
                 ) : (
                   /* No licensed link for this match: an HONEST line, never a
                      static "isn't linked yet" box — and the levers below are the
@@ -777,6 +779,7 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
 };
 
 const baseStyles = StyleSheet.create({
+  affiliateDisclosure: { fontSize: 11, color: '#8a8aa3', lineHeight: 15, marginTop: 8 },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.8)',

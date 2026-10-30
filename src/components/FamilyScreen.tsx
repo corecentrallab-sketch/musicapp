@@ -22,6 +22,7 @@
 import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AFFILIATE_DISCLOSURE } from '../services/v471bMoneyCta';
 import { PurchaseWebView } from './PurchaseWebView';
 import { useHardwareBack } from '../hooks/useHardwareBack';
 import {
@@ -175,6 +176,9 @@ export const FamilyScreen: React.FC<FamilyScreenProps> = ({
           );
         })}
 
+        {/* v47.1 Part B item 3: the family money row IS an affiliate action,
+            so the disclosure travels with it. */}
+        <Text style={styles.moneyDisclosure}>{AFFILIATE_DISCLOSURE}</Text>
         {/* The footer states the split plainly — derived from the family table,
             never typed ("Free scores today: 1 of 5 style families"). */}
         <Text style={styles.footer} testID={FAMILY_FOOTER_TEST_ID}>
@@ -194,6 +198,7 @@ export const FamilyScreen: React.FC<FamilyScreenProps> = ({
 };
 
 const baseStyles = StyleSheet.create({
+  moneyDisclosure: { fontSize: 11, color: '#8a8aa3', lineHeight: 15, marginTop: 12 },
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

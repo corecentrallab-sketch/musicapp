@@ -34,6 +34,7 @@ import {
   SHARE_CARD_FAILED_HINT,
   SHARE_CARD_IMAGE_UNAVAILABLE_HINT,
   buildShareCardPayload,
+  SHARE_BASE_HOST,
 } from '../services/shareCardShare';
 
 /** Is sharing a *file* (not just text) possible on this device? */
@@ -258,7 +259,7 @@ export const ShareCard: React.FC<ShareCardProps> = ({
               ) : null}
 
               {/* Bottom branding */}
-              <Text style={styles.branding}>notesnap.app</Text>
+              <Text style={styles.branding}>{SHARE_BASE_HOST}</Text>
             </View>
           </View>
         </View>
