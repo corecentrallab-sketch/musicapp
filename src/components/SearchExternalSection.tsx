@@ -34,6 +34,7 @@ import {
   EXTERNAL_SMD_CTA_LABEL,
   type ExternalSearchSection as ExternalSearchSectionModel,
 } from '../services/searchExternal';
+import { AFFILIATE_DISCLOSURE } from '../services/v471bMoneyCta';
 
 interface SearchExternalSectionProps {
   /** The pure decision from `externalSearchSection(query, internalMatches)`. */
@@ -77,6 +78,10 @@ export const SearchExternalSection: React.FC<SearchExternalSectionProps> = ({
         <Text style={styles.cardChevron}>›</Text>
       </TouchableOpacity>
 
+      {/* v47.1 Part B item 3: the disclosure sits under the affiliate card it
+          belongs to, in the shared words (services/v471bMoneyCta.ts). */}
+      <Text style={styles.disclosure}>{AFFILIATE_DISCLOSURE}</Text>
+
       {/* SECONDARY — Musicnotes (UX-only: no affiliate program, owner 09-28).
           Rendered only when it is a genuinely different destination, so the two
           cards can never offer the same page twice. */}
@@ -99,6 +104,7 @@ export const SearchExternalSection: React.FC<SearchExternalSectionProps> = ({
 };
 
 const baseStyles = StyleSheet.create({
+  disclosure: { fontSize: 11, color: '#8a8aa3', lineHeight: 15, marginTop: 10 },
   wrap: {
     marginHorizontal: 20,
     marginTop: 18,

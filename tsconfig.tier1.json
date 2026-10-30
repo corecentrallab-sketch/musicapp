@@ -227,7 +227,10 @@
     "scripts/v47TrimTag.test.ts",
     "src/services/v471PlanPrices.ts",
     "src/services/v471SettingsFit.ts",
+    "src/services/v471bMoneyCta.ts",
     "scripts/v471PlanPrices.test.ts",
-    "scripts/v471SettingsFit.test.ts"
+    "scripts/v471SettingsFit.test.ts",
+    "scripts/v471bMoneyCta.test.ts",
+    "scripts/v471bShareLink.test.ts"
   ]
 }

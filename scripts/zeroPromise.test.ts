@@ -326,10 +326,19 @@ function modernNoLinkStateIsActionable(source: string): boolean {
   return /<TouchableOpacity[\s\S]{0,400}?onPress=\{onSearchForIt\}/.test(masked);
 }
 
-/** The piece page's honest state: the shared line + the search section, no promise. */
+/**
+ * The piece page's honest state: the shared line + a REAL licensed-retailer
+ * action, no promise.
+ *
+ * v47.1 Part B supersedes the surface, not the rule: the generic title-only
+ * `SearchExternalSection` was replaced by the pre-filled `OfficialEditionsCta`
+ * block (ONE full-width money CTA per page — the owner's duplicate-CTA rule,
+ * 10-01), so this reads the new host. What it still forbids is the thing it was
+ * written for: a no-score page with no way forward, or a promise we cannot keep.
+ */
 function promoFreeNoScoreState(source: string): boolean {
-  const hasSearch = source.indexOf('<SearchExternalSection') >= 0 &&
-    source.indexOf('externalSearchSection(piece.title') >= 0;
+  const hasSearch = source.indexOf('<OfficialEditionsCta') >= 0 &&
+    source.indexOf('onOpen={openInAppPurchase}') >= 0;
   return (
     source.indexOf('NO_HOSTED_SCORE_LINE') >= 0 &&
     hasSearch &&

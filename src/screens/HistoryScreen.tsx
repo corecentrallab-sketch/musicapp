@@ -60,6 +60,7 @@ import { PracticeWeekScreen } from './PracticeWeekScreen';
 // mounted here, so BACK returns to History.
 import { PurchaseWebView } from '../components/PurchaseWebView';
 import { primaryPurchaseUrl } from '../services/purchaseCta';
+import { AFFILIATE_DISCLOSURE } from '../services/v471bMoneyCta';
 import { exportCaptureMidiFromTake } from '../services/captureMidiExport';
 import {
   MIDI_EXPORT_BUSY_LABEL,
@@ -575,19 +576,26 @@ export const HistoryScreen: React.FC = () => {
           {/* The row's purchase action. Its own press (a nested Touchable wins
               the responder) opens the retailer INSIDE the app, over History. */}
           {rowPurchaseUrl ? (
-            <TouchableOpacity
-              style={styles.sheetBtn}
-              onPress={() => {
-                setPurchaseShellTitle(`${item.title} — official sheet music`);
-                setPurchaseWebUrl(rowPurchaseUrl);
-              }}
-              activeOpacity={0.8}
-              accessibilityRole="button"
-              accessibilityLabel={`Get sheet music for ${item.title}`}
-              accessibilityHint="Opens the licensed retailer page inside NoteSnap"
-            >
-              <Text style={styles.sheetBtnText}>🛒 Get sheet music</Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                style={styles.sheetBtn}
+                onPress={() => {
+                  setPurchaseShellTitle(`${item.title} — official sheet music`);
+                  setPurchaseWebUrl(rowPurchaseUrl);
+                }}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={`Get sheet music for ${item.title}`}
+                accessibilityHint="Opens the licensed retailer page inside NoteSnap"
+              >
+                <Text style={styles.sheetBtnText}>🛒 Get sheet music</Text>
+              </TouchableOpacity>
+              {/* v47.1 Part B item 3: this row's action IS the affiliate path —
+                  so the line sits directly UNDER the button, outside it. Inside
+                  the pressable it was part of the buy tap target (tapping the
+                  small print opened the retailer) and of the button's own block. */}
+              <Text style={styles.sheetDisclosure}>{AFFILIATE_DISCLOSURE}</Text>
+            </>
           ) : null}
           {/* A row saved from a hum/whistle/sing capture carries the user's OWN
               take — so it can write it out as MIDI (Batch A). Rows without a
@@ -1002,6 +1010,7 @@ export const HistoryScreen: React.FC = () => {
 };
 
 const baseStyles = StyleSheet.create({
+  sheetDisclosure: { fontSize: 10, color: '#8a8aa3', lineHeight: 14, marginTop: 6 },
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',

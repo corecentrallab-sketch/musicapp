@@ -27,8 +27,38 @@ export const SHARE_CARD_IMAGE_UNAVAILABLE_HINT =
 export const SHARE_CARD_FAILED_HINT =
   'Couldn’t open the share sheet — nothing was sent. Tap Share to try again.';
 
+/**
+ * ── THE ONE PUBLIC URL EVERY SHARE SURFACE EMITS (v47.1 Part B, defect D3) ───
+ * The app used to stamp `https://notesnap.app` on every share card. That host is
+ * still PARKED on the owner's registrar and does NOT complete a TLS handshake:
+ *
+ *   https://notesnap.app             → curl (35) OpenSSL sslv3 alert handshake failure
+ *   http://notesnap.app              → 200 (the registrar's parking page)
+ *   https://site-notesnap.vercel.app → 200 (the product site we actually serve)
+ *
+ * So every card anyone shared was a dead link — and "share sends >5%" is a Tier-1
+ * KPI, which made a broken destination poison the metric as well as the recipient.
+ *
+ * This constant is the ONLY place the public URL is written. When notesnap.app's
+ * certificate is live and the domain is pointed at the site, re-pointing every
+ * share surface is a one-line edit here and nothing else — `scripts/v471bShareLink
+ * .test.ts` fails the gate if a second literal appears anywhere in `src/`, and
+ * also if this value stops being what the share builders actually emit.
+ *
+ * Honest by construction: we emit the host we really serve, so the card never
+ * claims a branded domain the product cannot open.
+ */
+export const SHARE_BASE_URL = 'https://site-notesnap.vercel.app';
+
+/**
+ * The host as it is printed on the card / in the share sentence — DERIVED from
+ * `SHARE_BASE_URL`, never a second literal, so the branding text and the link
+ * can never describe two different destinations.
+ */
+export const SHARE_BASE_HOST = SHARE_BASE_URL.replace(/^https?:\/\//, '');
+
 /** Brand link appended to the text-only fallback (the PNG carries its own). */
-export const SHARE_CARD_LINK = 'https://notesnap.app';
+export const SHARE_CARD_LINK = SHARE_BASE_URL;
 
 /** MIME type of the captured card PNG. */
 export const SHARE_CARD_MIME_TYPE = 'image/png';
