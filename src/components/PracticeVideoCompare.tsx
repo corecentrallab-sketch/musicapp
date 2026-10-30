@@ -174,7 +174,7 @@ export const PracticeVideoCompare: React.FC<PracticeVideoCompareProps> = ({
         await player.setPositionAsync(Math.min(clockMs, Math.max(0, side.durationSec * 1000)));
         await playWithAudioFocus(() => player.playAsync(), {
           source: 'take-playback',
-          reason: 'take-playback',
+          reason: 'clip-load',
         });
         playingIndexRef.current = index;
         setPlayingIndex(index);
@@ -182,7 +182,7 @@ export const PracticeVideoCompare: React.FC<PracticeVideoCompareProps> = ({
         setVideoLine(COMPARE_MISSING_LINE);
         reportAudioFailure({
           source: 'take-playback',
-          reason: 'take-playback',
+          reason: 'clip-load',
           detail: usableDetail(err),
         });
       } finally {
