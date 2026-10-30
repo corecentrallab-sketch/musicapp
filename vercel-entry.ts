@@ -31,6 +31,7 @@ import {
   handleNewsletterUnsubscribe,
 } from "./src/services/newsletter-handler";
 import { handleExport } from "./src/services/export-handler";
+import { handleEvents } from "./src/services/events-handler";
 
 // --- Health check handler ---
 async function handleHealth(): Promise<Response> {
@@ -360,6 +361,27 @@ export default async function vercelHandler(
     if (pathname === "/api/newsletter/unsubscribe") {
       const webReq = toWebRequest(req);
       const webRes = await handleNewsletterUnsubscribe(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+    // Anonymous product events (v47.2). Routed on PATH ONLY, before the SSR
+    // fallthrough, so the handler owns its own method answers: GET/PUT get 405,
+    // OPTIONS gets 204, POST gets 204/202/400/413/429. Anything that reached the
+    // SSR handler would answer 404 and the endpoint would look "wired" while
+    // being dead in production.
+    if (pathname === "/api/events") {
+      const webReq = toWebRequest(req);
+      const webRes = await handleEvents(webReq);
       res.statusCode = webRes.status;
       webRes.headers.forEach((value, key) => res.setHeader(key, value));
       if (webRes.body) {
