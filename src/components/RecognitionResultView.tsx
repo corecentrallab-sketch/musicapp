@@ -587,20 +587,22 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
                 {/* THE single purchase action, opened in the in-app shell above
                     (owner 10-02, audit D5) — never the system browser. */}
                 {hasPurchaseUrl ? (
-                  <TouchableOpacity
-                    style={styles.purchaseBtn}
-                    onPress={() => {
-                      if (purchaseUrl) setPurchaseWebUrl(purchaseUrl);
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel="Get the official sheet music"
-                    accessibilityHint="Opens the licensed retailer page inside NoteSnap"
-                  >
-                    <Text style={styles.purchaseBtnText}>
-                      🛒 Get the Official Sheet Music
-                    </Text>
-                  </TouchableOpacity>
-                  <Text style={styles.affiliateDisclosure}>{AFFILIATE_DISCLOSURE}</Text>
+                  <>
+                    <TouchableOpacity
+                      style={styles.purchaseBtn}
+                      onPress={() => {
+                        if (purchaseUrl) setPurchaseWebUrl(purchaseUrl);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Get the official sheet music"
+                      accessibilityHint="Opens the licensed retailer page inside NoteSnap"
+                    >
+                      <Text style={styles.purchaseBtnText}>
+                        🛒 Get the Official Sheet Music
+                      </Text>
+                    </TouchableOpacity>
+                    <Text style={styles.affiliateDisclosure}>{AFFILIATE_DISCLOSURE}</Text>
+                  </>
                 ) : (
                   /* No licensed link for this match: an HONEST line, never a
                      static "isn't linked yet" box — and the levers below are the

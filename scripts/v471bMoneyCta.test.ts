@@ -42,7 +42,9 @@ import { maskComments } from '../src/services/modalBackContract';
 let passes = 0;
 let failures = 0;
 
-declare const require: (id: string) => any;
+declare const require: ((id: string) => any) & {
+  resolve(id: string, options?: { paths?: string[] }): string;
+};
 declare const process: { cwd(): string; exit(code: number): never };
 
 function assert(ok: boolean, label: string): void {
@@ -360,6 +362,121 @@ function disclosureTests(): void {
   }
 }
 
+/**
+ * PARSE GUARD — the class no other assertion in this repo could see.
+ *
+ * WHY IT EXISTS: the first cut of this feature put the purchase button and the
+ * disclosure side by side inside one ternary branch, with no enclosing element.
+ * Metro/Babel refuse to bundle that ("Adjacent JSX elements must be wrapped in
+ * an enclosing tag"), so the whole app was unbuildable — and every gate we had
+ * was still green: `tsc -p tsconfig.tier1.json` does not include `src/screens/`
+ * or `src/components/`, and the source-scan suites read these files as TEXT and
+ * never parse them. A file that does not compile as JSX passes both.
+ *
+ * WHAT IT DOES: parses the touched components with the repo's OWN TypeScript in
+ * TSX mode and demands zero parse diagnostics, then proves the modern purchase
+ * branch is ONE root element and that the disclosure lives inside it. This is a
+ * real parse — not a regex — so a fragment-less file cannot slip through it.
+ * (`npm run test:tier1` also runs the full babel pre-flight in CI evidence; this
+ * is the in-gate version of the same rule for the files this feature touched.)
+ */
+const PARSE_GUARD_FILES = [
+  'src/components/RecognitionResultView.tsx',
+  'src/components/FamilyScreen.tsx',
+  'src/components/SearchExternalSection.tsx',
+  'src/components/ModernSongInterstitial.tsx',
+  'src/components/OfficialEditionsCta.tsx',
+  'src/components/ShareCard.tsx',
+  'src/screens/PieceDetailScreen.tsx',
+  'src/screens/HistoryScreen.tsx',
+];
+
+/** The repo's own TypeScript, resolved from the repo root (the gate runs tsc). */
+function typescriptModule(): any {
+  return require(require.resolve('typescript', { paths: [repoRoot()] }));
+}
+
+/** Parse one TSX source file; return its parse diagnostics as readable lines. */
+function tsxParseDiagnostics(ts: any, rel: string): string[] {
+  const path = require('path');
+  const file = path.join(repoRoot(), rel);
+  const sf = ts.createSourceFile(
+    file,
+    readSrc(rel),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const diags: any[] = sf.parseDiagnostics ?? [];
+  return diags.map(
+    (d: any) => `${rel}: ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`,
+  );
+}
+
+/** Depth-first search for the conditional whose test is exactly `condText`. */
+function findConditional(ts: any, node: any, condText: string): any | null {
+  if (
+    ts.isConditionalExpression(node) &&
+    node.condition.getText().trim() === condText
+  ) {
+    return node;
+  }
+  let found: any = null;
+  ts.forEachChild(node, (child: any) => {
+    if (!found) found = findConditional(ts, child, condText);
+  });
+  return found;
+}
+
+function parseGuardTests(): void {
+  console.log('\n── PARSE GUARD: the touched surfaces must PARSE (not just scan)');
+  const ts = typescriptModule();
+  for (const rel of PARSE_GUARD_FILES) {
+    const diags = tsxParseDiagnostics(ts, rel);
+    assert(
+      diags.length === 0,
+      `${rel} parses as TSX` + (diags.length ? ` — ${diags[0]}` : ''),
+    );
+  }
+  // The exact defect: the modern branch must return ONE root element, and the
+  // disclosure must ride inside that branch (never hoisted, never in the else).
+  const path = require('path');
+  const rel = 'src/components/RecognitionResultView.tsx';
+  const sf = ts.createSourceFile(
+    path.join(repoRoot(), rel),
+    readSrc(rel),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const branch = findConditional(ts, sf, 'hasPurchaseUrl');
+  assert(branch !== null, 'the modern purchase branch is still a hasPurchaseUrl ternary');
+  if (branch) {
+    const whenTrue = branch.whenTrue;
+    const whenFalse = branch.whenFalse;
+    // `? ( <X/> )` parses as ParenthesizedExpression → the JSX node inside it.
+    let root = whenTrue;
+    while (ts.isParenthesizedExpression(root)) root = root.expression;
+    assert(
+      ts.isJsxFragment(root) || ts.isJsxElement(root),
+      'the purchase branch returns ONE root JSX element',
+    );
+    const trueText = whenTrue.getText();
+    assert(
+      trueText.indexOf('AFFILIATE_DISCLOSURE') >= 0,
+      'the disclosure renders INSIDE the purchase branch',
+    );
+    assert(
+      whenFalse.getText().indexOf('AFFILIATE_DISCLOSURE') < 0,
+      'the disclosure is NOT in the no-link branch',
+    );
+    assert(
+      trueText.indexOf('purchaseBtn') >= 0,
+      'the purchase button is still in that branch',
+    );
+  }
+}
+
 // ─── run ────────────────────────────────────────────────────────
 function main(): void {
   console.log('v47.1 Part B items 1-3 — the money CTA, its pre-fill, its disclosure');
@@ -369,6 +486,7 @@ function main(): void {
   layoutTests();
   hostingTests();
   disclosureTests();
+  parseGuardTests();
   console.log(`\n${passes} passed, ${failures} failed\n`);
   process.exit(failures === 0 ? 0 : 1);
 }
