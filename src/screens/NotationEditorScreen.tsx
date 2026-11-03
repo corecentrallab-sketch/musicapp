@@ -51,7 +51,7 @@ import {
   originalScorePlan,
   transposeAbc,
   transposeKeyLabel,
-} from '../services/abcTranspose';} from '../services/abcTranspose';
+} from '../services/abcTranspose';
 import { track } from '../services/analytics';
 import {
   isSampleScore,
