@@ -17,6 +17,12 @@ import { PdfViewerScreen } from './src/screens/PdfViewerScreen';
 import { ScannedViewerScreen } from './src/screens/ScannedViewerScreen';
 import { ScanScoreScreen } from './src/screens/ScanScoreScreen';
 import { CloudSyncScreen } from './src/screens/CloudSyncScreen';
+// THE PLAN SCREEN (settings pass, change A): Your Plan, the upgrade cards and the
+// Billing notes moved out of Settings onto their own route. Registered like every
+// other full-screen tool, and reached from Settings' one "Your plan" row (and from
+// the recognition-limit prompt), so the money has one address instead of three
+// sections buried in the settings list.
+import { PlanScreen } from './src/screens/PlanScreen';
 import { MetronomeScreen } from './src/screens/MetronomeScreen';
 import { NotationEditorScreen } from './src/screens/NotationEditorScreen';
 // THE PRACTICE-VIDEO SURFACE (owner GO 10-10, backlog a49fbe2d): the record mode
@@ -226,6 +232,12 @@ function AppShell() {
             name="CloudSync"
             component={CloudSyncScreen}
             options={{ title: 'Cloud sync' }}
+          />
+          {/* THE PLAN ROUTE (settings pass, change A): the money surface. */}
+          <Stack.Screen
+            name="Plan"
+            component={PlanScreen}
+            options={{ title: 'Your plan' }}
           />
           <Stack.Screen
             name="Metronome"

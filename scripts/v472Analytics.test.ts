@@ -241,11 +241,20 @@ function hostingMutationProbes(): void {
   );
 
   // 4. the call is wired but no longer next to the real work (checkout removed).
-  const settings = fileText('src/screens/SettingsScreen.tsx');
-  const noCheckout = settings.split('createCheckoutSession(priceId, deviceId)').join('openNowhere()');
+  // SETTINGS PASS, CHANGE A: the checkout call moved to src/screens/PlanScreen.tsx
+  // with the money, so the probe mutates THAT surface.
+  const plan = fileText('src/screens/PlanScreen.tsx');
+  const noCheckout = plan.split('createCheckoutSession(priceId, deviceId)').join('openNowhere()');
   assert(
-    hostingViolations(withFile('src/screens/SettingsScreen.tsx', noCheckout)).length > 0,
+    hostingViolations(withFile('src/screens/PlanScreen.tsx', noCheckout)).length > 0,
     'FAILS when upgrade_tap is no longer beside a real checkout',
+  );
+  // …and the same event fails when the Plan surface stops being mounted at all.
+  const app = fileText('App.tsx');
+  const planUnmounted = app.split('PlanScreen').join('SomeOtherScreen');
+  assert(
+    hostingViolations(withFile('App.tsx', planUnmounted)).length > 0,
+    'FAILS when the Plan screen that tracks is no longer mounted in App.tsx',
   );
 
   // 5. the real tree still passes after every probe.

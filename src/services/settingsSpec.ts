@@ -19,15 +19,27 @@
  *   • THE ROLE MAP: the designer's roles (CARD, LINE, CARD_LINE, SUB, TXT, HUM,
  *     LISTEN, SOFTFILL, PILL_ON, DIM) are NOT new colours — each one is an
  *     existing `theme.ts` role, so both themes are a token swap and nothing else.
- *   • THE HONEST VALUES. Three rows have no user-editable state in the app, and
+ *   • THE HONEST VALUES. Four rows have no user-editable state in the app, and
  *     this module says so in the copy rather than inventing a control:
- *       – Microphone access  → the REAL permission state, read live.
  *       – Noise filter       → "Always on": the cleanup is always applied
  *                              (pitchDetection's filters + the backend query
  *                              high/low-pass); there is no stored toggle to flip.
  *       – Auto-scroll speed  → per-piece memory set in the score reader; the row
- *                              reports the profile a piece without a saved speed
+ *                              reports the profile a piece with no saved speed
  *                              starts from. No global speed setting exists.
+ *       – Current streak     → the engine's own number (v45 slice 2).
+ *       – Last backup        → the timestamp services/cloudSync really stored,
+ *                              or "No backup yet" — never a guess.
+ *
+ * THE SETTINGS PASS (owner-approved, branch feat/settings-pass):
+ *   A. THE MONEY LEFT THIS SURFACE. Your Plan / Upgrade / Billing moved to
+ *      src/screens/PlanScreen.tsx; Settings keeps ONE row ("Your plan", value =
+ *      the live tier) that opens it.
+ *   B. "Test your microphone" opens the free tuner (route 'Tuner').
+ *   C. "Last backup" + "Sync now" report and run the EXISTING sync entry point.
+ *   D. The Noise filter row reads as information, not a switch.
+ *   E. A row whose choice is 2-4 mutually exclusive options hosts segmented
+ *      pills inline (Theme), instead of a tap that opens a panel.
  *   • THE DETECTORS the v43 §3 guard suite runs against the REAL screen source
  *     (source scans, so they bite without a recompile — that is how the mutation
  *     probes are executed).
@@ -38,6 +50,16 @@
 import { maskSourceComments } from './audioFocusContract';
 import type { ThemeMode, ThemeTokens } from './theme';
 import { DEFAULT_PAGE_TURN_PROFILE, PAGE_TURN_PRESETS } from './pageTurnPresets';
+// The backup rows' copy and the honest relative-time formatter live in their own
+// pure module (services/lastBackup), so the screen prints them and never composes
+// a timestamp of its own.
+import {
+  BACKUP_ROW_SUB,
+  BACKUP_ROW_TITLE,
+  SYNC_ROW_SUB_IDLE,
+  SYNC_ROW_TITLE,
+  syncNowRowSub,
+} from './lastBackup';
 
 declare const process: { cwd(): string; exit(code: number): never };
 
@@ -51,23 +73,47 @@ export const SETTINGS_GROUP_TITLES: readonly string[] = [
   'Support',
 ];
 
-/** The Pro row — the money path, one quiet row. */
-export const SETTINGS_PRO_TITLE = 'NoteSnap Pro';
-export const SETTINGS_PRO_SUB = 'Unlimited recognition · full History';
-export const SETTINGS_PRO_CTA = 'View plans';
+/**
+ * THE PLAN ROW — the money path, one quiet row (Settings pass, change A).
+ *
+ * The three money sections that used to live here (Your Plan, Upgrade, Billing)
+ * are on src/screens/PlanScreen.tsx now. Settings keeps exactly ONE row about
+ * money: its title, the live tier as the row's trailing VALUE, and a pill that
+ * opens the Plan screen. The copy says "plan", never "upgrade", because the row
+ * is a destination — the selling happens on the surface it opens.
+ */
+export const SETTINGS_PLAN_ROW_TITLE = 'Your plan';
+export const SETTINGS_PLAN_ROW_SUB = 'Plans, pricing and billing';
+export const SETTINGS_PLAN_ROW_CTA = 'View plans';
+
+/**
+ * THE MIC TEST ROW (Settings pass, change B). The tuner ships, is free and works
+ * offline, and it is the honest answer to "does my mic hear me?" — it is NOT a
+ * level meter, and the copy never promises one.
+ */
+export const SETTINGS_MIC_TEST_TITLE = 'Test your microphone';
+export const SETTINGS_MIC_TEST_SUB_READY = 'Opens the tuner so you can check the mic hears you';
+export const SETTINGS_MIC_TEST_SUB_NEEDS_PERMISSION =
+  'Opens the tuner — it will ask for microphone access';
 
 /** The one, once, at the bottom — honest about there being no account at all. */
 export const SETTINGS_NO_ACCOUNT_LINE =
   'No account needed — NoteSnap has nothing to sign in to.';
 
+/** The sub copy explains WHERE that speed is set (so the row is not a dead end). */
+export const AUTO_SCROLL_HONEST_SUB = 'Per piece — set it in the score reader';
+
 /** The closed row set, in the order the spec draws them. */
 export type SettingsRowId =
   | 'microphone'
+  | 'micTest'
   | 'noiseFilter'
   | 'theme'
   | 'autoScroll'
   | 'googleDrive'
   | 'dropbox'
+  | 'backup'
+  | 'syncNow'
   | 'help'
   | 'privacy'
   | 'about';
@@ -93,6 +139,13 @@ export interface SettingsRowCopy {
    */
   titleRef?: string;
   subRef?: string;
+  /**
+   * SETTINGS PASS: when set, the row's sub line is a LIVE expression (the mic
+   * permission, the sync state) rather than a fixed string. `sub` still carries
+   * the human description for this module; the guard requires the screen to
+   * render `sub={<subExpr>}` — never a retyped copy of it.
+   */
+  subExpr?: string;
 }
 
 /**
@@ -104,20 +157,39 @@ export const SETTINGS_ROWS: readonly SettingsRowCopy[] = [
   {
     id: 'microphone',
     title: 'Microphone access',
-    sub: 'Allowed while using the app',
+    // The sub follows the LIVE permission, so it can never contradict the value
+    // ("Allowed while using the app" beside "Not allowed" was that contradiction).
+    sub: 'The live microphone permission',
+    subExpr: 'microphoneRowSub(microphone)',
+    group: 0,
+  },
+  {
+    id: 'micTest',
+    title: SETTINGS_MIC_TEST_TITLE,
+    sub: SETTINGS_MIC_TEST_SUB_READY,
+    subExpr: 'micTestRowSub(microphone)',
     group: 0,
   },
   {
     id: 'noiseFilter',
     title: 'Noise filter',
-    sub: 'Clean the room before matching',
+    // CHANGE D: information, not a control. No switch exists and none is coming
+    // from this row — the cleanup is applied to every match, always.
+    sub: 'Always on — room noise is filtered out of every match',
     group: 0,
   },
-  { id: 'theme', title: 'Theme', sub: 'Dark, light or follow system', group: 1 },
+  {
+    id: 'theme',
+    title: 'Theme',
+    // The sub no longer promises a "follow system" option: ThemeMode is
+    // 'dark' | 'light' only, so that third option never existed.
+    sub: 'Dark or light, across the whole app',
+    group: 1,
+  },
   {
     id: 'autoScroll',
     title: 'Auto-scroll speed',
-    sub: 'Page turns while you play',
+    sub: AUTO_SCROLL_HONEST_SUB,
     group: 1,
   },
   {
@@ -127,6 +199,19 @@ export const SETTINGS_ROWS: readonly SettingsRowCopy[] = [
     group: 2,
   },
   { id: 'dropbox', title: 'Dropbox', sub: 'Back up scores and takes', group: 2 },
+  {
+    id: 'backup',
+    title: BACKUP_ROW_TITLE,
+    sub: BACKUP_ROW_SUB,
+    group: 2,
+  },
+  {
+    id: 'syncNow',
+    title: SYNC_ROW_TITLE,
+    sub: SYNC_ROW_SUB_IDLE,
+    subExpr: 'syncNowRowSub(anyProviderConnected, syncing)',
+    group: 2,
+  },
   { id: 'help', title: 'Help & FAQ', sub: '', group: 3 },
   { id: 'privacy', title: 'Privacy policy', sub: '', group: 3 },
   { id: 'about', title: 'About NoteSnap', sub: '', group: 3 },
@@ -195,7 +280,21 @@ export const SETTINGS_VALUE_ONLY_ROWS: readonly (SettingsRowId | SettingsRetenti
   'autoScroll',
   // v45 slice 2: the streak is STATE — visible, but nothing to press.
   'streak',
+  // Settings pass C: the stored backup time, read from AsyncStorage. There is
+  // nothing to press — "Sync now" is its own row, so this one is pure state.
+  'backup',
 ];
+
+/**
+ * THE ROWS THAT HOST A CONTROL INSTEAD OF BEING ONE (Settings pass, change E).
+ *
+ * The Theme row used to be a tap that OPENED a panel holding two pills — two taps
+ * for a two-option choice. The pills now live INSIDE the row, so the row itself
+ * has no `onPress`: it carries a `pills` array whose entries are the presses.
+ * A row in this list must render its pills (the guard checks `pills=`), which is
+ * what stops "declared a control row" from becoming "a row with nothing in it".
+ */
+export const SETTINGS_CONTROL_ROWS: readonly SettingsRowId[] = ['theme'];
 
 /**
  * The privacy page the Play listing already points at (app.json →
@@ -360,6 +459,30 @@ export function settingsPaletteIsTokenValuesOnly(tokens: ThemeTokens): boolean {
 /** What the app can actually read about the microphone. Never an invented state. */
 export type MicrophoneAccessState = 'granted' | 'denied' | 'undetermined' | 'unknown';
 
+/**
+ * THE MICROPHONE ROW'S SUB — it follows the live permission. It used to be a fixed
+ * "Allowed while using the app", which sat next to a value reading "Not allowed"
+ * on any device that had denied the mic: two halves of one row contradicting each
+ * other. The tap still opens the system page (behaviour unchanged).
+ */
+export function microphoneRowSub(state: MicrophoneAccessState): string {
+  if (state === 'granted') return 'Allowed while you use the app';
+  if (state === 'undetermined') return 'Not asked yet — tap to allow it';
+  if (state === 'denied') return 'Not allowed — tap to change it in system settings';
+  return 'The live microphone permission';
+}
+
+/**
+ * THE MIC-TEST ROW'S SUB (change B). Honest in both states: with the permission
+ * granted it opens the tuner; without it, the row says the tuner will ASK, so the
+ * permission dialog is never a surprise and never a dead end.
+ */
+export function micTestRowSub(state: MicrophoneAccessState): string {
+  return state === 'granted'
+    ? SETTINGS_MIC_TEST_SUB_READY
+    : SETTINGS_MIC_TEST_SUB_NEEDS_PERMISSION;
+}
+
 /** The row's trailing value — the truth about the live permission, never "Allowed" by default. */
 export function microphoneAccessLabel(state: MicrophoneAccessState): string {
   if (state === 'granted') return 'Allowed';
@@ -405,9 +528,6 @@ export function autoScrollValueLabel(): string {
   );
   return match ? match.label : 'Default';
 }
-
-/** The sub copy explains WHERE that speed is set (so the row is not a dead end). */
-export const AUTO_SCROLL_HONEST_SUB = 'Per piece — set it in the score reader';
 
 /**
  * THE VERSION (spec §3 says "Version 0.1.32"; that number is stale by
@@ -526,21 +646,30 @@ export function settingsHasNoAccountSection(settingsSource: string): boolean {
   return text.indexOf('{SETTINGS_NO_ACCOUNT_LINE}') >= 0;
 }
 
-/** The Pro row exists (CARD + LISTEN edge, its copy) and its pill opens the plans flow. */
-export function settingsProRowIsWired(settingsSource: string): boolean {
+/**
+ * THE PLAN ROW EXISTS (change A): CARD + LISTEN edge, the new copy, the live tier
+ * as its trailing value, and a pill that opens the PLAN SCREEN.
+ *
+ * It used to be the Pro row: same geometry, copy selling the plans, and a pill
+ * that opened the checkout cards in place. The geometry and the "one quiet row"
+ * idea survive; what changed is where it goes — and the guard follows it, so the
+ * row can never be left pointing at a block that no longer exists.
+ */
+export function settingsPlanRowIsWired(settingsSource: string): boolean {
   const text = maskSourceComments(settingsSource);
-  if (text.indexOf(`styles.proRow`) < 0) return false;
-  if (text.indexOf(`styles.proTitle`) < 0) return false;
-  if (text.indexOf(`styles.proSub`) < 0) return false;
-  if (text.indexOf('{SETTINGS_PRO_TITLE}') < 0) return false;
-  if (text.indexOf('{SETTINGS_PRO_SUB}') < 0) return false;
-  if (text.indexOf('{SETTINGS_PRO_CTA}') < 0) return false;
-  // The pill is a real pressable wired to the plans handler…
-  if (!/styles\.proCta[\s\S]{0,400}?onPress=\{openPlans\}/.test(text)) return false;
-  // …and the handler really opens the EXISTING plans flow (the checkout cards).
-  if (text.indexOf('openPlans') < 0) return false;
-  if (text.indexOf('onPress={() => handleUpgrade(plan.id)}') < 0) return false;
-  return text.indexOf('handleUpgrade') >= 0;
+  if (text.indexOf('styles.proRow') < 0) return false;
+  if (text.indexOf('styles.proTitle') < 0) return false;
+  if (text.indexOf('styles.proSub') < 0) return false;
+  if (text.indexOf('{SETTINGS_PLAN_ROW_TITLE}') < 0) return false;
+  if (text.indexOf('{SETTINGS_PLAN_ROW_SUB}') < 0) return false;
+  if (text.indexOf('{SETTINGS_PLAN_ROW_CTA}') < 0) return false;
+  // The value IS the live tier — never a hard-coded "Free" or "Pro".
+  if (text.indexOf('planTierLabel(proState.isPro, proState.plan)') < 0) return false;
+  // The pill is a real pressable wired to the plan handler…
+  if (!/styles\.proCta[\s\S]{0,400}?onPress=\{openPlan\}/.test(text)) return false;
+  // …and the handler really opens the Plan route.
+  if (text.indexOf('openPlan') < 0) return false;
+  return text.indexOf("navigate('Plan')") >= 0;
 }
 
 /**
@@ -560,6 +689,9 @@ export function settingsRowsAreTheClosedSet(settingsSource: string): boolean {
       return false;
     }
     if (row.subRef) return text.indexOf(`sub={${row.subRef}}`) >= 0;
+    // A LIVE sub (the mic permission, the sync state) is pinned as its own
+    // expression — never as a copy of the words it might render.
+    if (row.subExpr) return text.indexOf(`sub={${row.subExpr}}`) >= 0;
     return row.sub === '' || text.indexOf(`sub="${row.sub}"`) >= 0;
   });
 }
@@ -576,37 +708,88 @@ export function settingsHasNoDeadRows(settingsSource: string): boolean {
   const valueOnly = allSettingsRows()
     .filter((row) => SETTINGS_VALUE_ONLY_ROWS.indexOf(row.id) >= 0)
     .map(settingsRowKey);
+  const controlRows = allSettingsRows()
+    .filter((row) => SETTINGS_CONTROL_ROWS.indexOf(row.id as SettingsRowId) >= 0)
+    .map(settingsRowKey);
   for (const block of blocks) {
     const title = SPEC_ROW_TITLE.exec(block);
     if (title === null) return false;
     const key = title[1] !== undefined ? title[1] : `{${title[2]}}`;
     const isValueOnly = valueOnly.indexOf(key) >= 0;
+    const isControl = controlRows.indexOf(key) >= 0;
     const hasOnPress = /onPress=\{(?!\s*(?:undefined|null)\s*\})/.test(block);
     if (isValueOnly && hasOnPress) return false;
-    if (!isValueOnly && !hasOnPress) return false;
+    if (!isValueOnly && !isControl && !hasOnPress) return false;
+    // A control row must really carry its controls (change E): the pills ARE the
+    // interaction, so a control row without them is a row that does nothing.
+    if (isControl && block.indexOf('pills={[') < 0) return false;
   }
   return true;
+}
+
+/**
+ * NO ROW PROMISES A DESTINATION IT DOES NOT HAVE (change D, as a rule).
+ *
+ * A trailing chevron means "this opens something". A row that renders a chevron
+ * and no `onPress` is the exact defect class the Noise filter row was in: it looks
+ * pressable and does nothing. A `value` is a statement; a chevron is an invitation,
+ * and only one of them may appear on a row that goes nowhere.
+ */
+export function settingsValueRowsCarryNoChevron(settingsSource: string): boolean {
+  const blocks = specRowBlocks(settingsSource);
+  if (blocks.length === 0) return false;
+  return blocks.every((block) => {
+    const hasOnPress = /onPress=\{(?!\s*(?:undefined|null)\s*\})/.test(block);
+    const hasChevron = /chevron(?:\s|\n|$)/.test(block);
+    return !hasChevron || hasOnPress;
+  });
 }
 
 /** Every wired row reaches a destination that EXISTS (greped by the guard suite). */
 export function settingsRowsReachRealDestinations(settingsSource: string): boolean {
   const text = maskSourceComments(settingsSource);
   const destinations = [
-    // Pro row → the existing checkout/plans flow in this screen.
-    'onPress={() => handleUpgrade(plan.id)}',
+    // The plan row → the Plan screen, where the checkout cards live now.
+    "navigate('Plan')",
     // Microphone → the system settings page (the app's existing permission path).
     'Linking.openSettings()',
+    // Test your microphone → the tuner route registered in App.tsx.
+    "navigate('Tuner')",
     // Theme → the existing Dark/Light choice, through the shared store.
     "setThemeMode('light')",
     "setThemeMode('dark')",
     // Cloud rows → the existing Cloud Sync screen.
     "navigate('CloudSync')",
+    // Sync now → the ONE existing sync entry point (services/cloudSync).
+    'syncCloud(',
     // Privacy → the policy page the Play listing already points at.
     'WebBrowser.openBrowserAsync(SETTINGS_PRIVACY_URL)',
     // About → the live version from the app config.
     'Constants.expoConfig?.version',
   ];
   return destinations.every((needle) => text.indexOf(needle) >= 0);
+}
+
+/**
+ * CHANGE A, AS A GUARD: THE MONEY IS NOT ON THIS SURFACE ANY MORE.
+ *
+ * Settings kept three money sections (Your Plan, Upgrade, Billing) and the
+ * checkout call. They live on src/screens/PlanScreen.tsx now. This asserts the
+ * move is COMPLETE — a half-migrated money path (a plan card left behind that
+ * still calls checkout, or a second copy of the price table) is exactly the
+ * failure mode the brief said to stop and report rather than ship.
+ */
+export function settingsHasNoMoneySurface(settingsSource: string): boolean {
+  const text = maskSourceComments(settingsSource);
+  const money = [
+    'LIVE_PRICES',
+    'BILLING_NOTES',
+    'createCheckoutSession(',
+    'handleUpgrade',
+    'PURCHASE_DONE_TITLE',
+    'price_',
+  ];
+  return money.every((needle) => text.indexOf(needle) < 0);
 }
 
 /**
@@ -777,7 +960,9 @@ export function settingsSurfaceContracts(settingsSource: string): boolean {
     settingsHasGroupsInOrder(settingsSource) &&
     settingsHeadersPrecedeTheirRows(settingsSource) &&
     settingsHasNoAccountSection(settingsSource) &&
-    settingsProRowIsWired(settingsSource) &&
+    settingsPlanRowIsWired(settingsSource) &&
+    settingsHasNoMoneySurface(settingsSource) &&
+    settingsValueRowsCarryNoChevron(settingsSource) &&
     settingsRowsAreTheClosedSet(settingsSource) &&
     settingsHasNoDeadRows(settingsSource) &&
     settingsRowsReachRealDestinations(settingsSource) &&

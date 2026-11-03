@@ -368,6 +368,8 @@ export type RootStackParamList = {
   ScannedViewer: { itemId: string };
   ScanScore: undefined;
   CloudSync: undefined;
+  /** Settings pass, change A — the money surface (was Settings' plans block). */
+  Plan: undefined;
   Metronome: undefined;
   /**
    * Notation editor (transpose v1). Reachable from the Editor tab card and from

@@ -729,16 +729,22 @@ export function settingsAppliesTheChosenTheme(screenSource: string): boolean {
   if (masked.indexOf("setThemeMode('light')") < 0) return false;
   if (masked.indexOf('themeAppliedLine(themeMode)') < 0) return false;
   // The Appearance copy is RENDERED (not merely imported — the F1 lesson).
+  // SETTINGS PASS, CHANGE E (2026-11): the Dark/Light choice became segmented
+  // pills INSIDE the Theme row, so the panel's own "Dark mode" heading
+  // ({THEME_ROW_TITLE}) is no longer rendered — the two pill labels are, and the
+  // note that explains the app-wide scope still is. The section title stays as
+  // the note block's heading.
   for (const marker of [
     '{THEME_SECTION_TITLE}',
-    '{THEME_ROW_TITLE}',
-    '{THEME_DARK_LABEL}',
-    '{THEME_LIGHT_LABEL}',
+    // The pill labels are rendered from the model's constants — they are the
+    // segmented choice's own text now, not a panel heading.
+    'label: THEME_DARK_LABEL',
+    'label: THEME_LIGHT_LABEL',
     '{THEME_HONEST_NOTE}',
   ]) {
     if (masked.indexOf(marker) < 0) return false;
   }
-  if (masked.indexOf('accessibilityLabel={THEME_ACCESSIBILITY_LABEL}') < 0) return false;
+  if (masked.indexOf('accessibilityLabel: THEME_ACCESSIBILITY_LABEL') < 0) return false;
   // …and the chosen mode is what the surface reads back.
   if (masked.indexOf("themeMode === 'dark'") < 0) return false;
   if (masked.indexOf("themeMode === 'light'") < 0) return false;
@@ -750,10 +756,12 @@ export function settingsAppliesTheChosenTheme(screenSource: string): boolean {
   if (masked.indexOf('color: theme.text') < 0) return false;
   if (masked.indexOf('color: theme.subtext') < 0) return false;
   if (masked.indexOf('color: theme.accent') < 0) return false;
-  // The themed surfaces are the real ones (the plan card and the billing card),
-  // not one decorative element.
-  if (masked.indexOf('[styles.planCard, themed.card]') < 0) return false;
+  // The themed surfaces are the real ones, not one decorative element.
+  // SETTINGS PASS, CHANGE A (2026-11): the plan card moved to src/screens/
+  // PlanScreen.tsx with the money, so the surfaces asserted here are the ones
+  // that actually live on THIS screen — the reminder card and the calendar card.
   if (masked.indexOf('[styles.infoCard, themed.card]') < 0) return false;
+  if (masked.indexOf('{ backgroundColor: theme.surface, borderColor: theme.border }') < 0) return false;
   return true;
 }
 
