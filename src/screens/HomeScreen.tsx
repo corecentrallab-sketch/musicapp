@@ -9,6 +9,10 @@
  * 3. Results shown in RecognitionResultView modal
  */
 import { useThemedStyles } from '../services/themeStore';
+// THE BILLING SWITCH (services/billingMode): with it off the quota-exhausted
+// card gets NO upgrade handler at all, so the result view has nothing to open
+// even if a future edit renders the button by mistake.
+import { BILLING_ENABLED } from '../services/billingMode';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   AccessibilityInfo,
@@ -1396,7 +1400,7 @@ export const HomeScreen: React.FC = () => {
         phase={recognitionPhase}
         onClose={handleCloseRecognition}
         onRetry={handleRetryRecognition}
-        onUpgrade={handleUpgradePro}
+        onUpgrade={BILLING_ENABLED ? handleUpgradePro : undefined}
         onHumFallback={noMatchOffer === 'hum' ? handleHumFallbackFromCard : undefined}
         onFindAnySong={noMatchOffer === 'modern' ? handleFindAnySongFromCard : undefined}
         onHumIt={handleHumItFromModern}

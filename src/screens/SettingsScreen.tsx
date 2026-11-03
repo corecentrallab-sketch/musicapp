@@ -174,6 +174,12 @@ import {
 } from '../services/calendarReminderDevice';
 import { CalendarPickerSheet } from '../components/CalendarPickerSheet';
 import { createCheckoutSession, checkEntitlement } from '../services/api';
+// THE BILLING SWITCH (services/billingMode). With it off this screen renders NO
+// purchase surface at all: the "NoteSnap Pro / View plans" row is not rendered
+// (not greyed out, not a placeholder) and the plans block below it cannot be
+// opened, so "Your Plan", "Upgrade", the tier names, the prices and the checkout
+// cards are all absent. Flipping the constant restores every one of them.
+import { BILLING_ENABLED } from '../services/billingMode';
 import { track } from '../services/analytics';
 import { getDeviceId } from '../services/device';
 // The app's light/dark choice (v33 §F2, owner 10-04 email batch: "a dark/light
@@ -310,7 +316,15 @@ export const SettingsScreen: React.FC = () => {
   const [hygieneBusy, setHygieneBusy] = useState(false);
   // ── The §3 rows' state (v43 slice 2) ──
   /** The Pro row's pill: opens the EXISTING plans flow (never a dead pill). */
-  const [plansOpen, setPlansOpen] = useState(false);
+  const [plansOpenRequested, setPlansOpen] = useState(false);
+  /**
+   * BILLING MODE OFF → the plans block below CANNOT BE OPENED. `plansOpen` is a
+   * derivation of the one constant, not a second boolean anyone can set: even a
+   * stray `setPlansOpen(true)` leaves it false, so "Your Plan" and "Upgrade"
+   * cannot appear in a build with no purchase surface. With billing on this is
+   * exactly the state the row toggles.
+   */
+  const plansOpen = BILLING_ENABLED && plansOpenRequested;
   /** The Theme row opens the existing Dark/Light choice in place. */
   const [themeOpen, setThemeOpen] = useState(false);
   const [microphone, setMicrophone] = useState<MicrophoneAccessState>('unknown');
@@ -796,7 +810,11 @@ export const SettingsScreen: React.FC = () => {
     >
       {/* ═══════════════ v43 §3 · THE PRO ROW (the money path, one quiet row) ═══════════════
           CARD fill + 1 dp LISTEN edge, r16, 358 × 62. The pill opens the EXISTING
-          plans flow below; nothing here blocks the free tier. */}
+          plans flow below; nothing here blocks the free tier.
+          BILLING MODE OFF → THIS ROW IS NOT RENDERED. Not disabled, not a
+          placeholder: a row reading "NoteSnap Pro · View plans" IS a purchase
+          surface, and a build with nothing for sale must not carry one. */}
+      {BILLING_ENABLED && (
       <Pressable
         style={[styles.proRow, { backgroundColor: palette.CARD, borderColor: palette.LISTEN }]}
         onPress={openPlans}
@@ -817,6 +835,7 @@ export const SettingsScreen: React.FC = () => {
           <Text style={[styles.proCtaText, { color: palette.HUM }]}>{SETTINGS_PRO_CTA}</Text>
         </Pressable>
       </Pressable>
+      )}
 
       {/* ── The plans flow the Pro row opens: the EXISTING checkout cards ── */}
       {plansOpen && (

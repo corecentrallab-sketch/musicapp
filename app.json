@@ -2,7 +2,7 @@
   "expo": {
     "name": "NoteSnap: Sheet Music",
     "slug": "notesnap",
-    "version": "0.1.41",
+    "version": "0.1.42",
     "orientation": "default",
     "scheme": "notesnap",
     "icon": "./assets/icon.png",
@@ -34,8 +34,8 @@
         "android.permission.CAMERA",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
-      "versionCode": 47,
-      "versionName": "0.1.41"
+      "versionCode": 48,
+      "versionName": "0.1.42"
     },
     "web": {
       "favicon": "./assets/favicon.png"
