@@ -28,27 +28,36 @@ export const SHARE_CARD_FAILED_HINT =
   'Couldn’t open the share sheet — nothing was sent. Tap Share to try again.';
 
 /**
- * ── THE ONE PUBLIC URL EVERY SHARE SURFACE EMITS (v47.1 Part B, defect D3) ───
- * The app used to stamp `https://notesnap.app` on every share card. That host is
- * still PARKED on the owner's registrar and does NOT complete a TLS handshake:
+ * ── THE ONE PUBLIC URL EVERY SHARE SURFACE EMITS (v47.1 Part B → v47.3) ─────
+ * HISTORY (kept accurate, because it explains why this constant exists at all):
+ * the app stamped `https://notesnap.app` on every share card, and in v47.1 that
+ * host was PARKED on the owner's registrar and did NOT complete a TLS handshake:
  *
  *   https://notesnap.app             → curl (35) OpenSSL sslv3 alert handshake failure
  *   http://notesnap.app              → 200 (the registrar's parking page)
- *   https://site-notesnap.vercel.app → 200 (the product site we actually serve)
+ *   https://site-notesnap.vercel.app → 200 (the product site we served at the time)
  *
  * So every card anyone shared was a dead link — and "share sends >5%" is a Tier-1
  * KPI, which made a broken destination poison the metric as well as the recipient.
+ * v47.1 Part B parked this constant on the vercel.app host so the cards opened.
  *
- * This constant is the ONLY place the public URL is written. When notesnap.app's
- * certificate is live and the domain is pointed at the site, re-pointing every
- * share surface is a one-line edit here and nothing else — `scripts/v471bShareLink
- * .test.ts` fails the gate if a second literal appears anywhere in `src/`, and
- * also if this value stops being what the share builders actually emit.
+ * THE DOMAIN IS LIVE (measured 2026-11-03): notesnap.app answers 200 on the apex
+ * with a valid Let's Encrypt certificate (issued 3 Nov 2026, expires 1 Feb 2027),
+ * `www` 308-redirects to the apex, and https://notesnap.app/api/pieces answers
+ * 200. v47.3 therefore points every share card at the branded address.
  *
- * Honest by construction: we emit the host we really serve, so the card never
- * claims a branded domain the product cannot open.
+ * This constant is the ONLY place the public URL is written. Re-pointing every
+ * share surface is a one-line edit here and nothing else — `scripts/
+ * v471bShareLink.test.ts` fails the gate if a second `https://notesnap.app`
+ * literal appears anywhere in `src/`, and also if this value stops being what
+ * the share builders actually emit. `SHARE_BASE_HOST` and `SHARE_CARD_LINK`
+ * below are DERIVED from it.
+ *
+ * Honest by construction: we emit the host we really serve — the one whose
+ * certificate and API were measured live — never a branded name the product
+ * cannot open.
  */
-export const SHARE_BASE_URL = 'https://site-notesnap.vercel.app';
+export const SHARE_BASE_URL = 'https://notesnap.app';
 
 /**
  * The host as it is printed on the card / in the share sentence — DERIVED from

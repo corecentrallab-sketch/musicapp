@@ -1,29 +1,39 @@
 /**
- * v471bShareLink.test.ts — ITEM 0: NO SHARE CARD MAY POINT AT A HOST WE DO NOT
- * SERVE (v47.1 Part B, defect D3, launch blocking).
+ * v471bShareLink.test.ts — ITEM 0: EVERY SHARE CARD MUST POINT AT THE HOST WE
+ * ACTUALLY SERVE (v47.1 Part B, defect D3; re-pointed to the branded domain in
+ * v47.3).
  *
- * Measured live on 2026-10-30:
+ * Measured live on 2026-10-30 — the state v47.1 Part B was written against:
  *   https://notesnap.app             → curl (35) OpenSSL sslv3 alert handshake
- *                                      failure (the domain is parked; no TLS)
+ *                                      failure (the domain was parked; no TLS)
  *   http://notesnap.app              → 200 (the registrar's parking page)
- *   https://site-notesnap.vercel.app → 200 (the product site we actually serve)
+ *   https://site-notesnap.vercel.app → 200 (the product site we actually served)
  *
- * The app stamped `https://notesnap.app` on every share card, so every card
- * anyone shared was a link that does not open — and "share sends >5%" is a
- * Tier-1 KPI, so the dead destination poisoned the metric too.
+ * Measured live on 2026-11-03 — why the constant moved to the branded domain:
+ *   https://notesnap.app             → 200, valid Let's Encrypt certificate
+ *                                      (issued 2026-11-03, expires 2027-02-01)
+ *   https://www.notesnap.app         → 308 → the apex
+ *   https://notesnap.app/api/pieces  → 200
+ *
+ * The app stamped `https://notesnap.app` on every share card back when that host
+ * did not open, so every card anyone shared was a dead link — and "share sends
+ * >5%" is a Tier-1 KPI, so the dead destination poisoned the metric too. v47.1
+ * Part B parked the constant on the vercel.app host; the domain is live now, so
+ * v47.3 points every card at the branded address.
  *
  * WHAT THIS SUITE PROVES
- *   • the ONE constant (`SHARE_BASE_URL`) is a working https URL and is NOT the
- *     parked host — and the branding host is DERIVED from it, not a second
- *     literal;
+ *   • the ONE constant (`SHARE_BASE_URL`) is the branded https host measured
+ *     live on 2026-11-03 and is NOT the vercel.app host it was parked on — and
+ *     the branding host is DERIVED from it, not a second literal;
  *   • the share builder really EMITS that constant (hosting, not just wiring —
  *     the v46 lesson): the text payload carries it, and the two surfaces that
  *     print the host read the derived constant;
- *   • a live source scan of `src/` finds NO `https://notesnap.app` literal in
- *     code anywhere (comments are masked, so the explanatory note in
- *     shareCardShare.ts is allowed to name the dead host);
- *   • re-pointing at notesnap.app later stays a ONE-LINE change: the guard fails
- *     the moment a second literal appears.
+ *   • a live source scan of `src/` finds EXACTLY ONE `https://notesnap.app`
+ *     literal — the constant itself — and no second copy anywhere (comments are
+ *     masked, so the explanatory note in shareCardShare.ts may name the host);
+ *   • re-pointing stays a ONE-LINE change: the guard fails the moment a second
+ *     literal appears, and fails if the constant is pointed back at a host we
+ *     do not serve.
  *
  * Plain Node, no react-native, no network. Run with: `npm run test:tier1`.
  */
@@ -98,16 +108,35 @@ function srcFiles(): Record<string, string> {
   return out;
 }
 
-/** The parked host, assembled so this test file itself holds no literal URL. */
-const PARKED_HOST = 'notesnap' + '.app';
+/** How many times `needle` occurs in `hay` (a second literal must be countable). */
+function countOccurrences(hay: string, needle: string): number {
+  let n = 0;
+  let i = hay.indexOf(needle);
+  while (i >= 0) {
+    n += 1;
+    i = hay.indexOf(needle, i + needle.length);
+  }
+  return n;
+}
+
+// The hosts, assembled so this test file itself holds no literal URL.
+const BRANDED_HOST = 'notesnap' + '.app';
+const BRANDED_URL = 'https://' + BRANDED_HOST;
+/** Where the constant was parked while the branded domain had no certificate. */
+const PARKED_HOST = 'site-notesnap' + '.vercel.app';
 
 // ─── 1. the constant ─────────────────────────────────────────────
 function constantTests(): void {
-  console.log('\nSHARE_BASE_URL is a host we actually serve');
+  console.log('\nSHARE_BASE_URL is the branded host we actually serve');
   assert(/^https:\/\//.test(SHARE_BASE_URL), 'the share base URL is https');
+  assertEq(
+    SHARE_BASE_URL,
+    BRANDED_URL,
+    'the constant is the branded domain measured live (200 + valid cert) on 2026-11-03',
+  );
   assert(
     SHARE_BASE_URL.indexOf(PARKED_HOST) < 0,
-    'the share base URL is NOT the parked host (its TLS handshake fails)',
+    'the constant is NOT the vercel.app host it was parked on while the domain had no TLS',
   );
   assertEq(SHARE_CARD_LINK, SHARE_BASE_URL, 'the text-fallback link IS the one constant');
   assertEq(
@@ -115,14 +144,10 @@ function constantTests(): void {
     SHARE_BASE_URL.replace(/^https?:\/\//, ''),
     'the branding host is DERIVED from the constant, never a second literal',
   );
-  assert(
-    SHARE_BASE_HOST.indexOf(PARKED_HOST) < 0,
-    'the branding text does not claim a branded domain we are not serving',
-  );
   assertEq(
-    SHARE_BASE_URL,
-    'https://site-notesnap.vercel.app',
-    'the constant is the live product site measured 200 on 2026-10-30',
+    SHARE_BASE_HOST,
+    BRANDED_HOST,
+    'the branding text prints the branded host, so card and link describe one destination',
   );
 }
 
@@ -138,11 +163,11 @@ function emitTests(): void {
   if (text.mode === 'text') {
     assert(
       text.message.indexOf(SHARE_BASE_URL) >= 0,
-      'the text payload carries the working URL',
+      'the text payload carries the working branded URL',
     );
     assert(
       text.message.indexOf(PARKED_HOST) < 0,
-      'the text payload does NOT carry the parked host',
+      'the text payload does NOT carry the old vercel.app host',
     );
   }
   const image = buildShareCardPayload({
@@ -168,28 +193,42 @@ function emitTests(): void {
     'the ShareCard modal prints SHARE_BASE_HOST',
   );
   assert(
-    shareCard.indexOf('>' + PARKED_HOST + '<') < 0,
-    'the ShareCard modal no longer prints the parked host as branding',
+    shareCard.indexOf('>' + BRANDED_HOST + '<') < 0,
+    'the ShareCard modal prints the DERIVED host, never a bare literal',
   );
 }
 
-// ─── 3. live scan: no literal survives in src/ ──────────────────
+// ─── 3. live scan: exactly one literal in src/ ──────────────────
 function scanTests(): void {
-  console.log('\nno `https://notesnap.app` literal survives in src/');
+  console.log('\nEXACTLY ONE `https://notesnap.app` literal exists in src/');
   const files = srcFiles();
   const paths = Object.keys(files);
   assert(paths.length >= 200, `the scan really walked src/ (${paths.length} files, floor 200)`);
   const offenders: string[] = [];
   const bareHost: string[] = [];
+  let literalTotal = 0;
   for (const p of paths) {
-    // Comments are masked: the explanatory note may NAME the dead host, but no
-    // executable line may emit it.
+    // Comments are masked: the explanatory note may NAME the host, but no
+    // executable line may emit a second copy of it.
     const code = maskComments(files[p]);
-    if (code.indexOf('https://' + PARKED_HOST) >= 0) offenders.push(p);
-    if (code.indexOf(PARKED_HOST) >= 0) bareHost.push(p);
+    const n = countOccurrences(code, BRANDED_URL);
+    if (n > 0) {
+      offenders.push(`${p} (${n})`);
+      literalTotal += n;
+    }
+    if (code.indexOf(BRANDED_HOST) >= 0) bareHost.push(p);
   }
-  assertEq(offenders.join(', '), '', 'no src file emits an https URL on the parked host');
-  assertEq(bareHost.join(', '), '', 'no src file names the parked host outside a comment');
+  assertEq(
+    offenders.join(', '),
+    'src/services/shareCardShare.ts (1)',
+    'the ONLY file holding the public URL is the module that owns the constant',
+  );
+  assertEq(literalTotal, 1, 'there is exactly ONE literal copy of the public URL in src/');
+  assertEq(
+    bareHost.join(', '),
+    'src/services/shareCardShare.ts',
+    'no other src file names the branded host outside a comment (every surface derives it)',
+  );
   // Floor: the guard must have seen the module that owns the constant.
   assert(
     files['src/services/shareCardShare.ts'] !== undefined,
@@ -201,33 +240,34 @@ function scanTests(): void {
 function mutationProbes(): void {
   console.log('\nmutation probes — the guard bites on the defect');
   const shareCard = readSrc('src/components/ShareCard.tsx');
-  const broken = shareCard.replace('{SHARE_BASE_HOST}', '>' + PARKED_HOST + '<');
-  assert(broken !== shareCard, 'probe: the pre-fix branding text was reconstructed');
+  const broken = shareCard.replace('{SHARE_BASE_HOST}', '>' + BRANDED_HOST + '<');
+  assert(broken !== shareCard, 'probe: a hardcoded branding literal was reconstructed');
   const brokenCode = maskComments(broken);
   assert(
-    brokenCode.indexOf(PARKED_HOST) >= 0,
+    brokenCode.indexOf(BRANDED_HOST) >= 0,
     'probe: with the literal back, the scan reports the file (it is not vacuous)',
   );
   // …and the real file is clean.
   assert(
-    maskComments(shareCard).indexOf(PARKED_HOST) < 0,
+    maskComments(shareCard).indexOf(BRANDED_HOST) < 0,
     'the real ShareCard.tsx is clean again',
   );
   // A second literal URL anywhere is caught by the same rule.
-  const fixture = "const LINK = 'https://" + PARKED_HOST + "';";
-  assert(
-    maskComments(fixture).indexOf('https://' + PARKED_HOST) >= 0,
-    'probe: a fresh second literal would fail the scan',
+  const fixture = "const LINK = '" + BRANDED_URL + "';";
+  assertEq(
+    countOccurrences(maskComments(fixture), BRANDED_URL),
+    1,
+    'probe: a fresh second literal WOULD be counted by the scan (so 2 would fail it)',
   );
   assert(
-    maskComments('// https://' + PARKED_HOST + ' is parked').indexOf('https://' + PARKED_HOST) < 0,
-    'a COMMENT naming the dead host is allowed (masked) — the guard is about emission',
+    maskComments('// ' + BRANDED_URL + ' is the public address').indexOf(BRANDED_URL) < 0,
+    'a COMMENT naming the host is allowed (masked) — the guard is about emission',
   );
 }
 
 // ─── run ─────────────────────────────────────────────────────────
 function main(): void {
-  console.log('v47.1 Part B item 0 — every share card emits a URL that opens');
+  console.log('v47.1 Part B item 0 / v47.3 — every share card emits the branded URL that opens');
   constantTests();
   emitTests();
   scanTests();
