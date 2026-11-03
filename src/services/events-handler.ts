@@ -64,15 +64,17 @@
  * when it is one of ours; anything else gets no allow-origin header at all,
  * so the endpoint is not open to arbitrary web pages.
  *
- * TODO(v47.2 follow-up): `purchase_complete` is NOT collected here. It must be
- * server-side from Stripe — never inferred from the client returning to the
- * app — and needs either (a) the owner adding this endpoint's URL as a Stripe
- * webhook endpoint (Express accounts can receive webhooks, but the endpoint has
- * to be created in the dashboard and its signing secret stored as
- * STRIPE_WEBHOOK_SECRET; the repo already has `src/services/webhook-handler.ts`
- * for subscription lifecycle), or (b) a Stripe key in the server env to read
- * completed Checkout Sessions on a schedule. Zero purchases exist today, so
- * nothing is lost by deferring it to that follow-up.
+ * `purchase_complete` (2026-11-03): now COLLECTED, but never from this
+ * endpoint's clients. The Stripe webhook writes it after it has recorded a paid
+ * one-time purchase (see `recordServerEvent` below and
+ * `src/services/webhook-handler.ts`), which is the only honest source — the app
+ * returning from a checkout page proves nothing about whether money moved.
+ *
+ * The split is enforced by two lists, not by convention:
+ *   EVENT_NAMES        — the nine names a CLIENT may post to /api/events.
+ *   SERVER_EVENT_NAMES — names only the server may write (`purchase_complete`).
+ * `handleEvents` validates against EVENT_NAMES only, so an app — or anyone
+ * holding the app's public API — cannot forge a purchase by posting one.
  */
 import { sql } from "~/db";
 
@@ -96,6 +98,17 @@ export const EVENT_NAMES = [
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];
+
+/**
+ * Names only the SERVER may write. `purchase_complete` is the receipt of a real
+ * Stripe payment, so it must originate from the Stripe webhook; a client that
+ * could post it could claim a purchase it never made. `handleEvents` never
+ * accepts these (it validates against EVENT_NAMES above), and the webhook
+ * writes them through `recordServerEvent`.
+ */
+export const SERVER_EVENT_NAMES = ["purchase_complete"] as const;
+
+export type ServerEventName = (typeof SERVER_EVENT_NAMES)[number];
 
 /** Words that may not appear in any prop key (or extra envelope key). */
 export const PII_DENY_TOKENS = [
@@ -195,9 +208,14 @@ function byteLength(text: string): number {
  * Validate ONE event object. Returns the normalised event or a fixed error
  * string (never echoing the input back — the input may be the very PII we are
  * refusing to store).
+ *
+ * `allowed` is the name allowlist to check against; it defaults to the CLIENT
+ * list, so every existing caller (and the HTTP endpoint) keeps rejecting
+ * `purchase_complete`. Only `recordServerEvent` passes SERVER_EVENT_NAMES.
  */
 export function validateOneEvent(
   raw: unknown,
+  allowed: readonly string[] = EVENT_NAMES,
 ): { ok: true; event: NormalizedEvent } | { ok: false; error: string } {
   if (!isPlainObject(raw)) return { ok: false, error: "each event must be an object" };
 
@@ -214,7 +232,7 @@ export function validateOneEvent(
   }
 
   const name = raw.name;
-  if (typeof name !== "string" || !(EVENT_NAMES as readonly string[]).includes(name)) {
+  if (typeof name !== "string" || !allowed.includes(name)) {
     return { ok: false, error: "unknown event name" };
   }
 
@@ -439,6 +457,28 @@ async function insertEvents(events: NormalizedEvent[]): Promise<boolean> {
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/**
+ * Write ONE server-originated event (currently `purchase_complete`).
+ *
+ * Used by the Stripe webhook: the row is validated by the SAME rules the public
+ * endpoint applies (so the table can never hold a shape this module would have
+ * refused), but against SERVER_EVENT_NAMES, and it is written without passing
+ * through the HTTP path — there is no request and no rate-limit bucket, because
+ * the caller is our own webhook, not an anonymous client.
+ *
+ * Returns true when the row was committed. A validation failure or a database
+ * error is logged and returns false: telemetry must never fail a webhook, or
+ * Stripe will retry a purchase it has already been charged for.
+ */
+export async function recordServerEvent(raw: unknown): Promise<boolean> {
+  const validated = validateOneEvent(raw, SERVER_EVENT_NAMES);
+  if (!validated.ok) {
+    console.warn("[events] server event rejected:", validated.error);
+    return false;
+  }
+  return insertEvents([validated.event]);
 }
 
 /**

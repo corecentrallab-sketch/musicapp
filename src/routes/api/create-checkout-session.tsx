@@ -1,8 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { LIVE_ONE_TIME_PRICES } from "~/services/live-prices";
 
 /**
  * GET /api/create-checkout-session — API info
  * POST /api/create-checkout-session — handled by serve.ts (see checkout-handler.ts)
+ *
+ * The price list is RENDERED from `LIVE_ONE_TIME_PRICES` rather than typed here,
+ * so this page cannot drift from the prices the endpoint actually accepts. It
+ * used to hardcode three `price_1U3SE…` subscription ids from an older Stripe
+ * account — the same stale set that made every upgrade tap fail.
  */
 export const Route = createFileRoute("/api/create-checkout-session")({
   component: ApiCheckoutInfo,
@@ -14,19 +20,26 @@ function ApiCheckoutInfo() {
       <h1>NoteSnap Checkout API</h1>
       <h2>POST /api/create-checkout-session</h2>
       <p>
-        Creates a Stripe Checkout Session for subscription signups.
+        Creates a Stripe Checkout Session for a one-time purchase (AUD). The
+        session is created in <code>mode: "payment"</code>; the webhook records
+        the purchase once Stripe confirms the payment.
       </p>
       <h3>Request body (JSON)</h3>
       <pre>{`{
-  "priceId": "price_1U3SEFBbnDObsY4ujb2zxBSs",
-  "successUrl": "https://site-notesnap.vercel.app/subscription/success",
-  "cancelUrl": "https://site-notesnap.vercel.app/subscription/cancel"
+  "priceId": "${LIVE_ONE_TIME_PRICES[0].priceId}",
+  "deviceId": "<app device uuid>",
+  "successUrl": "https://notesnap.app/subscription/success",
+  "cancelUrl": "https://notesnap.app/"
 }`}</pre>
-      <h3>Valid price IDs</h3>
+      <h3>Valid price IDs (live, one-time, AUD)</h3>
       <ul>
-        <li><code>price_1U3SEFBbnDObsY4ujb2zxBSs</code> — Pro Monthly ($4.99/mo)</li>
-        <li><code>price_1U3SEKBbnDObsY4usDGDFNPQ</code> — Pro Yearly ($39.99/yr)</li>
-        <li><code>price_1U3SEKBbnDObsY4uVrnJDIyg</code> — Family/Teacher ($9.99/mo)</li>
+        {LIVE_ONE_TIME_PRICES.map((price) => (
+          <li key={price.priceId}>
+            <code>{price.priceId}</code> — {price.plan} ($
+            {(price.amountTotal / 100).toFixed(2)} {price.currency.toUpperCase()},
+            one-time)
+          </li>
+        ))}
       </ul>
       <h3>Response</h3>
       <pre>{`{
@@ -34,7 +47,9 @@ function ApiCheckoutInfo() {
 }`}</pre>
       <p>
         <code>successUrl</code> and <code>cancelUrl</code> are optional — sensible
-        defaults are used if omitted.
+        defaults are used if omitted. <code>deviceId</code> is optional but a
+        purchase without it cannot be tied to an install, so nothing is
+        unlocked.
       </p>
     </div>
   );

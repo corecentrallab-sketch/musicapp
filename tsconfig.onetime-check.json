@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": { "~/*": ["./src/*"] },
+    "esModuleInterop": true
+  },
+  "include": [
+    "src/services/live-prices.ts",
+    "src/services/entitlement.ts",
+    "src/services/webhook-handler.ts",
+    "src/services/checkout-handler.ts",
+    "src/services/events-handler.ts",
+    "src/services/recognize-handler.ts",
+    "scripts/migrate-purchases-table.ts"
+  ]
+}

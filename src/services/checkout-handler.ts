@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { LIVE_PRICE_IDS } from "~/services/entitlement";
 
 // ---------------------------------------------------------------------------
 // Stripe Checkout Session Handler
@@ -16,13 +17,18 @@ interface CheckoutRequest {
   cancelUrl?: string;
 }
 
-// Price IDs from the OWNER's Stripe account (STRIPE_SECRET_KEY in Vercel env).
-// Currency is USD per the owner's product definitions (2026-08-12).
-const VALID_PRICE_IDS = new Set([
-  "price_1U3SEFBbnDObsY4ujb2zxBSs", // NoteSnap Pro — Monthly $4.99 USD / month
-  "price_1U3SEKBbnDObsY4usDGDFNPQ", // NoteSnap Pro — Yearly $39.99 USD / year
-  "price_1U3SEKBbnDObsY4uVrnJDIyg", // NoteSnap Family/Teacher $9.99 USD / month
-]);
+// Price IDs from the OWNER's live Stripe account: the three AUD ONE-TIME prices
+// ($4.99 / $39.99 / $9.99). They are read from `LIVE_ONE_TIME_PRICES` in
+// entitlement.ts, which is the only place in this repo a live price id appears.
+//
+// THE DEFECT THIS FIXED (2026-11-03): the allowlist used to hold three
+// `price_1U3SE…` ids from an OLDER Stripe account (labelled "USD plans", and
+// recurring). The app sends the ids from its own `LIVE_PRICES` — the three
+// one-time AUD prices — so every upgrade tap died here with
+// `400 Invalid price ID` before Stripe was ever called. The session was also
+// created in `mode: "subscription"`, which Stripe refuses for a one_time price.
+// Both are fixed: the allowlist is the live set, and the mode is "payment".
+const VALID_PRICE_IDS = new Set<string>(LIVE_PRICE_IDS);
 
 /**
  * Handle POST /api/create-checkout-session
@@ -96,7 +102,11 @@ export async function handleCreateCheckoutSession(
   // --- Create Checkout Session ---
   try {
     const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
+      // ONE-TIME PURCHASE, not a subscription. The three live prices are
+      // `type: one_time`, and Stripe rejects `mode: "subscription"` for them.
+      // `payment` is what makes the webhook's one-time branch (mode=payment +
+      // payment_status=paid → purchases row) fire at all.
+      mode: "payment",
       line_items: [
         {
           price: priceId,
@@ -104,11 +114,18 @@ export async function handleCreateCheckoutSession(
         },
       ],
       // deviceId ties the purchase back to the app install: the webhook reads
-      // metadata.device_id to write the subscription row that /api/entitlement
-      // serves. client_reference_id is kept as a Stripe-visible fallback.
-      ...(deviceId
-        ? { metadata: { device_id: deviceId }, client_reference_id: deviceId }
-        : {}),
+      // metadata.device_id (falling back to client_reference_id) to write the
+      // purchase row that /api/entitlement serves.
+      //
+      // metadata.price_id is set here because the webhook receives the session
+      // UNEXPANDED — it has no line_items — so without this the tier could only
+      // be guessed from amount_total. The webhook still falls back to
+      // amount+currency for sessions created outside this endpoint.
+      metadata: {
+        ...(deviceId ? { device_id: deviceId } : {}),
+        price_id: priceId,
+      },
+      ...(deviceId ? { client_reference_id: deviceId } : {}),
       success_url: successUrl || defaultSuccessUrl,
       cancel_url: cancelUrl || defaultCancelUrl,
     });

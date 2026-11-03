@@ -8,7 +8,7 @@ import { describeCleanup } from "~/services/audio-cleanup";
 import { extractLandmarksRobust } from "~/services/landmark";
 import { matchLandmarks } from "~/services/landmark-matching";
 import { generatePurchaseUrls } from "~/services/generate-purchase-urls";
-import { hasActiveSubscription } from "~/services/entitlement";
+import { hasProEntitlement } from "~/services/entitlement";
 import { applyMatchPolicy } from "~/services/match-policy";
 import { uploadScore } from "~/services/storage";
 import { logCaptureHeaders } from "~/services/capture-headers";
@@ -233,14 +233,17 @@ export async function handleRecognize(req: Request): Promise<Response> {
   // numbers, never echoed in the response.
   logCaptureHeaders("[recognize]", req);
   // Devices that send x-user-id (the app's anonymous device UUID) are checked
-  // against the subscriptions table: an active subscription bypasses the free
-  // tier's 5/month limit. Clients without the header fall back to per-IP
-  // limiting (the in-memory counter above — see its hardening note).
+  // for a PRO ENTITLEMENT: either a paid one-time purchase or an active
+  // subscription bypasses the free tier's 5/month limit. (Before 2026-11-03
+  // only the subscription table was consulted, so a real purchase unlocked
+  // nothing — the recognition cap is the first thing a buyer hits.) Clients
+  // without the header fall back to per-IP limiting (the in-memory counter
+  // above — see its hardening note).
   const deviceId = req.headers.get("x-user-id");
   const fallbackId = req.headers.get("x-forwarded-for") || "anonymous";
   if (deviceId) {
     // Internal QA/test identity (non-production only) reads as Pro — unlimited.
-    const isPro = isQaTestIdentity(deviceId) || (await hasActiveSubscription(deviceId));
+    const isPro = isQaTestIdentity(deviceId) || (await hasProEntitlement(deviceId));
     if (!isPro && !checkMonthlyLimit(deviceId)) {
       return corsResponse(
         {
