@@ -112,8 +112,13 @@ export const Route = createFileRoute("/")({
 // These three links used to point at the owner's USD monthly/yearly Stripe
 // subscription payment links — a product the business does not sell. Prices are
 // one-time AUD, and they live in the app.
+// PRE-LAUNCH: the store listing does not exist yet (it answers 404), so both
+// pricing CTAs point at the closed-test opt-in instead. That is the URL that
+// actually works while the app is in testing. Once the app is public, change
+// this one constant to
+//   https://play.google.com/store/apps/details?id=com.notesnap.sheetmusic
 const PLAY_STORE_URL =
-  "https://play.google.com/store/apps/details?id=com.notesnap.sheetmusic";
+  "https://play.google.com/apps/testing/com.notesnap.sheetmusic";
 
 function Home() {
   const { businessName, daily } = Route.useLoaderData();
