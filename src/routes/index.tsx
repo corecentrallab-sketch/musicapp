@@ -102,21 +102,23 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
-// Live Stripe Payment Links — no API keys needed
-const PAYMENT_LINKS = {
-  proMonthly: "https://buy.stripe.com/fZufZg3S1e3m8lo7cyefC00",
-  proYearly: "https://buy.stripe.com/5kQ28q9cl7EYeJM1SeefC01",
-  family: "https://buy.stripe.com/00wfZgcox8J20SW1SeefC02",
-} as const;
+// Every purchase happens inside the Android app, through Google Play.
+//
+// The site does not sell directly, for two reasons. Google Play requires Play
+// Billing for digital goods sold inside the app, so the app is the only place a
+// purchase can be completed legitimately. And a web buyer would have no
+// entitlement in the app, because there is no account to attach it to.
+//
+// These three links used to point at the owner's USD monthly/yearly Stripe
+// subscription payment links — a product the business does not sell. Prices are
+// one-time AUD, and they live in the app.
+const PLAY_STORE_URL =
+  "https://play.google.com/store/apps/details?id=com.notesnap.sheetmusic";
 
 function Home() {
   const { businessName, daily } = Route.useLoaderData();
-  const [loadingLink, setLoadingLink] = useState<string | null>(null);
-
-  const handleSubscribe = useCallback((url: string) => {
-    setLoadingLink(url);
-    window.open(url, "_blank");
-    setTimeout(() => setLoadingLink(null), 2000);
+  const openPlayStore = useCallback(() => {
+    window.open(PLAY_STORE_URL, "_blank");
   }, []);
 
   return (
@@ -370,7 +372,8 @@ function Home() {
             Simple, honest pricing
           </h2>
           <p className="mt-4 text-center text-lg text-stone-500">
-          Free is genuinely free. Cancel anytime in one tap.
+            Free is genuinely free. Paid tiers are a one-time payment — no
+            subscription, nothing renews.
           </p>
 
           <div className="mt-14 grid gap-8 lg:grid-cols-3">
@@ -380,7 +383,7 @@ function Home() {
               <p className="mt-1 text-sm text-stone-500">For casual players</p>
               <p className="mt-6">
                 <span className="text-4xl font-bold text-stone-900">$0</span>
-                <span className="text-stone-500">/month</span>
+                <span className="text-stone-500"> forever</span>
               </p>
               <ul className="mt-8 flex-1 space-y-3 text-sm text-stone-700">
                 {[
@@ -416,10 +419,10 @@ function Home() {
               <p className="mt-1 text-sm text-stone-500">For serious musicians</p>
               <p className="mt-6">
                 <span className="text-4xl font-bold text-stone-900">$4.99</span>
-                <span className="text-stone-500">/month</span>
+                <span className="text-stone-500"> AUD, one-time</span>
               </p>
               <p className="mt-1 text-sm text-amber-700 font-medium">
-                or $39.99/year (save 33%)
+                Or $39.99 one-time for everything, in Pro — Complete
               </p>
               <ul className="mt-8 flex-1 space-y-3 text-sm text-stone-700">
                 {[
@@ -441,23 +444,14 @@ function Home() {
               </ul>
               <div className="mt-8 space-y-3">
                 <button
-                  onClick={() => handleSubscribe(PAYMENT_LINKS.proMonthly)}
-                  disabled={loadingLink !== null}
-                  className="w-full rounded-full bg-amber-600 py-3 text-center text-sm font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  onClick={openPlayStore}
+                  className="w-full rounded-full bg-amber-600 py-3 text-center text-sm font-semibold text-white hover:bg-amber-700 transition-colors"
                 >
-                  {loadingLink === PAYMENT_LINKS.proMonthly
-                    ? "Opening checkout…"
-                    : "Subscribe — $4.99/mo"}
+                  Get the app — buy in Google Play
                 </button>
-                <button
-                  onClick={() => handleSubscribe(PAYMENT_LINKS.proYearly)}
-                  disabled={loadingLink !== null}
-                  className="w-full rounded-full border border-amber-400 py-3 text-center text-sm font-semibold text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {loadingLink === PAYMENT_LINKS.proYearly
-                    ? "Opening checkout…"
-                    : "Save 33% — $39.99/year"}
-                </button>
+                <p className="text-center text-xs text-stone-500">
+                  Purchases are made inside the app, through Google Play.
+                </p>
               </div>
             </div>
 
@@ -467,7 +461,7 @@ function Home() {
               <p className="mt-1 text-sm text-stone-500">For households & teachers</p>
               <p className="mt-6">
                 <span className="text-4xl font-bold text-stone-900">$9.99</span>
-                <span className="text-stone-500">/month</span>
+                <span className="text-stone-500"> AUD, one-time</span>
               </p>
               <ul className="mt-8 flex-1 space-y-3 text-sm text-stone-700">
                 {[
@@ -483,13 +477,10 @@ function Home() {
                 ))}
               </ul>
               <button
-                onClick={() => handleSubscribe(PAYMENT_LINKS.family)}
-                disabled={loadingLink !== null}
-                className="mt-8 w-full rounded-full border border-stone-300 py-3 text-center text-sm font-semibold text-stone-700 hover:border-amber-400 hover:text-amber-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={openPlayStore}
+                className="mt-8 w-full rounded-full border border-stone-300 py-3 text-center text-sm font-semibold text-stone-700 hover:border-amber-400 hover:text-amber-700 transition-colors"
               >
-                {loadingLink === PAYMENT_LINKS.family
-                  ? "Opening checkout…"
-                  : "Subscribe"}
+                Get the app
               </button>
             </div>
           </div>
@@ -509,8 +500,8 @@ function Home() {
             {[
               {
                 icon: "🔘",
-                title: "One-tap cancel",
-                desc: "Cancel any time with a single tap. No hoops, no retention scripts, no guilt. The button is always easy to find.",
+                title: "One payment, no subscription",
+                desc: "Buy a tier once and it is yours. Nothing renews, there is no card on file, and there is nothing to cancel later.",
               },
               {
                 icon: "🆓",
@@ -519,8 +510,8 @@ function Home() {
               },
               {
                 icon: "💡",
-                title: "Clear renewal benefits",
-                desc: "Before your subscription renews, we remind you what you'd lose by cancelling — informational, never manipulative.",
+                title: "Bought through Google Play",
+                desc: "Purchases and refunds are handled by Google Play under its own policy, so your payment details never touch our servers.",
               },
             ].map((item) => (
               <div
