@@ -174,6 +174,7 @@ import {
 } from '../services/calendarReminderDevice';
 import { CalendarPickerSheet } from '../components/CalendarPickerSheet';
 import { createCheckoutSession, checkEntitlement } from '../services/api';
+import { track } from '../services/analytics';
 import { getDeviceId } from '../services/device';
 // The app's light/dark choice (v33 §F2, owner 10-04 email batch: "a dark/light
 // mode toggle in Settings"; v34b: the SAME choice now repaints every screen —
@@ -669,10 +670,16 @@ export const SettingsScreen: React.FC = () => {
 
   const handleUpgrade = useCallback(async (priceId: string) => {
     setLoadingPlan(priceId);
+    // v47.2 upgrade_tap — WHICH tier, and whether checkout actually OPENED. The
+    // tier is the plan table's own stable key (never a Stripe identifier) and
+    // "opened" is set only when a real checkout URL came back and the browser
+    // opened: a tap that errors is counted as a tap that errored.
+    const tier = LIVE_PRICES.find((plan) => plan.id === priceId)?.key ?? 'unknown';
     try {
       const deviceId = await getDeviceId();
       const checkoutUrl = await createCheckoutSession(priceId, deviceId);
       await WebBrowser.openBrowserAsync(checkoutUrl);
+      track('upgrade_tap', { tier, opened: true });
 
       // User is back — poll the server until the webhook grants the entitlement
       // (webhooks usually land within seconds; give it up to 30s).
@@ -692,6 +699,7 @@ export const SettingsScreen: React.FC = () => {
         Alert.alert(PURCHASE_DONE_TITLE, PURCHASE_DONE_BODY);
       }
     } catch (err) {
+      track('upgrade_tap', { tier, opened: false });
       const message =
         err instanceof Error ? err.message : 'Something went wrong.';
       Alert.alert('Checkout Error', message);
@@ -705,6 +713,13 @@ export const SettingsScreen: React.FC = () => {
   // ── THE §3 ROWS' DESTINATIONS (v43 slice 2) — every one of them exists ──
   /** The Pro row: opens the plans/checkout cards that already live below. */
   const openPlans = useCallback(() => setPlansOpen((open) => !open), []);
+  // v47.2 plans_view — fired when the plans/upgrade block is ACTUALLY SEEN (the
+  // Pro row was opened and the entitlement check has finished), never on a
+  // Settings mount. That is the demand signal the subscription decision needs.
+  useEffect(() => {
+    if (!plansOpen || checking) return;
+    track('plans_view', { hosted: proState.isPro });
+  }, [plansOpen, checking, proState.isPro]);
   /** The Theme row: opens the existing Dark/Light choice, in place. */
   const toggleThemeChoice = useCallback(() => setThemeOpen((open) => !open), []);
   /** Google Drive / Dropbox: the Cloud Sync screen that owns their state. */

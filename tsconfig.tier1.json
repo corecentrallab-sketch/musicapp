@@ -231,6 +231,9 @@
     "scripts/v471PlanPrices.test.ts",
     "scripts/v471SettingsFit.test.ts",
     "scripts/v471bMoneyCta.test.ts",
-    "scripts/v471bShareLink.test.ts"
+    "scripts/v471bShareLink.test.ts",
+    "src/services/analytics.ts",
+    "src/services/v472AnalyticsContract.ts",
+    "scripts/v472Analytics.test.ts"
   ]
 }

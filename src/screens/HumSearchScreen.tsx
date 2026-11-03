@@ -49,6 +49,7 @@ import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useHardwareBack } from '../hooks/useHardwareBack';
 import { fetchPieceById, humToSearch } from '../services/api';
+import { track } from '../services/analytics';
 import { humOutcome, humPhraseHint, humNoMatchMessage, type HumOutcome } from '../services/tier1';
 import {
   HUM_RETRY_CTA,
@@ -269,6 +270,7 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
     }
     setMatchState('checking');
     setFindNote(null);
+    track('recognition_start', { source: 'hum' });
     try {
       const resp = await humToSearch(uri);
       const res = humOutcome(resp);
@@ -300,6 +302,11 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
         setMatchLine(`That's ${res.topMatch.title} — it's in our free library.`);
         setHumResult(humMatchToResultResponse(resp, res.matches, sheet));
         setMatchState('hit');
+        track('recognition_result', {
+          source: 'hum',
+          success: true,
+          piece_id: res.topMatch.piece_id,
+        });
       } else {
         // THE MISS, HELD FOR THE EXPLICIT STEP (v33 §B.1). Only a window that has
         // FINISHED its take may record the miss (a late answer must never
@@ -307,9 +314,11 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
         // the overlay below, opened by the user's own "Find this melody ›" tap.
         setStage((previous) => (previous === 'review' ? 'no-match' : previous));
         setMatchState('idle');
+        track('recognition_result', { source: 'hum', success: false });
       }
     } catch {
       setMatchState('idle');
+      track('recognition_result', { source: 'hum', success: false });
       setFindNote('We could not check the library just now — your melody is saved either way.');
     }
   }, []);
@@ -527,7 +536,11 @@ export const HumSearchScreen: React.FC<HumSearchScreenProps> = ({
       } else {
         setExportNote('Record a take first — then we can write it out as MIDI.');
       }
+      // v47.2 pro_feature_use (midi_export) — the export ran to completion (a
+      // take with no melody returns above, before any work).
+      track('pro_feature_use', { feature: 'midi_export', ok: true });
     } catch (err) {
+      track('pro_feature_use', { feature: 'midi_export', ok: false });
       setExportNote(
         err instanceof Error && err.message
           ? err.message

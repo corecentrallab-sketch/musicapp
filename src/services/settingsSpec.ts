@@ -429,6 +429,13 @@ export function aboutDialogBody(version: unknown): string {
     'Sheet-music recognition: audio that matches our public-domain library, or a melody you hum, whistle or sing.',
     'Modern songs: song ID plus the official sheet music or tab from a licensed retailer.',
     'No account needed — your History and settings stay on this device.',
+    // v47.2 — THE INSTRUMENTATION LINE (owner ruling 10-30: instrumentation ships
+    // before launch). One plain sentence, in the About block the About row opens:
+    // what is collected, and what is not. No opt-out is offered because none is
+    // implemented, and promising one the app cannot honour would be worse than
+    // saying nothing. No audio, no score content, no personal data leaves the
+    // phone — see services/analytics.ts, which owns every field that is sent.
+    'Anonymous usage counts — which screens you open, whether a recognition matched, which plan cards you looked at — are collected to improve the app. No personal data and no audio is collected.',
   ].join('\n');
 }
 
