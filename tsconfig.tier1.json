@@ -234,6 +234,8 @@
     "scripts/v471bShareLink.test.ts",
     "src/services/analytics.ts",
     "src/services/v472AnalyticsContract.ts",
-    "scripts/v472Analytics.test.ts"
+    "scripts/v472Analytics.test.ts",
+    "src/services/lastBackup.ts",
+    "scripts/v48SettingsPass.test.ts"
   ]
 }

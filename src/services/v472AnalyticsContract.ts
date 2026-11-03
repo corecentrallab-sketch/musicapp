@@ -147,20 +147,28 @@ export const EVENT_CALL_SITES: readonly EventCallSite[] = [
     host: 'src/screens/PieceDetailScreen.tsx',
     props: ['piece_id'],
   },
+  // SETTINGS PASS, CHANGE A (2026-11): the plans block and the checkout call
+  // moved out of SettingsScreen onto their own route. The EVENTS did not change —
+  // same names, same payload shape — only the file that hosts them, so these two
+  // entries follow the surface. Losing them silently would blind the only
+  // conversion data the app has, which is why they are pinned to the real path
+  // (the entitlement check, the checkout call, and a mount point in App.tsx).
   {
     event: 'plans_view',
-    file: 'src/screens/SettingsScreen.tsx',
+    file: 'src/screens/PlanScreen.tsx',
     call: "track('plans_view'",
-    evidence: ['plansOpen', 'checking', 'hosted: proState.isPro'],
-    host: 'src/navigation/TabNavigator.tsx',
+    evidence: ['checking', 'hosted: proState.isPro'],
+    host: 'App.tsx',
+    hostLiteral: 'PlanScreen',
     props: ['hosted'],
   },
   {
     event: 'upgrade_tap',
-    file: 'src/screens/SettingsScreen.tsx',
+    file: 'src/screens/PlanScreen.tsx',
     call: "track('upgrade_tap'",
     evidence: ['createCheckoutSession(', 'opened: true', 'opened: false', 'LIVE_PRICES', 'tier,'],
-    host: 'src/navigation/TabNavigator.tsx',
+    host: 'App.tsx',
+    hostLiteral: 'PlanScreen',
     props: ['opened'],
   },
   {

@@ -2,19 +2,38 @@
  * SettingsScreen — DESIGNER SPEC §3 (v43 slice 2), plus the surfaces the spec's
  * closed row set does not model yet.
  *
+ * THE SETTINGS PASS (owner-approved; branch feat/settings-pass) — this screen
+ * stopped being three screens at once:
+ *
+ *   A. THE MONEY LEFT. Your Plan, Upgrade and Billing moved VERBATIM to
+ *      src/screens/PlanScreen.tsx (route 'Plan'). What is left here is ONE row —
+ *      "Your plan", whose trailing value is the live tier — that opens it. The
+ *      plan cards, the price IDs and the checkout call are no longer in this
+ *      file at all (settingsSpec.settingsHasNoMoneySurface asserts that).
+ *   B. "Test your microphone" opens the tuner (route 'Tuner'): free, offline, and
+ *      the honest answer to "does my mic hear me?" — not a level meter.
+ *   C. "Last backup" prints the timestamp services/cloudSync really stored, or
+ *      "No backup yet"; "Sync now" calls the SAME syncCloud() the Cloud Sync
+ *      screen calls. No second sync path, no invented date.
+ *   D. Rows that are information read as information. The Noise filter row was
+ *      already a value; its copy now says so plainly instead of sounding like a
+ *      switch.
+ *   E. The Theme choice is segmented pills INSIDE its row (two options, one tap)
+ *      instead of a tap that opened a panel.
+ *
  * THE SPEC'S SHAPE (v43 §3, "/home/team/shared/ux-design-v41/spec.md"):
  *
- *     Pro row → Audio & Recording → Playback → Cloud Sync & Storage → Support
+ *     Plan row → Audio & Recording → Playback → Cloud Sync & Storage → Support
  *
  *   • ONE row style everywhere: 52 dp rows inset x32, title 15 dp bold TXT, sub
  *     11 dp SUB capped at right-100 dp, trailing value 13 dp bold HUM / chevron,
  *     a hairline LINE between rows inside a card.
  *   • Cards are the group bounds (r16, CARD + CARD_LINE), 20 dp apart; the section
  *     header is 11 dp caps bold SUB, 20 dp above / 18 dp below, indent x16.
- *   • The Pro row is the money path: CARD fill + 1 dp LISTEN border, one quiet row,
- *     and its "View plans" pill opens the EXISTING plans flow (the one-time AUD
- *     checkout cards that already live in this screen). Nothing else on the
- *     surface blocks the free tier.
+ *   • The plan row is the money path: CARD fill + 1 dp LISTEN border, one quiet
+ *     row, the live tier as its value, and a "View plans" pill that opens the
+ *     Plan screen (the one-time AUD checkout cards live THERE now). Nothing else
+ *     on the surface blocks the free tier.
  *   • There is NO Account section, on purpose: nothing in the app creates an
  *     account, so the screen says so once at the bottom.
  *   • Colours come from the SPEC ROLE MAP (services/settingsSpec →
@@ -27,6 +46,10 @@
  *   Noise filter      → "Always on" — the cleanup is always applied and there is
  *                       no stored preference to flip, so the row states that
  *                       instead of offering a switch that would change nothing.
+ *   Test your microphone → the tuner (free, offline), which asks for the mic only
+ *                       when you open it.
+ *   Last backup       → the stored sync time, or "No backup yet". Sync now runs
+ *                       the same pass the Cloud Sync screen runs.
  *   Theme             → the current mode; the tap opens the existing Dark/Light
  *                       choice (services/themeStore — app-wide since v34b).
  *   Auto-scroll speed → the profile a piece with no saved speed starts from. The
@@ -173,8 +196,7 @@ import {
   type CalendarPermissionState,
 } from '../services/calendarReminderDevice';
 import { CalendarPickerSheet } from '../components/CalendarPickerSheet';
-import { createCheckoutSession, checkEntitlement } from '../services/api';
-import { track } from '../services/analytics';
+import { checkEntitlement } from '../services/api';
 import { getDeviceId } from '../services/device';
 // The app's light/dark choice (v33 §F2, owner 10-04 email batch: "a dark/light
 // mode toggle in Settings"; v34b: the SAME choice now repaints every screen —
@@ -201,53 +223,52 @@ import {
 // scripts/uxr-v43-settings.test.ts), so this screen cannot drift from the spec it
 // is the delivery of.
 import {
+  AUTO_SCROLL_HONEST_SUB,
   SETTINGS_NO_ACCOUNT_LINE,
-  SETTINGS_PRO_CTA,
-  SETTINGS_PRO_SUB,
-  SETTINGS_PRO_TITLE,
+  SETTINGS_PLAN_ROW_CTA,
+  SETTINGS_PLAN_ROW_SUB,
+  SETTINGS_PLAN_ROW_TITLE,
   SETTINGS_PRIVACY_URL,
   aboutDialogBody,
   aboutVersionLine,
   autoScrollValueLabel,
   cloudValueLabel,
   faqDialogBody,
+  micTestRowSub,
   microphoneAccessLabel,
+  microphoneRowSub,
   noiseFilterValueLabel,
   settingsPalette,
   themeValueLabel,
   type MicrophoneAccessState,
   type SettingsPalette,
 } from '../services/settingsSpec';
+// THE BACKUP ROWS (settings pass, change C). The relative time is computed from
+// the STORED value by a pure module — this screen never composes a date, and it
+// never falls back to "now" when nothing was ever synced.
+import {
+  BACKUP_ROW_SUB,
+  SYNC_NOTICE_DONE,
+  mostRecentBackup,
+  SYNC_NOTICE_NO_PROVIDER,
+  relativeBackupLabel,
+  syncNowRowSub,
+} from '../services/lastBackup';
 import { BUILD_STAMP_TAG, buildStampLine } from '../services/buildStamp';
 import { BUILD_SHA } from '../services/buildSha';
-import { providerConnected } from '../services/cloudSync';
-
-// ── v47.1 Part A · THE PLAN CARDS' MONEY DATA (owner 10-30) ────────────────────
-// The price IDs, the tier names, the price labels, the CTA and the post-purchase
-// line are NOT declared here: they live in services/v471PlanPrices, which the
-// tier1 guard suite scans. Three dead IDs used to be hardcoded here and were gone
-// from the live Stripe account ("No such price" on every upgrade tap), and the
-// copy sold a monthly/yearly plan the account does not have — all three live
-// prices are one_time. Rendering the module's strings is what keeps the screen and
-// the guard on the same text.
 import {
-  BILLING_NOTES,
-  LIVE_PRICES,
-  PLAN_CTA_LABEL,
-  PLAN_SECTION_SUBTITLE,
-  PURCHASE_DONE_BODY,
-  PURCHASE_DONE_TITLE,
-} from '../services/v471PlanPrices';
+  friendlyCloudError,
+  getLastSyncedAt,
+  providerConnected,
+  syncCloud,
+} from '../services/cloudSync';
 
-const POLL_INTERVAL_MS = 2000;
-const POLL_MAX_MS = 30000;
-
-/**
- * The entitlement API's plan id, shown as a name. Deliberately a PREFIX match: the
- * server owns those ids, and none of them is copy the user should read.
- */
-const planDisplayName = (plan: string): string =>
-  plan.indexOf('family') >= 0 ? 'NoteSnap Family' : 'NoteSnap Pro';
+// ── THE TIER LABEL (settings pass, change A) ──────────────────────────────────
+// The plan cards, the price IDs and the checkout call left this screen for
+// src/screens/PlanScreen.tsx. What stays is the ONE fact this surface still needs:
+// which tier the user is on. It comes from services/v471PlanPrices (the money
+// module's own vocabulary) so the row's value and the Plan screen cannot disagree.
+import { planTierLabel } from '../services/v471PlanPrices';
 
 /**
  * THE LIVE MICROPHONE PERMISSION (spec §3 row 1). Read, never requested: opening
@@ -272,14 +293,11 @@ async function readMicrophonePermission(): Promise<MicrophoneAccessState> {
   }
 }
 
-type LoadingPlan = string | null;
-
 export const SettingsScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   // The TAB navigator's own view of the same object: the week view's exits have to
   // switch tabs (Home), which the stack typing does not describe.
   const tabNavigation = useNavigation<BottomTabNavigationProp<RootTabParamList>>();
-  const [loadingPlan, setLoadingPlan] = useState<LoadingPlan>(null);
   const [proState, setProState] = useState<ProState>({
     isPro: false,
     plan: null,
@@ -309,11 +327,12 @@ export const SettingsScreen: React.FC = () => {
   const [hygieneLine, setHygieneLine] = useState<string | null>(null);
   const [hygieneBusy, setHygieneBusy] = useState(false);
   // ── The §3 rows' state (v43 slice 2) ──
-  /** The Pro row's pill: opens the EXISTING plans flow (never a dead pill). */
-  const [plansOpen, setPlansOpen] = useState(false);
-  /** The Theme row opens the existing Dark/Light choice in place. */
-  const [themeOpen, setThemeOpen] = useState(false);
   const [microphone, setMicrophone] = useState<MicrophoneAccessState>('unknown');
+  // ── Change C · the backup rows ──
+  /** The REAL stored ISO time of the last successful sync pass, or null. */
+  const [backupIso, setBackupIso] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [cloud, setCloud] = useState({ gdrive: false, dropbox: false });
   // ── v45 slice 2 · the retention entries that moved off Home (owner 10-26) ──
   const [showAchievements, setShowAchievements] = useState(false);
@@ -366,6 +385,9 @@ export const SettingsScreen: React.FC = () => {
     blocked: calendarDenied,
   });
 
+  /** At least one cloud provider is connected — what "Sync now" can actually do. */
+  const anyProviderConnected = cloud.gdrive || cloud.dropbox;
+
   // ── THE §3 ROWS' READERS (v43 slice 2) ──
   /** Re-read the two cloud providers' REAL connection state (never a guess). */
   const refreshCloudState = useCallback(async () => {
@@ -379,6 +401,61 @@ export const SettingsScreen: React.FC = () => {
       // A failed read keeps the last known value; it never becomes "Connected".
     }
   }, []);
+
+  /**
+   * CHANGE C — THE STORED BACKUP TIME. `getLastSyncedAt(provider)` reads the key
+   * services/cloudSync writes at the end of every successful pass
+   * (`@notesnap/cloudSync/lastSynced/<provider>`). The row prints the most recent
+   * of the two providers' values, or "No backup yet" — there is no fallback to
+   * "now", no rounding up, and no timestamp composed here at all.
+   */
+  const refreshLastBackup = useCallback(async () => {
+    try {
+      const [gdrive, dropbox] = await Promise.all([
+        getLastSyncedAt('gdrive'),
+        getLastSyncedAt('dropbox'),
+      ]);
+      setBackupIso(mostRecentBackup([gdrive, dropbox]));
+    } catch {
+      // A failed read is not a backup: the row keeps saying "No backup yet".
+      setBackupIso(null);
+    }
+  }, []);
+
+  /**
+   * CHANGE C — SYNC NOW. This calls the SAME entry point the Cloud Sync screen
+   * calls (`syncCloud(provider)`, services/cloudSync) — there is no second sync
+   * path, no duplicate upload logic and no separate timestamp bookkeeping: the
+   * pass writes the stored time itself, and the row re-reads it afterwards.
+   *
+   * Cloud sync is not gated in this build (nothing in services/cloudSync or
+   * CloudSyncScreen checks an entitlement), so the row does not pretend to be:
+   * it says what it will do, and says plainly when there is no provider to sync
+   * to instead of failing silently.
+   */
+  const runSyncNow = useCallback(async () => {
+    if (syncing) return;
+    const providers: ('gdrive' | 'dropbox')[] = [];
+    if (cloud.gdrive) providers.push('gdrive');
+    if (cloud.dropbox) providers.push('dropbox');
+    if (providers.length === 0) {
+      setSyncNotice(SYNC_NOTICE_NO_PROVIDER);
+      return;
+    }
+    setSyncing(true);
+    setSyncNotice(null);
+    try {
+      for (const provider of providers) {
+        await syncCloud(provider);
+      }
+      setSyncNotice(SYNC_NOTICE_DONE);
+    } catch (error) {
+      setSyncNotice(friendlyCloudError(error));
+    } finally {
+      setSyncing(false);
+      await refreshLastBackup();
+    }
+  }, [cloud.dropbox, cloud.gdrive, refreshLastBackup, syncing]);
 
   // The streak this screen shows is the ENGINE's (practice history), read from the
   // SAME store Home used — a Settings row may never print a different number.
@@ -406,12 +483,14 @@ export const SettingsScreen: React.FC = () => {
     void refreshCloudState();
     // Coming back from the Cloud Sync screen must show the new state — the row is
     // the status of that screen, not a snapshot taken once at mount.
+    void refreshLastBackup();
     const unsubscribe = navigation.addListener('focus', () => {
       void refreshCloudState();
       void readMicrophonePermission().then(setMicrophone);
+      void refreshLastBackup();
     });
     return unsubscribe;
-  }, [navigation, refreshCloudState]);
+  }, [navigation, refreshCloudState, refreshLastBackup]);
 
   useEffect(() => {
     getNotificationEnabled().then(setNotificationsEnabled);
@@ -661,67 +740,25 @@ export const SettingsScreen: React.FC = () => {
     ]);
   }, [reminderMinutes, runNoteSnapReminderHygiene]);
 
-  const refreshEntitlement = useCallback(async (deviceId: string): Promise<boolean> => {
-    const fresh = await checkEntitlement(deviceId);
-    setProState({ isPro: fresh.pro, plan: fresh.plan, currentPeriodEnd: fresh.currentPeriodEnd });
-    await saveProState({ isPro: fresh.pro, plan: fresh.plan, currentPeriodEnd: fresh.currentPeriodEnd });
-    return fresh.pro;
-  }, []);
-
-  const handleUpgrade = useCallback(async (priceId: string) => {
-    setLoadingPlan(priceId);
-    // v47.2 upgrade_tap — WHICH tier, and whether checkout actually OPENED. The
-    // tier is the plan table's own stable key (never a Stripe identifier) and
-    // "opened" is set only when a real checkout URL came back and the browser
-    // opened: a tap that errors is counted as a tap that errored.
-    const tier = LIVE_PRICES.find((plan) => plan.id === priceId)?.key ?? 'unknown';
-    try {
-      const deviceId = await getDeviceId();
-      const checkoutUrl = await createCheckoutSession(priceId, deviceId);
-      await WebBrowser.openBrowserAsync(checkoutUrl);
-      track('upgrade_tap', { tier, opened: true });
-
-      // User is back — poll the server until the webhook grants the entitlement
-      // (webhooks usually land within seconds; give it up to 30s).
-      const startedAt = Date.now();
-      let pro = false;
-      while (!pro && Date.now() - startedAt < POLL_MAX_MS) {
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-        try {
-          pro = await refreshEntitlement(deviceId);
-        } catch {
-          // transient failure — keep polling
-        }
-      }
-      if (pro) {
-        // A PURCHASE, not a subscription: the live prices are one_time, so nothing
-        // here may claim a plan is "active" or that anything will renew.
-        Alert.alert(PURCHASE_DONE_TITLE, PURCHASE_DONE_BODY);
-      }
-    } catch (err) {
-      track('upgrade_tap', { tier, opened: false });
-      const message =
-        err instanceof Error ? err.message : 'Something went wrong.';
-      Alert.alert('Checkout Error', message);
-    } finally {
-      setLoadingPlan(null);
-    }
-  }, [refreshEntitlement]);
-
-  const planLabel = proState.plan ? planDisplayName(proState.plan) : null;
-
   // ── THE §3 ROWS' DESTINATIONS (v43 slice 2) — every one of them exists ──
-  /** The Pro row: opens the plans/checkout cards that already live below. */
-  const openPlans = useCallback(() => setPlansOpen((open) => !open), []);
-  // v47.2 plans_view — fired when the plans/upgrade block is ACTUALLY SEEN (the
-  // Pro row was opened and the entitlement check has finished), never on a
-  // Settings mount. That is the demand signal the subscription decision needs.
-  useEffect(() => {
-    if (!plansOpen || checking) return;
-    track('plans_view', { hosted: proState.isPro });
-  }, [plansOpen, checking, proState.isPro]);
-  /** The Theme row: opens the existing Dark/Light choice, in place. */
-  const toggleThemeChoice = useCallback(() => setThemeOpen((open) => !open), []);
+  /**
+   * THE PLAN ROW (settings pass, change A): opens the Plan screen, where the
+   * one-time AUD checkout cards live now. The row does not sell anything itself —
+   * it is a destination, and the surface it opens owns the prices, the disclosure
+   * and the checkout call.
+   */
+  const openPlan = useCallback(() => {
+    navigation.getParent()?.navigate('Plan');
+  }, [navigation]);
+  /**
+   * TEST YOUR MICROPHONE (change B): the tuner, registered as a root-stack route
+   * exactly like CloudSync above — so `getParent()` reaches the SAME navigator and
+   * the row opens a screen that really exists (App.tsx registers name="Tuner").
+   * The tuner asks for the mic itself when it opens; nothing here requests it.
+   */
+  const openTuner = useCallback(() => {
+    navigation.getParent()?.navigate('Tuner');
+  }, [navigation]);
   /** Google Drive / Dropbox: the Cloud Sync screen that owns their state. */
   const openCloudSync = useCallback(() => {
     navigation.getParent()?.navigate('CloudSync');
@@ -794,109 +831,38 @@ export const SettingsScreen: React.FC = () => {
       style={[styles.container, themed.screen]}
       contentContainerStyle={styles.content}
     >
-      {/* ═══════════════ v43 §3 · THE PRO ROW (the money path, one quiet row) ═══════════════
-          CARD fill + 1 dp LISTEN edge, r16, 358 × 62. The pill opens the EXISTING
-          plans flow below; nothing here blocks the free tier. */}
+      {/* ═══════════════ THE PLAN ROW (the money path, one quiet row) ═══════════════
+          SETTINGS PASS, CHANGE A: this used to be the Pro row, and tapping it opened
+          three money sections IN THIS SCREEN (Your Plan / Upgrade / Billing) with the
+          Stripe checkout cards inside them. Those sections moved verbatim to
+          src/screens/PlanScreen.tsx; what is left is one row that says what plan the
+          user is on and takes them there. Same CARD + 1 dp LISTEN edge, same "View
+          plans" pill — the geometry did not change, the destination did. */}
       <Pressable
         style={[styles.proRow, { backgroundColor: palette.CARD, borderColor: palette.LISTEN }]}
-        onPress={openPlans}
+        onPress={openPlan}
         accessibilityRole="button"
-        accessibilityLabel={SETTINGS_PRO_TITLE}
-        accessibilityHint="Shows the NoteSnap Pro plans"
+        accessibilityLabel={SETTINGS_PLAN_ROW_TITLE}
+        accessibilityHint="Opens your plan and the upgrade options"
       >
         <View style={styles.proCopy}>
-          <Text style={[styles.proTitle, { color: palette.TXT }]}>{SETTINGS_PRO_TITLE}</Text>
-          <Text style={[styles.proSub, { color: palette.SUB }]}>{SETTINGS_PRO_SUB}</Text>
+          <Text style={[styles.proTitle, { color: palette.TXT }]}>{SETTINGS_PLAN_ROW_TITLE}</Text>
+          <Text style={[styles.proSub, { color: palette.SUB }]}>{SETTINGS_PLAN_ROW_SUB}</Text>
         </View>
+        {/* The VALUE is the live tier — read from the cached entitlement, never a
+            hard-coded word, so a Pro user never sees "Free" here. */}
+        <Text style={[styles.proValue, { color: palette.HUM }]} numberOfLines={1}>
+          {planTierLabel(proState.isPro, proState.plan)}
+        </Text>
         <Pressable
           style={[styles.proCta, { backgroundColor: palette.SOFTFILL }]}
-          onPress={openPlans}
+          onPress={openPlan}
           accessibilityRole="button"
           hitSlop={8}
         >
-          <Text style={[styles.proCtaText, { color: palette.HUM }]}>{SETTINGS_PRO_CTA}</Text>
+          <Text style={[styles.proCtaText, { color: palette.HUM }]}>{SETTINGS_PLAN_ROW_CTA}</Text>
         </Pressable>
       </Pressable>
-
-      {/* ── The plans flow the Pro row opens: the EXISTING checkout cards ── */}
-      {plansOpen && (
-        <>
-          {/* ── Current Plan ── */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, themed.title]}>Your Plan</Text>
-            <View style={[styles.planCard, themed.card]}>
-              {checking ? (
-                <ActivityIndicator color={theme.accent} size="small" />
-              ) : (
-                <>
-                  <Text style={styles.planEmoji}>
-                    {proState.isPro ? '⭐' : '🎵'}
-                  </Text>
-                  <Text style={[styles.planName, themed.strong]}>
-                    {proState.isPro ? planLabel ?? 'NoteSnap Pro' : 'NoteSnap Free'}
-                  </Text>
-                  <Text style={[styles.planStatus, themed.muted]}>
-                    {proState.isPro
-                      ? 'Unlimited recognitions'
-                      : '5 recognitions a month'}
-                  </Text>
-                  {/* v47.1 Part A: the old "Renews <date>" line is gone. The live
-                      prices are one_time — nothing renews, so nothing may say so. */}
-                </>
-              )}
-            </View>
-          </View>
-
-          {/* ── Upgrade Options (shown for free users) ── */}
-          {!checking && !proState.isPro && (
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, themed.title]}>Upgrade</Text>
-              <Text style={[styles.sectionSubtitle, themed.subtitle]}>
-                {PLAN_SECTION_SUBTITLE}
-              </Text>
-
-              {LIVE_PRICES.map((plan) => (
-                <TouchableOpacity
-                  key={plan.id}
-                  style={[styles.upgradeCard, themed.card, plan.highlight && styles.upgradeCardHighlight]}
-                  onPress={() => handleUpgrade(plan.id)}
-                  disabled={loadingPlan !== null}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${plan.name}, ${plan.priceLabel}`}
-                >
-                  <View style={styles.upgradeInfo}>
-                    <Text style={[styles.upgradeName, themed.strong]}>{plan.name}</Text>
-                    <Text style={[styles.upgradePrice, themed.muted]}>{plan.priceLabel}</Text>
-                    <Text style={[styles.upgradeFeature, themed.muted]}>{plan.feature}</Text>
-                  </View>
-                  {loadingPlan === plan.id ? (
-                    <ActivityIndicator color={theme.accent} size="small" />
-                  ) : (
-                    <View style={[styles.upgradeBtn, plan.highlight && styles.upgradeBtnPrimary]}>
-                      <Text style={[styles.upgradeBtnText, plan.highlight && styles.upgradeBtnTextPrimary]}>
-                        {PLAN_CTA_LABEL}
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* ── Billing Info ── */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, themed.title]}>Billing</Text>
-            <View style={[styles.infoCard, themed.card]}>
-              {BILLING_NOTES.map((note) => (
-                <Text key={note} style={[styles.infoText, themed.muted]}>
-                  • {note}
-                </Text>
-              ))}
-            </View>
-          </View>
-        </>
-      )}
 
       {/* ═══════════════ v43 §3 · AUDIO & RECORDING ═══════════════ */}
       <Text style={[styles.specHeader, { color: palette.SUB }]} accessibilityRole="header">Audio & Recording</Text>
@@ -905,19 +871,34 @@ export const SettingsScreen: React.FC = () => {
           styles={styles}
           palette={palette}
           title="Microphone access"
-          sub="Allowed while using the app"
+          sub={microphoneRowSub(microphone)}
           value={microphoneAccessLabel(microphone)}
           onPress={openSystemSettings}
           hint="Opens the system settings"
         />
-        {/* The cleanup is ALWAYS applied (the pitch extractor filters breath and
-            room tone; the backend filters every query), and no stored preference
-            exists — so this is a value, not a switch that would do nothing. */}
+        {/* CHANGE B — the tuner ships, is free and works offline, and it is the
+            honest answer to "does my mic hear me?". The sub says the tuner will
+            ASK for the mic when it is not granted, so the dialog is never a
+            surprise and the row is never a dead end. */}
+        <SpecRow
+          styles={styles}
+          palette={palette}
+          title="Test your microphone"
+          sub={micTestRowSub(microphone)}
+          onPress={openTuner}
+          hint="Opens the tuner"
+          chevron
+          divider
+        />
+        {/* CHANGE D — the cleanup is ALWAYS applied (the pitch extractor filters
+            breath and room tone; the backend filters every query) and no stored
+            preference exists, so this is information, not a switch. The copy now
+            says so in the first three words instead of sounding like a control. */}
         <SpecRow
           styles={styles}
           palette={palette}
           title="Noise filter"
-          sub="Clean the room before matching"
+          sub="Always on — room noise is filtered out of every match"
           value={noiseFilterValueLabel()}
           divider
         />
@@ -926,65 +907,51 @@ export const SettingsScreen: React.FC = () => {
       {/* ═══════════════ v43 §3 · PLAYBACK ═══════════════ */}
       <Text style={[styles.specHeader, { color: palette.SUB }]} accessibilityRole="header">Playback</Text>
       <View style={[styles.specGroup, { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE }]}>
+        {/* CHANGE E — the two-option choice is now segmented pills INSIDE the row:
+            it used to be a tap that opened a panel holding the same two pills, i.e.
+            two taps for Dark/Light. Selected state is exposed to screen readers. */}
         <SpecRow
           styles={styles}
           palette={palette}
           title="Theme"
-          sub="Dark, light or follow system"
-          value={themeValueLabel(themeMode)}
-          onPress={toggleThemeChoice}
-          hint="Shows the dark and light choices"
+          sub="Dark or light, across the whole app"
+          pills={[
+            {
+              key: 'dark',
+              label: THEME_DARK_LABEL,
+              selected: themeMode === 'dark',
+              onPress: () => setThemeMode('dark'),
+              accessibilityLabel: THEME_ACCESSIBILITY_LABEL,
+            },
+            {
+              key: 'light',
+              label: THEME_LIGHT_LABEL,
+              selected: themeMode === 'light',
+              onPress: () => setThemeMode('light'),
+              accessibilityLabel: THEME_ACCESSIBILITY_LABEL,
+            },
+          ]}
         />
         {/* The page-turner speed is a PER-PIECE memory set in the score reader
             (services/pageTurnPresets + pageTurnSpeedStore); the row names the
-            profile a piece with no saved speed starts from. */}
+            profile a piece with no saved speed starts from, and its sub says where
+            the real control lives — a value row that cannot be changed here. */}
         <SpecRow
           styles={styles}
           palette={palette}
           title="Auto-scroll speed"
-          sub="Page turns while you play"
+          sub={AUTO_SCROLL_HONEST_SUB}
           value={autoScrollValueLabel()}
           divider
         />
       </View>
-      {/* The Theme row's choice — the SAME Dark/Light binding every screen reads
-          (services/themeStore), so the change is app-wide and live. */}
-      {themeOpen && (
-        <View style={[styles.specThemePanel, { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE }]}>
-          <Text style={[styles.specPanelTitle, { color: palette.TXT }]}>{THEME_SECTION_TITLE}</Text>
-          <Text style={[styles.infoText, themed.strong]}>{THEME_ROW_TITLE}</Text>
-          <Text style={[styles.infoText, themed.muted]}>{themeAppliedLine(themeMode)}</Text>
-          <View style={styles.themeChoiceRow}>
-            <TouchableOpacity
-              style={[
-                styles.themeChoice,
-                themed.chip,
-                themeMode === 'dark' && { backgroundColor: theme.accent, borderColor: theme.accent },
-              ]}
-              onPress={() => setThemeMode('dark')}
-              accessibilityRole="button"
-              accessibilityState={{ selected: themeMode === 'dark' }}
-              accessibilityLabel={THEME_ACCESSIBILITY_LABEL}
-            >
-              <Text style={[styles.themeChoiceText, themed.chipText]}>{THEME_DARK_LABEL}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.themeChoice,
-                themed.chip,
-                themeMode === 'light' && { backgroundColor: theme.accent, borderColor: theme.accent },
-              ]}
-              onPress={() => setThemeMode('light')}
-              accessibilityRole="button"
-              accessibilityState={{ selected: themeMode === 'light' }}
-              accessibilityLabel={THEME_ACCESSIBILITY_LABEL}
-            >
-              <Text style={[styles.themeChoiceText, themed.chipText]}>{THEME_LIGHT_LABEL}</Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={[styles.themeNote, themed.muted]}>{THEME_HONEST_NOTE}</Text>
-        </View>
-      )}
+      {/* What the theme choice does — always visible now (it used to be inside the
+          panel the row opened), so the honest note costs nothing to read. */}
+      <View style={[styles.specThemePanel, { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE }]}>
+        <Text style={[styles.specPanelTitle, { color: palette.TXT }]}>{THEME_SECTION_TITLE}</Text>
+        <Text style={[styles.infoText, themed.strong]}>{themeAppliedLine(themeMode)}</Text>
+        <Text style={[styles.themeNote, themed.muted]}>{THEME_HONEST_NOTE}</Text>
+      </View>
 
       {/* ═══════════════ v43 §3 · CLOUD SYNC & STORAGE ═══════════════ */}
       <Text style={[styles.specHeader, { color: palette.SUB }]} accessibilityRole="header">Cloud Sync & Storage</Text>
@@ -1008,6 +975,31 @@ export const SettingsScreen: React.FC = () => {
           hint="Opens Cloud sync"
           divider
         />
+        {/* CHANGE C — the REAL stored backup time (services/cloudSync writes it,
+            services/lastBackup formats it) or an honest "No backup yet". The value
+            is computed from the stored ISO string, never from "now". */}
+        <SpecRow
+          styles={styles}
+          palette={palette}
+          title="Last backup"
+          sub={BACKUP_ROW_SUB}
+          value={relativeBackupLabel(backupIso, Date.now())}
+          divider
+        />
+        {/* CHANGE C — Sync now runs the SAME syncCloud() pass the Cloud Sync screen
+            runs, and says plainly when there is nothing connected to sync to. */}
+        <SpecRow
+          styles={styles}
+          palette={palette}
+          title="Sync now"
+          sub={syncNowRowSub(anyProviderConnected, syncing)}
+          onPress={runSyncNow}
+          hint="Syncs your library with the cloud"
+          divider
+        />
+        {syncNotice ? (
+          <Text style={[styles.syncNotice, themed.muted]}>{syncNotice}</Text>
+        ) : null}
       </View>
 
       {/* ═══════════════ v43 §3 · SUPPORT ═══════════════ */}
@@ -1384,6 +1376,24 @@ interface SpecRowProps {
   chevron?: boolean;
   /** The hairline LINE above this row (every row but the card's first). */
   divider?: boolean;
+  /**
+   * CHANGE E — SEGMENTED PILLS. A row whose choice has 2–4 mutually exclusive
+   * options hosts the options itself: one tap, no panel to open, and every pill
+   * exposes `accessibilityState.selected`. A row with pills has no `onPress` of
+   * its own — the pills ARE the interaction (settingsSpec's SETTINGS_CONTROL_ROWS
+   * declares which rows are allowed to work this way).
+   */
+  pills?: SpecRowPill[];
+}
+
+/** One pill: a label, whether it is the current choice, and what it does. */
+export interface SpecRowPill {
+  key: string;
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  /** Screen-reader name; the visible label alone is ambiguous out of context. */
+  accessibilityLabel?: string;
 }
 
 const SpecRow: React.FC<SpecRowProps> = ({
@@ -1396,6 +1406,7 @@ const SpecRow: React.FC<SpecRowProps> = ({
   hint,
   chevron,
   divider,
+  pills,
 }) => {
   const content = (
     <>
@@ -1417,6 +1428,40 @@ const SpecRow: React.FC<SpecRowProps> = ({
       {chevron ? <Ionicons name="chevron-forward" size={14} color={palette.SUB} /> : null}
     </>
   );
+  // A PILL ROW stacks: the copy on one line, the segmented choice under it. It is
+  // a container of controls, not a control, so it carries no onPress of its own.
+  if (pills && pills.length > 0) {
+    return (
+      <View>
+        {divider ? <View style={[styles.specDivider, { backgroundColor: palette.LINE }]} /> : null}
+        <View style={[styles.specRow, styles.specRowStack]}>
+          <View style={styles.specRowLine}>{content}</View>
+          <View style={styles.specPills}>
+            {pills.map((pill) => (
+              <Pressable
+                key={pill.key}
+                style={[
+                  styles.specPill,
+                  { borderColor: palette.LINE },
+                  pill.selected && { backgroundColor: palette.SOFTFILL, borderColor: palette.LISTEN },
+                ]}
+                onPress={pill.onPress}
+                accessibilityRole="button"
+                accessibilityState={{ selected: pill.selected }}
+                accessibilityLabel={pill.accessibilityLabel ?? pill.label}
+              >
+                <Text
+                  style={[styles.specPillText, { color: pill.selected ? palette.HUM : palette.SUB }]}
+                >
+                  {pill.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      </View>
+    );
+  }
   return (
     <View>
       {divider ? <View style={[styles.specDivider, { backgroundColor: palette.LINE }]} /> : null}
@@ -1443,7 +1488,17 @@ const SpecRow: React.FC<SpecRowProps> = ({
  *  specRowTitle / specRowSub / specRowValue / specDivider). */
 type SpecRowStyles = Pick<
   typeof baseStyles,
-  'specRow' | 'specRowCopy' | 'specRowTitle' | 'specRowSub' | 'specRowValue' | 'specDivider'
+  | 'specRow'
+  | 'specRowCopy'
+  | 'specRowTitle'
+  | 'specRowSub'
+  | 'specRowValue'
+  | 'specDivider'
+  | 'specRowStack'
+  | 'specRowLine'
+  | 'specPills'
+  | 'specPill'
+  | 'specPillText'
 >;
 
 const baseStyles = StyleSheet.create({
@@ -1474,6 +1529,9 @@ const baseStyles = StyleSheet.create({
   // reserves space the other may not need.
   proCopy: { flex: 1, minWidth: 0 },
   proTitle: { fontSize: 16, fontWeight: '700' },
+  // The plan row's trailing VALUE (the live tier): measured, may shrink, never
+  // pushes the copy out of the row.
+  proValue: { fontSize: 13, fontWeight: '700', marginLeft: 8, flexShrink: 1 },
   proSub: { fontSize: 12, marginTop: 2 },
   proCta: {
     borderRadius: 999,
@@ -1530,6 +1588,24 @@ const baseStyles = StyleSheet.create({
   // A short trailing state label: it may shrink and ellipsize rather than push the
   // title out of the row.
   specRowValue: { fontSize: 13, fontWeight: '700', marginLeft: 12, flexShrink: 1 },
+  // CHANGE E — the segmented pills live INSIDE the row, so the row stacks: the
+  // copy on one line, the choice under it. Same 52 dp floor and vertical padding
+  // as every other row (the row grows with the text, never a fixed height).
+  specRowStack: { flexDirection: 'column', alignItems: 'stretch' },
+  specRowLine: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  specPills: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  specPill: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingVertical: 10,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  specPillText: { fontSize: 14, fontWeight: '700' },
+  // The Sync-now result line (change C): one quiet sentence under the card.
+  syncNotice: { fontSize: 13, lineHeight: 19, paddingHorizontal: 16, paddingVertical: 10 },
   // The Theme row's in-place choice (the existing Dark/Light binding).
   specThemePanel: {
     borderRadius: 16,
@@ -1610,100 +1686,9 @@ const baseStyles = StyleSheet.create({
   themeChoiceText: { fontSize: 15, fontWeight: '700' },
   themeNote: { fontSize: 13, lineHeight: 19, marginTop: 12 },
 
-  // Current Plan
-  planCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#0f3460',
-    minHeight: 110,
-    justifyContent: 'center',
-  },
-  planEmoji: {
-    fontSize: 40,
-    marginBottom: 8,
-  },
-  planName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  planStatus: {
-    fontSize: 14,
-    color: '#a0a0b8',
-  },
-  // v47.1 Part A: `planRenews` is gone — a one-time purchase has no renewal date,
-  // so the screen has no style for one either.
-
-  // Upgrade Cards
-  upgradeCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#0f3460',
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  upgradeCardHighlight: {
-    borderColor: '#e94560',
-    borderWidth: 2,
-  },
-  // v47.1 Part A: `bestValueBadge`/`bestValueText` are gone with the "BEST VALUE"
-  // badge — with no savings to point at, the claim was unsupported (and the
-  // "Save 33% vs monthly" line it sat above compared against a plan that does not
-  // exist on the account).
-  upgradeInfo: {
-    flex: 1,
-    minWidth: 0,
-    marginRight: 12,
-  },
-  upgradeName: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 2,
-  },
-  upgradePrice: {
-    fontSize: 15,
-    color: '#c0c0d0',
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  upgradeFeature: {
-    fontSize: 13,
-    color: '#a0a0b8',
-    lineHeight: 20,
-  },
-  upgradeBtn: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: '#e94560',
-    // The CTA is the measured side of the row: the copy beside it flexes and the
-    // card GROWS vertically at a raised font scale (no fixed height anywhere here).
-    flexShrink: 0,
-    alignSelf: 'center',
-  },
-  upgradeBtnPrimary: {
-    backgroundColor: '#e94560',
-  },
-  upgradeBtnText: {
-    color: '#e94560',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  upgradeBtnTextPrimary: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
+  // The plan cards, their buttons and the BEST VALUE badge left this screen with
+  // the money (settings pass, change A) — they live in src/screens/PlanScreen.tsx
+  // now, styles and all, so there is exactly one place a plan card is drawn.
 
   // Billing info
   infoCard: {

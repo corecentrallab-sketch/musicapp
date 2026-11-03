@@ -44,7 +44,7 @@ import {
   priceIdsAreAllLive,
   priceIdsIn,
   settingsHasNoBillingPeriodCopy,
-  settingsHostsPlanCards,
+  planScreenHostsPlanCards,
 } from '../src/services/v471PlanPrices';
 
 let passes = 0;
@@ -117,7 +117,10 @@ function walkSrc(): string[] {
   return found;
 }
 
-const SETTINGS_PATH = 'src/screens/SettingsScreen.tsx';
+// SETTINGS PASS, CHANGE A (2026-11): the money surface is src/screens/PlanScreen
+// now — the plan cards, the checkout call and the Billing notes moved there
+// verbatim. The guard follows the surface; the strings it scans did not change.
+const SETTINGS_PATH = 'src/screens/PlanScreen.tsx';
 const PRICES_PATH = 'src/services/v471PlanPrices.ts';
 
 const SETTINGS = readAppFile(SETTINGS_PATH);
@@ -388,12 +391,12 @@ function liveScanTests(): void {
 // ─── 5. hosting ───────────────────────────────────────────────
 
 function hostingTests(): void {
-  console.log('\n5. HOSTING — SettingsScreen RENDERS the cards (not just defines them)');
-  assertEq(settingsHostsPlanCards(SETTINGS), true, 'SettingsScreen hosts the LIVE_PRICES cards');
+  console.log('\n5. HOSTING — PlanScreen RENDERS the cards (not just defines them)');
+  assertEq(planScreenHostsPlanCards(SETTINGS), true, 'PlanScreen hosts the LIVE_PRICES cards');
   assert(
-    SETTINGS.indexOf('{plansOpen && (') >= 0 &&
-      SETTINGS.indexOf('{LIVE_PRICES.map((plan) =>') > SETTINGS.indexOf('{plansOpen && ('),
-    'the cards render INSIDE the plans block the Pro row opens',
+    SETTINGS.indexOf('{LIVE_PRICES.map((plan) =>') >= 0 &&
+      SETTINGS.indexOf('{!checking && !proState.isPro && (') >= 0,
+    'the cards render INSIDE the free-user branch of the Plan screen',
   );
   assert(
     SETTINGS.indexOf('onPress={() => handleUpgrade(plan.id)}') >= 0,
@@ -406,7 +409,7 @@ function hostingTests(): void {
   assertEq(settingsHasNoBillingPeriodCopy(SETTINGS), true, 'the screen itself carries no billing-period copy');
 
   // The pre-fix screen FAILS the hosting + copy guards.
-  assertEq(settingsHostsPlanCards(PRE_FIX_PLAN_TABLE), false, 'the pre-fix table is not a hosted card list');
+  assertEq(planScreenHostsPlanCards(PRE_FIX_PLAN_TABLE), false, 'the pre-fix table is not a hosted card list');
   assertEq(
     settingsHasNoBillingPeriodCopy(PRE_FIX_ALERT),
     false,
@@ -469,12 +472,12 @@ function mutationProbes(): void {
     (text) => settingsHasNoBillingPeriodCopy(text),
   );
 
-  // (e) the cards stop being hosted (moved out of the plans block).
+  // (e) the cards stop being hosted (the render branch goes away).
   probe(
-    'the cards are wired but no longer hosted inside the plans block',
-    SETTINGS.replace('{plansOpen && (', '{false && ('),
+    'the cards are wired but no longer hosted inside the plan screen’s render',
+    SETTINGS.replace('{LIVE_PRICES.map((plan) =>', '{NOT_RENDERED.map((plan) =>'),
     SETTINGS,
-    (text) => settingsHostsPlanCards(text),
+    (text) => planScreenHostsPlanCards(text),
   );
 
   // (f) the local PLANS table comes back beside the module (two owners).
@@ -485,7 +488,7 @@ function mutationProbes(): void {
       'const PLANS: Plan[] = [];\nconst POLL_INTERVAL_MS = 2000;',
     ),
     SETTINGS,
-    (text) => settingsHostsPlanCards(text),
+    (text) => planScreenHostsPlanCards(text),
   );
 
   // (g) the table itself drifts: one amount changed.
@@ -537,7 +540,7 @@ function mutationProbes(): void {
   assertEq(deadPriceIdsIn(SETTINGS).length, 0, 'the real screen still passes after every probe');
   assertEq(priceIdsAreAllLive([SETTINGS, PRICES]), true, 'the real sources still pass after every probe');
   assertEq(planCopyIsHonest(), true, 'the real copy still passes after every probe');
-  assertEq(settingsHostsPlanCards(SETTINGS), true, 'the real hosting still passes after every probe');
+  assertEq(planScreenHostsPlanCards(SETTINGS), true, 'the real hosting still passes after every probe');
 }
 
 // ─── run ────────────────────────────────────────────────────────

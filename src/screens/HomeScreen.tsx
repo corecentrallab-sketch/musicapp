@@ -998,13 +998,16 @@ export const HomeScreen: React.FC = () => {
   }, [recorder, startCapture]);
 
   // ── Upgrade to Pro (from the quota-exhausted modal) ──
-  // Close the modal and open the Settings tab, where the transparent upgrade
-  // flow (Stripe checkout + entitlement polling) already lives.
+  // Close the modal and open the PLAN surface, where the one-time AUD checkout
+  // cards and the entitlement polling live (settings pass, change A: they moved
+  // out of Settings, so this prompt follows them — the tab it used to open no
+  // longer sells anything). The stack route is the tab navigator's parent, which
+  // is why the call goes through getParent().
   const handleUpgradePro = useCallback(() => {
     setShowRecognitionResults(false);
     setRecognitionPhase(null);
     setNoMatchOffer(null);
-    navigation.navigate('Settings');
+    navigation.getParent()?.navigate('Plan');
   }, [navigation]);
 
   // ── The no-match card's two ways forward (front-door spec 09-24) ──

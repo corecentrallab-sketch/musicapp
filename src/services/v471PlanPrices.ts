@@ -115,6 +115,17 @@ export const DEAD_PRICE_ID_COUNT = 3;
 /** The card's button. "Buy once" — a purchase, not a billing relationship. */
 export const PLAN_CTA_LABEL = 'Buy once';
 
+/**
+ * THE CURRENT TIER, in words a user recognises (Settings pass, change A). These
+ * are the ONLY labels the app prints for "what am I on": the Settings row's value
+ * and the Plan screen's Pro tail both read them, so the two can never disagree.
+ */
+export const PLAN_TIER_FREE_LABEL = 'Free';
+export const PLAN_TIER_PRO_LABEL = 'Pro';
+export const PLAN_TIER_FAMILY_LABEL = 'Family / Teacher';
+export const PLAN_TIER_FREE_SUB = 'Free plan — 5 recognitions a month.';
+export const PLAN_TIER_PRO_SUB = 'Pro — unlimited recognitions, bought once. Nothing renews.';
+
 /** The upgrade section's honest sub-line (no period, no trial, no renewal). */
 export const PLAN_SECTION_SUBTITLE =
   "You're on the free plan — 5 recognitions a month.\nBuy Pro once and unlock unlimited access.";
@@ -264,18 +275,23 @@ export function completeTierNameIsOwnerChoice(prices: readonly LivePrice[] = LIV
 
 /**
  * HOSTING, not wiring (the v46 lesson: a module that exists but is never mounted
- * is invisible). True when SettingsScreen's own render path — inside the
- * `plansOpen` block — prints the LIVE_PRICES cards, the shared CTA and the shared
- * Billing notes, and sends the card's own id to the checkout call.
+ * is invisible). True when the PLAN SCREEN's own render path prints the
+ * LIVE_PRICES cards, the shared CTA and the shared Billing notes, and sends the
+ * card's own id to the checkout call.
+ *
+ * MOVED 2026-11 (Settings pass, change A): these cards lived in SettingsScreen
+ * behind the Pro row's `plansOpen` block. The money moved to its own surface
+ * (src/screens/PlanScreen.tsx), so the scan follows it — the same strings, the
+ * same table, one owner. A card list that stops being rendered is still a
+ * violation; it is just a violation in a different file now.
  */
-export function settingsHostsPlanCards(screenSource: string): boolean {
+export function planScreenHostsPlanCards(screenSource: string): boolean {
   const text = maskSourceComments(screenSource);
   if (text.indexOf("from '../services/v471PlanPrices'") < 0) return false;
   // No second, local copy of the table may exist.
   if (/const\s+PLANS\s*[:=]/.test(text)) return false;
-  const open = text.indexOf('{plansOpen && (');
   const cards = text.indexOf('{LIVE_PRICES.map((plan) =>');
-  if (open < 0 || cards < 0 || cards < open) return false;
+  if (cards < 0) return false;
   const needs = [
     'onPress={() => handleUpgrade(plan.id)}',
     '{plan.name}',
@@ -300,6 +316,27 @@ export function settingsHasNoBillingPeriodCopy(screenSource: string): boolean {
   return !BANNED_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+/**
+ * THE PLAN SCREEN'S OWN TIER LABEL — what Settings' single "Your plan" row shows
+ * as its value, and what the Plan screen's tail repeats for a Pro user.
+ *
+ * It reads the cached entitlement (services/storage's ProState), never a guess:
+ * a user with no purchase reads "Free", a purchase reads the tier the SERVER
+ * named (`plan` is the entitlement API's id, matched by prefix because the server
+ * owns those ids), and an entitlement whose id we cannot read still reads "Pro"
+ * rather than inventing a product name.
+ */
+export function planTierLabel(isPro: boolean, plan: string | null | undefined): string {
+  if (!isPro) return PLAN_TIER_FREE_LABEL;
+  if (typeof plan === 'string' && plan.indexOf('family') >= 0) return PLAN_TIER_FAMILY_LABEL;
+  return PLAN_TIER_PRO_LABEL;
+}
+
+/** The one-line honest description of what the current tier actually gives. */
+export function planTierSub(isPro: boolean): string {
+  return isPro ? PLAN_TIER_PRO_SUB : PLAN_TIER_FREE_SUB;
+}
+
 /** The whole contract, for one call in the suite and one in the guard table. */
 export function planMoneyContractHolds(screenSource: string): boolean {
   return (
@@ -307,7 +344,7 @@ export function planMoneyContractHolds(screenSource: string): boolean {
     planCopyIsHonest() &&
     deadPriceIdsIn(screenSource).length === 0 &&
     priceIdsAreAllLive([screenSource]) &&
-    settingsHostsPlanCards(screenSource) &&
+    planScreenHostsPlanCards(screenSource) &&
     settingsHasNoBillingPeriodCopy(screenSource)
   );
 }

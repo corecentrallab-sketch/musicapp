@@ -24,9 +24,10 @@ import {
   SETTINGS_FAQ,
   SETTINGS_GROUP_TITLES,
   SETTINGS_NO_ACCOUNT_LINE,
-  SETTINGS_PRO_CTA,
-  SETTINGS_PRO_SUB,
-  SETTINGS_PRO_TITLE,
+  SETTINGS_CONTROL_ROWS,
+  SETTINGS_PLAN_ROW_CTA,
+  SETTINGS_PLAN_ROW_SUB,
+  SETTINGS_PLAN_ROW_TITLE,
   SETTINGS_PRIVACY_URL,
   SETTINGS_RENDERED_ROLES,
   SETTINGS_RETENTION_HEADER,
@@ -50,7 +51,9 @@ import {
   settingsHasNoDeadRows,
   settingsHasRetentionSection,
   settingsHeadersPrecedeTheirRows,
-  settingsProRowIsWired,
+  settingsPlanRowIsWired,
+  settingsHasNoMoneySurface,
+  settingsValueRowsCarryNoChevron,
   settingsRowGeometry,
   settingsRowsAreTheClosedSet,
   settingsRowsReachRealDestinations,
@@ -121,23 +124,31 @@ assertEq(
   ['Audio & Recording', 'Playback', 'Cloud Sync & Storage', 'Support'],
   'the four groups, in the spec’s order',
 );
-assertEq(SETTINGS_PRO_TITLE, 'NoteSnap Pro', 'the Pro row’s title');
-assertEq(SETTINGS_PRO_SUB, 'Unlimited recognition · full History', 'the Pro row’s subtitle, verbatim');
-assertEq(SETTINGS_PRO_CTA, 'View plans', 'the pill is "View plans"');
+// SETTINGS PASS, CHANGE A: the row is a DESTINATION now, not the shop. Its copy
+// says so, and the three money sections it used to open are on PlanScreen.
+assertEq(SETTINGS_PLAN_ROW_TITLE, 'Your plan', 'the money row’s title');
+assertEq(SETTINGS_PLAN_ROW_SUB, 'Plans, pricing and billing', 'the money row’s subtitle');
+assertEq(SETTINGS_PLAN_ROW_CTA, 'View plans', 'the pill is still "View plans"');
 assertEq(
   SETTINGS_NO_ACCOUNT_LINE,
   'No account needed — NoteSnap has nothing to sign in to.',
   'the one bottom line, verbatim',
 );
+// SETTINGS PASS: three rows joined the set — the mic test (change B), and the
+// backup pair (change C). The row-set guard changes DELIBERATELY here, and the
+// mutation probes below prove it still bites.
 assertEq(
   SETTINGS_ROWS.map((row) => row.title),
   [
     'Microphone access',
+    'Test your microphone',
     'Noise filter',
     'Theme',
     'Auto-scroll speed',
     'Google Drive',
     'Dropbox',
+    'Last backup',
+    'Sync now',
     'Help & FAQ',
     'Privacy policy',
     'About NoteSnap',
@@ -146,13 +157,13 @@ assertEq(
 );
 assertEq(
   SETTINGS_ROWS.filter((row) => row.group === 0).map((row) => row.title),
-  ['Microphone access', 'Noise filter'],
-  'Audio & Recording holds the microphone and the noise filter',
+  ['Microphone access', 'Test your microphone', 'Noise filter'],
+  'Audio & Recording holds the microphone, the mic test and the noise filter',
 );
 assertEq(
   SETTINGS_ROWS.filter((row) => row.group === 2).map((row) => row.title),
-  ['Google Drive', 'Dropbox'],
-  'Cloud Sync & Storage holds the two providers',
+  ['Google Drive', 'Dropbox', 'Last backup', 'Sync now'],
+  'Cloud Sync & Storage holds the two providers, the stored backup time and Sync now',
 );
 assertEq(
   SETTINGS_ROWS.filter((row) => row.group === 3).map((row) => row.title),
@@ -209,10 +220,14 @@ assert(
 // ═══════════════════════ §3 · the Pro row (money path) ═══════════════════════
 
 console.log('\n§3 PRO ROW — one quiet row, and its pill opens the EXISTING plans flow');
-assert(settingsProRowIsWired(settings), 'the Pro row renders and its "View plans" pill is wired to openPlans');
+assert(settingsPlanRowIsWired(settings), 'the plan row renders the live tier and its pill opens the Plan screen');
 assert(
-  maskSourceComments(settings).indexOf('onPress={() => handleUpgrade(plan.id)}') >= 0,
-  'View plans opens the checkout cards that already existed (handleUpgrade)',
+  maskSourceComments(settings).indexOf("navigate('Plan')") >= 0,
+  'the pill routes to the Plan route the money moved to',
+);
+assert(
+  settingsHasNoMoneySurface(settings),
+  'the money really left this screen: no price table, no checkout call, no price id',
 );
 assert(
   /backgroundColor: palette\.CARD, borderColor: palette\.LISTEN/.test(settings),
@@ -268,8 +283,16 @@ assert(settingsRowsAreTheClosedSet(settings), 'the rendered copy matches the spe
 assert(settingsHasNoDeadRows(settings), 'every row is either wired or a declared honest VALUE row');
 assertEq(
   SETTINGS_VALUE_ONLY_ROWS,
-  ['noiseFilter', 'autoScroll', 'streak'],
-  'three rows are honest values, not controls (the streak joins them in v45 slice 2)',
+  ['noiseFilter', 'autoScroll', 'streak', 'backup'],
+  'four rows are honest values, not controls (the stored backup time joins them in the settings pass)',
+);
+// CHANGE E: the Theme row hosts its choice as segmented pills instead of being a
+// tap that opened a panel, so it is a CONTROL row — and the guard demands the
+// pills really render (a declared control row with nothing in it fails).
+assertEq(SETTINGS_CONTROL_ROWS, ['theme'], 'the Theme row hosts its own pills');
+assert(
+  settingsValueRowsCarryNoChevron(settings),
+  'no row shows a chevron it cannot honour (the change-D defect class)',
 );
 assert(settingsRowsReachRealDestinations(settings), 'the destinations greped for are all present in the screen');
 // ═══════════ v45 SLICE 2 · "YOUR PRACTICE" (owner call 10-26) ═══════════
@@ -373,8 +396,8 @@ probe(
 );
 probe(
   'the View plans pill loses its onPress',
-  settings.split('onPress={openPlans}').join('onPress={() => undefined}'),
-  settingsProRowIsWired,
+  settings.split('onPress={openPlan}').join('onPress={() => undefined}'),
+  settingsPlanRowIsWired,
 );
 probe(
   'a hex is hard-coded into the §3 layout',
