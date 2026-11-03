@@ -34,6 +34,7 @@ import {
   scanSessionTitle,
 } from '../services/scanFind';
 import type { OcrTitleCandidate } from '../services/ocrTitleCandidates';
+import { track } from '../services/analytics';
 import {
   scanPhotoKindFor,
   type ScanAutoSearchPlan,
@@ -320,6 +321,16 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
    */
   const handleClassified = useCallback((classification: ScanPhotoClassification) => {
     setScanClassification(classification);
+    // v47.2 — the scan's own recognition pair. A photo is a capture like a
+    // recording: start fires for every classified photo, and the RESULT says
+    // whether the read was good enough to name a piece we hold (the classifier's
+    // own honest gate, never a guess). No piece id: the classifier yields a
+    // query, not a catalog row.
+    track('recognition_start', { source: 'scan' });
+    track('recognition_result', {
+      source: 'scan',
+      success: classification.autoSearch.fire === true,
+    });
     if (classification.autoSearch.fire === true) {
       setAutoSearch(classification.autoSearch);
     }

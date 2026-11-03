@@ -26,6 +26,7 @@
  *     could only fail is not offered at all.
  */
 import { useThemedStyles } from '../services/themeStore';
+import { track } from '../services/analytics';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
@@ -96,6 +97,8 @@ export const SaveToLibraryButton: React.FC<SaveToLibraryButtonProps> = ({
       });
       setState('saved');
       setLine(SAVED_TO_LIBRARY_LINE);
+      // v47.2 save_piece — only on a REAL write (the catch below is not a save).
+      track('save_piece', { piece_id: pieceId });
     } catch (err) {
       // A failed save is ALWAYS visible: the button stays tappable and the
       // reason is printed here (a silent failure reads as a dead button).

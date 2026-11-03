@@ -52,6 +52,7 @@ import {
   transposeAbc,
   transposeKeyLabel,
 } from '../services/abcTranspose';
+import { track } from '../services/analytics';
 import {
   isSampleScore,
   transposedCopyTitle,
@@ -209,6 +210,10 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
   const step = useCallback(
     (delta: number) => {
       setOffset((o) => clampSemitones(o + delta));
+      // v47.2 pro_feature_use (transposition) — the reader's own transpose
+      // control, one of the tools that stays FREE through launch (owner 10-08)
+      // and whose usage decides whether a recurring plan is honest later.
+      track('pro_feature_use', { feature: 'transposition', ok: true });
     },
     []
   );

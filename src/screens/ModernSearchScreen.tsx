@@ -31,6 +31,7 @@ import {
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useHardwareBack } from '../hooks/useHardwareBack';
 import { recognizeModernSong } from '../services/api';
+import { track } from '../services/analytics';
 import { modernOutcome } from '../services/tier1';
 import { saveRecognition } from '../services/storage';
 // The category a modern song is saved with — never a fallback genre. A
@@ -205,6 +206,7 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
         recognized: false,
       });
       setShowInterstitial(true);
+      track('recognition_start', { source: 'modern' });
       try {
         const resp = await recognizeModernSong(uri);
         // ── THE PD CROSS-CHECK (owner 09-25, build #3) — BEFORE the modern card ──
@@ -238,6 +240,11 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
           setPdResult({
             type: 'success',
             response: pdLibraryResultResponse(pd),
+          });
+          track('recognition_result', {
+            source: 'modern',
+            success: true,
+            piece_id: pd.id,
           });
           return;
         }
@@ -273,6 +280,13 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
           match: outcome.match ?? null,
           recognized: outcome.recognized,
         });
+        // One event for both arms: a hit carries the song's own id, an honest
+        // no-match carries none (never an invented one).
+        track('recognition_result', {
+          source: 'modern',
+          success: outcome.recognized && outcome.match !== null,
+          piece_id: outcome.match ? outcome.match.isrc || outcome.match.song : null,
+        });
       } catch (err) {
         recorder.completeRecording();
         setInterstitial({
@@ -284,6 +298,7 @@ export const ModernSearchScreen: React.FC<ModernSearchScreenProps> = ({
           match: null,
           recognized: false,
         });
+        track('recognition_result', { source: 'modern', success: false });
       } finally {
         requestInFlightRef.current = false;
       }

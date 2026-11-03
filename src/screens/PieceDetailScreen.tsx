@@ -34,6 +34,7 @@ import {
 } from '../services/storage';
 import { getDisplayStreakLocal } from '../services/reinforcementStore';
 import { recordPieceOpened } from '../services/medalStore';
+import { track } from '../services/analytics';
 import { refreshStreakNudge } from '../services/notifications';
 import {
   resolveShareCardPreviewData,
@@ -96,6 +97,16 @@ export const PieceDetailScreen: React.FC<PieceDetailScreenProps> = ({
   onFindPiece,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
+  // v47.2 result_open: WHICH row the user actually opened, and whether that row
+  // had a hosted score or was affiliate-only — the number that says whether the
+  // catalog or the money path is doing the work. "hosted" is this page's own
+  // truth (piece.sheetMusicUrl), the same field "View Sheet Music" opens.
+  useEffect(() => {
+    track('result_open', {
+      piece_id: piece.id,
+      hosted: Boolean(piece.sheetMusicUrl),
+    });
+  }, [piece.id, piece.sheetMusicUrl]);
   const [sharing, setSharing] = useState(false);
   const [showScoreViewer, setShowScoreViewer] = useState(false);
   const startedAt = useRef<number | null>(null);

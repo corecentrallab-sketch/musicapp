@@ -42,6 +42,13 @@ import {
   saveOnboardingAnswers,
 } from './src/services/storage';
 import type { OnboardingAnswers, RootStackParamList } from './src/types';
+// THE EVENT LOGGING (v47.2, owner ruling 10-30: instrumentation ships BEFORE
+// launch). `initAnalytics` is the device half (AsyncStorage + the API host +
+// the build identity); `track` is the ONE call-site API, and `app_open` is
+// emitted here — once per launch, from the app root, because this is the only
+// place that runs exactly once when the app starts.
+import { initAnalytics } from './src/services/analyticsDevice';
+import { track } from './src/services/analytics';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -104,6 +111,15 @@ function AppShell() {
   // screens do the same with their own useThemedStyles binding.
   const { mode, tokens: theme } = useThemeMode();
   const statusBarStyle = mode === 'light' ? 'dark' : 'light';
+  // THE LAUNCH EVENT (v47.2). Wired first, before the onboarding read, so a
+  // first-launch user is counted too. `track` is fire-and-forget: it returns
+  // void, it never throws, and it is not awaited — nothing about startup waits
+  // on the network. The event carries the build's own version + versionCode and
+  // a random install id (minted once, kept in AsyncStorage) and nothing else.
+  useEffect(() => {
+    initAnalytics();
+    track('app_open');
+  }, []);
   useEffect(() => {
     (async () => {
       const completed = await hasCompletedOnboarding();

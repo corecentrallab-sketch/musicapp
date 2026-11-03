@@ -59,6 +59,7 @@ import {
   cloudImportOutcomeLine,
 } from '../services/cloudImport';
 import { importFilesIntoLibrary } from '../services/cloudImportDevice';
+import { track } from '../services/analytics';
 
 interface ProviderState {
   configured: boolean;
@@ -133,9 +134,13 @@ export const CloudSyncScreen: React.FC = () => {
         const outcome = await importFilesIntoLibrary();
         if (!outcome.cancelled) {
           await refresh();
+          // v47.2 pro_feature_use (pdf_import) — a real import ran; a cancelled
+          // picker is not a use.
+          track('pro_feature_use', { feature: 'pdf_import', ok: true });
         }
         Alert.alert(`Import from ${label}`, cloudImportOutcomeLine(outcome));
       } catch (e) {
+        track('pro_feature_use', { feature: 'pdf_import', ok: false });
         Alert.alert(`Import from ${label}`, friendlyCloudError(e));
       } finally {
         setImporting(null);
@@ -206,6 +211,9 @@ export const CloudSyncScreen: React.FC = () => {
       try {
         const report = await syncCloud(provider);
         await refresh();
+        // v47.2 pro_feature_use (cloud_sync) — one of the features that would
+        // have to justify a recurring plan, so its real use is measured.
+        track('pro_feature_use', { feature: 'cloud_sync', ok: true });
         const summary = [
           report.pulled > 0 ? `${report.pulled} pulled` : '',
           report.updated > 0 ? `${report.updated} updated` : '',
@@ -225,6 +233,7 @@ export const CloudSyncScreen: React.FC = () => {
         ].join('');
         Alert.alert(`Sync complete (${label})`, details);
       } catch (e) {
+        track('pro_feature_use', { feature: 'cloud_sync', ok: false });
         Alert.alert(`Sync failed (${label})`, friendlyCloudError(e));
       } finally {
         patch(false);

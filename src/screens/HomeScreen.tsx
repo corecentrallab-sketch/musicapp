@@ -50,6 +50,9 @@ import {
   fetchPieceById,
   isRecognitionLimitError,
 } from '../services/api';
+// v47.2: the ONE call-site API for the anonymous event log (see
+// services/analytics.ts — the only file that knows the endpoint).
+import { track } from '../services/analytics';
 import {
   humOutcome,
   humNoMatchMessage,
@@ -614,6 +617,9 @@ export const HomeScreen: React.FC = () => {
       setHeroBusy(true);
       setRecognitionPhase({ type: 'loading' });
       setShowRecognitionResults(true);
+      // v47.2 recognition_start (source: audio) — fired before the request, so a
+      // recognition that never comes back is still counted as an attempt.
+      track('recognition_start', { source: 'audio' });
       try {
         const result = await recognizeAudio(uri, diagnostics);
 
@@ -623,6 +629,11 @@ export const HomeScreen: React.FC = () => {
             type: 'success',
             response: result,
             diagnostics,
+          });
+          track('recognition_result', {
+            source: 'audio',
+            success: true,
+            piece_id: result.matches[0].piece_id,
           });
           await afterLibraryMatch(result.matches[0]);
           return;
@@ -660,6 +671,11 @@ export const HomeScreen: React.FC = () => {
               type: 'success',
               response: pdLibraryResultResponse(pd),
               diagnostics,
+            });
+            track('recognition_result', {
+              source: 'audio',
+              success: true,
+              piece_id: pd.id,
             });
             return;
           }
@@ -707,6 +723,13 @@ export const HomeScreen: React.FC = () => {
             recognized: true,
           });
           setShowModernInterstitial(true);
+          // The library held nothing and the provider named a song: a SUCCESSFUL
+          // recognition on this capture, with the song's own id.
+          track('recognition_result', {
+            source: 'audio',
+            success: true,
+            piece_id: m.isrc || m.song,
+          });
           return;
         }
 
@@ -723,6 +746,7 @@ export const HomeScreen: React.FC = () => {
           server: result.received_audio,
           diagnostics,
         });
+        track('recognition_result', { source: 'audio', success: false });
         setNoMatchOffer('hum');
       } catch (err) {
         recorder.completeRecording();
@@ -733,6 +757,7 @@ export const HomeScreen: React.FC = () => {
               message:
                 err instanceof Error ? err.message : 'Something went wrong.',
             } as const);
+        track('recognition_result', { source: 'audio', success: false });
         setRecognitionPhase({ ...errPhase, diagnostics });
       } finally {
         requestInFlightRef.current = false;
@@ -755,6 +780,7 @@ export const HomeScreen: React.FC = () => {
       setHeroBusy(true);
       setRecognitionPhase({ type: 'loading' });
       setShowRecognitionResults(true);
+      track('recognition_start', { source: 'hum' });
       try {
         const resp = await humToSearch(uri, diagnostics);
         const outcome = humOutcome(resp);
@@ -793,6 +819,11 @@ export const HomeScreen: React.FC = () => {
             type: 'success',
             response: humMatchToResultResponse(resp, outcome.matches, sheet),
           });
+          track('recognition_result', {
+            source: 'hum',
+            success: true,
+            piece_id: outcome.topMatch.piece_id,
+          });
           return;
         }
         recorder.completeRecording();
@@ -807,6 +838,7 @@ export const HomeScreen: React.FC = () => {
           // whether the microphone heard enough (V26, owner 09-25).
           diagnostics,
         });
+        track('recognition_result', { source: 'hum', success: false });
         setNoMatchOffer('modern');
       } catch (err) {
         recorder.completeRecording();
@@ -817,6 +849,7 @@ export const HomeScreen: React.FC = () => {
               message:
                 err instanceof Error ? err.message : 'Something went wrong.',
             } as const);
+        track('recognition_result', { source: 'hum', success: false });
         setRecognitionPhase(errPhase);
       } finally {
         requestInFlightRef.current = false;
