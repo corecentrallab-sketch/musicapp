@@ -21,6 +21,11 @@ import {
   type CatalogSearchResponse,
 } from "./catalogSearch";
 import { getDeviceId } from "./device";
+// THE BILLING SWITCH (services/billingMode): one build-time constant decides
+// whether this build can sell anything. It gates the checkout call below and
+// chooses which free-limit sentence ships — see the module's own comment for
+// why the closed test ships with no purchase surface at all.
+import { BILLING_ENABLED, BILLING_DISABLED_MESSAGE } from "./billingMode";
 // The on-device capture diagnostics (V26, owner 09-25) ride along as request
 // HEADERS so the server can log what the phone actually captured. The header
 // builder and its field names live in the pure captureFeedback module, together
@@ -78,6 +83,36 @@ function buildAudioFilePart(
   const name = /\./.test(tail) && tail.length > 0 ? tail : `recording.${ext || 'm4a'}`;
   const type = MIME_BY_EXT[ext] ?? 'audio/mp4';
   return { uri: audioUri, name, type };
+}
+
+/**
+ * THE FREE-LIMIT SENTENCE, in two versions, chosen by the ONE billing constant.
+ *
+ * The 429 body comes from our own server and has offered "Upgrade to Pro for
+ * unlimited" since the Stripe build. With billing OFF that sentence is a
+ * purchase offer inside a store build that has nothing for sale, so the client
+ * stops passing the server's text through and states only the facts: the
+ * allowance is used up, and it comes back next month. With billing ON the
+ * behaviour is exactly what shipped before.
+ */
+const FREE_LIMIT_MESSAGE_WITH_BILLING =
+  "You've reached your free recognition limit for this month. Upgrade to Pro for unlimited, or try again next month.";
+const FREE_LIMIT_MESSAGE_NO_BILLING =
+  "You've reached your free recognition limit for this month. Your free allowance resets next month.";
+
+const FREE_LIMIT_MESSAGE: string = BILLING_ENABLED
+  ? FREE_LIMIT_MESSAGE_WITH_BILLING
+  : FREE_LIMIT_MESSAGE_NO_BILLING;
+
+/**
+ * The message a quota-exhausted recognition shows. While the app sells
+ * something the server's own wording wins (it is the more specific text and it
+ * is the shipped behaviour); while it does not, the purchase-free sentence is
+ * used whatever the server says.
+ */
+function freeLimitMessage(serverMessage?: string): string {
+  if (!BILLING_ENABLED) return FREE_LIMIT_MESSAGE;
+  return serverMessage || FREE_LIMIT_MESSAGE;
 }
 
 /**
@@ -170,11 +205,10 @@ export async function recognizeAudio(
     // 429 = free-tier monthly quota exhausted. Throw the dedicated limit error
     // so the UI can render an explicit, honest "limit reached" modal instead of
     // a generic failure. NEVER let this path look like "No Match Found".
+    // The sentence itself comes from freeLimitMessage(), so a build with no
+    // purchase surface cannot repeat the server's "Upgrade to Pro" wording.
     if (response.status === 429) {
-      throw new RecognitionLimitError(
-        errBody?.error ||
-          "You've reached your free recognition limit for this month. Upgrade to Pro for unlimited, or try again next month.",
-      );
+      throw new RecognitionLimitError(freeLimitMessage(errBody?.error));
     }
     throw new Error(errBody?.error || "Something went wrong. Please try again.");
   }
@@ -244,10 +278,7 @@ async function postAudioMultipart(
       errBody = null;
     }
     if (response.status === 429) {
-      throw new RecognitionLimitError(
-        errBody?.error ||
-          "You've reached your free recognition limit for this month. Upgrade to Pro for unlimited, or try again next month.",
-      );
+      throw new RecognitionLimitError(freeLimitMessage(errBody?.error));
     }
     throw new Error(errBody?.error || "Something went wrong. Please try again.");
   }
@@ -509,11 +540,22 @@ export async function searchPiecePage(
 /**
  * Start a Stripe Checkout session for the given plan (price id) and device.
  * Returns the hosted checkout URL to open in a browser.
+ *
+ * BILLING MODE OFF → THIS FUNCTION CANNOT REACH STRIPE. The refusal is here,
+ * in the only function that knows the endpoint, rather than in the screens: a
+ * screen-level check is one new call site away from being bypassed, and a store
+ * build that can still open a Stripe checkout for a digital good is the exact
+ * submission Play's payments policy rejects. `src/services/billingModeGuard.ts`
+ * fails the tier1 gate if this gate is removed, moved after the request, or if
+ * any other module names the endpoint.
  */
 export async function createCheckoutSession(
   priceId: string,
   deviceId: string,
 ): Promise<string> {
+  if (!BILLING_ENABLED) {
+    throw new Error(BILLING_DISABLED_MESSAGE);
+  }
   const response = await fetch(`${BASE_URL}/api/create-checkout-session`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },

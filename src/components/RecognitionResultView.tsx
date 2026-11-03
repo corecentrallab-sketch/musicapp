@@ -14,6 +14,11 @@
  * The capture path still measures the same numbers for the on-device log.
  */
 import { useThemeMode, useThemedStyles } from '../services/themeStore';
+// THE BILLING SWITCH (services/billingMode). The quota-exhausted modal is the
+// one place the free allowance is explained, so it is the one place an upgrade
+// offer is most likely to survive a clean-up. With billing off it says what
+// happened and when the allowance returns — no price, no tier, no button.
+import { BILLING_ENABLED } from '../services/billingMode';
 import React from 'react';
 import {
   View,
@@ -309,19 +314,34 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
             <Text style={styles.cardTitle}>Recognition limit reached</Text>
             <Text style={styles.limitText}>
               {phase.message}
-              {'\n\n'}Upgrade to Pro for unlimited recognition, or try again
-              next month when your free limit resets.
+              {BILLING_ENABLED && (
+                <>
+                  {'\n\n'}Upgrade to Pro for unlimited recognition, or try again
+                  next month when your free limit resets.
+                </>
+              )}
             </Text>
             <View style={styles.buttonRow}>
-              <TouchableOpacity style={styles.secondaryBtn} onPress={onClose}>
-                <Text style={styles.secondaryBtnText}>Not Now</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.primaryBtn}
-                onPress={onUpgrade ?? onClose}
-              >
-                <Text style={styles.primaryBtnText}>View Pro Options</Text>
-              </TouchableOpacity>
+              {BILLING_ENABLED ? (
+                <>
+                  <TouchableOpacity style={styles.secondaryBtn} onPress={onClose}>
+                    <Text style={styles.secondaryBtnText}>Not Now</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.primaryBtn}
+                    onPress={onUpgrade ?? onClose}
+                  >
+                    <Text style={styles.primaryBtnText}>View Pro Options</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                // BILLING MODE OFF: one button, and it only dismisses. The
+                // sentence above already says the allowance resets next month,
+                // so there is nothing to sell and nowhere to send the user.
+                <TouchableOpacity style={styles.primaryBtn} onPress={onClose}>
+                  <Text style={styles.primaryBtnText}>OK</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
