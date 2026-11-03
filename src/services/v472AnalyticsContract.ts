@@ -324,7 +324,7 @@ export function aboutUsageLineViolations(aboutBody: string, settingsSource: stri
     violations.push('Settings → About does not say that no audio is collected');
   }
   // An opt-out the app cannot honour would be a false statement in the About box.
-  if (/opt[- ]?out|turn (it|this) off|disable (tracking|analytics)/i.test(aboutBody)) {
+  if (/opt[- ]?out|turn (it|this|tracking|usage) off|disable (tracking|analytics)/i.test(aboutBody)) {
     violations.push('Settings → About promises an opt-out the app does not implement');
   }
   if (!settingsSource.includes('aboutDialogBody')) {

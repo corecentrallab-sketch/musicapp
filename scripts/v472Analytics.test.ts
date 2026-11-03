@@ -210,7 +210,11 @@ function hostingMutationProbes(): void {
 
   // 1. the module exists but the recognition path never calls it (the v46 class).
   const home = fileText('src/screens/HomeScreen.tsx');
-  const noTrack = home.split("track('recognition_start', { source: 'audio' });").join('');
+  const noTrack = home
+    .split("track('recognition_start', { source: 'audio' });")
+    .join('')
+    .split("track('recognition_start', { source: 'hum' });")
+    .join('');
   assert(noTrack !== home, 'probe: the HomeScreen track call can be removed');
   assert(
     hostingViolations(withFile('src/screens/HomeScreen.tsx', noTrack)).length > 0,
@@ -226,9 +230,11 @@ function hostingMutationProbes(): void {
   );
 
   // 3. the call is only in a COMMENT — not a call site at all.
-  const commented = home.split("track('recognition_start', { source: 'audio' });").join(
-    "// track('recognition_start', { source: 'audio' });",
-  );
+  const commented = home
+    .split("track('recognition_start', { source: 'audio' });")
+    .join("// track('recognition_start', { source: 'audio' });")
+    .split("track('recognition_start', { source: 'hum' });")
+    .join("// track('recognition_start', { source: 'hum' });");
   assert(
     hostingViolations(withFile('src/screens/HomeScreen.tsx', commented)).length > 0,
     'FAILS when the call is commented out',
@@ -253,7 +259,10 @@ function deniedKeyTests(): void {
   assert(propVocabularyIsClean(), 'no prop key in the vocabulary trips a denied token');
   assert(vocabularyAvoids(deniedTokens()), 'the vocabulary avoids every denied token');
   for (const token of deniedTokens()) {
-    assert(!vocabularyAvoids([token]), `a key containing "${token}" is rejected`);
+    assert(
+      findDeniedAnalyticsKey(['x_' + token]) !== null,
+      `a key containing "${token}" is rejected`,
+    );
   }
   // The two keys the server's own docs warn about.
   assertEq(findDeniedAnalyticsKey(['piece_name']), 'piece_name', 'piece_name is refused (contains "name")');
@@ -297,9 +306,11 @@ function deniedKeyTests(): void {
     }
     const keys = Object.keys(wire.props);
     if (findDeniedAnalyticsKey(keys) !== null) clean = false;
-    const serialised = JSON.stringify(wire);
+    // Only the PROPS are scanned: the envelope's own "name" key is the event name,
+    // not a person's name, and it is the server's own fixed field.
+    const serialisedProps = JSON.stringify(wire.props);
     for (const token of deniedTokens()) {
-      if (serialised.includes(`"${token}`)) clean = false;
+      if (serialisedProps.includes(`"${token}`)) clean = false;
     }
   }
   assert(clean, 'no event payload carries a denied key');
