@@ -255,10 +255,15 @@ export function videoUsesTheOneDecodeSeam(screenSource: string): boolean {
 /**
  * The correction step is the app's EXISTING editor, reused as a third host — not
  * a second copy that would drift from the one the capture window and History open.
- * Every JSX element this screen opens whose name ends in "Editor" must be
- * `TakeCorrectionEditor`, it must be handed the take and the row id, and it must
- * be opened after a take exists (an editor with nothing in it is a dead surface).
+ * Every JSX element this screen opens whose name ends in "Editor" must be one of
+ * the app's own editors — `TakeCorrectionEditor` (the notes) or, since vc49, the
+ * SHARED `TakeClipTagEditor` (the clip window, mounted on the record flow's
+ * review surface so a user who has just filmed is offered the trim) — it must be
+ * handed the take and the row id, and it must be opened after a take exists (an
+ * editor with nothing in it is a dead surface).
  */
+const ALLOWED_VIDEO_EDITORS: readonly string[] = ['TakeCorrectionEditor', 'TakeClipTagEditor'];
+
 export function videoOpensTheOneEditor(screenSource: string): boolean {
   const src = maskComments(screenSource);
   if (src.length < 6000) return false;
@@ -270,7 +275,9 @@ export function videoOpensTheOneEditor(screenSource: string): boolean {
     at = src.indexOf('<', at + 1);
   }
   if (editors.length === 0) return false;
-  if (!editors.every((name) => name === 'TakeCorrectionEditor')) return false;
+  if (!editors.every((name) => ALLOWED_VIDEO_EDITORS.indexOf(name) >= 0)) return false;
+  // The NOTES editor is still the one the correction step uses.
+  if (editors.indexOf('TakeCorrectionEditor') < 0) return false;
   const open = src.indexOf('<TakeCorrectionEditor');
   if (open < 0) return false;
   const close = src.indexOf('/>', open);

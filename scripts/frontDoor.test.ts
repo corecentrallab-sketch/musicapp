@@ -270,9 +270,28 @@ function promiseTests(): void {
     /classical/i.test(HOME_PROMISE_ALL_GENRES),
     'the promise still names classical music as part of the range',
   );
+  // vc49 (owner 11-03): jazz is named too, in the owner's own wording.
   assert(
-    /TAB/.test(HOME_PROMISE_GUITAR),
-    'the guitar line promises the official TAB (the live guitar story)',
+    /jazz/i.test(HOME_PROMISE_ALL_GENRES),
+    'the promise names jazz as part of the range (owner wording)',
+  );
+  /**
+   * vc49: the guitar line no longer promises an official TAB. There is no
+   * tablature feature in this build, so the line may only claim what the app
+   * really does for a guitarist today — a tuner, and the chords and key read
+   * from the user's own take.
+   */
+  assert(
+    /guitar/i.test(HOME_PROMISE_GUITAR) || /tuner/i.test(HOME_PROMISE_GUITAR),
+    'the guitar line speaks to a guitarist with what the app really does',
+  );
+  assert(
+    /tuner/i.test(HOME_PROMISE_GUITAR),
+    'the guitar line names the tuner (a real, free, offline feature)',
+  );
+  assert(
+    !/tab/i.test(HOME_PROMISE_GUITAR) && !/tablature/i.test(HOME_PROMISE_ALL_GENRES),
+    'no TAB / tablature claim on the front page — that feature does not exist yet',
   );
   assert(
     !/free/i.test(HOME_PROMISE_GUITAR),
@@ -282,8 +301,8 @@ function promiseTests(): void {
   assertEq(homePromiseCopy('piano'), HOME_PROMISE_ALL_GENRES, 'piano → genre-neutral line');
   assertEq(homePromiseCopy(undefined), HOME_PROMISE_ALL_GENRES, 'no answer yet → genre-neutral');
   assertEq(homePromiseCopy(null), HOME_PROMISE_ALL_GENRES, 'no onboarding → genre-neutral');
-  assertEq(homePromiseCopy('guitar'), HOME_PROMISE_GUITAR, 'guitar → TAB line');
-  assertEq(homePromiseCopy('both'), HOME_PROMISE_GUITAR, 'piano & guitar → TAB line');
+  assertEq(homePromiseCopy('guitar'), HOME_PROMISE_GUITAR, 'guitar → the guitar line');
+  assertEq(homePromiseCopy('both'), HOME_PROMISE_GUITAR, 'piano & guitar → the guitar line');
 
   console.log('\nthe secondary search entry');
 

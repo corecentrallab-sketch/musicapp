@@ -114,6 +114,39 @@ import {
   type TakeTrimSpan,
 } from '../services/takeClipTag';
 import { COMPARE_CTA, COMPARE_LEFT_LABEL, COMPARE_RIGHT_LABEL } from '../services/videoCompare';
+/**
+ * ── vc49 DEVICE BATCH (owner email 11-03) ────────────────────────────────────
+ * The camera FLIP, the COUNT-IN and the RECORDING LENGTH the owner asked for
+ * after using the app on a phone. The two record-screen choices live in a pure
+ * module so their bounds (and the count-in's clock rule) are testable without an
+ * emulator; the flip is the camera's own `facing` prop, driven by state.
+ */
+import {
+  CAMERA_BACK_LINE,
+  CAMERA_FRONT_LINE,
+  COUNT_IN_CANCEL_CTA,
+  COUNT_IN_HONESTY,
+  COUNT_IN_HINT,
+  COUNT_IN_LABEL,
+  COUNT_IN_OPTIONS,
+  FLIP_CAMERA_CTA,
+  FLIP_CAMERA_HINT,
+  FLIP_LOCKED_LINE,
+  RECORDING_LENGTH_HINT,
+  RECORDING_LENGTH_LABEL,
+  RECORDING_LENGTH_OPTIONS,
+  RECORDING_LENGTH_REACHED_LINE,
+  clampRecordingLength,
+  countInCountdownLine,
+  countInLabel,
+  normaliseCountIn,
+  recordingClock,
+  recordingLengthLabel,
+  recordingLengthReached,
+  recordingProgressLine,
+  type CameraFacing,
+} from '../services/practiceRecordingOptions';
+import { TakeClipTagEditor } from '../components/TakeClipTagEditor';
 import {
   VIDEO_MISSING_LINE,
   VIDEO_NOTES_DROPPED_LINE,
@@ -160,6 +193,11 @@ import { TakeCorrectionEditor } from '../components/TakeCorrectionEditor';
 export type PracticeVideoPhase =
   | 'playback'
   | 'permissions'
+  /**
+   * vc49: the COUNT-IN — a phase BEFORE any capture exists. Nothing is filmed and
+   * no clock is stamped here; `startBothCaptures` runs only when it reaches zero.
+   */
+  | 'count_in'
   | 'recording'
   | 'keeping'
   | 'review'
@@ -262,6 +300,22 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   const [trimSpan, setTrimSpan] = useState<TakeTrimSpan | null>(null);
   const [noteLine, setNoteLine] = useState<string | null>(null);
   const [noteBusy, setNoteBusy] = useState(false);
+
+  /**
+   * ── vc49 DEVICE BATCH STATE (owner email 11-03) ─────────────────────────────
+   *
+   * `facing` is WHICH WAY THE CAMERA LOOKS and it is the only thing the camera's
+   * `facing` prop is allowed to read (a literal there is the defect the owner hit:
+   * "i could not turn it around to face me"). `countInSec` is the chosen lead-in
+   * and `countInLeft` the number on screen while it runs; `recordingLengthSec` is
+   * the chosen length, ALWAYS written through `clampRecordingLength`, and
+   * `autoStopRef` makes the length-triggered stop fire exactly once.
+   */
+  const [facing, setFacing] = useState<CameraFacing>('back');
+  const [countInSec, setCountInSec] = useState(0);
+  const [countInLeft, setCountInLeft] = useState(0);
+  const [recordingLengthSec, setRecordingLengthSec] = useState(PRACTICE_VIDEO_MAX_SECONDS);
+  const autoStopRef = useRef(false);
 
   /**
    * DECISION 1's STAMPS. Each capture stamp is taken at the moment its recorder
@@ -486,20 +540,73 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       return;
     }
     setErrorLine(null);
+    /**
+     * THE COUNT-IN IS A PHASE, NOT A DELAY INSIDE THE CAPTURE (vc49). With a
+     * lead-in chosen, Start only moves the screen to `count_in` and RETURNS — the
+     * one function that stamps the two clocks and asks the camera to record is
+     * not reached until the countdown ends (see the effect below). Nothing is
+     * captured during the count-in, so it cannot move the take's start.
+     */
+    if (countInSec > 0) {
+      setCountInLeft(countInSec);
+      setPhase('count_in');
+      return;
+    }
     void startBothCaptures();
-  }, [cameraReady, startBothCaptures]);
+  }, [cameraReady, countInSec, startBothCaptures]);
 
-  /** The running clock, the remaining time and the hard stop at the cap. */
+  /**
+   * ── THE COUNT-IN ITSELF (vc49) ──────────────────────────────────────────────
+   *
+   * A visible countdown (the big number the record screen draws) that ends by
+   * calling `startBothCaptures()` — the same single entry point the no-count-in
+   * path uses, so both captures are stamped together exactly as before. The
+   * effect runs ONLY in the `count_in` phase, which is a phase in which no
+   * recorder is running: nothing is recorded into the video and no start stamp
+   * exists yet, which is what keeps the notes on the video's clock.
+   */
   useEffect(() => {
-    if (phase !== 'recording') return undefined;
+    if (phase !== 'count_in') return undefined;
+    setCountInLeft(countInSec);
     const started = Date.now();
     const timer = setInterval(() => {
-      const seconds = Math.round((Date.now() - started) / 1000);
-      elapsedRef.current = seconds;
-      setElapsedSec(seconds);
-    }, 500);
+      const left = Math.max(0, countInSec - Math.floor((Date.now() - started) / 1000));
+      setCountInLeft(left);
+      if (left <= 0) {
+        clearInterval(timer);
+        void startBothCaptures();
+      }
+    }, 250);
     return () => clearInterval(timer);
-  }, [phase]);
+  }, [phase, countInSec, startBothCaptures]);
+
+  /** Leaving the count-in before it finishes: nothing was captured, nothing lost. */
+  const cancelCountIn = useCallback(() => {
+    setCountInLeft(0);
+    setPhase('permissions');
+    setLine(null);
+  }, []);
+
+  /**
+   * ── THE CAMERA FLIP (vc49, owner 11-03: "i could not turn it around") ───────
+   *
+   * `facing` is state, so the control turns the camera around both ways. It is
+   * LOCKED while a capture is running: changing the camera's facing mid-take
+   * re-mounts the preview under the running `recordAsync`, which is exactly the
+   * way to lose or corrupt a recording. The control is disabled and says why
+   * (`FLIP_LOCKED_LINE`); the handler refuses as well, so a stale press on a
+   * disabled-looking control still cannot reach the camera.
+   */
+  const flipLocked = phase === 'recording' || phase === 'count_in' || phase === 'keeping';
+
+  const handleFlipCamera = useCallback(() => {
+    if (flipLocked) return;
+    if (facing === 'front') {
+      setFacing('back');
+    } else {
+      setFacing('front');
+    }
+  }, [facing, flipLocked]);
 
   /**
    * STOP → KEEP. The camera hands back its file, the audio take is read by the ONE
@@ -579,7 +686,13 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       );
       setErrorLine(takeLine);
       if (!persisted.uri) setErrorLine(PRACTICE_VIDEO_NOT_KEPT_LINE);
-      if (take && saved) setEditorOpen(true);
+      /**
+       * vc49: the notes editor NO LONGER opens itself over the take. The owner's
+       * report was that a user who has just recorded is never offered the TRIM,
+       * and a modal editor opening on top of the review surface is exactly what
+       * hid it. The review surface now shows the clip first, with the notes
+       * editor one press below it (`Correct the notes ›`).
+       */
     },
     [],
   );
@@ -604,6 +717,40 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     const pairedSeparately = separateTakeRef.current;
     await keepTake(audio?.uri ?? null, pairedSeparately);
   }, [keepTake, recorder]);
+
+  /**
+   * ── THE RUNNING CLOCK AND THE CHOSEN LENGTH (vc49) ──────────────────────────
+   *
+   * One timer, two jobs: it draws the running clock (and the remaining time from
+   * `recordingProgressLine`) and, when the length the user chose is reached, it
+   * stops the take through the SAME `handleStop` the Stop button uses — so the
+   * camera is closed, the audio is stopped and the pair is kept exactly as a
+   * manual stop does. `autoStopRef` makes that fire once, so a slow tick can
+   * never call Stop twice over the same recording.
+   *
+   * The length is read through `clampRecordingLength`, and the camera's own
+   * `maxDuration` stays at `PRACTICE_VIDEO_MAX_SECONDS`: the user's choice is an
+   * inner bound, never a way past the 3-minute cap.
+   */
+  useEffect(() => {
+    if (phase !== 'recording') return undefined;
+    const started = Date.now();
+    autoStopRef.current = false;
+    const limit = clampRecordingLength(recordingLengthSec);
+    const timer = setInterval(() => {
+      const seconds = Math.round((Date.now() - started) / 1000);
+      elapsedRef.current = seconds;
+      setElapsedSec(seconds);
+      if (recordingLengthReached(seconds, limit) && !autoStopRef.current) {
+        autoStopRef.current = true;
+        clearInterval(timer);
+        // The take goes to the TRIM step: `handleStop` keeps the pair and the
+        // review surface offers the clip, with a line saying why it stopped.
+        void handleStop().then(() => setLine(RECORDING_LENGTH_REACHED_LINE));
+      }
+    }, 500);
+    return () => clearInterval(timer);
+  }, [phase, recordingLengthSec, handleStop]);
 
   /**
    * DECISION 2's SECOND HALF. The video already carries its own sound; this films
@@ -636,10 +783,17 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     videoPromiseRef.current = null;
     separateTakeRef.current = false;
     elapsedRef.current = 0;
+    autoStopRef.current = false;
     setRow(null);
     setElapsedSec(0);
     setLine(null);
     setErrorLine(null);
+    // A NEW take starts with no window and no label of the old one (vc49: the
+    // clip is per-take, so re-filming must not inherit it), and the count-in
+    // choice stays as the user left it — it is a preference, not take data.
+    setTrimSpan(null);
+    setNoteLine(null);
+    setCountInLeft(0);
     setPhase('permissions');
     // The camera remounts with the record body, so it is not ready yet — and the
     // new take still does not film until Start is pressed (v39 fix 2).
@@ -1113,14 +1267,43 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
 
         {phase !== 'review' ? (
           <View style={styles.preview}>
+            {/* vc49: `facing` is STATE, never a literal — the owner's report was
+                "i could not turn it around to face me". `mode="video"` and the
+                single-mic audio path are untouched. */}
             <CameraView
               ref={cameraRef}
               style={styles.camera}
               mode="video"
-              facing="back"
+              facing={facing}
               mute={false}
               onCameraReady={handleCameraReady}
             />
+          </View>
+        ) : null}
+
+        {/* ── vc49: THE CAMERA FLIP (owner 11-03) ──────────────────────────────
+            Visible whenever the preview is up, DISABLED while a capture is
+            running (or counting in): flipping mid-take re-mounts the preview
+            under a running `recordAsync`, which loses the recording. The line
+            under it says which way the camera is pointing, and while it is
+            locked it says why. */}
+        {phase !== 'review' ? (
+          <View style={styles.flipRow}>
+            <TouchableOpacity
+              style={[styles.flipBtn, flipLocked && styles.flipBtnOff]}
+              onPress={handleFlipCamera}
+              disabled={flipLocked}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={FLIP_CAMERA_CTA}
+              accessibilityHint={FLIP_CAMERA_HINT}
+              accessibilityState={{ disabled: flipLocked }}
+            >
+              <Text style={styles.flipBtnText}>{FLIP_CAMERA_CTA}</Text>
+            </TouchableOpacity>
+            <Text style={styles.flipLine}>
+              {flipLocked ? FLIP_LOCKED_LINE : facing === 'front' ? CAMERA_FRONT_LINE : CAMERA_BACK_LINE}
+            </Text>
           </View>
         ) : null}
 
@@ -1128,6 +1311,47 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
           <>
             <Text style={styles.meta}>{PRACTICE_VIDEO_START_LINE}</Text>
             <Text style={styles.honest}>{PRACTICE_VIDEO_START_HINT}</Text>
+
+            {/* ── vc49: THE COUNT-IN AND THE RECORDING LENGTH ─────────────────
+                Both are chosen BEFORE Start, on the surface the user is already
+                looking at, and both are bounded by pure rules in
+                services/practiceRecordingOptions.ts. */}
+            <View style={styles.optionBlock}>
+              <Text style={styles.optionLabel}>{COUNT_IN_LABEL}</Text>
+              <View style={styles.chipRow}>
+                {COUNT_IN_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={`countin-${option}`}
+                    style={[styles.chip, countInSec === option && styles.chipOn]}
+                    onPress={() => setCountInSec(normaliseCountIn(option))}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Count-in ${countInLabel(option)}`}
+                    accessibilityState={{ selected: countInSec === option }}
+                  >
+                    <Text style={styles.chipText}>{countInLabel(option)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.honest}>{COUNT_IN_HINT}</Text>
+
+              <Text style={styles.optionLabel}>{RECORDING_LENGTH_LABEL}</Text>
+              <View style={styles.chipRow}>
+                {RECORDING_LENGTH_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={`length-${option}`}
+                    style={[styles.chip, recordingLengthSec === clampRecordingLength(option) && styles.chipOn]}
+                    onPress={() => setRecordingLengthSec(clampRecordingLength(option))}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Record for ${recordingLengthLabel(option)}`}
+                    accessibilityState={{ selected: recordingLengthSec === clampRecordingLength(option) }}
+                  >
+                    <Text style={styles.chipText}>{recordingLengthLabel(option)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.honest}>{RECORDING_LENGTH_HINT}</Text>
+            </View>
+
             {/* THE START CONTROL (v39 fix 2). The camera preview is up and
                 waiting; filming and the audio take both begin on THIS press and
                 not before, so the user can set the phone down first. */}
@@ -1142,9 +1366,34 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
             </TouchableOpacity>
           </>
         ) : null}
+        {/* ── vc49: THE COUNT-IN, ON SCREEN (owner 11-03) ──────────────────────
+            A large, unmistakable countdown. It is deliberately VISIBLE rather
+            than audible: the app plays no click track, and a sound here would be
+            captured by the same microphone the take is recorded with. Nothing is
+            recorded during this phase, so the count can never land in the video
+            or move the take's start. */}
+        {phase === 'count_in' ? (
+          <>
+            <Text style={styles.countInBig}>{String(countInLeft)}</Text>
+            <Text style={styles.timer}>{countInCountdownLine(countInLeft)}</Text>
+            <Text style={styles.honest}>{COUNT_IN_HONESTY}</Text>
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={cancelCountIn}
+              accessibilityRole="button"
+              accessibilityLabel={COUNT_IN_CANCEL_CTA}
+            >
+              <Text style={styles.secondaryBtnText}>{COUNT_IN_CANCEL_CTA}</Text>
+            </TouchableOpacity>
+          </>
+        ) : null}
         {phase === 'recording' ? (
           <>
             <Text style={styles.meta}>{PRACTICE_VIDEO_RECORDING_LINE}</Text>
+            {/* vc49: the running clock, then how much of the CHOSEN length is
+                left, then the cap line the screen has always shown. */}
+            <Text style={styles.timer}>{recordingClock(elapsedSec)}</Text>
+            <Text style={styles.meta}>{recordingProgressLine(elapsedSec, recordingLengthSec)}</Text>
             <Text style={styles.timer}>{practiceVideoRemainingLine(elapsedSec)}</Text>
             {practiceVideoNeedsWarning(elapsedSec) ? (
               <Text style={styles.warn}>
@@ -1194,6 +1443,41 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 ) : null}
               </>
             ) : null}
+
+            {/* ── vc49: THE TRIM, WHERE THE USER RECORDS (owner 11-03) ────────
+                The clip control already existed, but only on a SAVED take's
+                playback screen — so a user who had just filmed was never offered
+                it. This is the SAME control (`TakeClipTagEditor`) reading the
+                SAME state (`trimSpan`), persisted through the SAME
+                `handleSpanChange` → `attachPracticeVideo`, and it still feeds
+                `trimmedSendPair`, so the PDF, the MIDI and the video can never
+                describe different windows. Shown whenever there is a video to
+                trim; a take whose video failed to save says so above instead. */}
+            {practiceVideoIsUsable(ref) ? (
+              <TakeClipTagEditor
+                durationSec={Math.max(0, Number(ref?.durationSec) || 0)}
+                span={trimSpan}
+                note={row?.takeNote ?? null}
+                onSpanChange={(next) => void handleSpanChange(next)}
+                onNoteChange={(next) => void handleNoteChange(next)}
+                noteLine={noteLine}
+                noteBusy={noteBusy}
+              />
+            ) : null}
+
+            {/* The notes editor is one press below the trim (it used to open
+                itself over this surface, which is what hid the clip). */}
+            {take ? (
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => setEditorOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Correct the notes of this take"
+              >
+                <Text style={styles.secondaryBtnText}>{'Correct the notes ›'}</Text>
+              </TouchableOpacity>
+            ) : null}
+
             <TouchableOpacity
               style={styles.primaryBtn}
               onPress={() => {
@@ -1354,4 +1638,47 @@ const baseStyles = StyleSheet.create({
     marginTop: 16,
   },
   startBtnText: { color: '#06210f', fontSize: 17, fontWeight: '800' },
+  /** vc49: the camera flip — visible whenever the preview is up. */
+  flipRow: { marginTop: 10 },
+  flipBtn: {
+    backgroundColor: '#1b2a4a',
+    borderColor: '#4ecdc4',
+    borderWidth: 1,
+    borderRadius: 10,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  /** Locked while a capture is running: dimmed, disabled, and explained. */
+  flipBtnOff: { opacity: 0.45, borderColor: '#2f4370' },
+  flipBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
+  flipLine: { color: '#9aa0b5', fontSize: 12, lineHeight: 18, marginTop: 6 },
+  /** vc49: the count-in and recording-length choices. */
+  optionBlock: { marginTop: 16 },
+  optionLabel: { color: '#ffffff', fontSize: 13, fontWeight: '800', marginTop: 10 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
+  chip: {
+    minWidth: 64,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1b2a4a',
+    borderColor: '#2f4370',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  chipOn: { borderColor: '#4ecdc4', backgroundColor: '#12243a' },
+  chipText: { color: '#cfe4ff', fontSize: 13, fontWeight: '700' },
+  /** The count-in's big number — visible from across the room. */
+  countInBig: {
+    color: '#4ecdc4',
+    fontSize: 72,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 18,
+  },
 });
