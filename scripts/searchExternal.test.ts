@@ -395,9 +395,12 @@ function mutationProbes(): void {
   );
 
   // (d) a hand-rolled retailer URL on the screen (no affiliate id).
+  // v49: the injected URL must sit in a STRING literal. Written as bare JSX text it
+  // is invisible to this contract — `maskComments()` treats the `//` in `https://` as
+  // a line comment and blanks the rest of the line — so the probe could never fail.
   const handRolled = screen.replace(
     '      {external.visible ? (',
-    "      <Text>https://www.sheetmusicdirect.com/en-US/Search.aspx?query=x</Text>\n      {external.visible ? (",
+    "      <Text>{'https://www.sheetmusicdirect.com/en-US/Search.aspx?query=x'}</Text>\n      {external.visible ? (",
   );
   assert(handRolled !== screen, 'the hand-rolled-URL mutation changed FindPieceScreen');
   assertEq(
