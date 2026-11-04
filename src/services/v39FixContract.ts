@@ -245,10 +245,13 @@ export function practiceVideoFilmsOnlyAfterAPress(screenSource: string, refSourc
   const readyBody = src.slice(ready, ready + 400);
   if (readyBody.indexOf('startBothCaptures(') >= 0) return false;
   if (readyBody.indexOf('setCameraReady(true)') < 0) return false;
-  // The Start control: its own handler, wired to the one start seam.
+  // The Start control: its own handler, wired to the one start seam. The window
+  // is generous because vc49 added the COUNT-IN branch above the call — Start may
+  // first move the screen to the `count_in` phase and return, and the countdown
+  // then reaches this same seam (v49DeviceBatchContract guards that clock rule).
   const start = src.indexOf('const handleStart = useCallback(');
   if (start < 0) return false;
-  const startBody = src.slice(start, start + 600);
+  const startBody = src.slice(start, start + 1400);
   if (startBody.indexOf('startBothCaptures()') < 0) return false;
   if (startBody.indexOf('PRACTICE_VIDEO_CAMERA_NOT_READY_LINE') < 0) return false;
   if (src.indexOf('onPress={handleStart}') < 0) return false;

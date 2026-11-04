@@ -222,20 +222,21 @@ export const HERO_FORBIDDEN_WORDS: readonly string[] = [
 // ─────────────────────── the home promise (genre-neutral) ───────────────
 
 /**
- * The Home subtitle. It used to read "Curated Classical" whenever the user
- * skipped genre selection (onboarding defaulted to ['classical']), which told a
- * guitar or pop learner the app was not for them. The front door is
- * genre-neutral for everyone — and instrument-aware for guitar: the live guitar
- * story today is modern song → official TAB (Sheet Music Direct, affiliate
- * 67650), which is exactly what this line promises.
+ * The Home subtitle — THE OWNER'S OWN WORDING (vc49, owner email 11-03):
+ * "Find any Song from Jazz and Classical to today's hits". Jazz and Classical are
+ * named because the all-genres front door starts there and runs to today's hits;
+ * it is the same genre-neutral promise as before, in the owner's words.
  *
- * NO OVERCLAIM: the TAB line talks about getting the official TAB for a song we
- * recognise. It does not promise a free in-app TAB library — that catalog is
- * still gated on a compliant source.
+ * The guitar line is the same promise plus what the app REALLY does for a
+ * guitarist TODAY: a tuner, and the chords and key read from the user's own take.
+ * There is NO tablature feature in this build, so the line must never say "tab",
+ * "tabs" or "tablature" — a guard in scripts/v49DeviceBatch.test.ts fails the
+ * build if either line ever does.
  */
 export const HOME_PROMISE_ALL_GENRES =
-  "Find any song — classical to today's hits";
-export const HOME_PROMISE_GUITAR = 'Find any song — get the official TAB';
+  "Find any Song from Jazz and Classical to today's hits";
+export const HOME_PROMISE_GUITAR =
+  "Find any Song from Jazz and Classical to today's hits — guitar too, with a tuner and the chords and key from your take";
 
 /** The subtitle for a given onboarding instrument (null = not answered yet). */
 export function homePromiseCopy(instrument: Instrument | null | undefined): string {

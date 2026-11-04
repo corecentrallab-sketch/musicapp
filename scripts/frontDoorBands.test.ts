@@ -139,8 +139,9 @@ function chipCopyTests(): void {
 
   // v45 (owner 10-26): the label is `Find a song` — the designer's SearchBar
   // copy, and the chip's "any" claim retired with the chip itself. The HOME
-  // PROMISE subtitle keeps its own "Find any song — classical to today's hits"
-  // verbatim (frontDoor.HOME_PROMISE_ALL_GENRES); this is the ELEMENT's label.
+  // PROMISE subtitle carries the owner's vc49 wording
+  // (frontDoor.HOME_PROMISE_ALL_GENRES: "Find any Song from Jazz and Classical
+  // to today's hits"); this is the ELEMENT's label.
   assert(
     FIND_ANY_SONG_CHIP_LABEL === 'Find a song',
     'the search bar is labelled exactly "Find a song" (v45)',
