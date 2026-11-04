@@ -56,6 +56,7 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
+  Keyboard,
 } from 'react-native';
 import { fetchPieceById, searchPieces } from '../services/api';
 import {
@@ -78,6 +79,14 @@ import {
   sheetMusicDirectSearchUrl,
 } from '../services/searchExternal';
 import { SearchExternalSection } from '../components/SearchExternalSection';
+// v49 — THE SEARCH KEY IS ALWAYS AN ACTION (owner report 11-03: "Find a Piece does
+// not work on home page and second page… Dead on both"). The field used to bind
+// `onSubmitEditing` to `undefined` for every TYPED query, so the keyboard's Search
+// key was a silent no-op. The decision now lives in services/searchSubmit.ts
+// (pure, tier1-tested) and the zero-match copy in services/searchNoMatch.ts, so
+// neither can drift back into the screen. Guarded by services/searchSubmitContract.ts.
+import { planSearchSubmit } from '../services/searchSubmit';
+import { noMatchState } from '../services/searchNoMatch';
 // ── v46 CORRECTIVE: THIS SCREEN **IS** DISCOVER ──────────────────────────────
 // The ratified v45 design puts the genre surface HERE, not on Home: "Home
 // (minimal) → Discover (five families + money rows) → family screen", and
@@ -222,6 +231,20 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   // Bumped by the Retry button to re-run the current query.
   const [reloadToken, setReloadToken] = useState(0);
+  /**
+   * v49 — THE VISIBLE ANSWER TO AN EMPTY SUBMIT. A submit always produces a state
+   * change; when there is nothing to search for, the change is this line (plus the
+   * cursor going back in the field). Without it an empty submit would be the same
+   * silent no-op the owner reported, just on a different input.
+   */
+  const [submitNotice, setSubmitNotice] = useState<string | null>(null);
+  /**
+   * v49 — "RUN IT NOW". Raised by the submit handler, read once by the debounced
+   * effect below: an explicit submit must not wait out the type-ahead debounce (a
+   * user who presses Search is not still typing). Cleared the moment it is read,
+   * so typing afterwards is debounced exactly as before.
+   */
+  const searchImmediatelyRef = useRef(false);
   // Full-screen piece page for a tapped row (rendered in place, like History).
   const [showDetail, setShowDetail] = useState<DailyChallengePiece | null>(null);
   // The licensed retailer the user tapped (opened in the in-app shell). Never
@@ -236,6 +259,9 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
   // v46: the field's own ref, so a Discover money row can put the cursor in it
   // when there is nothing to search yet (no invented query, no store redirect).
   const searchInputRef = useRef<TextInput>(null);
+  // v49 — the one results scroller (declared here because the submit handler,
+  // defined below, returns the user to the top of the answer on every submit).
+  const resultsScrollRef = useRef<ScrollView>(null);
 
   // ── v46 CORRECTIVE: the Discover surface's real numbers (moved from Home) ──
   // `familyCounts` starts null and stays null if the catalog cannot be read, so
@@ -265,6 +291,15 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
     const typed = trimmed;
     const token = ++searchRequestRef.current;
     setStatus('loading');
+
+    // v49 — AN EXPLICIT SUBMIT SKIPS THE WAIT, IT DOES NOT SKIP THE SEARCH.
+    // The debounce exists for TYPING (one request per settled query); a user who
+    // pressed the keyboard's Search key has finished typing, so the request goes
+    // out at once. The flag is consumed here, so the next keystroke is debounced
+    // exactly as before — and because the token is bumped above, a submit on
+    // unchanged words is still a fresh request rather than a silent no-op.
+    const immediate = searchImmediatelyRef.current;
+    searchImmediatelyRef.current = false;
 
     const timer = setTimeout(() => {
       void (async () => {
@@ -325,10 +360,16 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
           setStatus('error');
         }
       })();
-    }, CATALOG_SEARCH_DEBOUNCE_MS);
+    }, immediate ? 0 : CATALOG_SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
   }, [query, reloadToken, prefillPending]);
+
+  // v49 — the empty-submit notice belongs to the empty field it was raised on: the
+  // moment the user types anything it has been answered and must go.
+  useEffect(() => {
+    setSubmitNotice(null);
+  }, [query]);
 
   /**
    * Open a search result on the piece page. The row already carries the
@@ -363,15 +404,51 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
   }, []);
 
   /**
-   * THE USER AGREED TO THE READ WORDS (v42 fix D). Their tap (or the keyboard's
-   * search key) is the ONLY thing that turns a prefilled read into a query; the
-   * token bump makes it a fresh request even when the text itself did not change.
-   * From here the screen is the ordinary type-ahead search it always was.
+   * THE ONE SUBMIT — the keyboard's Search key, and the prefill card's "Search
+   * these words" control (v49, owner report 11-03).
+   *
+   * WHAT WAS WRONG: the field bound `onSubmitEditing` to `undefined` whenever
+   * `prefillPending` was false — i.e. for every query a human TYPED — so pressing
+   * Search did nothing at all. The owner typed "heroes by David Bowie" and the app
+   * answered with silence, on both doors (Home's "Find a Piece" card and Discover,
+   * which are the same screen).
+   *
+   * WHAT IT DOES NOW, on every submit, in this order:
+   *   1. drop the keyboard — the results live under it, and the shipped build left
+   *      it up, so even a real answer was hidden behind the keys;
+   *   2. put the scroller back at the top, so the answer (results, or the
+   *      zero-match state and its retailer CTA) is on screen, not above it;
+   *   3. plan it (`planSearchSubmit`, pure and tested): an empty field leaves the
+   *      honest notice and the cursor in the field; anything else searches NOW
+   *      (bypassing the type-ahead debounce), confirms an OCR proposal (the v42
+   *      fix-D agreement — the AUTOMATIC path stays gated), and bumps the reload
+   *      token so pressing Search twice asks twice instead of doing nothing.
+   *
+   * The v42 fix-D gate is untouched: this is the explicit user action that gate
+   * was always waiting for, and nothing here searches a read on its own.
    */
-  const handleSubmitPrefill = useCallback(() => {
+  const handleSubmitSearch = useCallback(() => {
+    const plan = planSearchSubmit({ query, prefillPending });
+    Keyboard.dismiss();
+    resultsScrollRef.current?.scrollTo({ y: 0, animated: true });
+    if (plan.kind === 'empty') {
+      setSubmitNotice(plan.notice);
+      searchInputRef.current?.focus();
+      return;
+    }
+    setSubmitNotice(null);
     setPrefillPending(false);
+    searchImmediatelyRef.current = true;
     setReloadToken((n) => n + 1);
-  }, []);
+  }, [query, prefillPending]);
+
+  /**
+   * THE USER AGREED TO THE READ WORDS (v42 fix D). Their tap — and now the
+   * keyboard's search key — is the ONLY thing that turns a prefilled read into a
+   * query. It is the same handler as above on purpose: one submit path, two doors,
+   * so the two can never disagree about what "search" means.
+   */
+  const handleSubmitPrefill = handleSubmitSearch;
 
   /**
    * Open a retailer card in the in-app browser shell. Tap-driven only: this is
@@ -418,7 +495,8 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
   // top would leave the user looking at the same tiles they just left. The y is
   // MEASURED (onLayout) rather than computed from style constants, so it stays
   // right on every screen size.
-  const resultsScrollRef = useRef<ScrollView>(null);
+  // v49: the scroller's own ref is declared ABOVE the submit handler, which puts
+  // the user back at the top of the answer on every submit.
   const freeListYRef = useRef(0);
   const pendingFreeListScrollRef = useRef(false);
   const scrollToFreeList = useCallback(() => {
@@ -514,6 +592,15 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
    * matched nothing. Empty query → `visible: false` → the section renders nothing.
    */
   const external = externalSearchSection(query, pieces.length);
+  /**
+   * v49 — THE ZERO-MATCH STATE'S COPY AND ITS MONEY PATH, decided once, pure and
+   * tested (services/searchNoMatch.ts). It quotes the user's own words back (proof
+   * the search ran), says plainly that this piece is not in the free library, and
+   * carries the licensed-retailer link built by the shared builder — so a famous
+   * modern title ("heroes by David Bowie") resolves to a real destination instead
+   * of reading as a dead screen.
+   */
+  const noMatch = noMatchState(query, external);
 
   const renderItem = ({ item }: { item: CatalogPiece }) => {
     const meta = [item.composer, item.catalog].filter(
@@ -651,7 +738,13 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
           autoCorrect={false}
           autoCapitalize="words"
           returnKeyType="search"
-          onSubmitEditing={prefillPending ? handleSubmitPrefill : undefined}
+          // v49 — THE SEARCH KEY IS ALWAYS A REAL HANDLER. It used to be
+          // `prefillPending ? handleSubmitPrefill : undefined`, i.e. a silent no-op
+          // for every query a human typed (the owner's "does not search at all",
+          // 11-03). One handler, both modes; the v42 fix-D gate lives in the
+          // debounced effect, never in whether this key works.
+          onSubmitEditing={handleSubmitSearch}
+          blurOnSubmit
           accessibilityLabel="Search the catalog by title or composer"
         />
         {query.length > 0 ? (
@@ -671,6 +764,15 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
       <Text style={styles.subtitle}>
         Free public-domain and classical pieces — search, then open the score.
       </Text>
+
+      {/* v49 — AN EMPTY SUBMIT STILL ANSWERS. Pressing search on an empty field
+          says what to do (and the cursor goes back in the field) instead of
+          doing nothing, which is the exact defect the owner reported. */}
+      {submitNotice ? (
+        <Text style={styles.submitNotice} accessibilityLiveRegion="polite">
+          {submitNotice}
+        </Text>
+      ) : null}
 
       {/* ── WHAT THE APP READ OFF YOUR PHOTO (v42 fix D) ───────────────────────
           The recogniser's own words are in the field above and NOTHING has been
@@ -855,14 +957,41 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
         ) : null}
 
         {status === 'empty' ? (
-          <View style={styles.stateBlock}>
+          /* ── THE ZERO-MATCH STATE (v49, owner report 11-03) ──────────────────
+             It used to be one grey line: "No match — try another title or
+             composer". For a song our free public-domain library will never hold
+             that reads as a broken screen, which is exactly how the owner read it.
+             It now says the three things the 09-28 no-dead-end rule requires, in
+             order: the SEARCH RAN (their own words quoted back), there is NO FREE
+             SCORE (a fact about our catalogue, not an error), and the LICENSED
+             EDITION is one tap away — a prominent CTA carrying the user's own
+             words, built by services/searchExternal.ts (affiliate 67650) and
+             opened only by this tap. The fuller two-retailer section follows
+             below, still outside every status branch. */
+          <View style={styles.stateBlock} testID="no-match-block">
             <Text style={styles.emptyEmoji}>🔍</Text>
-            <Text style={styles.emptyTitle}>No match</Text>
+            <Text style={styles.emptyTitle}>{noMatch.headline}</Text>
+            <Text style={styles.emptyText}>{noMatch.searchedLine}</Text>
             <Text style={styles.emptyText}>{NO_MATCH_MESSAGE}</Text>
+            <Text style={styles.emptyText}>{noMatch.honestyLine}</Text>
             {/* The no-dead-end line (owner 10-01): a song our free library does not
                 hold still has a money path, and it is right below this text. */}
             {external.visible ? (
               <Text style={styles.emptyText}>{EXTERNAL_NO_MATCH_HINT}</Text>
+            ) : null}
+            {noMatch.showRetailer && noMatch.retailerUrl ? (
+              <TouchableOpacity
+                style={styles.emptyRetailerCta}
+                onPress={() => handleOpenRetailer(noMatch.retailerUrl as string)}
+                accessibilityRole="button"
+                accessibilityLabel={noMatch.retailerCtaLabel}
+              >
+                <Text
+                  style={[styles.emptyRetailerCtaText, { color: theme.accentInk }]}
+                >
+                  {noMatch.retailerCtaLabel}
+                </Text>
+              </TouchableOpacity>
             ) : null}
           </View>
         ) : null}
@@ -1144,6 +1273,17 @@ const baseStyles = StyleSheet.create({
     marginHorizontal: 20,
     marginTop: 10,
   },
+  /* v49 — the answer to an EMPTY submit. It sits directly under the field (where
+     the user is looking) and uses the palette's accent so it reads as an answer,
+     not as decoration. */
+  submitNotice: {
+    color: '#e94560',
+    fontSize: 12.5,
+    lineHeight: 17,
+    fontWeight: '700',
+    marginHorizontal: 20,
+    marginTop: 8,
+  },
 
   // ── States (v41 item 3) ──────────────────────────────────────
   // The ONE results scroller. It was a FlatList + a bounded, non-scrolling
@@ -1182,10 +1322,35 @@ const baseStyles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
     marginBottom: 6,
+    // v49: the zero-match headline now quotes the user's own (possibly long)
+    // words, so a wrapped title must centre like the lines under it.
+    textAlign: 'center',
   },
   emptyText: {
     fontSize: 14,
     color: '#a0a0b8',
+    textAlign: 'center',
+    lineHeight: 21,
+  },
+  /* v49 — THE PROMINENT LICENSED-EDITION CTA on the zero-match state. It is the
+     state's primary action, not a footnote: full-width, accent-filled, 52 dp tall
+     (a comfortable target), and it carries the user's own words in its label. The
+     ink is applied INLINE from the palette's accentInk (white on the red pill in
+     BOTH themes) — the same v44 #59 rule the prefill CTA follows. */
+  emptyRetailerCta: {
+    alignSelf: 'stretch',
+    minHeight: 52,
+    marginTop: 16,
+    borderRadius: 14,
+    backgroundColor: '#e94560',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+  },
+  emptyRetailerCtaText: {
+    fontSize: 15,
+    fontWeight: '800',
     textAlign: 'center',
     lineHeight: 21,
   },
