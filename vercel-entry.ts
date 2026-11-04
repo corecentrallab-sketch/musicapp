@@ -19,6 +19,7 @@ import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
 import { handleStripeWebhook } from "./src/services/webhook-handler";
 import { handleEntitlement } from "./src/services/entitlement";
 import { handleSheetServe, isSheetServeMethod } from "./src/services/sheet-handler";
+import { handleNotesServe, isNotesServeMethod } from "./src/services/notes-handler";
 import { handleAudioServe, isAudioServeMethod } from "./src/services/audio-handler";
 import { handleDailyChallenge } from "./src/services/daily-challenge-handler";
 import {
@@ -247,6 +248,24 @@ export default async function vercelHandler(
     if (pathname.startsWith("/api/sheets/") && isSheetServeMethod(req.method)) {
       const webReq = toWebRequest(req);
       const webRes = await handleSheetServe(webReq);
+      res.statusCode = webRes.status;
+      webRes.headers.forEach((value, key) => res.setHeader(key, value));
+      if (webRes.body) {
+        const reader = webRes.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      }
+      res.end();
+      return;
+    }
+    // Stored score NOTES (Standard MIDI File, Stage 1 guitar build) — same proxy shape
+    // and the same HEAD support as the scores route above.
+    if (pathname.startsWith("/api/notes/") && isNotesServeMethod(req.method)) {
+      const webReq = toWebRequest(req);
+      const webRes = await handleNotesServe(webReq);
       res.statusCode = webRes.status;
       webRes.headers.forEach((value, key) => res.setHeader(key, value));
       if (webRes.body) {

@@ -46,6 +46,16 @@
  * sheet_music_available / sheet_music_url are computed from the actual row —
  * never invented.
  *
+ * NOTES + INSTRUMENT (Stage 1 guitar build, 2026-11-04): both endpoints also
+ * carry `instrument: string | null` (the instrument the piece is written for,
+ * from `pieces.instrument`) and `notes_available` / `notes_url` for a stored
+ * Standard MIDI File (`piece_notes`, joined LEFT so an unscored piece keeps its
+ * row). Before this build the catalogue stored no notes at all and a TAB engine
+ * had nothing to render; `notes_url` points at the site's own proxy
+ * (`/api/notes/<id>.mid`, see notes-handler.ts), never at a raw R2 URL. All
+ * three fields are additive and null/absent-safe, so older app builds keep
+ * working.
+ *
  * `genre` (v45 slice 3a, owner all-genres scope 2026-10-26): every piece object
  * from BOTH endpoints now carries `genre: string | null` — the era bucket
  * stored on `pieces.genre` (Renaissance / Baroque / Classical / Romantic /
@@ -91,6 +101,10 @@ export interface PieceRow {
   is_public_domain: boolean | null;
   sheet_music_url: string | null;
   album_art_url: string | null;
+  /** Instrument the piece is written for (Stage 1 guitar build). Null when not recorded. */
+  instrument: string | null;
+  /** Public URL of the stored Standard MIDI File, from `piece_notes`. Null when no notes. */
+  notes_url: string | null;
 }
 
 /**
@@ -109,7 +123,19 @@ export interface PieceRow {
  * invented.
  */
 export const PIECE_COLUMNS =
-  "p.id, p.title, p.composer, p.catalog, p.genre, p.difficulty, p.is_public_domain, p.sheet_music_url, p.album_art_url";
+  "p.id, p.title, p.composer, p.catalog, p.genre, p.difficulty, p.is_public_domain, p.sheet_music_url, p.album_art_url, p.instrument, n.public_url AS notes_url";
+
+/**
+ * The FROM clause both catalog queries use. `piece_notes` is LEFT JOINed so a piece with no
+ * stored notes still returns a row (`notes_url: null`) — the 445 unscored catalogue rows must
+ * keep resolving honestly, and an inner join would silently delete them from search.
+ *
+ * The join is why `notes_url` lives in `PIECE_COLUMNS` as `n.public_url` rather than on the
+ * pieces row: the notes' location is a fact about the notes artefact (it is written by the
+ * ingest together with its sha256 and licence evidence), and duplicating it onto `pieces` would
+ * let the two drift apart. One copy, one truth.
+ */
+export const PIECE_FROM = "pieces p LEFT JOIN piece_notes n ON n.piece_id = p.id";
 
 /** Shape of a sheet_music_sources row (curated arrangements for a piece). */
 interface SheetSourceRow {
@@ -191,6 +217,7 @@ function foldedParam(index: number, fold: boolean): string {
 /** Map a DB row to the public piece shape shared by list and detail endpoints. */
 export function serializePiece(row: PieceRow): Record<string, unknown> {
   const sheetAvailable = !!row.sheet_music_url && row.sheet_music_url !== "";
+  const notesUrl = row.notes_url && row.notes_url !== "" ? row.notes_url : null;
   return {
     id: row.id,
     title: row.title,
@@ -205,6 +232,16 @@ export function serializePiece(row: PieceRow): Record<string, unknown> {
     sheet_music_available: sheetAvailable,
     sheet_music_url: sheetAvailable ? row.sheet_music_url : null,
     album_art_url: row.album_art_url ?? null,
+    // Instrument the piece is written for (Stage 1 guitar build, 2026-11-04). Additive:
+    // older clients ignore it. Null for the ~500 rows where we have not recorded it —
+    // never guessed from the title.
+    instrument: row.instrument ?? null,
+    // Stored NOTES (Standard MIDI File) for this piece. `notes_available` is computed
+    // from the row so a client can gate the TAB/notes surface without parsing the URL,
+    // and `notes_url` is the site's own proxy route (/api/notes/<id>.mid), never a raw
+    // R2 URL — R2 answers 400 to an anonymous GET.
+    notes_available: notesUrl !== null,
+    notes_url: notesUrl,
     // Retailing (WAVE 1a, owner direction 09-18): the Sheet Music Direct search
     // link for this piece, built by the same shared builder the piece pages use,
     // so the app and the site carry one attributable CTA path. Present for every
@@ -391,7 +428,7 @@ export async function handleCatalogList(req: Request): Promise<Response> {
 
     const rows = (await sql().query(
       `SELECT ${PIECE_COLUMNS}
-       FROM pieces p
+       FROM ${PIECE_FROM}
        WHERE ${whereSql}
        ORDER BY p.title, p.id
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -430,7 +467,7 @@ export async function handleCatalogDetail(req: Request): Promise<Response> {
   try {
     const rows = (await sql().query(
       `SELECT ${PIECE_COLUMNS}
-       FROM pieces p
+       FROM ${PIECE_FROM}
        WHERE p.id = $1 AND p.is_public_domain = true`,
       [id],
     )) as unknown as PieceRow[];

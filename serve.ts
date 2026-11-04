@@ -17,6 +17,7 @@ import { handleCreateCheckoutSession } from "./src/services/checkout-handler";
 import { handleStripeWebhook } from "./src/services/webhook-handler";
 import { handleEntitlement } from "./src/services/entitlement";
 import { handleSheetServe, isSheetServeMethod } from "./src/services/sheet-handler";
+import { handleNotesServe, isNotesServeMethod } from "./src/services/notes-handler";
 import { handleAudioServe, isAudioServeMethod } from "./src/services/audio-handler";
 import { handleDailyChallenge } from "./src/services/daily-challenge-handler";
 import {
@@ -126,6 +127,12 @@ for (let attempt = 1; ; attempt++) {
         // (GET-only here made every score answer 404 to HEAD.)
         if (pathname.startsWith("/api/sheets/") && isSheetServeMethod(req.method)) {
           return handleSheetServe(req);
+        }
+        // Stored score NOTES (Standard MIDI File, Stage 1 guitar build). HEAD too, for the
+        // same reason as the scores route: a GET-only guard made every score look broken to
+        // HEAD-based link monitors in the 2026-09-22 audit.
+        if (pathname.startsWith("/api/notes/") && isNotesServeMethod(req.method)) {
+          return handleNotesServe(req);
         }
         // HEAD too: the same dead-end the scores route had (GET-only here made
         // every practice-audio URL answer 404, text/html, to a HEAD probe).
