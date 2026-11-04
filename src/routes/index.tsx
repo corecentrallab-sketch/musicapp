@@ -58,13 +58,13 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Identify music by ear with NoteSnap — the Shazam for sheet music. Find sheet music by listening to any song: free classical sheet music, piano sheet music and guitar tabs for public-domain pieces, official scores for modern hits.",
+          "Identify music by ear with NoteSnap — the Shazam for sheet music. Find sheet music by listening to any song: free classical and piano sheet music for public-domain pieces, official scores for modern hits.",
       },
       { property: "og:title", content: "NoteSnap — Identify Music & Find Sheet Music Instantly" },
       {
         property: "og:description",
         content:
-          "Hear a song and want to play it? NoteSnap identifies the music and finds the sheet music — free piano scores and guitar tabs for classical pieces, official sheet music for modern songs.",
+          "Hear a song and want to play it? NoteSnap identifies the music and finds the sheet music — free piano scores for classical pieces, official sheet music for modern songs.",
       },
       { property: "og:url", content: "https://site-notesnap.vercel.app/" },
       {
@@ -162,7 +162,7 @@ function Home() {
             <span className="text-amber-600">Get sheet music instantly.</span>
           </h1>
           <p className="mt-6 max-w-xl text-lg text-stone-600 leading-relaxed">
-            Hear a piece and want to play it? NoteSnap identifies music playing around you — classical masterpieces, modern hits, anything. For public-domain works you get free sheet music and tabs. For copyrighted songs, tap to buy the official score from licensed retailers.
+            Hear a piece and want to play it? NoteSnap identifies music playing around you — classical masterpieces, modern hits, anything. For public-domain works you get free sheet music. For copyrighted songs, tap to buy the official score from licensed retailers.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <a
@@ -271,7 +271,7 @@ function Home() {
               {
                 step: "2",
                 title: "Get sheet music",
-                desc: "For public-domain works: free piano scores, guitar tabs, and album art. For copyrighted songs: one tap to buy the official sheet music from licensed retailers like Sheet Music Direct.",
+                desc: "For public-domain works: free piano scores. For copyrighted songs: one tap to buy the official sheet music from licensed retailers like Sheet Music Direct.",
               },
               {
                 step: "3",
