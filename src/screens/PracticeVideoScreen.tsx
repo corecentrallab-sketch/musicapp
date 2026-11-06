@@ -99,6 +99,7 @@ import {
   loadPracticeVideoRow,
   persistPracticeVideo,
   savePracticeVideoRow,
+  savePracticeVideoTake,
 } from '../services/practiceVideoStore';
 // THE TAKE'S OWN LABEL (v47 part B, item 2): the same local text the History card
 // keeps, saved through the melody store's own note write — one label per take.
@@ -138,9 +139,12 @@ import {
   RECORDING_LENGTH_REACHED_LINE,
   clampRecordingLength,
   countInCountdownLine,
+  countInDeadline,
   countInLabel,
+  countInRemainingSec,
   normaliseCountIn,
   recordingClock,
+  recordingElapsedSec,
   recordingLengthLabel,
   recordingLengthReached,
   recordingProgressLine,
@@ -252,6 +256,62 @@ export const VIDEO_PLAY_HINT =
 export const VIDEO_PLAYBACK_FAILED_LINE =
   'This video would not play on this device — the file could not be opened. Your take, its notation and its exports are untouched.';
 
+/**
+ * ── vc50: NO SILENT FAILURE, NO EMPTY SURFACE (owner 11-04) ───────────────────
+ *
+ * The owner's report: "Not recording takes… nothing shows up once processed in
+ * the Record your Practice screen either in any of the boxes. A dead end." and
+ * "the user is in the watch with notes page but can't watch anything as there's
+ * nothing to watch on the page."
+ *
+ * Every line below is a surface for a failure that used to be silent: a camera
+ * that never handed back a file (its rejection was swallowed by an empty
+ * `.catch`), a take whose decode threw or never resolved (the screen stayed on
+ * "Keeping your video…" forever), and a playback page with nothing on it.
+ */
+export const VIDEO_CAPTURE_FAILED_LINE =
+  'The camera did not hand back a video file, so there is no video for this take. Your notes are kept and you can film again.';
+export const VIDEO_TAKE_READING_LINE = 'Reading the notes out of your take…';
+export const VIDEO_TAKE_TIMEOUT_LINE =
+  'Reading the notes from this take took too long, so we stopped waiting. Your video and its audio are saved — you can try the notes again from the take.';
+export const VIDEO_TAKE_SAVE_FAILED_LINE =
+  'The notes were read but could not be saved onto this take. Your video and its audio are saved.';
+export const VIDEO_REVIEW_TITLE = 'Your take';
+export const VIDEO_REVIEW_VIDEO_LINE =
+  'This is the video you just filmed. Trim it below, or watch it with your notes.';
+export const VIDEO_NOTHING_TO_WATCH_LINE =
+  'There is no video for this take on this device, so there is nothing to play here. Your take’s notes and exports are unaffected.';
+export const VIDEO_NOTHING_AT_ALL_LINE =
+  'Nothing was kept from this take — there is no video and no audio to play. Film it again and it will appear here.';
+export const VIDEO_RECORD_AGAIN_CTA = 'Film a new take';
+
+/**
+ * How long the take's decode may hold the review surface's "reading" line before
+ * the screen says it gave up. The decode runs OFF the surface's critical path (the
+ * video is already on screen), so this is a bound on a promise, not a spinner the
+ * user has to sit through.
+ */
+export const TAKE_DECODE_TIMEOUT_MS = 45000;
+
+/**
+ * Resolve with `promise`'s value, or with `fallback` once `ms` has passed. A
+ * promise that never settles is the failure mode this exists for: the screen must
+ * always have something to say, so every step that could hang is bounded.
+ */
+async function settleWithin<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   rowId: requestedRowId = null,
   onClose,
@@ -318,6 +378,23 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   const autoStopRef = useRef(false);
 
   /**
+   * ── vc50 STATE (owner 11-04) ────────────────────────────────────────────────
+   *
+   * `takeLine` is the take-decode's own outcome sentence and `takeBusy` is its
+   * in-flight flag: the video lands on the review surface FIRST and the notes
+   * arrive when they arrive, so a slow or failing decode can never leave the user
+   * on a spinner with nothing to look at. `videoFailureRef` keeps the camera's own
+   * rejection reason so the surface can say what happened instead of swallowing it.
+   */
+  const [takeLine, setTakeLine] = useState<string | null>(null);
+  const [takeBusy, setTakeBusy] = useState(false);
+  const videoFailureRef = useRef<string | null>(null);
+  /** The take's own start stamp, so its length never depends on a ticker. */
+  const recordingStartedAtRef = useRef(0);
+  /** Stop is idempotent: the auto-stop and the Stop button cannot both run it. */
+  const stoppingRef = useRef(false);
+
+  /**
    * DECISION 1's STAMPS. Each capture stamp is taken at the moment its recorder
    * reports it is rolling, and the pair's offset is the MEASURED difference
    * between them — never a literal zero (guarded in v38UiContract).
@@ -362,6 +439,24 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       void videoRef.current?.pauseAsync().catch(() => undefined);
     });
     return unregister;
+  }, [phase, row?.ref?.uri]);
+
+  /**
+   * ── THE REVIEW SURFACE'S OWN VIDEO NEEDS THE PLAYBACK SESSION (vc50) ────────
+   *
+   * The review surface now shows the take the user just filmed (that is the fix
+   * for "a large blue screen pops in … obscuring the video": the take is ON the
+   * surface instead of hidden behind a panel). But the app has just left the
+   * RECORDING session, and expo-av's Android player takes its volume from audio
+   * focus — so a video played under a recording session reports success at volume
+   * 0, which is the v40 fix J class of failure ("it plays, with no sound"). The
+   * playback session is therefore applied as soon as the review surface has a
+   * video to show, before the player mounts.
+   */
+  useEffect(() => {
+    if (phase !== 'review') return undefined;
+    void restorePlaybackAudioMode();
+    return undefined;
   }, [phase, row?.ref?.uri]);
 
   /**
@@ -495,6 +590,14 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     }
 
     videoStartMsRef.current = Date.now();
+    /**
+     * THE TAKE'S OWN START STAMP (vc50). This is what the running clock and the
+     * take's stored length are measured from — one stamp, taken once, so no timer
+     * and no re-render can move it.
+     */
+    recordingStartedAtRef.current = videoStartMsRef.current;
+    videoFailureRef.current = null;
+    stoppingRef.current = false;
     setPhase('recording');
     try {
       /**
@@ -509,14 +612,58 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       videoPromiseRef.current = recorded
         .then((result) => {
           videoUriRef.current = result?.uri ?? null;
+          if (!videoUriRef.current) videoFailureRef.current = VIDEO_CAPTURE_FAILED_LINE;
         })
-        .catch(() => {
+        .catch((err: unknown) => {
+          /**
+           * NO SILENT FAILURE (vc50). This used to be an empty `.catch` that set
+           * the uri to null: a camera that refused the take left the screen with
+           * no video and no reason, which is the "dead end" the owner hit. The
+           * reason is kept and printed on the review surface.
+           */
           videoUriRef.current = null;
+          videoFailureRef.current = VIDEO_CAPTURE_FAILED_LINE;
+          reportAudioFailure({
+            source: 'recording',
+            reason: 'clip-load',
+            detail: usableDetail(err),
+          });
         });
-    } catch {
+    } catch (err) {
       videoUriRef.current = null;
+      videoFailureRef.current = VIDEO_CAPTURE_FAILED_LINE;
+      reportAudioFailure({
+        source: 'recording',
+        reason: 'clip-load',
+        detail: usableDetail(err),
+      });
     }
   }, [recorder]);
+
+  /**
+   * ── THE LATEST CALLBACK, AS A REF (vc50 fix 1 & 2 — THE ROOT CAUSE) ─────────
+   *
+   * `useAudioRecorder()` returns a FRESH object on every render (its `return {}`
+   * literal is rebuilt each time, and its live meter re-renders this screen every
+   * 200 ms while recording). So every callback built from it — `startBothCaptures`,
+   * `handleStop` — has a NEW identity on every render.
+   *
+   * The count-in and recording timers used to list those callbacks in their
+   * dependency arrays. React therefore tore the interval down and rebuilt it on
+   * every render, resetting the `started` stamp each time: the countdown repainted
+   * its first number forever ("the count timer gets stuck and doesn't count down")
+   * and the recording clock stayed at 0:00 for the whole take (so the chosen length
+   * never stopped it, and the stored `durationSec` was 0 — which is why the trim
+   * window had no timeline).
+   *
+   * The timers now depend ONLY on the phase, and reach the current callback
+   * through these refs. The refs are updated in their own effect, declared before
+   * the timers so it runs first, and a timer's first tick is ≥250 ms later.
+   */
+  const startBothCapturesRef = useRef(startBothCaptures);
+  useEffect(() => {
+    startBothCapturesRef.current = startBothCaptures;
+  }, [startBothCaptures]);
 
   /**
    * The camera is up (v39 fix 2). Coming up is NOT a reason to film: the owner's
@@ -567,18 +714,27 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
    */
   useEffect(() => {
     if (phase !== 'count_in') return undefined;
-    setCountInLeft(countInSec);
-    const started = Date.now();
+    /**
+     * THE DEADLINE IS ABSOLUTE (vc50 — the fix for "the count timer gets stuck").
+     * It is computed ONCE, from the moment this phase was entered, and the number
+     * on screen is `countInRemainingSec(deadline, now)`. Nothing here depends on a
+     * callback's identity, so a re-render can no longer restart the count — which
+     * is exactly what the previous `[phase, countInSec, startBothCaptures]` deps
+     * did on every render (see `startBothCapturesRef` above).
+     */
+    const deadline = countInDeadline(countInSec, Date.now());
+    setCountInLeft(countInRemainingSec(deadline, Date.now()));
     const timer = setInterval(() => {
-      const left = Math.max(0, countInSec - Math.floor((Date.now() - started) / 1000));
+      const left = countInRemainingSec(deadline, Date.now());
       setCountInLeft(left);
       if (left <= 0) {
         clearInterval(timer);
-        void startBothCaptures();
+        // The ONE capture entry point, reached only when the count reaches zero.
+        startBothCapturesRef.current();
       }
     }, 250);
     return () => clearInterval(timer);
-  }, [phase, countInSec, startBothCaptures]);
+  }, [phase, countInSec]);
 
   /** Leaving the count-in before it finishes: nothing was captured, nothing lost. */
   const cancelCountIn = useCallback(() => {
@@ -617,26 +773,41 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     async (audioCacheUri: string | null, pairedSeparately: boolean) => {
       setPhase('keeping');
       setLine(PRACTICE_VIDEO_KEEPING_LINE);
+      setErrorLine(null);
+      setTakeLine(null);
+      setTakeBusy(false);
       const capturedAt = new Date().toISOString();
       const rowId =
         rowIdRef.current ?? melodyRowId(capturedAt, 'practicevideo');
       rowIdRef.current = rowId;
+      /**
+       * THE TAKE'S LENGTH, MEASURED (vc50). `handleStop` writes this from the start
+       * stamp the camera was given, so it is the real length of the take and not
+       * whatever the last tick of a timer happened to say.
+       */
+      const durationSec = Math.max(0, Math.round(Number(elapsedRef.current) || 0));
 
+      // ── PHASE A: THE VIDEO, ONTO THE DISK AND ONTO THE SCREEN ──────────────
       // THE VIDEO IS PERSISTED BEFORE ANY ROW REFERENCES IT (the cache trap).
-      const videoUri = videoUriRef.current;
-      const persisted = videoUri
-        ? await persistPracticeVideo(videoUri, rowId)
-        : { uri: null, sizeBytes: null, message: PRACTICE_VIDEO_NOT_KEPT_LINE };
-
-      let take: SavedCaptureTake | null = null;
-      let takeLine: string | null = null;
-      if (audioCacheUri) {
-        const audioUri = await persistMelodyAudio(audioCacheUri, rowId);
-        audioUriRef.current = audioUri;
-        const derived = await deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt });
-        take = derived.take;
-        takeLine = derived.message;
+      let persisted: Awaited<ReturnType<typeof persistPracticeVideo>> = {
+        uri: null,
+        sizeBytes: null,
+        message: PRACTICE_VIDEO_NOT_KEPT_LINE,
+      };
+      try {
+        const videoUri = videoUriRef.current;
+        if (videoUri) persisted = await persistPracticeVideo(videoUri, rowId);
+      } catch {
+        persisted = { uri: null, sizeBytes: null, message: PRACTICE_VIDEO_NOT_KEPT_LINE };
       }
+
+      let audioUri: string | null = null;
+      try {
+        audioUri = audioCacheUri ? await persistMelodyAudio(audioCacheUri, rowId) : null;
+      } catch {
+        audioUri = null;
+      }
+      audioUriRef.current = audioUri;
 
       const measuredOffsetMs = pairedSeparately
         ? separateTakeOffset()
@@ -648,7 +819,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       const ref = persisted.uri
         ? practiceVideoRefFromCapture({
             uri: persisted.uri,
-            durationSec: elapsedRef.current,
+            durationSec,
             audioOffsetMs: measuredOffsetMs,
             measuredOffsetMs,
             filmedAt: capturedAt,
@@ -657,47 +828,84 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
           })
         : null;
 
-      const saved = await savePracticeVideoRow({
-        rowId,
-        capturedAt,
-        take,
-        audioUri: audioUriRef.current,
-        videoRef: ref,
-        title: PRACTICE_VIDEO_ROW_TITLE,
-      });
+      let saved: Awaited<ReturnType<typeof savePracticeVideoRow>> = null;
+      try {
+        saved = await savePracticeVideoRow({
+          rowId,
+          capturedAt,
+          take: null,
+          audioUri: audioUriRef.current,
+          videoRef: ref,
+          title: PRACTICE_VIDEO_ROW_TITLE,
+        });
+      } catch {
+        saved = null;
+      }
 
-      const nextRow: PracticeTakeRow = {
+      /**
+       * LAND ON THE REVIEW SURFACE NOW (vc50 — the fix for "not recording takes…
+       * nothing shows up once processed… a dead end").
+       *
+       * The row used to be written only AFTER the audio had been decoded into a
+       * take, in one long `await` chain with no try/catch. A decode that threw or
+       * never resolved left the screen on "Keeping your video…" for ever, with no
+       * video, no notes and no message — the dead end. Now the VIDEO is on screen
+       * the moment it is on disk, and the notes arrive underneath it.
+       */
+      setRow({
         rowId: saved?.id ?? rowId,
         title: PRACTICE_VIDEO_ROW_TITLE,
-        take,
+        take: null,
         ref,
         audioUri: audioUriRef.current,
         takeNote: null,
-      };
-      setRow(nextRow);
+      });
       setOffsetMs(Math.round(Number(ref?.audioOffsetMs) || 0));
       setPhase('review');
       setLine(
         saved
-          ? take
-            ? null
-            : VIDEO_TAKE_FAILED_LINE
+          ? null
           : 'Could not write this practice recording into your History — your video is still on this device.',
       );
-      setErrorLine(takeLine);
-      if (!persisted.uri) setErrorLine(PRACTICE_VIDEO_NOT_KEPT_LINE);
-      /**
-       * vc49: the notes editor NO LONGER opens itself over the take. The owner's
-       * report was that a user who has just recorded is never offered the TRIM,
-       * and a modal editor opening on top of the review surface is exactly what
-       * hid it. The review surface now shows the clip first, with the notes
-       * editor one press below it (`Correct the notes ›`).
-       */
+      // WHY THERE IS NO VIDEO, WHEN THERE IS NO VIDEO (vc50): the camera's own
+      // refusal, said out loud instead of swallowed by an empty `.catch`.
+      if (!persisted.uri) setErrorLine(videoFailureRef.current ?? PRACTICE_VIDEO_NOT_KEPT_LINE);
+
+      // ── PHASE B: THE NOTES, BOUNDED AND NEVER SILENT ───────────────────────
+      if (!audioCacheUri) {
+        setTakeLine(VIDEO_TAKE_FAILED_LINE);
+        return;
+      }
+      setTakeBusy(true);
+      setTakeLine(VIDEO_TAKE_READING_LINE);
+      let derived: Awaited<ReturnType<typeof deriveCaptureTakeFromRecording>>;
+      try {
+        derived = await settleWithin(
+          deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt }),
+          TAKE_DECODE_TIMEOUT_MS,
+          { take: null, unavailable: true, message: VIDEO_TAKE_TIMEOUT_LINE },
+        );
+      } catch {
+        derived = { take: null, unavailable: false, message: VIDEO_TAKE_FAILED_LINE };
+      }
+      setTakeBusy(false);
+      const derivedTake = derived.take;
+      if (!derivedTake) {
+        setTakeLine(derived.message ?? VIDEO_TAKE_FAILED_LINE);
+        return;
+      }
+      // The take reaches the surface FIRST (so it is never invisible), then the row.
+      setRow((current) => (current && !current.take ? { ...current, take: derivedTake } : current));
+      const written = await savePracticeVideoTake(rowId, derivedTake);
+      setTakeLine(written ? null : VIDEO_TAKE_SAVE_FAILED_LINE);
     },
     [],
   );
 
   const handleStop = useCallback(async () => {
+    // The auto-stop and the Stop button can both reach this: only the first runs.
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
     setPhase('keeping');
     try {
       cameraRef.current?.stopRecording();
@@ -711,12 +919,55 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         videoUriRef.current = null;
       }
     }
-    const audio = await recorder.stopRecording();
+    /**
+     * THE LENGTH OF THE TAKE, MEASURED FROM ITS START STAMP (vc50). The running
+     * clock used to be the only writer of `elapsedRef`, and it was reset on every
+     * render, so a 40-second take was stored as 0 seconds — which is what left the
+     * trim window with no length and no timeline. This is a measurement, not a
+     * guess: one stamp, taken when the camera was asked to record.
+     */
+    const startedAt = recordingStartedAtRef.current || videoStartMsRef.current;
+    const filmedSec = startedAt > 0 ? recordingElapsedSec(startedAt, Date.now()) : 0;
+    elapsedRef.current = Math.max(Number(elapsedRef.current) || 0, filmedSec);
+    setElapsedSec(elapsedRef.current);
+
+    let audio: Awaited<ReturnType<typeof recorder.stopRecording>> = null;
+    try {
+      audio = await recorder.stopRecording();
+    } catch {
+      audio = null;
+    }
     const stopFailure = audio ? null : recorder.takeStopFailure();
     if (stopFailure) setErrorLine(stopFailure.message);
     const pairedSeparately = separateTakeRef.current;
-    await keepTake(audio?.uri ?? null, pairedSeparately);
+    try {
+      await keepTake(audio?.uri ?? null, pairedSeparately);
+    } catch {
+      /**
+       * NO SILENT FAILURE (vc50). This `await` used to be the last statement of a
+       * function the Stop button calls with `void`, so a rejection anywhere in the
+       * keep path escaped as an unhandled rejection and left the screen on
+       * "Keeping your video…" for ever. It is caught here and said out loud.
+       */
+      setTakeBusy(false);
+      setLine('This take could not be saved to your History.');
+      setErrorLine(
+        'Your video file, if it was filmed, is still on this device. Nothing else was changed.',
+      );
+      setPhase('review');
+    }
   }, [keepTake, recorder]);
+
+  /**
+   * The recording timer's own handle on the CURRENT `handleStop`. Same reason as
+   * `startBothCapturesRef`: `handleStop` is rebuilt on every render (it closes over
+   * the recorder), so listing it in the timer's dependency array restarted the
+   * clock — and the chosen length could never be reached.
+   */
+  const handleStopRef = useRef(handleStop);
+  useEffect(() => {
+    handleStopRef.current = handleStop;
+  }, [handleStop]);
 
   /**
    * ── THE RUNNING CLOCK AND THE CHOSEN LENGTH (vc49) ──────────────────────────
@@ -734,11 +985,21 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
    */
   useEffect(() => {
     if (phase !== 'recording') return undefined;
-    const started = Date.now();
+    /**
+     * THE CLOCK IS MEASURED FROM THE START STAMP, NOT FROM THIS EFFECT (vc50).
+     * `recordingStartedAtRef` was stamped once, in `startBothCaptures`, at the
+     * moment the camera was asked to record — so the number on screen (and the
+     * length stored on the take) cannot be moved by a re-render, a slow tick or a
+     * restarted interval. That is exactly what the old `[phase, recordingLengthSec,
+     * handleStop]` deps did: the metering hook re-renders this screen every 200 ms
+     * while recording, `handleStop` is rebuilt every render, so the interval was
+     * rebuilt every 200 ms and the clock never left 0:00.
+     */
     autoStopRef.current = false;
+    const startedAt = recordingStartedAtRef.current || Date.now();
     const limit = clampRecordingLength(recordingLengthSec);
     const timer = setInterval(() => {
-      const seconds = Math.round((Date.now() - started) / 1000);
+      const seconds = recordingElapsedSec(startedAt, Date.now());
       elapsedRef.current = seconds;
       setElapsedSec(seconds);
       if (recordingLengthReached(seconds, limit) && !autoStopRef.current) {
@@ -746,11 +1007,11 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         clearInterval(timer);
         // The take goes to the TRIM step: `handleStop` keeps the pair and the
         // review surface offers the clip, with a line saying why it stopped.
-        void handleStop().then(() => setLine(RECORDING_LENGTH_REACHED_LINE));
+        void handleStopRef.current().then(() => setLine(RECORDING_LENGTH_REACHED_LINE));
       }
-    }, 500);
+    }, 250);
     return () => clearInterval(timer);
-  }, [phase, recordingLengthSec, handleStop]);
+  }, [phase, recordingLengthSec]);
 
   /**
    * DECISION 2's SECOND HALF. The video already carries its own sound; this films
@@ -794,6 +1055,13 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     setTrimSpan(null);
     setNoteLine(null);
     setCountInLeft(0);
+    // vc50: a new take carries none of the last take's outcome — not its notes
+    // line, not its decode state, not the camera's old refusal.
+    setTakeLine(null);
+    setTakeBusy(false);
+    videoFailureRef.current = null;
+    recordingStartedAtRef.current = 0;
+    stoppingRef.current = false;
     setPhase('permissions');
     // The camera remounts with the record body, so it is not ready yet — and the
     // new take still does not film until Start is pressed (v39 fix 2).
@@ -973,7 +1241,23 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   // History row starts in, so a watch-only row can never render the record body
   // (and never mounts a camera at all).
   if (phase === 'playback') {
-    const missing = !!row && !practiceVideoIsUsable(row.ref) && !deletedLine;
+    /**
+     * ── NOTHING TO WATCH IS SAID, AND HAS A WAY OUT (vc50, defect 5) ──────────
+     *
+     * The owner: "the user is in the watch with notes page but can't watch
+     * anything as there's nothing to watch on the page." This page used to render
+     * a generic missing card and then a wall of overlay/transport controls for a
+     * video that was not there. It now names which of the three cases it is —
+     * no row, no video but a take, nothing at all — and every one of them offers
+     * the one move that helps: film a new take.
+     */
+    const noVideoLine = deletedLine
+      ? deletedLine
+      : !row
+        ? VIDEO_MISSING_LINE
+        : take
+          ? VIDEO_NOTHING_TO_WATCH_LINE
+          : VIDEO_NOTHING_AT_ALL_LINE;
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.body}>
@@ -1047,7 +1331,15 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
             </>
           ) : (
             <View style={styles.missingCard}>
-              <Text style={styles.missingText}>{deletedLine ?? VIDEO_MISSING_LINE}</Text>
+              <Text style={styles.missingText}>{noVideoLine}</Text>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={handleRecordAgain}
+                accessibilityRole="button"
+                accessibilityLabel={VIDEO_RECORD_AGAIN_CTA}
+              >
+                <Text style={styles.secondaryBtnText}>{VIDEO_RECORD_AGAIN_CTA}</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -1427,21 +1719,73 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
 
         {phase === 'review' ? (
           <>
-            <Text style={styles.meta}>{line ?? 'Saved to your History.'}</Text>
-            {!take ? (
+            <Text style={styles.title}>{VIDEO_REVIEW_TITLE}</Text>
+            <Text style={styles.meta}>
+              {line ?? (row ? 'Saved to your History.' : 'Nothing was saved from this take.')}
+            </Text>
+
+            {/* ── vc50: THE TAKE ITSELF, ON THIS SURFACE ────────────────────────
+                The owner: "Once video is taken, a large blue screen pops in
+                another window up obscuring the video." Two things were true. The
+                notes editor used to slide in over this surface by itself (that
+                auto-open is gone — see `keepTake`), and this surface showed no
+                video of its own, so what filled the space was a panel with
+                nothing in it. The take the user just filmed is now rendered
+                here, with its own length under it, before anything else. */}
+            {practiceVideoIsUsable(ref) ? (
               <>
-                <Text style={styles.honest}>{VIDEO_TAKE_FAILED_LINE}</Text>
-                {separateTakeRef.current ? (
-                  <TouchableOpacity
-                    style={styles.primaryBtn}
-                    onPress={() => void recordSeparateTake()}
-                    accessibilityRole="button"
-                    accessibilityLabel="Record the take now"
-                  >
-                    <Text style={styles.primaryBtnText}>{'Record the take now'}</Text>
-                  </TouchableOpacity>
-                ) : null}
+                <Video
+                  style={styles.video}
+                  source={{ uri: ref.uri }}
+                  useNativeControls
+                  volume={1}
+                  isMuted={false}
+                  resizeMode={ResizeMode.CONTAIN}
+                  progressUpdateIntervalMillis={200}
+                  onError={() => setVideoLine(VIDEO_PLAYBACK_FAILED_LINE)}
+                  onReadyForDisplay={() => {
+                    void restorePlaybackAudioMode();
+                  }}
+                />
+                <Text style={styles.meta}>
+                  {videoSizeLine(Math.max(0, Number(ref?.durationSec) || 0), ref?.sizeBytes ?? null)}
+                </Text>
+                <Text style={styles.honest}>{VIDEO_REVIEW_VIDEO_LINE}</Text>
+                {videoLine ? <Text style={styles.error}>{videoLine}</Text> : null}
               </>
+            ) : (
+              <View style={styles.missingCard}>
+                <Text style={styles.missingText}>
+                  {videoFailureRef.current ?? PRACTICE_VIDEO_NOT_KEPT_LINE}
+                </Text>
+              </View>
+            )}
+
+            {/* THE NOTES (vc50): read off the take's sound, bounded, and never a
+                silent wait — "reading", then either the staff or the reason. */}
+            {takeBusy ? <Text style={styles.meta}>{VIDEO_TAKE_READING_LINE}</Text> : null}
+            {!takeBusy && takeLine ? <Text style={styles.honest}>{takeLine}</Text> : null}
+            {!takeBusy && !takeLine && !take ? (
+              <Text style={styles.honest}>{VIDEO_TAKE_FAILED_LINE}</Text>
+            ) : null}
+            {take && take.notes.length > 0 ? (
+              <TakeStaffCard
+                take={take}
+                chordNames={chordRow}
+                chordHonestLine={null}
+                title={PRACTICE_VIDEO_ROW_TITLE}
+                interactive={false}
+              />
+            ) : null}
+            {!take && separateTakeRef.current ? (
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => void recordSeparateTake()}
+                accessibilityRole="button"
+                accessibilityLabel="Record the take now"
+              >
+                <Text style={styles.primaryBtnText}>{'Record the take now'}</Text>
+              </TouchableOpacity>
             ) : null}
 
             {/* ── vc49: THE TRIM, WHERE THE USER RECORDS (owner 11-03) ────────
@@ -1451,8 +1795,8 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 SAME state (`trimSpan`), persisted through the SAME
                 `handleSpanChange` → `attachPracticeVideo`, and it still feeds
                 `trimmedSendPair`, so the PDF, the MIDI and the video can never
-                describe different windows. Shown whenever there is a video to
-                trim; a take whose video failed to save says so above instead. */}
+                describe different windows. vc50: it now draws the take's length
+                as a timeline, because the length it was given was 0. */}
             {practiceVideoIsUsable(ref) ? (
               <TakeClipTagEditor
                 durationSec={Math.max(0, Number(ref?.durationSec) || 0)}

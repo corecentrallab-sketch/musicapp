@@ -25,7 +25,7 @@
  * video lives in src/services/practiceVideoRef.ts, which IS tier1-compiled.
  */
 import * as FileSystem from 'expo-file-system';
-import { getRecognitionHistory, saveRecognition, updateRecognitionPracticeVideo } from './storage';
+import { getRecognitionHistory, saveRecognition, updateRecognitionCapture, updateRecognitionPracticeVideo } from './storage';
 import { personalMelodyPiece } from './melodyStore';
 import {
   PRACTICE_VIDEO_DIR_NAME,
@@ -148,6 +148,32 @@ export async function savePracticeVideoRow(
     await attachPracticeVideo(piece.id, input.videoRef);
   }
   return piece;
+}
+
+/**
+ * ── THE TAKE ARRIVES AFTER THE VIDEO (vc50 fix, owner 11-04) ──────────────────
+ *
+ * The screen now lands the user on the review surface as soon as the VIDEO is on
+ * disk, and reads the notes out of the audio afterwards (a decode over a
+ * three-minute take can take seconds, and it used to hold the whole surface on a
+ * spinner with nothing on it). `savePracticeVideoRow` cannot do that second write:
+ * it skips a row that is already in History (`saveRecognition` is idempotent by
+ * id), so the take is attached to the EXISTING row through the one seam that does
+ * that — `updateRecognitionCapture`.
+ *
+ * Returns false when there was no take or the row is gone; callers say so.
+ */
+export async function savePracticeVideoTake(
+  rowId: string,
+  take: SavedCaptureTake | null,
+): Promise<boolean> {
+  if (!take) return false;
+  if (typeof rowId !== 'string' || rowId.length === 0) return false;
+  try {
+    return await updateRecognitionCapture(rowId, take);
+  } catch {
+    return false;
+  }
 }
 
 /**

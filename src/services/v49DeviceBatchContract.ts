@@ -240,13 +240,20 @@ export function countInCannotShiftTheTakeStart(screenSource: string): boolean {
   // The countdown is the only thing that starts the captures, and only at zero.
   if (src.indexOf("if (phase !== 'count_in') return undefined;") < 0) return false;
   const effectAt = src.indexOf("if (phase !== 'count_in') return undefined;");
-  const effectEnd = src.indexOf('}, [phase, countInSec, startBothCaptures]);', effectAt);
+  /**
+   * vc50: the effect's dependencies are the PHASE and the CHOICE only. The
+   * callback it calls lives in a ref (`startBothCapturesRef`), because a callback
+   * built from `useAudioRecorder()` changes identity on every render and used to
+   * restart the interval on every render — the "count timer gets stuck" defect.
+   */
+  const effectEnd = src.indexOf('}, [phase, countInSec]);', effectAt);
   if (effectEnd < 0) return false;
   const effect = src.slice(effectAt, effectEnd);
   // EXACTLY ONE start, and it is inside the zero branch (a second call on any
   // other tick would start a capture mid-count).
-  if (countOf(effect, 'startBothCaptures()') !== 1) return false;
-  return /left <= 0[\s\S]{0,160}startBothCaptures\(\)/.test(effect);
+  if (countOf(effect, 'startBothCapturesRef.current()') !== 1) return false;
+  if (src.indexOf('startBothCapturesRef.current = startBothCaptures;') < 0) return false;
+  return /left <= 0[\s\S]{0,240}startBothCapturesRef\.current\(\)/.test(effect);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -286,7 +293,9 @@ export function recordingLengthIsBounded(screenSource: string, optionsSource: st
   if (src.indexOf('const limit = clampRecordingLength(recordingLengthSec);') < 0) return false;
   if (src.indexOf('recordingLengthReached(seconds, limit)') < 0) return false;
   // Reaching it stops the take the normal way (never a silent truncation).
-  return /autoStopRef\.current[\s\S]{0,400}handleStop\(\)/.test(src);
+  // vc50: through the current `handleStop`, held in a ref so the timer's own
+  // dependencies stay stable (see `countInCannotShiftTheTakeStart`).
+  return /autoStopRef\.current[\s\S]{0,400}handleStopRef\.current\(\)/.test(src);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

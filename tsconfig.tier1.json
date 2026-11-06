@@ -244,6 +244,9 @@
     "scripts/billingMode.test.ts",
     "src/services/practiceRecordingOptions.ts",
     "src/services/v49DeviceBatchContract.ts",
-    "scripts/v49DeviceBatch.test.ts"
+    "scripts/v49DeviceBatch.test.ts",
+    "src/services/takeClipTag.ts",
+    "src/services/v50PracticeVideoContract.ts",
+    "scripts/v50PracticeVideo.test.ts"
   ]
 }
