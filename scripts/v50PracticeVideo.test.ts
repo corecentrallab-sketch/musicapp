@@ -38,7 +38,7 @@ import {
   V50_CLIP_MODULE_PATH,
   V50_OPTIONS_PATH,
   V50_SCREEN_PATH,
-  billingPermissionIsDeclared,
+  noBillingSurfaceInBuild,
   countInTicksToZero,
   recordSurfaceShowsTheTake,
   recordingClockIsStable,
@@ -208,7 +208,8 @@ function testGuardsOnRealFiles(): void {
   assert(takeCannotBeDropped(screen), 'GUARD 4: a completed take cannot be dropped');
   assert(recordSurfaceShowsTheTake(screen), 'GUARD 5: the review surface shows the take it filmed');
   assert(watchSurfaceIsNeverEmpty(screen), 'GUARD 6: the watch surface is never an empty page');
-  assert(billingPermissionIsDeclared(appJson, pkg, billing), 'GUARD 7: the billing permission, and nothing else');
+  assert(noBillingSurfaceInBuild(appJson, pkg, billing),
+    'GUARD 7: no billing permission, no billing SDK, and billing OFF');
   assert(v50IsGated(tsconfig, pkg), 'GUARD 8: this suite and its modules are in the gate');
 }
 
@@ -308,16 +309,26 @@ function testMutations(): void {
   const noWayOut = replaceOnce(screen, 'onPress={handleRecordAgain}', 'onPress={() => undefined}');
   assert(!watchSurfaceIsNeverEmpty(noWayOut), 'MUTATION 6b: no way out of the empty page → guard fails');
 
-  // THE SCOPED EXTRA — the permission, and nothing else.
-  const noPermission = appJson.replace('        "com.android.vending.BILLING"\n', '');
-  assert(!billingPermissionIsDeclared(noPermission, pkg, billing),
-    'MUTATION 7a: the billing permission removed → guard fails');
+  // NO BILLING SURFACE — vc51 inverted this guard after Play refused the release.
+  // The permission alone, with no library behind it, is what Play reads as the
+  // legacy AIDL client and blocks; so its RETURN is now the defect, not its absence.
+  const withPermission = appJson.replace(
+    '"android.permission.MODIFY_AUDIO_SETTINGS"\n',
+    '"android.permission.MODIFY_AUDIO_SETTINGS",\n        "com.android.vending.BILLING"\n',
+  );
+  assert(withPermission.indexOf('com.android.vending.BILLING') >= 0,
+    'MUTATION 7a setup: the permission really was put back');
+  assert(!noBillingSurfaceInBuild(withPermission, pkg, billing),
+    'MUTATION 7a: the billing permission put back → guard fails');
   const withLibrary = pkg.replace('"expo": "~52.0.0"', '"expo": "~52.0.0", "react-native-iap": "^12.0.0"');
-  assert(!billingPermissionIsDeclared(appJson, withLibrary, billing),
-    'MUTATION 7b: a billing SDK added alongside the permission → guard fails');
+  assert(!noBillingSurfaceInBuild(appJson, withLibrary, billing),
+    'MUTATION 7b: a billing SDK added → guard fails');
   const billingOn = replaceOnce(billing, 'BILLING_ENABLED: boolean = false', 'BILLING_ENABLED: boolean = true');
-  assert(!billingPermissionIsDeclared(appJson, pkg, billingOn),
+  assert(!noBillingSurfaceInBuild(appJson, pkg, billingOn),
     'MUTATION 7c: the build turned back into a shop → guard fails');
+  const noCamera = appJson.replace('        "android.permission.CAMERA",\n', '');
+  assert(!noBillingSurfaceInBuild(noCamera, pkg, billing),
+    'MUTATION 7d: the camera permission stripped along with billing → guard fails');
 
   // THE GATE ITSELF.
   const ungated = pkg.replace('/tmp/tier1-test/scripts/v50PracticeVideo.test.js', '');
