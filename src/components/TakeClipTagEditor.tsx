@@ -47,6 +47,8 @@ import {
   normaliseTakeTag,
   tagPresetIsActive,
   trimSpanLabel,
+  trimTimeline,
+  trimTimelineLine,
   type TakeTrimSpan,
 } from '../services/takeClipTag';
 import { videoClock } from '../services/videoTakeSync';
@@ -113,27 +115,65 @@ export const TakeClipTagEditor: React.FC<TakeClipTagEditorProps> = ({
   );
 
   const whole = trimSpanLabel(span);
+  /**
+   * ── THE TIMELINE (vc50 fix, owner 11-04) ────────────────────────────────────
+   *
+   * "I did not see any video timer on the screen or underneath for trimming the
+   * video." The control now draws the take's whole length as a bar with the
+   * window lit up on it, and says the length in words underneath. When the length
+   * is not known the bar is replaced by an honest sentence and the ± controls are
+   * DISABLED — a press that `nudgeTrimSpan` would silently discard is a dead
+   * control, and a dead control is the defect.
+   */
+  const timeline = trimTimeline(span, durationSec);
+  const canTrim = !timeline.unknown;
 
   return (
     <View style={styles.wrap}>
       <Text style={styles.sectionTitle}>{TRIM_LABEL}</Text>
       <Text style={styles.hint}>{TRIM_HINT}</Text>
 
+      {/* THE BAR: the whole video, with the window drawn on it. */}
+      {canTrim ? (
+        <View
+          style={styles.timeline}
+          accessibilityRole="progressbar"
+          accessibilityLabel={trimTimelineLine(timeline)}
+        >
+          <View
+            style={[
+              styles.timelineWindow,
+              {
+                left: `${Math.round(timeline.startFrac * 100)}%`,
+                width: `${Math.max(2, Math.round(timeline.widthFrac * 100))}%`,
+              },
+            ]}
+          />
+        </View>
+      ) : null}
+      <Text style={canTrim ? styles.timelineLine : styles.timelineUnknown}>
+        {trimTimelineLine(timeline)}
+      </Text>
+
       <View style={styles.trimRow}>
         <Text style={styles.trimLabel}>{TRIM_START_LABEL}</Text>
         <TouchableOpacity
-          style={styles.stepBtn}
+          style={[styles.stepBtn, !canTrim && styles.stepBtnOff]}
           onPress={() => step('start', -TRIM_STEP_SECONDS)}
+          disabled={!canTrim}
           accessibilityRole="button"
+          accessibilityState={{ disabled: !canTrim }}
           accessibilityLabel="Start the clip one second earlier"
         >
           <Text style={styles.stepBtnText}>{TRIM_EARLIER_LABEL}</Text>
         </TouchableOpacity>
         <Text style={styles.trimValue}>{videoClock(span?.startSec ?? 0)}</Text>
         <TouchableOpacity
-          style={styles.stepBtn}
+          style={[styles.stepBtn, !canTrim && styles.stepBtnOff]}
           onPress={() => step('start', TRIM_STEP_SECONDS)}
+          disabled={!canTrim}
           accessibilityRole="button"
+          accessibilityState={{ disabled: !canTrim }}
           accessibilityLabel="Start the clip one second later"
         >
           <Text style={styles.stepBtnText}>{TRIM_LATER_LABEL}</Text>
@@ -143,18 +183,22 @@ export const TakeClipTagEditor: React.FC<TakeClipTagEditorProps> = ({
       <View style={styles.trimRow}>
         <Text style={styles.trimLabel}>{TRIM_END_LABEL}</Text>
         <TouchableOpacity
-          style={styles.stepBtn}
+          style={[styles.stepBtn, !canTrim && styles.stepBtnOff]}
           onPress={() => step('end', -TRIM_STEP_SECONDS)}
+          disabled={!canTrim}
           accessibilityRole="button"
+          accessibilityState={{ disabled: !canTrim }}
           accessibilityLabel="End the clip one second earlier"
         >
           <Text style={styles.stepBtnText}>{TRIM_EARLIER_LABEL}</Text>
         </TouchableOpacity>
         <Text style={styles.trimValue}>{videoClock(span?.endSec ?? durationSec)}</Text>
         <TouchableOpacity
-          style={styles.stepBtn}
+          style={[styles.stepBtn, !canTrim && styles.stepBtnOff]}
           onPress={() => step('end', TRIM_STEP_SECONDS)}
+          disabled={!canTrim}
           accessibilityRole="button"
+          accessibilityState={{ disabled: !canTrim }}
           accessibilityLabel="End the clip one second later"
         >
           <Text style={styles.stepBtnText}>{TRIM_LATER_LABEL}</Text>
@@ -256,6 +300,27 @@ const baseStyles = StyleSheet.create({
     minWidth: 48,
     textAlign: 'center',
   },
+  /** vc50: the whole take as a bar, with the window lit up on it. */
+  timeline: {
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#101024',
+    borderColor: '#25324f',
+    borderWidth: 1,
+    marginTop: 12,
+    overflow: 'hidden',
+  },
+  timelineWindow: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    backgroundColor: '#4ecdc4',
+    borderRadius: 7,
+  },
+  timelineLine: { color: '#cfe4ff', fontSize: 13, fontWeight: '700', marginTop: 8 },
+  timelineUnknown: { color: '#ffd166', fontSize: 12, lineHeight: 17, marginTop: 8 },
+  /** A step button with no length to step inside: dimmed and disabled, never dead. */
+  stepBtnOff: { opacity: 0.4, borderColor: '#2f4370' },
   input: {
     minHeight: 44,
     borderRadius: 10,

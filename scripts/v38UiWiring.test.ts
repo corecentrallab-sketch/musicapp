@@ -382,9 +382,11 @@ probe('guard 5: nothing is persisted before the row is written', rowFirst, SCREE
 );
 
 // 6a — a second decode of the same audio.
+// vc50: the decode now runs inside the bounded `settleWithin(...)` wrapper, so the
+// mutation anchors on the CALL, not on the surrounding `const derived = await`.
 const secondDecode = SCREEN.replace(
-  'const derived = await deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt });',
-  'const derived = await deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt });\n        const again = await deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt });',
+  'deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt }),',
+  'deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt }), deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt }),',
 );
 probe('guard 6: the take is decoded twice', secondDecode, SCREEN, () => videoUsesTheOneDecodeSeam(secondDecode));
 // 6b — the screen grows its own network route.

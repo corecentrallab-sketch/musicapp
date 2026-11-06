@@ -253,8 +253,11 @@ function mutationProbes(): void {
   );
   // 2c. the notes editor opens itself over the review surface again
   const autoEditor = SCREEN.replace(
-    'if (!persisted.uri) setErrorLine(PRACTICE_VIDEO_NOT_KEPT_LINE);',
-    'if (!persisted.uri) setErrorLine(PRACTICE_VIDEO_NOT_KEPT_LINE);\n      setEditorOpen(true);',
+    // vc50 re-anchor: the not-kept line now names the failure reason, so the
+    // mutation follows the live text. Still inside `keepTake`, which is the
+    // callback the guard inspects.
+    'if (!persisted.uri) setErrorLine(videoFailureRef.current ?? PRACTICE_VIDEO_NOT_KEPT_LINE);',
+    'if (!persisted.uri) setErrorLine(videoFailureRef.current ?? PRACTICE_VIDEO_NOT_KEPT_LINE);\n      setEditorOpen(true);',
   );
   assertEq(
     recordFlowOffersTheTrim(autoEditor),
@@ -294,8 +297,11 @@ function mutationProbes(): void {
   );
   // 3c. the capture starts before the countdown ends
   const earlyStart = SCREEN.replace(
-    'if (left <= 0) {\n        clearInterval(timer);\n        void startBothCaptures();',
-    'if (left <= 0) {\n        clearInterval(timer);\n        void startBothCaptures();\n      }\n      if (left > 0) {\n        void startBothCaptures();',
+    // vc50 re-anchor: the capture now runs through `startBothCapturesRef.current()`
+    // (the ref is what stopped the count-in restarting every render). The mutation
+    // still adds a second call on a NON-ZERO tick — the defect this guard exists for.
+    'startBothCapturesRef.current();\n      }\n    }, 250);',
+    'startBothCapturesRef.current();\n      }\n      if (left > 0) { startBothCapturesRef.current(); }\n    }, 250);',
   );
   assert(earlyStart !== SCREEN, 'PROBE 10 setup: the capture is started on a non-zero tick too');
   assertEq(

@@ -161,6 +161,75 @@ export function nudgeTrimSpan(
   return normaliseTrimSpan(next, duration);
 }
 
+/**
+ * ── THE CLIP'S TIMELINE (vc50 fix, owner 11-04) ───────────────────────────────
+ *
+ * THE DEFECT THIS REPLACES. "I did not see any video timer on the screen or
+ * underneath for trimming the video." The clip control drew two rows of ±
+ * buttons and two numbers, and nothing else: no length, no bar, no picture of
+ * where the window sat in the take. Worse, the length it was handed came from the
+ * recording clock, which read 0 because of the effect-restart defect (see
+ * `recordingElapsedSec`), so both numbers said 0:00 and every ± press was
+ * silently discarded by `nudgeTrimSpan` (a video shorter than
+ * `TRIM_MIN_SECONDS` has no window to move).
+ *
+ * The geometry below is pure, so the surface can draw a real bar and say the
+ * length in words, and a test can prove the bar matches the window.
+ */
+export interface TrimTimeline {
+  /** True when the video's length is unknown — nothing is drawn, the row says so. */
+  unknown: boolean;
+  /** The whole video's length, as a clock (`0:32`). */
+  durationLabel: string;
+  /** 0..1 — where the window starts on the whole video. */
+  startFrac: number;
+  /** 0..1 — how much of the video the window covers (1 with no window). */
+  widthFrac: number;
+  /** `0:02–0:18`, or null when the whole take goes. */
+  windowLabel: string | null;
+}
+
+/** Said instead of a timeline when the length could not be measured. */
+export const TRIM_LENGTH_UNKNOWN_LINE =
+  'This video’s length could not be measured, so there is no timeline to draw and no window to move. Your video and your take are saved.';
+
+/** The bar's geometry and the words beside it, from the span and the length. */
+export function trimTimeline(
+  span: TakeTrimSpan | null | undefined,
+  durationSec: number,
+): TrimTimeline {
+  const duration = Number(durationSec);
+  const known = Number.isFinite(duration) && duration >= TRIM_MIN_SECONDS;
+  if (!known) {
+    return {
+      unknown: true,
+      durationLabel: videoClock(0),
+      startFrac: 0,
+      widthFrac: 1,
+      windowLabel: null,
+    };
+  }
+  const bounded = normaliseTrimSpan(span ?? null, duration);
+  const start = bounded ? Math.min(Math.max(0, bounded.startSec), duration) : 0;
+  const end = bounded ? Math.min(Math.max(start, bounded.endSec), duration) : duration;
+  return {
+    unknown: false,
+    durationLabel: videoClock(duration),
+    startFrac: start / duration,
+    widthFrac: Math.max(0, Math.min(1, (end - start) / duration)),
+    windowLabel: bounded ? trimSpanLabel(bounded) : null,
+  };
+}
+
+/** `Length 0:32 · sending 0:02–0:18` — the one line under the bar. */
+export function trimTimelineLine(timeline: TrimTimeline): string {
+  if (!timeline || timeline.unknown) return TRIM_LENGTH_UNKNOWN_LINE;
+  const window = timeline.windowLabel;
+  return window
+    ? `Length ${timeline.durationLabel} · sending ${window}`
+    : `Length ${timeline.durationLabel} · sending the whole take`;
+}
+
 export interface TrimmedTake {
   take: SavedCaptureTake | null;
   span: TakeTrimSpan | null;

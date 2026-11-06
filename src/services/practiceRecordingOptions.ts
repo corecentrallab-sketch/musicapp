@@ -75,6 +75,38 @@ export function countInCountdownLine(remaining: number): string {
   return `Starting in ${left}…`;
 }
 
+/**
+ * ── THE COUNT-IN'S CLOCK, AS AN ABSOLUTE DEADLINE (vc50 fix, owner 11-04) ─────
+ *
+ * THE DEFECT THIS REPLACES. The countdown was computed from a `started` stamp
+ * taken INSIDE the effect that owned the interval. That effect listed the
+ * capture callback in its dependency array, and that callback is rebuilt on every
+ * render (`useAudioRecorder()` returns a fresh object each render), so the effect
+ * was torn down and restarted on every render — resetting `started` and the
+ * displayed number. The countdown therefore re-painted its first number forever:
+ * "the count timer gets stuck and doesn't count down on 3 & 5 second intervals".
+ *
+ * THE RULE NOW. The count-in is a DEADLINE in epoch milliseconds, computed once
+ * when the phase is entered, and the number on screen is a pure function of
+ * (deadline, now). A re-render, a slow tick or a dropped frame cannot move it,
+ * because nothing about it depends on when the effect last ran. The two pure
+ * functions below are that rule, and `scripts/v50PracticeVideo.test.ts` proves
+ * the number decrements once per second and reaches 0 exactly at the deadline.
+ */
+export function countInDeadline(countInSec: number, nowMs: number): number {
+  const now = Number(nowMs);
+  const base = Number.isFinite(now) ? now : 0;
+  return base + normaliseCountIn(countInSec) * 1000;
+}
+
+/** How many whole seconds are left before the deadline (`0` = start filming). */
+export function countInRemainingSec(deadlineMs: number, nowMs: number): number {
+  const deadline = Number(deadlineMs);
+  const now = Number(nowMs);
+  if (!Number.isFinite(deadline) || !Number.isFinite(now)) return 0;
+  return Math.max(0, Math.ceil((deadline - now) / 1000));
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // THE RECORDING LENGTH
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,6 +169,31 @@ export function recordingProgressLine(elapsedSec: number, lengthSec: number): st
 export function recordingLengthReached(elapsedSec: number, lengthSec: number): boolean {
   const elapsed = Math.max(0, Math.round(Number(elapsedSec) || 0));
   return elapsed >= clampRecordingLength(lengthSec);
+}
+
+/**
+ * ── THE RECORDING CLOCK, MEASURED FROM THE START STAMP (vc50 fix, owner 11-04) ─
+ *
+ * THE DEFECT THIS REPLACES. The running clock took its `started` stamp inside the
+ * effect that owned the interval, and that effect listed `handleStop` in its
+ * dependencies — a callback rebuilt on every render (see `countInDeadline` above).
+ * The metering hook re-renders the screen every 200 ms while recording, so the
+ * effect restarted every 200 ms, `started` was reset every 200 ms, and the clock
+ * read 0:00 for the whole take. Three owner-visible symptoms came from that one
+ * line: the length timer never moved, the chosen length never triggered its stop,
+ * and the take was stored with `durationSec: 0` — which is why the trim window had
+ * no timeline and no length on it.
+ *
+ * The clock is now a pure function of (start stamp, now): the stamp is taken once,
+ * when the camera is asked to record, so no ticker state can move it. The SAME
+ * function measures the finished take at Stop, which is what makes a 40-second
+ * take 40 seconds long no matter how many frames the JS thread dropped.
+ */
+export function recordingElapsedSec(startedAtMs: number, nowMs: number): number {
+  const started = Number(startedAtMs);
+  const now = Number(nowMs);
+  if (!Number.isFinite(started) || !Number.isFinite(now)) return 0;
+  return Math.max(0, Math.round((now - started) / 1000));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
