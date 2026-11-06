@@ -349,33 +349,47 @@ export function watchSurfaceIsNeverEmpty(screenSource: string): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GUARD 7 — THE ONE SCOPED EXTRA: THE BILLING PERMISSION, AND NOTHING ELSE
+// GUARD 7 — NO BILLING SURFACE AT ALL: NO PERMISSION, NO SDK, BILLING OFF
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The owner is mid-way through the Google Play Billing application and Play
- * Console cannot create in-app products until an uploaded AAB carries
- * `com.android.vending.BILLING`. This build declares the PERMISSION only: no
- * billing library, no price code, no purchase surface, and the app's own billing
- * switch stays OFF.
+ * vc51 — THE BILLING PERMISSION COMES BACK OUT, AND THE GUARD IS INVERTED.
+ *
+ * vc50 added `com.android.vending.BILLING` on the reasoning that Play Console
+ * cannot create in-app products without it. Play then REFUSED the release:
+ *
+ *   "Your app currently uses Play Billing Library version AIDL and must update
+ *    to at least version 8.0.0"
+ *
+ * There is no billing library in the build to update — all four dex files carry
+ * zero `com/android/billingclient` classes — because billing is OFF and nothing
+ * in the app sells anything. Play treats a declared BILLING permission with no
+ * Play Billing Library behind it as the legacy AIDL client, so the permission
+ * alone blocks every future release while buying us nothing we can use yet.
+ *
+ * The manifest now says what is true: NO billing permission, NO billing SDK, and
+ * the app's own switch OFF. When billing ships for real it arrives as Play Billing
+ * Library >= 8.0.0 AND the permission together, in one reviewed change — at which
+ * point this guard flips back to requiring exactly that pair.
  */
-export function billingPermissionIsDeclared(
+export function noBillingSurfaceInBuild(
   appJsonSource: string,
   packageSource: string,
   billingModeSource: string,
 ): boolean {
   if (appJsonSource.length < 500) return false;
-  if (countOf(appJsonSource, '"com.android.vending.BILLING"') !== 1) return false;
-  // It is inside the android permissions ARRAY, not floating somewhere else.
+  // The permission is GONE — not commented out, not moved elsewhere.
+  if (appJsonSource.indexOf('com.android.vending.BILLING') >= 0) return false;
+  // The permissions the practice video genuinely needs are still declared.
   const permsAt = appJsonSource.indexOf('"permissions"');
   if (permsAt < 0) return false;
   const arrStart = appJsonSource.indexOf('[', permsAt);
   const arrEnd = appJsonSource.indexOf(']', arrStart);
   if (arrStart < 0 || arrEnd < 0) return false;
   const permissions = appJsonSource.slice(arrStart, arrEnd);
-  if (permissions.indexOf('"com.android.vending.BILLING"') < 0) return false;
   if (permissions.indexOf('"android.permission.CAMERA"') < 0) return false;
-  // THE PERMISSION ONLY: no billing SDK may ride along.
+  if (permissions.indexOf('"android.permission.RECORD_AUDIO"') < 0) return false;
+  // …nor may a billing SDK ride along.
   const banned = ['react-native-iap', 'expo-in-app-purchases', 'expo-iap', 'react-native-google-play-billing'];
   for (const name of banned) {
     if (packageSource.indexOf(name) >= 0) return false;
