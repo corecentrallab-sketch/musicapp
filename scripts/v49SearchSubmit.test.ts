@@ -51,6 +51,7 @@ import {
   SUBMIT_PROP,
   emptyStateCarriesTheRetailerRoute,
   jsxBranchBody,
+  noMatchMoneyPathComesFirst,
   prefillGateSurvivesSubmitFix,
   propExpression,
   submitHandlerSearchesImmediately,
@@ -283,6 +284,22 @@ function liveScanTests(screen: string): void {
     'C: the zero-match state cannot render without the retailer route (no dead end)',
   );
 
+  // E (v51, owner item 12). The money path comes BEFORE the explanation, and its
+  // disclosure sits outside the tap target.
+  assertEq(
+    noMatchMoneyPathComesFirst(screen),
+    true,
+    'E: the licensed CTA + its disclosure render ABOVE the public-domain explanation',
+  );
+  assert(
+    emptyBody.indexOf('{AFFILIATE_DISCLOSURE}') >= 0,
+    'E: the zero-match CTA carries its affiliate disclosure in the same block',
+  );
+  assert(
+    emptyBody.indexOf('{AFFILIATE_DISCLOSURE}') > emptyBody.indexOf('</TouchableOpacity>'),
+    'E: that disclosure is OUTSIDE the tap target (after the button closes)',
+  );
+
   // D. the v42 fix-D gate survives
   assert(
     screen.indexOf(PREFILL_GATE) >= 0,
@@ -416,6 +433,48 @@ function mutationTests(screen: string): void {
       emptyStateCarriesTheRetailerRoute(mutation.source),
       false,
       `MUTATION: ${mutation.label} FAILS thesis C (the zero-match state must carry the retailer route)`,
+    );
+  }
+
+  /* E (v51, owner item 12) — put the SHIPPED ORDER back and prove the guard fails.
+     A probe that no longer changes the source is a broken gate, so each mutation
+     first asserts it actually edited the screen. */
+  const orderMutations: { label: string; source: string }[] = [
+    {
+      label: 'the CTA is moved back BELOW the public-domain explanation (the shipped order)',
+      source: screen.replace(
+        /(            \{noMatch\.showRetailer && noMatch\.retailerUrl \? \([\s\S]*?\n            \) : null\}\n)(            <Text style=\{styles\.emptyText\}>\{NO_MATCH_MESSAGE\}<\/Text>\n            <Text style=\{styles\.emptyText\}>\{noMatch\.honestyLine\}<\/Text>\n)/,
+        '$2$1',
+      ),
+    },
+    {
+      label: 'the disclosure is moved INSIDE the tap target (a child of the button)',
+      source: screen.replace(
+        '                </TouchableOpacity>\n                {/* Outside the tap target, per the standing money-path rule. */}\n                <Text style={styles.noMatchDisclosure}>{AFFILIATE_DISCLOSURE}</Text>\n',
+        '                  <Text style={styles.noMatchDisclosure}>{AFFILIATE_DISCLOSURE}</Text>\n                </TouchableOpacity>\n',
+      ),
+    },
+    {
+      label: 'the affiliate disclosure is dropped from the zero-match CTA',
+      source: screen.replace(
+        '                <Text style={styles.noMatchDisclosure}>{AFFILIATE_DISCLOSURE}</Text>\n',
+        '',
+      ),
+    },
+    {
+      label: 'the retry line is dropped, so the state offers no way forward',
+      source: screen.replace(
+        '            <Text style={styles.emptyText}>{NO_MATCH_MESSAGE}</Text>\n',
+        '',
+      ),
+    },
+  ];
+  for (const mutation of orderMutations) {
+    assert(mutation.source !== screen, `the mutation "${mutation.label}" changed the real screen`);
+    assertEq(
+      noMatchMoneyPathComesFirst(mutation.source),
+      false,
+      `MUTATION: ${mutation.label} FAILS thesis E (money path first, disclosure outside the tap target)`,
     );
   }
 

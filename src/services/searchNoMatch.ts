@@ -113,10 +113,19 @@ export function noMatchState(
     headline: `No match for ${quoted}`,
     searchedLine:
       'The search ran — nothing in our free public-domain and classical library matches those words.',
+    /*
+     * v51 (owner item 12): SHORTENED. This line used to be three sentences about
+     * public-domain licensing, and it sat BETWEEN the no-match message and the
+     * retailer button — so on a phone the money path was below the fold and behind
+     * an essay ("then a long public-domain explanation, and the red retailer button
+     * is below the fold"). The button now renders ABOVE this line, and the line
+     * says only what the user needs: no free score here, the published edition is
+     * the way to play it. The v49 assertion `/not in the free library/i` still
+     * matches, and the fuller explanation of what the free library is lives in the
+     * retailer section below, where it is not in the way.
+     */
     honestyLine:
-      'This piece is not in the free library, so there is no free score to open here. ' +
-      'The official published edition is sold by the licensed retailers below, ' +
-      'and they are searching for your words, not ours.',
+      'This piece is not in the free library, so the official published edition is the way to play it.',
     retailerCtaLabel: `${NO_MATCH_RETAILER_CTA_PREFIX} ${quoted}`,
     retailerUrl,
     showRetailer,
