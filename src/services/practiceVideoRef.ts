@@ -208,9 +208,13 @@ export function practiceVideoRefFromCapture(input: PracticeVideoCaptureInput): P
  *   • `<Video source={{ uri: ref.uri }} />` failed with TS18047 (`ref` possibly
  *     null) — PracticeVideoScreen.tsx:1739.
  * Neither was caught by any gate, because `tsconfig.tier1.json` compiles only the
- * pure service modules and never a screen. Both are now narrowed properly, and
- * `npm run test:tier1` type-checks the screens (see tsconfig.screens.json), so the
- * next one of these fails the gate instead of shipping.
+ * pure service modules and never a screen. Both are narrowed properly here.
+ *
+ * STILL OPEN: `tsconfig.screens.json` exists but is NOT wired into
+ * `npm run test:tier1`. On the build box it reports 57 TS7016 errors
+ * ("Could not find a declaration file") from an incomplete `node_modules`, so it
+ * cannot go green there. Until it is wired in and proven to bite, a screen type
+ * error can still ship — this file's two are fixed, the hole is not closed.
  */
 export function practiceVideoIsUsable(
   ref: PracticeVideoRef | null | undefined,
