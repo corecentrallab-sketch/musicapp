@@ -87,6 +87,11 @@ import { SearchExternalSection } from '../components/SearchExternalSection';
 // neither can drift back into the screen. Guarded by services/searchSubmitContract.ts.
 import { planSearchSubmit } from '../services/searchSubmit';
 import { noMatchState } from '../services/searchNoMatch';
+// v51 (owner item 12) — the zero-match CTA now carries its OWN affiliate
+// disclosure directly beneath it, as a sibling of the button: the CTA moved above
+// the explanation, and the disclosure must still render outside the tap target.
+// Same constant the rest of the money path uses (one spelling, one place).
+import { AFFILIATE_DISCLOSURE } from '../services/v471bMoneyCta';
 // ── v46 CORRECTIVE: THIS SCREEN **IS** DISCOVER ──────────────────────────────
 // The ratified v45 design puts the genre surface HERE, not on Home: "Home
 // (minimal) → Discover (five families + money rows) → family screen", and
@@ -972,26 +977,49 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
             <Text style={styles.emptyEmoji}>🔍</Text>
             <Text style={styles.emptyTitle}>{noMatch.headline}</Text>
             <Text style={styles.emptyText}>{noMatch.searchedLine}</Text>
+            {/* ── THE MONEY PATH COMES FIRST (v51, owner item 12) ────────────────
+                The owner's report: "when I typed something not found, the no-match
+                message is at the top, then a long public-domain explanation, and the
+                red retailer button is below the fold — I have to close the keyboard
+                to reach it."
+
+                The order inside this block is now: PROOF the search ran (headline +
+                searched line) → the LICENSED EDITION, immediately → its affiliate
+                disclosure, as a SIBLING of the button and never a child of it →
+                the short explanation → the retry hint. The CTA is the fourth row of
+                a block that is the first child of the one results scroller, so it
+                lands above the keyboard on a 390 dp phone, and the scroller already
+                sets `keyboardShouldPersistTaps="handled"`, so the tap is not
+                swallowed by the keyboard's dismissal.
+
+                ONE GATE, TWO ELEMENTS (a fragment, not a second condition): the
+                disclosure must appear exactly when the button does. Duplicating the
+                `noMatch.showRetailer && noMatch.retailerUrl` gate would also have
+                blunted the v49 mutation probe that deletes this block — the gate
+                string would survive in the copy, the probe would inspect a screen
+                that still "has" the CTA, and it would pass. */}
+            {noMatch.showRetailer && noMatch.retailerUrl ? (
+              <>
+                <TouchableOpacity
+                  style={styles.emptyRetailerCta}
+                  onPress={() => handleOpenRetailer(noMatch.retailerUrl as string)}
+                  accessibilityRole="button"
+                  accessibilityLabel={noMatch.retailerCtaLabel}
+                >
+                  <Text
+                    style={[styles.emptyRetailerCtaText, { color: theme.accentInk }]}
+                  >
+                    {noMatch.retailerCtaLabel}
+                  </Text>
+                </TouchableOpacity>
+                {/* Outside the tap target, per the standing money-path rule. */}
+                <Text style={styles.noMatchDisclosure}>{AFFILIATE_DISCLOSURE}</Text>
+              </>
+            ) : null}
             <Text style={styles.emptyText}>{NO_MATCH_MESSAGE}</Text>
             <Text style={styles.emptyText}>{noMatch.honestyLine}</Text>
-            {/* The no-dead-end line (owner 10-01): a song our free library does not
-                hold still has a money path, and it is right below this text. */}
             {external.visible ? (
               <Text style={styles.emptyText}>{EXTERNAL_NO_MATCH_HINT}</Text>
-            ) : null}
-            {noMatch.showRetailer && noMatch.retailerUrl ? (
-              <TouchableOpacity
-                style={styles.emptyRetailerCta}
-                onPress={() => handleOpenRetailer(noMatch.retailerUrl as string)}
-                accessibilityRole="button"
-                accessibilityLabel={noMatch.retailerCtaLabel}
-              >
-                <Text
-                  style={[styles.emptyRetailerCtaText, { color: theme.accentInk }]}
-                >
-                  {noMatch.retailerCtaLabel}
-                </Text>
-              </TouchableOpacity>
             ) : null}
           </View>
         ) : null}
@@ -1353,6 +1381,18 @@ const baseStyles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
     lineHeight: 21,
+  },
+  /* v51 — the affiliate disclosure that sits DIRECTLY under that CTA, as its
+     sibling (never inside the TouchableOpacity): the money-path rule is that the
+     line always renders outside the tap target. `#8a8aa3` is an existing palette
+     literal the light-theme remap already knows (→ subtext), the same one
+     SearchExternalSection's own disclosure uses. */
+  noMatchDisclosure: {
+    fontSize: 11,
+    color: '#8a8aa3',
+    lineHeight: 15,
+    marginTop: 8,
+    textAlign: 'center',
   },
   primaryBtn: {
     backgroundColor: '#e94560',

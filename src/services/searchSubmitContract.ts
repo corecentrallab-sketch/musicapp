@@ -219,6 +219,48 @@ export function emptyStateCarriesTheRetailerRoute(source: string): boolean {
 }
 
 /**
+ * THESIS E (v51, owner item 12) — THE MONEY PATH COMES BEFORE THE ESSAY.
+ *
+ * The owner's device report: "when I typed something not found, the no-match
+ * message is at the top, then a long public-domain explanation, and the red
+ * retailer button is below the fold — I have to close the keyboard to reach it.
+ * That's a money pathway problem."
+ *
+ * So, inside the zero-match branch, all of this must hold:
+ *   • the licensed CTA renders BEFORE the explanation (`noMatch.honestyLine`) and
+ *     before the retry line (`NO_MATCH_MESSAGE`) — the button is not a footnote;
+ *   • the affiliate disclosure (`{AFFILIATE_DISCLOSURE}`) renders with it, and
+ *     OUTSIDE the tap target: strictly AFTER the CTA's `</TouchableOpacity>`, so
+ *     the standing "the disclosure line always renders outside the tap target"
+ *     rule cannot be broken by moving it inside the button;
+ *   • the explanation and the retry line are BOTH still there, so "money path
+ *     first" never becomes "money path only" — the state still says what happened
+ *     and still offers a way forward (no dead end).
+ *
+ * Order is compared on the MASKED source, so a comment that mentions the button
+ * cannot satisfy any of it.
+ */
+export function noMatchMoneyPathComesFirst(source: string): boolean {
+  const masked = maskComments(source);
+  const body = jsxBranchBody(masked, EMPTY_BRANCH_ANCHOR);
+  if (body === '') return false;
+  const ctaAt = body.indexOf(EMPTY_RETAILER_CTA_GATE);
+  const openAt = body.indexOf(RETAILER_OPEN_HANDLER);
+  const ctaCloseAt = body.indexOf('</TouchableOpacity>');
+  const disclosureAt = body.indexOf('{AFFILIATE_DISCLOSURE}');
+  const messageAt = body.indexOf('NO_MATCH_MESSAGE');
+  const honestyAt = body.indexOf('noMatch.honestyLine');
+  if (ctaAt < 0 || openAt < 0 || ctaCloseAt < 0) return false;
+  if (disclosureAt < 0 || messageAt < 0 || honestyAt < 0) return false;
+  // The disclosure is a SIBLING of the button, never inside it.
+  if (disclosureAt < ctaCloseAt) return false;
+  // Button → disclosure → retry line → explanation.
+  if (!(ctaAt < disclosureAt)) return false;
+  if (!(disclosureAt < messageAt)) return false;
+  return messageAt < honestyAt;
+}
+
+/**
  * THESIS D — the v42 fix-D OCR gate survives the fix.
  *
  * A read from a photo is a PROPOSAL: it must not be searched until the user acts.

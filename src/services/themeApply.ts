@@ -130,6 +130,19 @@ export const LIGHT_FOREGROUND_ROLE: Record<string, keyof ThemeTokens> = {
   '#1f2b52': 'subtext',
   '#7a1f2b': 'danger',
   '#3a1020': 'danger',
+  /* v51 (owner D10 — "the light blue writing is unreadable especially in light
+     mode"). Four PALE-BLUE GLYPH literals that had no entry here, so a light
+     screen kept the pale ink and drew it on paper-white: measured 1.25:1, 2.60:1,
+     1.64:1 and 3.15:1 on `surface` (#ffffff). They are glyphs only — never a fill —
+     and every one of their sites sits on a THEMED surface (a `chip`/`eraChip` on
+     `#0f3460`, a card on `#16213e`, or a screen on `#12122b`/`#10101c`), so the
+     role below is the surface they actually sit on. Same rule as the v40 fix that
+     removed two stray `#cfe4ff` literals from ScanFindSection for this exact reason:
+     a palette literal must be one this table knows. */
+  '#cfe9ff': 'chipText', // eraChipText / FullScreenScore chipText / prefillNote
+  '#9aa0b5': 'subtext', // hints, subtitles, lane/column labels (sibling of #a0a0b8)
+  '#c8c8e0': 'text', // ScanScore thumb index, saved line, control label
+  '#8f8fa8': 'subtext', // Settings time-step label
 };
 
 /** Roles that stay a dark FILL in light mode — white labels on them stay white. */

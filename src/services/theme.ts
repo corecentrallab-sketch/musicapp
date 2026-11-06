@@ -39,9 +39,25 @@ export interface ThemeTokens {
   positive: string;
   danger: string;
   chipBg: string;
+  /**
+   * THE INK THAT SITS ON A CHIP (v51, owner D10 — "the light blue writing is
+   * unreadable especially in light mode - remove the colour from the app"). This
+   * token used to be `#cfe9ff` in the dark palette: a saturated pale blue (hue
+   * 208, 100% saturation) that read as COLOURED writing rather than as a label.
+   * It is now a near-neutral soft white in dark and the dark ink in light, so a
+   * chip label is legible in BOTH themes and carries no blue of its own.
+   */
   chipText: string;
   /** The staff's ink on the notation WebView (which is always white paper). */
   staffInk: string;
+  /**
+   * THE RAW TRACE'S INK on the notation paper. Its surface is the staff's PAPER,
+   * which is white in both themes (AbcScoreView's ABC_DEFAULT_BACKGROUND, and
+   * takeStaffPalette.TAKE_STAFF_PAPER), so this ink must be DARK in both palettes.
+   * It was `#9aa0b4` in both — a pale grey-blue measuring 2.61:1 on white paper,
+   * i.e. below AA in either theme. It now matches the take staff's own raw ink
+   * (`takeStaffPalette.TAKE_STAFF_RAW_INK`, 4.83:1 on the same paper).
+   */
   staffRawInk: string;
 }
 
@@ -59,9 +75,9 @@ export const DARK_THEME: ThemeTokens = {
   positive: '#4ecdc4',
   danger: '#e94560',
   chipBg: '#0f3460',
-  chipText: '#cfe9ff',
+  chipText: '#e8e8ea',
   staffInk: '#0b1220',
-  staffRawInk: '#9aa0b4',
+  staffRawInk: '#6b7280',
 };
 
 /** The light palette: the same roles, readable on paper-white. */
@@ -80,7 +96,7 @@ export const LIGHT_THEME: ThemeTokens = {
   chipBg: '#e6ebf5',
   chipText: '#25324a',
   staffInk: '#0b1220',
-  staffRawInk: '#9aa0b4',
+  staffRawInk: '#6b7280',
 };
 
 export const THEMES: Record<ThemeMode, ThemeTokens> = {
