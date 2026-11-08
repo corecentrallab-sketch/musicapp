@@ -21,7 +21,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "NoteSnap identifies music playing around you and finds the sheet music — free public-domain piano scores and guitar tabs, or official scores for modern songs. Practice tools, notation editing, and export built in.",
+          "NoteSnap identifies music playing around you and finds the sheet music — free public-domain piano scores, or official scores for modern songs. Practice tools, notation editing, and export built in.",
       },
       // Open Graph + Twitter defaults (leaf routes may override og:title,
       // og:description, og:url, and og:image per page).
