@@ -67,7 +67,10 @@ type TunerStatus = 'idle' | 'listening' | 'reading' | 'error';
 export const TunerScreen: React.FC = () => {
   const { styles, theme } = useThemedStyles(baseStyles);
   const recorder = useAudioRecorder();
-  const decoderRef = useRef<WebView>(null);
+  // `WebView`'s generic defaults to `undefined`, which turns the element's props
+  // (`WebViewProps & P`) into `never`; `{}` is the type argument that keeps them
+  // intact. See the same note in src/components/ScoreViewer.tsx.
+  const decoderRef = useRef<WebView<{}>>(null);
   const decoderReadyRef = useRef(false);
   /** A decode request that arrived before the page said it was ready. */
   const queuedRef = useRef<string | null>(null);

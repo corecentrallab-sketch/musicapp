@@ -37,7 +37,7 @@
  * the gate.
  */
 import { AppState, type AppStateStatus } from 'react-native';
-import { Audio } from 'expo-av';
+import { Audio, type AudioMode } from 'expo-av';
 import Constants from 'expo-constants';
 import { reportAudioFailure, usableDetail } from './audioDiagnostics';
 import type { AudioFailureReason, AudioFailureSource } from './audioDiagnostics';
@@ -84,14 +84,14 @@ export const AUDIO_MODE_TIMEOUT_MS = 2000;
  * of the ducking transient hint. Leaving the app pauses the players through
  * `pauseAllAudioPlayers` below, so nothing plays on behind the user.
  */
-export const PLAYBACK_AUDIO_MODE: Partial<Audio.AudioMode> = {
+export const PLAYBACK_AUDIO_MODE: Partial<AudioMode> = {
   ...PLAYBACK_SESSION_SPEC,
-} as Partial<Audio.AudioMode>;
+} as Partial<AudioMode>;
 
 /** THE RECORDING SESSION: the playback session plus the mic. */
-export const RECORDING_AUDIO_MODE: Partial<Audio.AudioMode> = {
+export const RECORDING_AUDIO_MODE: Partial<AudioMode> = {
   ...RECORDING_SESSION_SPEC,
-} as Partial<Audio.AudioMode>;
+} as Partial<AudioMode>;
 
 /** Which session the app believes it is in. */
 export type AudioModeName = 'playback' | 'recording' | 'unknown';
@@ -127,7 +127,7 @@ async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T
  * transition needs, because the recorder changes the session underneath us.
  */
 async function applyAudioMode(
-  mode: Partial<Audio.AudioMode>,
+  mode: Partial<AudioMode>,
   name: AudioModeName,
   force: boolean,
 ): Promise<boolean> {

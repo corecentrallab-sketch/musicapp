@@ -112,7 +112,12 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
   const [autoTurnExpanded, setAutoTurnExpanded] = useState(false);
   /** Auto-turn reached the last page and stopped itself. */
   const [autoTurnEnded, setAutoTurnEnded] = useState(false);
-  const webViewRef = useRef<WebView>(null);
+  // react-native-webview declares `class WebView<P = undefined> extends
+  // Component<WebViewProps & P>`. A bare `useRef<WebView>` pins P to its default
+  // `undefined`, which makes the element's props `WebViewProps & undefined` —
+  // i.e. `never` — so the `<WebView>` below cannot take a single prop. Naming the
+  // type argument as `{}` restores the library's real props type.
+  const webViewRef = useRef<WebView<{}>>(null);
 
   // v34b: the reader is themed like every other surface. `themeMode` comes from the
   // ONE app-wide binding (declared FIRST — the memo below runs during this render).
