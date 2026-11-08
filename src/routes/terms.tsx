@@ -4,7 +4,7 @@ export const Route = createFileRoute("/terms")({
   head: () => ({
     meta: [
       { title: "Terms of Service \u2014 NoteSnap" },
-      { name: "description", content: "NoteSnap's terms of service: free and Pro plans, auto-renewing subscriptions with one-tap cancel, affiliate disclosure for official sheet music links, and no hosting of copyrighted scores." },
+      { name: "description", content: "NoteSnap's terms of service: the free tier and one-time Pro, Pro — Complete and Family purchases through Google Play, affiliate disclosure for official sheet music links, and no hosting of copyrighted scores." },
     ],
     links: [{ rel: "canonical", href: "https://site-notesnap.vercel.app/terms" }],
   }),
@@ -19,7 +19,7 @@ function Terms() {
         <h1 className="mt-6 text-3xl font-bold tracking-tight text-stone-900 sm:text-4xl">
           Terms of Service
         </h1>
-        <p className="mt-2 text-sm text-stone-500">Last updated: August 2026</p>
+        <p className="mt-2 text-sm text-stone-500">Last updated: November 2026</p>
 
         <div className="mt-10 space-y-8 text-stone-600 leading-relaxed">
           <section>
@@ -37,9 +37,12 @@ function Terms() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-stone-900">3. Subscriptions</h2>
+            <h2 className="text-xl font-semibold text-stone-900">3. Plans and purchases</h2>
             <p className="mt-2">
-              The free tier includes 5 music recognitions per month with full access to the notation editor, practice tools, and exports. Pro and Family plans offer unlimited recognitions and additional features. Subscriptions auto-renew unless cancelled. You can cancel anytime with one tap — no commitments, no penalties.
+              The free tier includes 5 music recognitions per month with full access to the notation editor, practice tools, and exports. Pro, Pro — Complete and Family are <strong>one-time purchases</strong> of $4.99, $39.99 and $9.99 AUD respectively. They do not renew: there is no recurring charge and nothing to cancel.
+            </p>
+            <p className="mt-2">
+              Purchases are completed inside the Android app through Google Play. The amount you pay is the price Google Play shows you in your own currency at checkout, which Google converts from the Australian prices above. Refunds are handled by Google Play under its refund policy.
             </p>
           </section>
 
