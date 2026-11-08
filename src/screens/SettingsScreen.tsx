@@ -748,10 +748,28 @@ export const SettingsScreen: React.FC = () => {
   const openPrivacyPolicy = useCallback(() => {
     void WebBrowser.openBrowserAsync(SETTINGS_PRIVACY_URL);
   }, []);
-  /** About: the live version + what this build really does. */
+  /**
+   * ── vc52 (owner 11-08, STEP 0): THE BUILD STAMP, ONE GLANCE AWAY ──────
+   *
+   * The owner IS the release operator and could not find "v51 / 0.1.45" anywhere
+   * in the app: it existed, as a small grey line under the About row, and nothing
+   * else. Step 0 of every checklist ("Settings → About must read the version you
+   * were told to test") was therefore a hunt.
+   *
+   * It is now in two places a glance cannot miss, and Home still carries NONE
+   * (v43UiContract.homeCarriesNoBuildStamp stays green):
+   *   • the About ROW's own subtitle IS the stamp — visible on Settings itself,
+   *     no scrolling, no tapping;
+   *   • the About screen it opens LEADS with it (the alert's title), so a
+   *     screenshot of that dialog is self-contained.
+   * It is still built from the build's own constants, never a hard-coded version.
+   */
+  const stampInput = { version: appVersion, versionCode: appVersionCode, sha: BUILD_SHA };
+  const stampLine = buildStampLine(stampInput);
+  /** About: the stamp first, then the live version and what this build does. */
   const openAbout = useCallback(() => {
-    Alert.alert('NoteSnap', aboutDialogBody(appVersion));
-  }, [appVersion]);
+    Alert.alert(stampLine, `${aboutVersionLine(appVersion)}\n\n${aboutDialogBody(appVersion)}`);
+  }, [appVersion, stampLine]);
   // ── v45 slice 2 · the two retention entries (owner 10-26: off Home, in here) ──
   /** 🏅 Achievements — the medals surface, rendered in place like Home used to. */
   const handleOpenAchievements = useCallback(() => {
@@ -1053,7 +1071,7 @@ export const SettingsScreen: React.FC = () => {
           styles={styles}
           palette={palette}
           title="About NoteSnap"
-          sub={aboutVersionLine(appVersion)}
+          sub={stampLine}
           onPress={openAbout}
           hint="Shows the version and what this build does"
           chevron
@@ -1067,7 +1085,7 @@ export const SettingsScreen: React.FC = () => {
           accessibilityLabel={BUILD_STAMP_TAG}
           selectable
         >
-          {buildStampLine({ version: appVersion, versionCode: appVersionCode, sha: BUILD_SHA })}
+          {buildStampLine(stampInput)}
         </Text>
       </View>
 

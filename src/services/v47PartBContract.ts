@@ -276,7 +276,11 @@ export function clipIsPersistedAndAppliedToTheVideo(screenSource: string): boole
   if (screen.indexOf('trim: bounded') < 0) return false;
   if (screen.indexOf('attachPracticeVideo(row.rowId, updated)') < 0) return false;
   if (screen.indexOf('normaliseTrimSpan(') < 0) return false;
-  if (screen.indexOf('trimPlaybackShouldPause(position, trimSpan)') < 0) return false;
+  // vc52 (A4): the window is now enforced on EVERY status update through ONE
+  // rule, which covers the start of the window as well as its end — the v47
+  // wiring only paused at the end, which is why a trimmed take still played whole.
+  if (screen.indexOf('trimPlaybackAction(position, trimSpan)') < 0) return false;
+  if (screen.indexOf('trimPlaybackWindowLine(') < 0) return false;
   if (screen.indexOf('trimSpan={trimSpan}') < 0) return false;
   return screen.indexOf('{`Clip: ${trimSpanLabel(trimSpan)}`}') >= 0;
 }

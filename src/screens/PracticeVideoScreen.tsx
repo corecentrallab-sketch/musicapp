@@ -88,8 +88,14 @@ import {
   practiceVideoTakeLine,
   practiceVideoIsManuallyAligned,
   practiceVideoIsUsable,
+  practiceVideoPlaybackPlan,
+  practiceVideoSaveState,
+  PRACTICE_VIDEO_FILE_GONE_LINE,
   PRACTICE_VIDEO_KEEPING_LINE,
+  PRACTICE_VIDEO_SAVE_FAILED_HEADLINE,
+  PRACTICE_VIDEO_SAVE_RETRY_CTA,
   type PracticeVideoRef,
+  type PracticeVideoSaveState,
 } from '../services/practiceVideoRef';
 import {
   PRACTICE_VIDEO_NOT_KEPT_LINE,
@@ -98,6 +104,7 @@ import {
   listPracticeVideoRows,
   loadPracticeVideoRow,
   persistPracticeVideo,
+  practiceVideoFileExists,
   savePracticeVideoRow,
   savePracticeVideoTake,
 } from '../services/practiceVideoStore';
@@ -110,8 +117,10 @@ import {
   TAKE_TAG_FAILED_LINE,
   TAKE_TAG_SAVED_LINE,
   normaliseTrimSpan,
-  trimPlaybackShouldPause,
+  trimPlaybackAction,
+  trimPlaybackWindowLine,
   trimSpanLabel,
+  trimWindowStartMs,
   type TakeTrimSpan,
 } from '../services/takeClipTag';
 import { COMPARE_CTA, COMPARE_LEFT_LABEL, COMPARE_RIGHT_LABEL } from '../services/videoCompare';
@@ -284,6 +293,14 @@ export const VIDEO_NOTHING_TO_WATCH_LINE =
 export const VIDEO_NOTHING_AT_ALL_LINE =
   'Nothing was kept from this take — there is no video and no audio to play. Film it again and it will appear here.';
 export const VIDEO_RECORD_AGAIN_CTA = 'Film a new take';
+/**
+ * ── vc52 (B1): A BLACK RECTANGLE IS NOT A VIDEO ───────────────────────────
+ * The owner pressed "Watch with notes" and got a black screen. Half of that was a
+ * player mounted over a file nobody had checked; the other half is the gap between
+ * mounting a player and the decoder producing a frame, which is also black. The
+ * surface now says which one it is looking at.
+ */
+export const VIDEO_LOADING_LINE = 'Opening your video…';
 
 /**
  * How long the take's decode may hold the review surface's "reading" line before
@@ -348,6 +365,21 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   const [clockMs, setClockMs] = useState(0);
   const [offsetMs, setOffsetMs] = useState(0);
   const [deletedLine, setDeletedLine] = useState<string | null>(null);
+  /**
+   * ── vc52 (A5): THE SAVE'S OWN VERIFIED OUTCOME ──────────────────────────────
+   * `saveState` is what the READ-BACK said, not what a write function hoped. A
+   * failed save renders its own headline, its own card and a retry; it is never a
+   * body line in the pale colour the owner cannot read.
+   */
+  const [saveState, setSaveState] = useState<PracticeVideoSaveState | null>(null);
+  const [saveRetrying, setSaveRetrying] = useState(false);
+  /**
+   * ── vc52 (B1): THE PLAYER HAS PAINTED A FRAME ───────────────────────────────
+   * Until the file is loaded and seeked, the player is a black rectangle. The
+   * surface says "loading" instead of showing an empty box, and only calls itself
+   * ready once a frame really exists.
+   */
+  const [videoLoaded, setVideoLoaded] = useState(false);
   /**
    * ── v47 PART B STATE ────────────────────────────────────────────────────────
    * `compareOpen` / `otherSide` are the side-by-side surface and the SECOND take it
@@ -497,16 +529,19 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       const at = (status as { positionMillis?: number; durationMillis?: number });
       const position = Number.isFinite(at.positionMillis) ? Number(at.positionMillis) : 0;
       const duration = Number.isFinite(at.durationMillis) ? Number(at.durationMillis) : 0;
-      // A finished video starts again rather than appearing to do nothing.
-      if (duration > 0 && position >= duration - 250) await player.setPositionAsync(0);
       /**
-       * THE CLIP APPLIES TO THE VIDEO TOO (v47 part B). With a window stored, play
-       * starts at the window's first frame (and the status handler stops it at the
-       * window's end), so what the user watches is the window they are about to
-       * send — the same window the PDF and MIDI are built from.
+       * THE WINDOW DECIDES WHERE PLAY BEGINS (vc52, A4). One rule
+       * (`trimPlaybackAction`), the same one the status handler uses, so the button
+       * and the native transport can never disagree: outside the window we seek to
+       * its first frame, at its end we rewind to it, inside it we just play. With
+       * no window this is a no-op and the finished-video restart stands.
        */
-      if (trimSpan && position < trimSpan.startSec * 1000) {
-        await player.setPositionAsync(Math.round(trimSpan.startSec * 1000));
+      const clipAction = trimPlaybackAction(position, trimSpan);
+      if (clipAction.kind === 'seek' || clipAction.kind === 'stop') {
+        await player.setPositionAsync(clipAction.toMs);
+      } else if (duration > 0 && position >= duration - 250) {
+        // A finished video starts again rather than appearing to do nothing.
+        await player.setPositionAsync(0);
       }
       await playWithAudioFocus(() => player.playAsync(), {
         source: 'take-playback',
@@ -524,6 +559,36 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     }
   }, [row, trimSpan, videoBusy, videoPlaying]);
 
+  /**
+   * ── vc52 (A4): THE WINDOW IS IN FORCE FROM THE FIRST FRAME ──────────────────
+   *
+   * The owner: "If you trim a video, then play it, it should show up as trimmed and
+   * play as trimmed." Two things make that true here, and neither needs a new
+   * dependency:
+   *   • `onLoad` seeks into the window, so the frame the user first sees is the
+   *     window's first frame (and a real frame is decoded, instead of an unpainted
+   *     black rectangle — B1's other half);
+   *   • this effect re-seeks whenever `trimSpan` changes, so a ± press or a drag of
+   *     the clip bar moves the picture immediately, not only on the next play.
+   * The player's own status handler stops it at the window's end.
+   */
+  useEffect(() => {
+    if (!videoLoaded) return;
+    const startMs = trimWindowStartMs(trimSpan);
+    if (startMs === null) return;
+    const player = videoRef.current;
+    if (!player) return;
+    void player.setPositionAsync(startMs).catch(() => undefined);
+  }, [trimSpan, videoLoaded]);
+
+  /** The player has a frame: say so, and put it inside the window. */
+  const handleVideoLoad = useCallback(() => {
+    setVideoLoaded(true);
+    const startMs = trimWindowStartMs(trimSpan);
+    if (startMs === null) return;
+    void videoRef.current?.setPositionAsync(startMs).catch(() => undefined);
+  }, [trimSpan]);
+
   // ── PLAYBACK: read the row we were opened for ────────────────────────────────
   useEffect(() => {
     let alive = true;
@@ -537,8 +602,29 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         setErrorLine(VIDEO_MISSING_LINE);
         return;
       }
-      const ref = stored.practiceVideo ?? null;
+      /**
+       * ── vc52 (B1): THE FILE IS CHECKED BEFORE THE PLAYER IS MOUNTED ─────────
+       *
+       * The owner pressed "Watch with notes" and got a BLACK SCREEN. The row's
+       * `practiceVideo.uri` was handed straight to `<Video>` without ever asking
+       * the file system whether the file was still there — `practiceVideoFileExists`
+       * has existed in the store since the feature shipped and was called by
+       * nothing. A row whose file had gone (evicted, deleted, moved) therefore
+       * mounted a player over nothing: an unpainted black rectangle with native
+       * controls, and no sentence.
+       *
+       * Now the file is checked first. A missing file clears the ref (so no player
+       * is mounted at all), keeps the take and its exports, and says so.
+       */
+      const storedRef = stored.practiceVideo ?? null;
+      const refUsable = practiceVideoIsUsable(storedRef);
+      const fileExists = refUsable ? await practiceVideoFileExists(storedRef.uri) : null;
+      if (!alive) return;
+      const plan = practiceVideoPlaybackPlan(refUsable, fileExists);
+      const ref = plan === 'play' ? storedRef : null;
+      if (plan === 'file-missing') setErrorLine(PRACTICE_VIDEO_FILE_GONE_LINE);
       audioUriRef.current = stored.personalMelody?.audioUri ?? null;
+      setVideoLoaded(false);
       setRow({
         rowId: stored.id,
         title: stored.title || PRACTICE_VIDEO_ROW_TITLE,
@@ -841,6 +927,20 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       } catch {
         saved = null;
       }
+      /**
+       * ── vc52 (A5): THE SAVE IS VERIFIED, AND A FAILED ONE IS LOUD ──────────
+       *
+       * `savePracticeVideoRow` now reads the row back out of History through the
+       * same read the History tab performs, so `saved === null` means the take is
+       * NOT in History — not "maybe". That is the state the owner's force-quit
+       * test found and the app never told him about: the only signal was one
+       * `styles.meta` line, in the same pale blue as the success line.
+       *
+       * It is now a card with a headline, the reason in full-contrast body text,
+       * and a retry that re-runs exactly the same verified write.
+       */
+      const saveOutcome = practiceVideoSaveState(!!saved);
+      setSaveState(saveOutcome);
 
       /**
        * LAND ON THE REVIEW SURFACE NOW (vc50 — the fix for "not recording takes…
@@ -861,12 +961,16 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         takeNote: null,
       });
       setOffsetMs(Math.round(Number(ref?.audioOffsetMs) || 0));
+      setVideoLoaded(false);
+      setSaveRetrying(false);
       setPhase('review');
-      setLine(
-        saved
-          ? null
-          : 'Could not write this practice recording into your History — your video is still on this device.',
-      );
+      /**
+       * The body line is now ONLY the "keeping"/progress text: whether the take is
+       * in History is `saveState`'s job, and it is rendered as a card (see the
+       * review body). The v51 sentence lived here, in `styles.meta`, and was the
+       * whole of the failure signal.
+       */
+      setLine(null);
       // WHY THERE IS NO VIDEO, WHEN THERE IS NO VIDEO (vc50): the camera's own
       // refusal, said out loud instead of swallowed by an empty `.catch`.
       if (!persisted.uri) setErrorLine(videoFailureRef.current ?? PRACTICE_VIDEO_NOT_KEPT_LINE);
@@ -1136,6 +1240,42 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     [row?.title, take],
   );
 
+  /**
+   * ── vc52 (A5): THE RETRY ─────────────────────────────────────────────────────────
+   *
+   * A failed save is now visible and actionable. This re-runs the SAME verified
+   * write (`savePracticeVideoRow` reads the row back out of History) with the row
+   * id, the audio and the video ref the take already has, so a retry can only ever
+   * write the take that is on screen — never a second copy, and never a different
+   * one.
+   */
+  const handleSaveRetry = useCallback(async () => {
+    if (!row || saveRetrying) return;
+    setSaveRetrying(true);
+    setErrorLine(null);
+    let stored = false;
+    try {
+      const written = await savePracticeVideoRow({
+        rowId: row.rowId,
+        capturedAt: row.ref?.filmedAt ?? new Date().toISOString(),
+        take: row.take,
+        audioUri: row.audioUri,
+        videoRef: row.ref,
+        title: PRACTICE_VIDEO_ROW_TITLE,
+      });
+      stored = !!written;
+    } catch {
+      stored = false;
+    }
+    setSaveRetrying(false);
+    setSaveState(practiceVideoSaveState(stored));
+    if (stored && row.take) {
+      // The notes belong on the row too, if they were read but never stored.
+      await savePracticeVideoTake(row.rowId, row.take);
+      setTakeLine(null);
+    }
+  }, [row, saveRetrying]);
+
   const handleDeleteVideo = useCallback(async () => {
     if (!row) return;
     const ok = await deletePracticeVideo(row.rowId, row.ref);
@@ -1287,21 +1427,33 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                   const position = (status as { positionMillis?: number }).positionMillis;
                   if (typeof position === 'number' && Number.isFinite(position)) setClockMs(position);
                   /**
-                   * THE CLIP'S END STOPS THE PLAYER (v47 part B). The window the user
-                   * sends is the window they watch, so the video pauses there instead
-                   * of playing on past it.
+                   * ── vc52 (A4): THE WINDOW IS ENFORCED ON EVERY UPDATE ────────
+                   *
+                   * v47 only PAUSED at the window's end, and only our own Play
+                   * button ever seeked to its start — so the native transport (and
+                   * any re-play) ran from 0:00 and the take "plays it back as a
+                   * whole video", exactly as the owner reported. One pure rule now
+                   * answers for both edges, whatever moved the playhead:
+                   *   • before the window  → seek to its first frame;
+                   *   • at/past its end    → pause and rewind to the first frame,
+                   *                          so the next play is the window again.
                    */
-                  if (
-                    typeof position === 'number' &&
-                    trimPlaybackShouldPause(position, trimSpan) &&
-                    (status as { isPlaying?: boolean }).isPlaying === true
-                  ) {
-                    void videoRef.current?.pauseAsync().catch(() => undefined);
+                  if (typeof position === 'number' && Number.isFinite(position)) {
+                    const action = trimPlaybackAction(position, trimSpan);
+                    if (action.kind === 'seek') {
+                      void videoRef.current?.setPositionAsync(action.toMs).catch(() => undefined);
+                    } else if (action.kind === 'stop') {
+                      void videoRef
+                        .current?.pauseAsync()
+                        .then(() => videoRef.current?.setPositionAsync(action.toMs))
+                        .catch(() => undefined);
+                    }
                   }
                   // The button mirrors the PLAYER's own state, never our hope.
                   const playing = (status as { isPlaying?: boolean }).isPlaying === true;
                   setVideoPlaying((current) => (current === playing ? current : playing));
                 }}
+                onLoad={() => handleVideoLoad()}
                 onReadyForDisplay={() => {
                   void restorePlaybackAudioMode();
                 }}
@@ -1323,6 +1475,26 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                   </Text>
                 </TouchableOpacity>
               </View>
+              {/* ── vc52, ITEM 4: THE CLIP SITS DIRECTLY UNDER THE VIDEO ──────
+                  The owner had to scroll away from the video to reach the blue
+                  editor panel. On the watch surface the clip was inside the Send-to
+                  sheet, so trimming and watching were on different pages; it is now
+                  under the player, where the trim can be seen taking effect. */}
+              <TakeClipTagEditor
+                durationSec={Math.max(0, Number(ref?.durationSec) || 0)}
+                span={trimSpan}
+                note={row?.takeNote ?? null}
+                onSpanChange={(next) => void handleSpanChange(next)}
+                onNoteChange={(next) => void handleNoteChange(next)}
+                noteLine={noteLine}
+                noteBusy={noteBusy}
+              />
+              {/* WHICH WINDOW PLAYS (vc52, A4). The trim is now enforced on the
+                  player, so the surface says which window it is playing — and stays
+                  honest that the .mp4 file itself is not cut. */}
+              <Text style={styles.windowLine}>
+                {trimPlaybackWindowLine(trimSpan, Math.max(0, Number(ref?.durationSec) || 0))}
+              </Text>
               {videoLine ? (
                 <Text style={styles.honest}>{videoLine}</Text>
               ) : (
@@ -1720,9 +1892,36 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         {phase === 'review' ? (
           <>
             <Text style={styles.title}>{VIDEO_REVIEW_TITLE}</Text>
-            <Text style={styles.meta}>
-              {line ?? (row ? 'Saved to your History.' : 'Nothing was saved from this take.')}
-            </Text>
+            {/* ── vc52 (A5): WHAT ACTUALLY HAPPENED TO THE SAVE ───────────────
+                v51 printed a reassuring sentence whenever the write function
+                returned anything — and that function could not report a failure.
+                The line now comes from the VERIFIED outcome: a saved take says so,
+                and a take that is not in History gets a loud card with a retry.
+                `line` keeps only the keeping/progress text. */}
+            {line ? <Text style={styles.meta}>{line}</Text> : null}
+            {saveState && !saveState.saved ? (
+              <View style={styles.saveFailedCard}>
+                <Text style={styles.saveFailedHeadline}>{PRACTICE_VIDEO_SAVE_FAILED_HEADLINE}</Text>
+                <Text style={styles.saveFailedText}>{saveState.line}</Text>
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={() => void handleSaveRetry()}
+                  disabled={saveRetrying}
+                  accessibilityRole="button"
+                  accessibilityLabel={PRACTICE_VIDEO_SAVE_RETRY_CTA}
+                >
+                  <Text style={styles.primaryBtnText}>
+                    {saveRetrying ? VIDEO_PREPARING_LABEL : PRACTICE_VIDEO_SAVE_RETRY_CTA}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+            {saveState && saveState.saved ? (
+              <Text style={styles.meta}>{saveState.line}</Text>
+            ) : null}
+            {!saveState && !row ? (
+              <Text style={styles.meta}>{'Nothing was saved from this take.'}</Text>
+            ) : null}
 
             {/* ── vc50: THE TAKE ITSELF, ON THIS SURFACE ────────────────────────
                 The owner: "Once video is taken, a large blue screen pops in
@@ -1743,6 +1942,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                   resizeMode={ResizeMode.CONTAIN}
                   progressUpdateIntervalMillis={200}
                   onError={() => setVideoLine(VIDEO_PLAYBACK_FAILED_LINE)}
+                  onLoad={() => handleVideoLoad()}
                   onReadyForDisplay={() => {
                     void restorePlaybackAudioMode();
                   }}
@@ -1751,6 +1951,9 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                   {videoSizeLine(Math.max(0, Number(ref?.durationSec) || 0), ref?.sizeBytes ?? null)}
                 </Text>
                 <Text style={styles.honest}>{VIDEO_REVIEW_VIDEO_LINE}</Text>
+                {/* vc52 (B1): until a frame is decoded the player is a black
+                    rectangle — so the surface says what is happening. */}
+                {!videoLoaded ? <Text style={styles.meta}>{VIDEO_LOADING_LINE}</Text> : null}
                 {videoLine ? <Text style={styles.error}>{videoLine}</Text> : null}
               </>
             ) : (
@@ -1761,8 +1964,37 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               </View>
             )}
 
+            {/* ── vc52, ITEM 4: THE TRIM SITS DIRECTLY UNDER THE VIDEO ────────
+                The owner: "The blue video editor panel needs to be closer to the
+                captured video screen … you have to scroll too far down away from
+                the video to start editing using the blue box." It was BELOW the
+                staff card — the tallest thing on the page — so the editor was a
+                screenful away. The order is now video → clip → notes/score, which
+                is also the order the user works in. Same control, same state, same
+                persisted write as before: only its position changed. */}
+            {practiceVideoIsUsable(ref) ? (
+              <>
+                <TakeClipTagEditor
+                  durationSec={Math.max(0, Number(ref?.durationSec) || 0)}
+                  span={trimSpan}
+                  note={row?.takeNote ?? null}
+                  onSpanChange={(next) => void handleSpanChange(next)}
+                  onNoteChange={(next) => void handleNoteChange(next)}
+                  noteLine={noteLine}
+                  noteBusy={noteBusy}
+                />
+                {/* WHICH WINDOW PLAYS (vc52, A4) — said on the surface, so a trim
+                    that is in force is visible and the file's own limit is honest. */}
+                <Text style={styles.windowLine}>
+                  {trimPlaybackWindowLine(trimSpan, Math.max(0, Number(ref?.durationSec) || 0))}
+                </Text>
+              </>
+            ) : null}
+
             {/* THE NOTES (vc50): read off the take's sound, bounded, and never a
-                silent wait — "reading", then either the staff or the reason. */}
+                silent wait — "reading", then either the staff or the reason. The
+                score sits BELOW the clip now (owner: "the notation score recorded
+                can go lower in the page"). */}
             {takeBusy ? <Text style={styles.meta}>{VIDEO_TAKE_READING_LINE}</Text> : null}
             {!takeBusy && takeLine ? <Text style={styles.honest}>{takeLine}</Text> : null}
             {!takeBusy && !takeLine && !take ? (
@@ -1788,26 +2020,9 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               </TouchableOpacity>
             ) : null}
 
-            {/* ── vc49: THE TRIM, WHERE THE USER RECORDS (owner 11-03) ────────
-                The clip control already existed, but only on a SAVED take's
-                playback screen — so a user who had just filmed was never offered
-                it. This is the SAME control (`TakeClipTagEditor`) reading the
-                SAME state (`trimSpan`), persisted through the SAME
-                `handleSpanChange` → `attachPracticeVideo`, and it still feeds
-                `trimmedSendPair`, so the PDF, the MIDI and the video can never
-                describe different windows. vc50: it now draws the take's length
-                as a timeline, because the length it was given was 0. */}
-            {practiceVideoIsUsable(ref) ? (
-              <TakeClipTagEditor
-                durationSec={Math.max(0, Number(ref?.durationSec) || 0)}
-                span={trimSpan}
-                note={row?.takeNote ?? null}
-                onSpanChange={(next) => void handleSpanChange(next)}
-                onNoteChange={(next) => void handleNoteChange(next)}
-                noteLine={noteLine}
-                noteBusy={noteBusy}
-              />
-            ) : null}
+            {/* ── vc52, ITEM 4: the trim used to sit HERE, below the staff card.
+                It now sits directly under the video (see above), so the editor is
+                one glance from the take it edits instead of a screenful away. */}
 
             {/* The notes editor is one press below the trim (it used to open
                 itself over this surface, which is what hid the clip). */}
@@ -1897,6 +2112,25 @@ const baseStyles = StyleSheet.create({
   honest: { color: '#9aa0b5', fontSize: 12, lineHeight: 18, marginTop: 6 },
   meta: { color: '#cfe4ff', fontSize: 13, lineHeight: 19, marginTop: 10 },
   error: { color: '#ffb4b4', fontSize: 12, lineHeight: 18, marginTop: 10 },
+  /**
+   * ── vc52 STYLES ──────────────────────────────────────────────────────
+   * `windowLine` states which window the player is playing (A4). The save-failure
+   * card is a CARD, not a body line: the owner's A5 loss was invisible partly
+   * because its only signal was one 12px line in the pale body colour.
+   * Every literal below is one `services/themeApply.ts` knows, so light mode
+   * repaints all of them (scripts/vc52DeviceRepairs.test.ts measures the ratios).
+   */
+  windowLine: { color: '#cfe4ff', fontSize: 13, fontWeight: '700', lineHeight: 19, marginTop: 8 },
+  saveFailedCard: {
+    backgroundColor: '#1b2a4a',
+    borderColor: '#e94560',
+    borderWidth: 2,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 14,
+  },
+  saveFailedHeadline: { color: '#ff6b6b', fontSize: 16, fontWeight: '800', marginBottom: 6 },
+  saveFailedText: { color: '#cfe4ff', fontSize: 13, lineHeight: 19 },
   warn: { color: '#ffd166', fontSize: 12, marginTop: 8 },
   timer: { color: '#ffffff', fontSize: 16, fontWeight: '700', marginTop: 10 },
   preview: {
