@@ -51,11 +51,30 @@ assertEq(BUILD_STAMP_UNKNOWN_SHA.length, 7, 'the "unknown" sha still occupies th
 assertEq(buildStampLine(null), 'NoteSnap 0.0.0 (vc0) · unknown', 'a missing input still renders one honest line');
 assertEq(buildStampLine(undefined).length > 0, true, 'the stamp is never an empty string');
 
-console.log('\nv43 B1 — the placeholder is visibly a placeholder');
+console.log('\nv43 B1 — the stamp identifies the build it is in');
 assertEq(BUILD_STAMP_TAG, 'build-stamp', 'the accessibility tag the source scan keys on');
 assertEq(BUILD_SHA.length, 7, 'the build-time sha constant is 7 characters');
-assertEq(BUILD_SHA_IS_PLACEHOLDER, true, 'this build still carries the placeholder — the RELEASE slice must stamp the real commit');
-assertEq(buildStampLine({ version: '0.1.37', versionCode: 43, sha: BUILD_SHA }).indexOf('· 0000000') >= 0, true, 'an unstamped build is visible at a glance');
+/**
+ * vc52 — THIS ASSERTION WAS BACKWARDS.
+ *
+ * It used to read `assertEq(BUILD_SHA_IS_PLACEHOLDER, true, 'this build still
+ * carries the placeholder…')` — i.e. it went GREEN precisely when the release
+ * shipped unstamped, and RED the moment the release slice did the one thing it
+ * asks for. vc51 shipped with `0000000` because of it: the owner was told to
+ * verify a build whose own stamp could not name the commit.
+ *
+ * The rule now: the constant must be a real 7-char hex commit, or the seven-zero
+ * placeholder — and which one it is gets said out loud, every run. The release
+ * slice stamps the real commit before the EAS build; the pure function below
+ * still proves an unstamped build is visible at a glance.
+ */
+assertEq(/^[0-9a-f]{7}$/.test(BUILD_SHA), true, 'the build-time sha is 7 lowercase hex characters (a commit, or the 0000000 placeholder)');
+console.log(
+  BUILD_SHA_IS_PLACEHOLDER
+    ? '  ! this tree is UNSTAMPED (0000000) — the release slice must stamp the real commit before an EAS build'
+    : `  · this tree is stamped for release: ${BUILD_SHA}`,
+);
+assertEq(buildStampLine({ version: '0.1.37', versionCode: 43, sha: '0000000' }).indexOf('· 0000000') >= 0, true, 'an unstamped build is visible at a glance');
 
 console.log(`\n${passes} passed, ${failures} failed`);
 if (failures > 0) process.exit(1);
