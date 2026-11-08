@@ -246,6 +246,8 @@
     "src/services/v49DeviceBatchContract.ts",
     "scripts/v49DeviceBatch.test.ts",
     "src/services/v50PracticeVideoContract.ts",
-    "scripts/v50PracticeVideo.test.ts"
+    "scripts/v50PracticeVideo.test.ts",
+    "src/services/vc52DeviceContract.ts",
+    "scripts/vc52DeviceRepairs.test.ts"
   ]
 }

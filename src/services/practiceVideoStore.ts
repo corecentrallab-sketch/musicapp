@@ -127,6 +127,27 @@ export interface PracticeVideoRowInput {
  * is the same melody row the capture window writes (`personalMelodyPiece`), so a
  * video row is a melody row in every existing respect (editor, exports, tap
  * behaviour); the practice-video block is additive on top of it.
+ *
+ * ── vc52 (owner 11-08, A5): A WRITE THAT DID NOT HAPPEN IS NOT A SAVE ─────────
+ *
+ * The owner filmed a take, force-quit from recents, reopened, opened History — and
+ * the take was not there, while the screen had said "Saved to your History."
+ *
+ * WHY IT COULD SAY THAT. Nothing in this path could report a failure:
+ *   • `saveRecognition` returns VOID and silently does nothing when the row's id
+ *     is already in History (it is idempotent by id) — so a skipped write was
+ *     indistinguishable from a real one, and this function returned the piece as
+ *     if it had been stored;
+ *   • `attachPracticeVideo`'s boolean was ignored;
+ *   • the `catch` below turned every throw into `null` with the reason discarded.
+ *
+ * THE FIX, AND WHY IT IS A PROOF RATHER THAN A HOPE. After the write, the row is
+ * READ BACK through `loadPracticeVideoRow` — the very same `getRecognitionHistory`
+ * read the History tab performs. If the row is not there, this returns `null` and
+ * the screen shows a loud failure with a retry (services/practiceVideoRef.ts,
+ * `practiceVideoSaveState`). A row that survives that read is genuinely on the
+ * device in the place History reads from, which is exactly what has to be true for
+ * the take to survive a force-quit.
  */
 export async function savePracticeVideoRow(
   input: PracticeVideoRowInput,
@@ -147,8 +168,21 @@ export async function savePracticeVideoRow(
   if (input.videoRef) {
     await attachPracticeVideo(piece.id, input.videoRef);
   }
-  return piece;
+  // THE READ-BACK. Same read History performs; no local cache, no assumption.
+  const stored = await loadPracticeVideoRow(piece.id);
+  if (!stored) return null;
+  return stored;
 }
+
+/**
+ * Is this row really in History? The read-back the save path and the retry share,
+ * so "saved" always means "History can find it".
+ */
+export async function practiceVideoRowIsStored(rowId: string): Promise<boolean> {
+  const stored = await loadPracticeVideoRow(rowId);
+  return !!stored;
+}
+
 
 /**
  * ── THE TAKE ARRIVES AFTER THE VIDEO (vc50 fix, owner 11-04) ──────────────────

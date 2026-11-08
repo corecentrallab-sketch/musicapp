@@ -264,3 +264,80 @@ export function practiceVideoTakeLine(take: SavedCaptureTake | null | undefined)
   if (count === 0) return null;
   return `${count} note${count === 1 ? '' : 's'} read from your take`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// vc52 — A5: A SAVE THAT DID NOT HAPPEN IS NEVER CALLED A SAVE
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * THE OWNER'S A5 FAILURE, AND WHY IT WAS SILENT.
+ *
+ * v51 filmed a take, the owner force-quit from recents, reopened, opened History —
+ * and the take was not there. The screen had said "Saved to your History." The
+ * write path could not tell a written row from a skipped or failed one: the store
+ * swallowed every throw into `null`, `saveRecognition` no-ops when the id already
+ * exists, and the only failure signal was one `styles.meta` line in the same
+ * pale-blue body colour as the success line — the colour the owner has now told us
+ * twice he cannot read.
+ *
+ * So the save now has THREE states, and the screen renders all three differently:
+ * verified-written (the row was READ BACK out of History), failed (loudly, with a
+ * retry), and nothing to save.
+ */
+export const PRACTICE_VIDEO_SAVE_FAILED_HEADLINE = 'This take was not saved to your History';
+export const PRACTICE_VIDEO_SAVE_FAILED_LINE =
+  'The notes and the video are on this device, but the History row could not be written, so the take would be gone after you close the app. Tap below to write it again — nothing else about the take changes.';
+export const PRACTICE_VIDEO_SAVE_RETRY_CTA = 'Save it to my History again';
+export const PRACTICE_VIDEO_SAVE_CONFIRMED_LINE =
+  'Saved to your History — it will still be there when you close and reopen the app.';
+
+export interface PracticeVideoSaveState {
+  /** True only when the row was read back out of History after the write. */
+  saved: boolean;
+  /** A headline for a FAILED save (null when the save is fine). */
+  headline: string | null;
+  /** The sentence the surface shows in either case. */
+  line: string;
+}
+
+/**
+ * The honest outcome of the write. `stored` is the READ-BACK result, not the
+ * return value of a function that cannot report failure.
+ */
+export function practiceVideoSaveState(stored: boolean): PracticeVideoSaveState {
+  return stored
+    ? { saved: true, headline: null, line: PRACTICE_VIDEO_SAVE_CONFIRMED_LINE }
+    : {
+        saved: false,
+        headline: PRACTICE_VIDEO_SAVE_FAILED_HEADLINE,
+        line: PRACTICE_VIDEO_SAVE_FAILED_LINE,
+      };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// vc52 — B1: THE PLAYER IS ONLY MOUNTED FOR A FILE THAT IS THERE
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * THE OWNER'S B1 FAILURE: "Watch with notes" → a BLACK SCREEN.
+ *
+ * `practiceVideoFileExists` has existed in the store since the feature shipped and
+ * NOTHING called it. The playback surface read `row.practiceVideo.uri` and handed
+ * it straight to `<Video>`, so a row whose file had been evicted, deleted or moved
+ * mounted an expo-av view over nothing: an unpainted black rectangle with native
+ * controls on it, and no sentence explaining it. This is the decision the surface
+ * now makes BEFORE it mounts a player.
+ */
+export const PRACTICE_VIDEO_FILE_GONE_LINE =
+  'The video file for this take is no longer on this device, so there is nothing to play. Your notes, the PDF and the MIDI export are all still here.';
+
+export type PracticeVideoPlaybackPlan = 'play' | 'file-missing' | 'no-video';
+
+export function practiceVideoPlaybackPlan(
+  refUsable: boolean,
+  fileExists: boolean | null | undefined,
+): PracticeVideoPlaybackPlan {
+  if (!refUsable) return 'no-video';
+  return fileExists === false ? 'file-missing' : 'play';
+}
+

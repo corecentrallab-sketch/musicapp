@@ -81,11 +81,19 @@ export const TRIM_WHOLE_TAKE_LINE = 'The whole take goes to your teacher.';
 /** Too short / unusable span — said plainly, never silently ignored. */
 export const TRIM_TOO_SHORT_LINE = 'That window is too short to send — pick at least one second.';
 /**
- * THE VIDEO MEMBER'S HONEST LIMIT (see the header). It states why the video file
- * travels whole and what the span does instead of pretending the .mp4 was cut.
+ * THE VIDEO MEMBER'S HONEST LIMIT (see the header).
+ *
+ * vc52 (owner 11-08) — THIS SENTENCE WAS THE COMPLAINT. The owner trimmed two
+ * seconds off each end of a ten-second take and the video "plays it back as a
+ * whole video — the entire recording", while the panel told him the video
+ * "travels whole". Both halves were true and both were wrong for the product: the
+ * window was metadata only. Playback now HONOURS the window (see
+ * `trimPlaybackAction`), so the copy says exactly that, and still says the truth
+ * about the file: cutting the .mp4 itself needs a native media module, which is
+ * an owner decision and not part of this batch.
  */
 export const TRIM_VIDEO_WHOLE_LINE =
-  'Your phone cannot cut the video file itself, so the video travels whole — the window is printed on it and in the summary, and the PDF and MIDI are your take from that window only.';
+  'Your phone cannot cut the video file itself, so the file itself travels whole — but in NoteSnap the video now plays only the window you chose: it starts at the window’s first frame and stops at its last. The PDF and MIDI are your take from that window only.';
 /** A span that holds no notes: nothing to print, but the pair still goes. */
 export const TRIM_NO_NOTES_LINE =
   'No notes of this take fall inside that window, so there is no PDF or MIDI for it — your video and the summary still go.';
@@ -330,6 +338,89 @@ export function trimPlaybackShouldPause(
   if (!Number.isFinite(position) || !Number.isFinite(end)) return false;
   return position >= end * 1000 - 50;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// vc52 — PLAYBACK HONOURS THE WINDOW (owner 11-08, A4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** How far inside the window a position may drift before it is pulled back. */
+export const TRIM_PLAYBACK_TOLERANCE_MS = 250;
+
+/**
+ * WHAT THE PLAYER MUST DO WITH THIS POSITION.
+ *
+ * THE DEFECT THIS REPLACES (owner, verbatim): "when I trimmed back the video - a
+ * 10 second video trimming 2 seconds at start and ending, the video plays it back
+ * as a whole video- the entire recording … If you trim a video, then play it, it
+ * should show up as trimmed and play as trimmed until finally saved."
+ *
+ * What the v47 code did: it seeked to the window's start ONCE, inside our own
+ * "▶ Play the video" button, and paused at the window's end. The native transport
+ * (which every user presses) never seeked, and a re-play from the end ran from
+ * 0:00 — so the take played WHOLE, exactly as reported. The window was also
+ * invisible: nothing on the surface said which part was playing.
+ *
+ * This function is the ONE rule, asked on every status update:
+ *   • no window                      → `free`  (unchanged behaviour, older rows);
+ *   • position BEFORE the window     → `seek` to the window's first frame;
+ *   • position AT/PAST the window end → `stop`, and rewind to the first frame so
+ *                                      the next play is the window again;
+ *   • anywhere inside                → `free`  (leave the player alone).
+ *
+ * PURE, and it never invents a window: an unreadable span is `free`.
+ */
+export type TrimPlaybackAction =
+  | { kind: 'free' }
+  | { kind: 'seek'; toMs: number }
+  | { kind: 'stop'; toMs: number };
+
+export function trimPlaybackAction(
+  positionMs: number,
+  span: TakeTrimSpan | null | undefined,
+): TrimPlaybackAction {
+  if (!span) return { kind: 'free' };
+  const startSec = Number(span.startSec);
+  const endSec = Number(span.endSec);
+  if (!Number.isFinite(startSec) || !Number.isFinite(endSec)) return { kind: 'free' };
+  const startMs = Math.max(0, Math.round(Math.min(startSec, endSec) * 1000));
+  const endMs = Math.max(startMs, Math.round(Math.max(startSec, endSec) * 1000));
+  const position = Number(positionMs);
+  if (!Number.isFinite(position)) return { kind: 'free' };
+  if (position >= endMs - 50) return { kind: 'stop', toMs: startMs };
+  if (position < startMs - TRIM_PLAYBACK_TOLERANCE_MS) return { kind: 'seek', toMs: startMs };
+  return { kind: 'free' };
+}
+
+/**
+ * WHERE THE WINDOW BEGINS, in ms (null when there is no usable window). The one
+ * value the surface seeks to when the file loads and whenever the window changes.
+ */
+export function trimWindowStartMs(span: TakeTrimSpan | null | undefined): number | null {
+  if (!span) return null;
+  const start = Number(span.startSec);
+  const end = Number(span.endSec);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  return Math.max(0, Math.round(Math.min(start, end) * 1000));
+}
+
+/**
+ * WHICH WINDOW IS PLAYING — the sentence the surface shows under the video, so the
+ * user can see that the trim is in force (and that the file itself is untouched).
+ */
+export function trimPlaybackWindowLine(
+  span: TakeTrimSpan | null | undefined,
+  durationSec: number,
+): string {
+  const label = trimSpanLabel(span);
+  if (!label) {
+    return 'Playing the whole take — nothing is trimmed out.';
+  }
+  const duration = Number(durationSec);
+  const whole =
+    Number.isFinite(duration) && duration > 0 ? ` of ${videoClock(duration)}` : '';
+  return `Playing only ${label}${whole} — your trim is in force. The .mp4 file itself is not cut.`;
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE LABEL (the take's own note, teacher-facing)

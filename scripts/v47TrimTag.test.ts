@@ -333,7 +333,7 @@ assertEq(
   false,
   'PROBE 6: a SECOND pair derivation appears → the pair guard FAILS (two windows could disagree)',
 );
-const noPause = SCREEN.replace('trimPlaybackShouldPause(position, trimSpan)', 'false');
+const noPause = SCREEN.split('trimPlaybackAction(position, trimSpan)').join('false');
 assertEq(
   clipIsPersistedAndAppliedToTheVideo(noPause),
   false,

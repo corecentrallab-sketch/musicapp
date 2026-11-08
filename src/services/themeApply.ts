@@ -116,6 +116,19 @@ export const LIGHT_BACKGROUND_ROLE: Record<string, keyof ThemeTokens> = {
   '#fff': 'surface',
   '#eaeaff': 'surfaceAlt',
   '#c0c0d0': 'chipBg',
+  /* vc52 (owner 11-08, C1 + the practice-video surface): THE DARK NAVY FILLS.
+     These four literals are the raised card/chip/panel fills of the whole
+     practice-video family (PracticeVideoScreen, TakeClipTagEditor,
+     VideoOverlayLane, PracticeVideoCompare, PracticeVideoSendToSheet). None of
+     them was in this table, so in light mode the page went paper-white around
+     cards that stayed near-black — and every `#cfe4ff` label on them kept pale
+     ink. They are BACKGROUND-ONLY entries on purpose: each is only ever a fill,
+     and putting them here (rather than in LIGHT_ROLE_BY_COLOR) keeps a
+     border of the same colour dark and visible on a light card. */
+  '#1b2a4a': 'chipBg',
+  '#12243a': 'chipBg',
+  '#101024': 'surfaceAlt',
+  '#161634': 'surfaceAlt',
 };
 
 /** Same colour, different job: a glyph that would vanish on a light page. */
@@ -143,6 +156,19 @@ export const LIGHT_FOREGROUND_ROLE: Record<string, keyof ThemeTokens> = {
   '#9aa0b5': 'subtext', // hints, subtitles, lane/column labels (sibling of #a0a0b8)
   '#c8c8e0': 'text', // ScanScore thumb index, saved line, control label
   '#8f8fa8': 'subtext', // Settings time-step label
+  /* vc52 (owner 11-08, C1 — "very feint light blue text colour on light mode").
+     THE DEFERRED ONE, NOW DUE. `#cfe4ff` is the practice-video family's body ink
+     (13 sites across 5 files) and it was NOT in this table, so a light screen drew
+     pale blue on paper-white: measured 1.26:1 on `surface` (#ffffff) and 1.31:1 on
+     the light `background` (#f6f7fb) — well under AA's 4.5:1, i.e. the owner's
+     "almost impossible to read". It is a GLYPH-ONLY literal (every site is
+     `color:`), so it maps to `chipText`: the near-neutral soft white in dark, the
+     dark ink in light. Foreground-only, so no fill is ever recoloured by it.
+     The same rule takes the surface's two status inks: `#ffb4b4` (error) and
+     `#ffd166` (warning) measured 1.63:1 and 1.30:1 on light paper. */
+  '#cfe4ff': 'chipText',
+  '#ffb4b4': 'danger',
+  '#ffd166': 'danger',
 };
 
 /** Roles that stay a dark FILL in light mode — white labels on them stay white. */
