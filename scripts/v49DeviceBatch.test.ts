@@ -234,7 +234,11 @@ function mutationProbes(): void {
   );
 
   // 2. the record flow completes without offering the trim
-  const noTrim = SCREEN.replace('<TakeClipTagEditor', '<SomethingElse');
+  // vc52: the clip control now appears TWICE (review surface AND watch surface),
+  // so a single `.replace` left the second one in place and the probe stopped
+  // biting — the guard stayed green with the defect reintroduced. Remove every
+  // occurrence so "the record flow no longer offers the trim" is the real defect.
+  const noTrim = SCREEN.split('<TakeClipTagEditor').join('<SomethingElse');
   assert(noTrim !== SCREEN, 'PROBE 4 setup: the clip control was removed from the review surface');
   assertEq(
     recordFlowOffersTheTrim(noTrim),
