@@ -8,6 +8,17 @@
   // import, and (transitively) the services those pull in. `noEmit`: it is a
   // type-check, never an emit. Requires `node_modules` to be installed.
   //
+  // D13 widened the `include` to App.tsx and src/navigation/**. Before it, the
+  // project checked 215 files and NONE of them were the navigation wiring: a
+  // `--listFiles` run showed src/navigation/ = 0 files and App.tsx = 0 files.
+  // That is the vc49 defect class — a route param mismatch, or a Screen
+  // registered under a name that is not in the param list — and no gate saw it.
+  // Both are now caught (mutation-proven): a wrong-typed prop on a Tab.Screen
+  // fails with TS2322, and renaming a route to "Homee" fails with TS2820
+  // `Type '"Homee"' is not assignable to type 'keyof RootTabParamList'`.
+  // The project now checks 217 files. Widening it surfaced no genuine errors;
+  // App.tsx and TabNavigator.tsx were already clean, they were just invisible.
+  //
   // `skipLibCheck` is ON, and it is NOT a way to hide our own errors: it only
   // stops TypeScript re-checking DECLARATION files (*.d.ts). Errors in our own
   // .ts/.tsx sources — including a screen passing a number where a string is
@@ -24,10 +35,12 @@
     "composite": false
   },
   "include": [
+    "App.tsx",
     "src/screens/**/*.tsx",
     "src/components/**/*.tsx",
     "src/hooks/**/*.ts",
     "src/hooks/**/*.tsx",
+    "src/navigation/**/*.tsx",
     "src/types/**/*.d.ts"
   ]
 }
