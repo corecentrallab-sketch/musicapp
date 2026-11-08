@@ -1,9 +1,33 @@
 {
+  // D12: the screen type gate. `npm run test:tier1` runs this AFTER
+  // `tsc -p tsconfig.tier1.json`, because tier1's own project only compiles the
+  // pure src/services modules and the scripts/*.test.ts suites — a genuine type
+  // error in a screen passed every gate (two shipped that way in vc49).
+  //
+  // This project checks the React Native screens, the components and hooks they
+  // import, and (transitively) the services those pull in. `noEmit`: it is a
+  // type-check, never an emit. Requires `node_modules` to be installed.
+  //
+  // `skipLibCheck` is ON, and it is NOT a way to hide our own errors: it only
+  // stops TypeScript re-checking DECLARATION files (*.d.ts). Errors in our own
+  // .ts/.tsx sources — including a screen passing a number where a string is
+  // required — are still reported; the D12 mutation probe proves exactly that.
+  // It is required because this dependency tree ships two unfixable third-party
+  // declaration errors (a missing @expo/vector-icons d.ts, and @react-navigation
+  // 7's `preload` generic under @types/react 18.3), which would otherwise make
+  // the gate permanently red for reasons that are not our code.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
     "skipLibCheck": true,
-    "incremental": false
+    "incremental": false,
+    "composite": false
   },
-  "include": ["src/screens/**/*.tsx", "src/components/**/*.tsx"]
+  "include": [
+    "src/screens/**/*.tsx",
+    "src/components/**/*.tsx",
+    "src/hooks/**/*.ts",
+    "src/hooks/**/*.tsx",
+    "src/types/**/*.d.ts"
+  ]
 }

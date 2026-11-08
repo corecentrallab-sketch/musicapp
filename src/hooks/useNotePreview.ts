@@ -126,16 +126,20 @@ export function useNotePreview(
       }
       const key = `${which}:${Math.round(midi)}`;
       try {
-        let sound = soundsRef.current.get(key);
-        if (!sound) {
+        let resolved = soundsRef.current.get(key);
+        if (!resolved) {
           // THE LOADER walks the source rungs (module id → android.resource://
           // names), sets the playback audio session first, and reports the honest
           // reason when nothing loads (v34).
           const loaded = await loadToneSound(which, midi);
           if (!loaded) return false;
-          sound = loaded.sound;
-          soundsRef.current.set(key, sound);
+          resolved = loaded.sound;
+          soundsRef.current.set(key, resolved);
         }
+        // Bound to a `const` so the null-check above survives into the callback
+        // below: TypeScript drops the narrowing of a reassigned `let` inside a
+        // closure, which is why this used to read as `Sound | undefined`.
+        const sound = resolved;
         // v41 item 1: replaying a CACHED tone is still a play — the session and
         // audio focus are re-established on the way in (a cached Sound created
         // before the recorder ran used to replay into a silent session), and a

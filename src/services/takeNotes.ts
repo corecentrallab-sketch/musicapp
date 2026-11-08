@@ -71,17 +71,17 @@ export function takeNoteLine(row: { takeNote?: unknown } | null | undefined): st
  * Can this row hold a note? A take row does — one of the user's OWN takes (a
  * melody row, a filmed take, or a row whose audio was kept); a recognized piece of
  * published music is not a take and gets no box.
+ *
+ * The row is read STRUCTURALLY (`in` checks) rather than through an index
+ * signature: a real row type like `SavedPiece` has no `[key: string]: unknown`,
+ * so an index-signature parameter made every caller's row unassignable to it.
  */
-export function takeCanHoldNote(row: {
-  personalMelody?: unknown;
-  practiceVideo?: unknown;
-  capture?: { notes?: unknown } | null;
-  [key: string]: unknown;
-} | null | undefined): boolean {
+export function takeCanHoldNote<R extends object>(row: R | null | undefined): boolean {
   if (!row || typeof row !== 'object') return false;
-  if (row.personalMelody) return true;
-  if (row.practiceVideo) return true;
-  const notes = row.capture?.notes;
+  if ('personalMelody' in row && row.personalMelody) return true;
+  if ('practiceVideo' in row && row.practiceVideo) return true;
+  const capture: unknown = 'capture' in row ? row.capture : null;
+  const notes = capture && typeof capture === 'object' && 'notes' in capture ? capture.notes : null;
   return Array.isArray(notes) && notes.length > 0;
 }
 
