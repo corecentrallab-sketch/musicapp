@@ -195,7 +195,13 @@ import { VideoOverlayLane } from '../components/VideoOverlayLane';
 // vc53, items 3/4/7: the full-screen player, the draggable scrub bar and the
 // full-screen notes box. The player is an in-app Modal because the pinned expo-av
 // cannot present native fullscreen on Android (see FullScreenVideo's header).
-import { FullScreenVideo, FULL_SCREEN_VIDEO_CTA } from '../components/FullScreenVideo';
+import {
+  FullScreenVideo,
+  FULL_SCREEN_VIDEO_CTA,
+  FULL_SCREEN_VIDEO_ICON_LABEL,
+  FULL_SCREEN_VIDEO_ICON_NAME,
+} from '../components/FullScreenVideo';
+import { Ionicons } from '@expo/vector-icons';
 import { ScrubBar } from '../components/ScrubBar';
 import { scrubSeekTargetMs } from '../services/videoScrub';
 import { OVERLAY_EMPTY_LINE, OVERLAY_LANE_LABEL } from '../services/videoOverlayLayout';
@@ -1458,6 +1464,36 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     [row],
   );
 
+  /**
+   * ── vc54, ITEM 3: THE FULLSCREEN CONTROL SITS ON THE VIDEO ────────────
+   *
+   * The owner: "icon on the video next build". `openFullScreen` is the ONE action
+   * behind every fullscreen control on this surface — the icon drawn on the video
+   * itself, and the labelled button under it. One action, so the two can never
+   * drift into different behaviour, and neither is a dead control.
+   */
+  const openFullScreen = useCallback(() => setVideoFullOpen(true), []);
+
+  /**
+   * THE ICON ON THE VIDEO. A 44 pt square in the video's OWN top-right corner,
+   * inside the frame that holds the player, so it can never land on the scrub bar
+   * or the notes playhead (both sit UNDER the video). It carries its own label for
+   * a screen reader; the labelled button under the video stays for a first-time
+   * user who does not know the corner glyph.
+   */
+  const renderFullScreenIcon = () => (
+    <TouchableOpacity
+      style={styles.videoFullIcon}
+      onPress={openFullScreen}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={FULL_SCREEN_VIDEO_ICON_LABEL}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+    >
+      <Ionicons name={FULL_SCREEN_VIDEO_ICON_NAME} size={20} color="#ffffff" />
+    </TouchableOpacity>
+  );
+
   // ── RENDER ─────────────────────────────────────────────────────────────────
   // ONE mode test, off the phase machine (v39 fix 3): `playback` is the phase a
   // History row starts in, so a watch-only row can never render the record body
@@ -1497,6 +1533,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                   its own scrubber would be a second timeline that ignores the trim.
                   This surface now owns all three: play/pause, the scrub bar under
                   the video, and the full-screen window. */}
+              <View style={styles.videoFrame}>
               <Video
                 ref={videoRef}
                 style={styles.video}
@@ -1551,6 +1588,8 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                   void restorePlaybackAudioMode();
                 }}
               />
+              {renderFullScreenIcon()}
+              </View>
               {/* OUR OWN TRANSPORT (v40 fix J): the session is re-applied on every
                   press and the outcome is a sentence, not silence. */}
               <View style={styles.syncRow}>
@@ -1572,7 +1611,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                     present native fullscreen on Android. It is never a dead icon. */}
                 <TouchableOpacity
                   style={[styles.syncBtn, styles.fullScreenBtn]}
-                  onPress={() => setVideoFullOpen(true)}
+                  onPress={openFullScreen}
                   activeOpacity={0.7}
                   accessibilityRole="button"
                   accessibilityLabel="Play this take full screen"
@@ -2114,6 +2153,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                     trim's cut ends dimmed, and the full-screen window. The native
                     bar is off because its fullscreen icon does nothing on Android
                     with the pinned expo-av, and its scrubber ignored the trim. */}
+                <View style={styles.videoFrame}>
                 <Video
                   ref={reviewVideoRef}
                   style={styles.video}
@@ -2145,10 +2185,12 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                     }
                   }}
                 />
+                {renderFullScreenIcon()}
+                </View>
                 <View style={styles.syncRow}>
                   <TouchableOpacity
                     style={styles.syncBtn}
-                    onPress={() => setVideoFullOpen(true)}
+                    onPress={openFullScreen}
                     activeOpacity={0.7}
                     accessibilityRole="button"
                     accessibilityLabel="Play this take full screen"
@@ -2393,6 +2435,28 @@ const baseStyles = StyleSheet.create({
     borderRadius: 2,
   },
   video: { width: '100%', height: 220, backgroundColor: '#000000', borderRadius: 12 },
+  /**
+   * ── vc54, ITEM 3: THE FRAME AROUND THE PLAYER ────────────────────
+   * The video and the icon on it are one box, so the icon's `position: 'absolute'`
+   * is measured against the VIDEO's corner, never the page.
+   */
+  videoFrame: { position: 'relative', width: '100%' },
+  /**
+   * THE ICON: 44 × 44 pt (the smallest comfortable touch target), pinned to the
+   * video's TOP-RIGHT corner and never to its bottom — the scrub bar and the notes
+   * playhead sit UNDER the video, so a top-anchored overlay cannot cover either.
+   */
+  videoFullIcon: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
   missingCard: {
     backgroundColor: '#1b2a4a',
     borderRadius: 12,

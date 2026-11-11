@@ -26,6 +26,8 @@ export function maskComments(source: string): string {
 
 export const VC52_SCREEN_PATH = 'src/screens/PracticeVideoScreen.tsx';
 export const VC52_STORE_PATH = 'src/services/practiceVideoStore.ts';
+/** vc54: the all-or-nothing writer the store's save now delegates to. */
+export const VC52_SAVE_MODULE_PATH = 'src/services/practiceVideoSave.ts';
 export const VC52_CLIP_MODULE_PATH = 'src/services/takeClipTag.ts';
 export const VC52_SETTINGS_PATH = 'src/screens/SettingsScreen.tsx';
 export const VC52_APPLY_PATH = 'src/services/themeApply.ts';
@@ -43,19 +45,40 @@ export const VC52_APPLY_PATH = 'src/services/themeApply.ts';
  * screen printed "Saved to your History." on the strength of that return value.
  * The store now re-reads through the SAME read History performs and returns null
  * when the row is not there.
+ *
+ * ── RE-ANCHORED ON vc54 ───────────────────────────────────────────────────────
+ * vc54 moved the write out of the store and into `services/practiceVideoSave.ts`
+ * (`writePracticeVideoRow`), because the store's inline version had two silent
+ * success paths a handset could reach. This guard follows the BEHAVIOUR, not the
+ * old file layout: it demands both halves of the one save —
+ *
+ *   • the store's `savePracticeVideoRow` DELEGATES to `writePracticeVideoRow`
+ *     through the device port, and that port's read-back is `loadPracticeVideoRow`
+ *     — History's own read, never a local cache…
+ *   • …and the writer itself reads the row back and treats a row that is not
+ *     there as a FAILURE, not a success.
+ *
+ * Either half going missing is the v51 defect again: a row returned for a write
+ * that never happened, printed as "Saved to your History."
  */
-export function saveIsVerifiedByReadBack(storeSource: string): boolean {
-  const src = maskComments(storeSource);
-  if (src.length < 2000) return false;
-  const fn = src.indexOf('export async function savePracticeVideoRow');
+export function saveIsVerifiedByReadBack(storeSource: string, saveSource: string): boolean {
+  const store = maskComments(storeSource);
+  const save = maskComments(saveSource);
+  if (store.length < 2000 || save.length < 1000) return false;
+  // ── the store delegates; it no longer writes inline ───────────────────────
+  const fn = store.indexOf('export async function savePracticeVideoRow');
   if (fn < 0) return false;
-  const body = src.slice(fn, fn + 2200);
-  // …it re-reads the row it just wrote…
-  if (body.indexOf('loadPracticeVideoRow(') < 0) return false;
-  // …and a row that is not there is a FAILURE, not a success.
-  if (!/if\s*\(!\s*stored\s*\)\s*return\s+null/.test(body)) return false;
-  // …the read-back must be the History read itself, not a local cache.
-  return src.indexOf('getRecognitionHistory') >= 0;
+  const body = store.slice(fn, fn + 2400);
+  if (body.indexOf('writePracticeVideoRow(') < 0) return false;
+  if (body.indexOf('practiceVideoSavePort') < 0) return false;
+  // ── the read-back must be the History read itself, not a local cache ───────
+  if (store.indexOf('readRow: (rowId) => loadPracticeVideoRow(rowId)') < 0) return false;
+  if (store.indexOf('getRecognitionHistory') < 0) return false;
+  // ── the writer really re-reads the row it just wrote… ─────────────────────
+  if (save.indexOf('export async function writePracticeVideoRow') < 0) return false;
+  if (save.indexOf('await port.readRow(') < 0) return false;
+  // ── …and a row that is not there is a FAILURE, not a success ──────────────
+  return /if\s*\(\s*!\s*stored\s*\)\s*return\s+null/.test(save);
 }
 
 /**

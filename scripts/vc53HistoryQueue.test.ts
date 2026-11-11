@@ -256,26 +256,50 @@ function testHistoryReReadsOnFocus(): void {
 
 function testSaveIsWriteAttachVerify(): void {
   console.log('\n3c. The save writes the row first, attaches second, verifies third');
+  /**
+   * RE-ANCHORED ON vc54. The order moved: the store's `savePracticeVideoRow` now
+   * DELEGATES to the all-or-nothing writer in `services/practiceVideoSave.ts`,
+   * which is where write → attach → verify lives. The guard follows the save, so
+   * it reads both files: the store must hand the write to the writer through the
+   * device port (whose read-back is History's own read), and the writer must do
+   * the three steps in that order and fail on a missing row or a lost video block.
+   */
   const store = readRepoFile('src/services/practiceVideoStore.ts');
+  const writer = readRepoFile('src/services/practiceVideoSave.ts');
   const save = store.indexOf('export async function savePracticeVideoRow(');
+  assert(save >= 0, 'savePracticeVideoRow is still the one save the screen calls');
   const saveBody = store.slice(save, store.indexOf('\n}\n', save) + 3);
-  const writeAt = saveBody.indexOf('await saveRecognition(piece)');
-  const attachAt = saveBody.indexOf('attachPracticeVideo(piece.id, input.videoRef)');
-  const verifyAt = saveBody.indexOf('loadPracticeVideoRow(piece.id)');
+  assert(saveBody.indexOf('writePracticeVideoRow(') >= 0, 'the store delegates to the vc54 writer');
+  assert(saveBody.indexOf('practiceVideoSavePort') >= 0, '…through the device port, not a private copy');
+  assert(
+    store.indexOf('readRow: (rowId) => loadPracticeVideoRow(rowId)') >= 0,
+    'the verify is the History read itself, not a cache',
+  );
+
+  const attempt = writer.indexOf('async function attemptSave(');
+  assert(attempt >= 0, 'the writer has one attempt that either saves the take or fails it');
+  const attemptBody = writer.slice(attempt, writer.indexOf('\n}\n', attempt) + 3);
+  const writeAt = attemptBody.indexOf('await port.insertRow(input.piece)');
+  const attachAt = attemptBody.indexOf('await port.patchRow(rowId,');
+  const verifyAt = attemptBody.indexOf('await port.readRow(rowId)');
   assert(writeAt >= 0, 'the row is written');
-  assert(attachAt >= 0, 'the video block is attached');
+  assert(attachAt >= 0, 'the take blocks are attached');
   assert(verifyAt >= 0, 'the row is read back');
   assert(
     writeAt < attachAt && attachAt < verifyAt,
     'in that order: write → attach → verify',
   );
   assert(
-    saveBody.indexOf('if (!attached) return null;') >= 0,
+    attemptBody.indexOf('if (!patched) return null;') >= 0,
     'a failed attach is a failed save (cause 2 can no longer pass silently)',
   );
   assert(
-    saveBody.indexOf('practiceVideoIsUsable(stored.practiceVideo') >= 0,
+    attemptBody.indexOf('if (storedUri !== refUri) return null;') >= 0,
     'the read-back also proves the video block survived, not just the row',
+  );
+  assert(
+    writer.indexOf('if (!stored) return null;') >= 0,
+    'and a row that is not there is a failure, never a save',
   );
 }
 
