@@ -550,7 +550,16 @@ export function settingsProRowIsWired(settingsSource: string): boolean {
 export function settingsRowsAreTheClosedSet(settingsSource: string): boolean {
   const rendered = specRowTitles(settingsSource);
   const expected = settingsClosedSetKeys();
-  if (JSON.stringify(rendered) !== JSON.stringify(expected)) return false;
+  /**
+   * vc53 ITEM 6 — ABOUT IS THE LAST ROW ON THE PAGE (owner 11-11). The closed set
+   * is unchanged; only its rendered POSITION moved, from the end of the Support
+   * card to a card at the foot of the surface. So the comparison ignores About's
+   * place in the middle and then pins it to the end: a row that drifts back up
+   * the page fails here.
+   */
+  const withoutAbout = (keys: string[]): string[] => keys.filter((key) => key !== ABOUT_ROW_TITLE);
+  if (JSON.stringify(withoutAbout(rendered)) !== JSON.stringify(withoutAbout(expected))) return false;
+  if (rendered[rendered.length - 1] !== ABOUT_ROW_TITLE) return false;
   // …and the copy in the screen is the copy in this module (no drift). A `titleRef`
   // / `subRef` row proves the IDENTIFIER is rendered; the value is pinned by the
   // module that owns it, which is the point of never retyping it here.
@@ -709,6 +718,9 @@ export function settingsSpecHasNoHexColors(settingsSource: string): boolean {
   return SETTINGS_RENDERED_ROLES.every((role) => masked.indexOf(`palette.${role}`) >= 0);
 }
 
+/** The About row's title, as the closed set spells it (vc53 item 6 pins it last). */
+export const ABOUT_ROW_TITLE = 'About NoteSnap';
+
 /** The About row shows the LIVE version, never a hard-coded one. */
 export function settingsVersionIsLive(settingsSource: string): boolean {
   const text = maskSourceComments(settingsSource);
@@ -752,7 +764,9 @@ export function settingsHasRetentionSection(settingsSource: string): boolean {
   if (supportAt < 0 || headerAt < supportAt) return false;
   // …and its three rows are the tail of the rendered order.
   const mine = SETTINGS_RETENTION_ROWS.map(settingsRowKey);
-  const rendered = specRowTitles(settingsSource);
+  // vc53 item 6: About now renders BELOW this block by owner direction, so the
+  // tail this guard measures is the tail of the §3 groups, not of the page.
+  const rendered = specRowTitles(settingsSource).filter((key) => key !== ABOUT_ROW_TITLE);
   if (JSON.stringify(rendered.slice(-mine.length)) !== JSON.stringify(mine)) return false;
   // Both rows land on a screen this surface owns — the ROW really taps it…
   if (text.indexOf('onPress={handleOpenAchievements}') < 0) return false;

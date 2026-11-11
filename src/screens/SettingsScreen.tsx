@@ -1067,26 +1067,6 @@ export const SettingsScreen: React.FC = () => {
           chevron
           divider
         />
-        <SpecRow
-          styles={styles}
-          palette={palette}
-          title="About NoteSnap"
-          sub={stampLine}
-          onPress={openAbout}
-          hint="Shows the version and what this build does"
-          chevron
-          divider
-        />
-        {/* v43 item B1 — THE BUILD STAMP, under the About row. Step 0 of every
-            owner checklist from v43 on: this line must read the version you were
-            told to test. It is the only reliable cure for a stale Play install. */}
-        <Text
-          style={styles.buildStamp}
-          accessibilityLabel={BUILD_STAMP_TAG}
-          selectable
-        >
-          {buildStampLine(stampInput)}
-        </Text>
       </View>
 
       {/* ═══════════ BELOW THE SPEC'S FOUR GROUPS ═══════════
@@ -1376,6 +1356,35 @@ export const SettingsScreen: React.FC = () => {
 
       {/* The honest tail (v43 §3): there is nothing to sign in to. */}
       <Text style={[styles.specFootnote, { color: palette.DIM }]}>{SETTINGS_NO_ACCOUNT_LINE}</Text>
+
+      {/* ═══════════════ vc53, ITEM 6 · ABOUT IS LAST ═══════════════
+          The owner (11-11): move "About NoteSnap" to the very bottom of the
+          Settings page. It used to be the last row of the Support card, with the
+          practice-reminders and calendar sections below it — so the one row that
+          carries the build stamp was never the last thing on the page. It is now
+          its own card at the foot of the surface, and the stamp is still under it
+          (the row's subtitle is the stamp, one glance, no scrolling). */}
+      <View style={[styles.aboutTail, { backgroundColor: palette.CARD, borderColor: palette.CARD_LINE }]}>
+        <SpecRow
+          styles={styles}
+          palette={palette}
+          title="About NoteSnap"
+          sub={stampLine}
+          onPress={openAbout}
+          hint="Shows the version and what this build does"
+          chevron
+        />
+        {/* v43 item B1 — THE BUILD STAMP, under the About row. Step 0 of every
+            owner checklist from v43 on: this line must read the version you were
+            told to test. It is the only reliable cure for a stale Play install. */}
+        <Text
+          style={styles.buildStamp}
+          accessibilityLabel={BUILD_STAMP_TAG}
+          selectable
+        >
+          {buildStampLine(stampInput)}
+        </Text>
+      </View>
 
       <View style={styles.bottomSpacer} />
     </ScrollView>
@@ -1765,6 +1774,14 @@ const baseStyles = StyleSheet.create({
     paddingTop: 8,
   },
 
+  /** vc53 item 6 — the About card at the foot of the page. */
+  aboutTail: {
+    marginTop: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
   bottomSpacer: {
     height: 40,
   },

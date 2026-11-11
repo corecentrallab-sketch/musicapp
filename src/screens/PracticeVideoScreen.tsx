@@ -189,6 +189,15 @@ import {
 } from '../services/videoTakeSync';
 import { OVERLAY_LANE_HEIGHT } from '../components/VideoOverlayLane';
 import { VideoOverlayLane } from '../components/VideoOverlayLane';
+// vc53, items 3/4/7: the full-screen player, the draggable scrub bar and the
+// full-screen notes box. The player is an in-app Modal because the pinned expo-av
+// cannot present native fullscreen on Android (see FullScreenVideo's header).
+import { FullScreenVideo, FULL_SCREEN_VIDEO_CTA } from '../components/FullScreenVideo';
+import { ScrubBar } from '../components/ScrubBar';
+import { scrubSeekTargetMs } from '../services/videoScrub';
+import { OVERLAY_LANE_LABEL } from '../services/videoOverlayLayout';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { tabScreenBottomPadding } from '../services/tabBarLayout';
 import { PracticeVideoSendToSheet } from '../components/PracticeVideoSendToSheet';
 import { PracticeVideoCompare, type CompareTakeSide } from '../components/PracticeVideoCompare';
 import { TakeStaffCard } from '../components/TakeStaffCard';
@@ -360,6 +369,17 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   // the same viewport box every other notation surface uses.
   const [takeExpanded, setTakeExpanded] = useState(false);
   const expandBoxHeight = useFullScreenScoreBox();
+  /**
+   * ── vc53, ITEMS 3 AND 7: TWO FULL-SCREEN WINDOWS ────────────────────────────
+   * `videoFullOpen` is the in-app full-screen player (the native fullscreen
+   * affordance expo-av shows on Android does nothing — see FullScreenVideo), and
+   * `notesFullOpen` is the "notes NoteSnap heard in your take" box, full bleed.
+   * The screen's bottom inset is read here too, because this surface scrolls and
+   * its last control must clear the device's navigation bar.
+   */
+  const insets = useSafeAreaInsets();
+  const [videoFullOpen, setVideoFullOpen] = useState(false);
+  const [notesFullOpen, setNotesFullOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [midiBusy, setMidiBusy] = useState(false);
   const [midiLine, setMidiLine] = useState<string | null>(null);
@@ -451,6 +471,12 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
    * `videoLine` is the player's failure sentence on the surface.
    */
   const videoRef = useRef<Video>(null);
+  /**
+   * vc53: the REVIEW page's player gets a ref of its own. Before this it had
+   * none, so nothing on that page could move it — which is why the trim could be
+   * set but not scrubbed and the full-screen window had no position to open at.
+   */
+  const reviewVideoRef = useRef<Video>(null);
   const [videoPlaying, setVideoPlaying] = useState(false);
   const [videoBusy, setVideoBusy] = useState(false);
   const [videoLine, setVideoLine] = useState<string | null>(null);
@@ -1196,6 +1222,27 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   const take = row?.take ?? null;
   const ref = row?.ref ?? null;
 
+  /**
+   * ── vc53, ITEM 4: WHERE A DRAG ON THE SCRUB BAR LANDS ──────────────────────
+   * The bar spans the whole recording and the rule that keeps playback inside the
+   * clip is `scrubSeekTargetMs` (services/videoScrub). Both players move through
+   * this one callback, so a drag behaves the same on the review page and on the
+   * watch page.
+   */
+  const seekPlayerTo = useCallback(
+    (player: Video | null, ms: number) => {
+      const durationMs = Math.max(0, Number(ref?.durationSec) || 0) * 1000;
+      const target = scrubSeekTargetMs(
+        durationMs > 0 ? ms / durationMs : 0,
+        durationMs,
+        trimSpan,
+      );
+      setClockMs(target);
+      void player?.setPositionAsync(target).catch(() => undefined);
+    },
+    [ref, trimSpan],
+  );
+
   // DECISION 4: the cues come from the take the EDITOR saved, never a raw trace.
   const cueSet: VideoCueSet = useMemo(
     () =>
@@ -1419,15 +1466,26 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
           : VIDEO_NOTHING_AT_ALL_LINE;
     return (
       <View style={styles.container}>
-        <ScrollView contentContainerStyle={styles.body}>
+        {/* vc53, item 2: the page reserves the device's bottom inset, so the last
+            control on the watch surface is reachable on a handset with a
+            three-button navigation bar. */}
+        <ScrollView
+          contentContainerStyle={[styles.body, { paddingBottom: tabScreenBottomPadding(insets.bottom) }]}
+        >
           <Text style={styles.title}>Watch your practice</Text>
           {ref && practiceVideoIsUsable(ref) ? (
             <>
+              {/* vc53, ITEMS 3 AND 4: NO NATIVE TRANSPORT HERE ANY MORE. The native
+                  bar's fullscreen icon is the control the owner pressed and nothing
+                  happened (pinned expo-av cannot present fullscreen on Android), and
+                  its own scrubber would be a second timeline that ignores the trim.
+                  This surface now owns all three: play/pause, the scrub bar under
+                  the video, and the full-screen window. */}
               <Video
                 ref={videoRef}
                 style={styles.video}
                 source={{ uri: ref.uri }}
-                useNativeControls
+                useNativeControls={false}
                 volume={1}
                 isMuted={false}
                 resizeMode={ResizeMode.CONTAIN}
@@ -1478,8 +1536,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 }}
               />
               {/* OUR OWN TRANSPORT (v40 fix J): the session is re-applied on every
-                  press and the outcome is a sentence, not silence. The native
-                  controls above still scrub. */}
+                  press and the outcome is a sentence, not silence. */}
               <View style={styles.syncRow}>
                 <TouchableOpacity
                   style={styles.syncBtn}
@@ -1493,7 +1550,30 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                     {videoBusy ? VIDEO_PREPARING_LABEL : videoPlaying ? VIDEO_PAUSE_CTA : VIDEO_PLAY_CTA}
                   </Text>
                 </TouchableOpacity>
+                {/* ── vc53, ITEM 3: THE FULLSCREEN CONTROL REALLY OPENS SOMETHING ──
+                    It opens the in-app window (components/FullScreenVideo), built on
+                    the FullScreenScore pattern, because the pinned expo-av cannot
+                    present native fullscreen on Android. It is never a dead icon. */}
+                <TouchableOpacity
+                  style={[styles.syncBtn, styles.fullScreenBtn]}
+                  onPress={() => setVideoFullOpen(true)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Play this take full screen"
+                >
+                  <Text style={styles.syncBtnText}>{FULL_SCREEN_VIDEO_CTA}</Text>
+                </TouchableOpacity>
               </View>
+              {/* ── vc53, ITEM 4: THE SCRUB BAR, UNDER THE VIDEO ──────────────────
+                  One timeline over the whole recording; the clip's cut ends are
+                  dimmed and a drag into them snaps to the nearest window edge
+                  (services/videoScrub). */}
+              <ScrubBar
+                positionMs={clockMs}
+                durationMs={Math.max(0, Number(ref?.durationSec) || 0) * 1000}
+                span={trimSpan}
+                onSeekMs={(ms) => seekPlayerTo(videoRef.current, ms)}
+              />
               {/* ── vc52, ITEM 4: THE CLIP SITS DIRECTLY UNDER THE VIDEO ──────
                   The owner had to scroll away from the video to reach the blue
                   editor panel. On the watch surface the clip was inside the Send-to
@@ -1547,12 +1627,17 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
             <Text style={styles.meta}>{`Clip: ${trimSpanLabel(trimSpan)}`}</Text>
           ) : null}
 
-          {/* THE OVERLAY: the CORRECTED take's notes and chords, on the video clock. */}
+          {/* THE OVERLAY: the CORRECTED take's notes and chords, on the video clock.
+              vc53, ITEM 7: the red playhead is now the user's — a drag on the box
+              moves the video (through the same scrub rule as the bar), and the box
+              opens full screen like the video does. */}
           <VideoOverlayLane
             cues={cueSet.cues}
             videoDurationSec={Math.max(0, Number(ref?.durationSec) || 0)}
             clockMs={clockMs}
             chordRow={chordRow}
+            onSeekMs={(ms) => seekPlayerTo(videoRef.current, ms)}
+            onExpand={() => setNotesFullOpen(true)}
           />
           <Text style={styles.honest}>{VIDEO_SYNC_HONESTY}</Text>
           {videoCueCountLine(cueSet) ? (
@@ -1705,6 +1790,46 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
           onRecordSecond={handleRecordSecond}
           onClose={() => setCompareOpen(false)}
         />
+        {/* ── vc53, ITEM 3: THE VIDEO, FULL SCREEN ─────────────────────────────
+            An in-app window, not `presentFullscreenPlayer()`: the pinned expo-av
+            documents that call as iOS-only, so on Android it is a no-op — which is
+            exactly why the native fullscreen icon "did nothing". The window plays
+            the same local file with the same trim window in force. */}
+        <FullScreenVideo
+          visible={videoFullOpen}
+          uri={ref && practiceVideoIsUsable(ref) ? ref.uri : null}
+          span={trimSpan}
+          startMs={clockMs}
+          title={row?.title ?? PRACTICE_VIDEO_ROW_TITLE}
+          onClose={() => setVideoFullOpen(false)}
+        />
+        {/* ── vc53, ITEM 7: THE NOTES BOX, FULL SCREEN ─────────────────────────
+            The same window the take's staff already opens (`FullScreenScore`), the
+            same lane element, a taller box — plus the scrub bar, so the playhead
+            can still be moved while the box fills the screen. */}
+        <FullScreenScore
+          visible={notesFullOpen}
+          onClose={() => setNotesFullOpen(false)}
+          title={OVERLAY_LANE_LABEL}
+          subtitle={trimSpanLabel(trimSpan)}
+        >
+          <ScrollView contentContainerStyle={[styles.expandedBody, { minHeight: expandBoxHeight }]}>
+            <VideoOverlayLane
+              cues={cueSet.cues}
+              videoDurationSec={Math.max(0, Number(ref?.durationSec) || 0)}
+              clockMs={clockMs}
+              chordRow={chordRow}
+              laneHeight={OVERLAY_LANE_HEIGHT * 2}
+              onSeekMs={(ms) => seekPlayerTo(videoRef.current, ms)}
+            />
+            <ScrubBar
+              positionMs={clockMs}
+              durationMs={Math.max(0, Number(ref?.durationSec) || 0) * 1000}
+              span={trimSpan}
+              onSeekMs={(ms) => seekPlayerTo(videoRef.current, ms)}
+            />
+          </ScrollView>
+        </FullScreenScore>
       </View>
     );
   }
@@ -1742,7 +1867,11 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.body}>
+      {/* vc53, item 2: the record/review page reserves the device's bottom inset,
+          so "Send to…" and the trim's last control are never under the bar. */}
+      <ScrollView
+        contentContainerStyle={[styles.body, { paddingBottom: tabScreenBottomPadding(insets.bottom) }]}
+      >
         <Text style={styles.title}>{PRACTICE_VIDEO_SCREEN_TITLE}</Text>
         <Text style={styles.honest}>{VIDEO_RECORD_HONESTY}</Text>
         <Text style={styles.honest}>{VIDEO_STAYS_ON_PHONE_LINE}</Text>
@@ -1790,6 +1919,27 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
           </View>
         ) : null}
 
+        {/* ── vc53, ITEM 5: THE START CONTROL, DIRECTLY UNDER THE FLIP ─────────
+            The owner: move the record/start button "up, directly under the Flip
+            camera button", keep it green, and make it larger and round. It stays
+            in the same phase and calls the same `handleStart`, so the count-in and
+            the one-press-start-both-captures behaviour are untouched; only where
+            it sits and how big it is changed. The round visual system is the
+            designer's pass — this is a plain larger round button so the layout is
+            right and a restyle cannot move anything. */}
+        {phase === 'permissions' ? (
+          <TouchableOpacity
+            style={styles.startBtnRound}
+            onPress={handleStart}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={PRACTICE_VIDEO_START_CTA}
+            accessibilityHint={PRACTICE_VIDEO_START_HINT}
+          >
+            <Text style={styles.startBtnRoundText}>{PRACTICE_VIDEO_START_CTA}</Text>
+          </TouchableOpacity>
+        ) : null}
+
         {phase === 'permissions' ? (
           <>
             <Text style={styles.meta}>{PRACTICE_VIDEO_START_LINE}</Text>
@@ -1834,19 +1984,8 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               </View>
               <Text style={styles.honest}>{RECORDING_LENGTH_HINT}</Text>
             </View>
-
-            {/* THE START CONTROL (v39 fix 2). The camera preview is up and
-                waiting; filming and the audio take both begin on THIS press and
-                not before, so the user can set the phone down first. */}
-            <TouchableOpacity
-              style={styles.startBtn}
-              onPress={handleStart}
-              accessibilityRole="button"
-              accessibilityLabel={PRACTICE_VIDEO_START_CTA}
-              accessibilityHint={PRACTICE_VIDEO_START_HINT}
-            >
-              <Text style={styles.startBtnText}>{PRACTICE_VIDEO_START_CTA}</Text>
-            </TouchableOpacity>
+            {/* vc53, ITEM 5: the Start control now sits ABOVE this block, directly
+                under the Flip camera button (see the round green button above). */}
           </>
         ) : null}
         {/* ── vc49: THE COUNT-IN, ON SCREEN (owner 11-03) ──────────────────────
@@ -1952,10 +2091,16 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 here, with its own length under it, before anything else. */}
             {practiceVideoIsUsable(ref) ? (
               <>
+                {/* vc53, ITEMS 3 AND 4: the review page gets the same three controls
+                    as the watch page — our own transport, the scrub bar with the
+                    trim's cut ends dimmed, and the full-screen window. The native
+                    bar is off because its fullscreen icon does nothing on Android
+                    with the pinned expo-av, and its scrubber ignored the trim. */}
                 <Video
+                  ref={reviewVideoRef}
                   style={styles.video}
                   source={{ uri: ref.uri }}
-                  useNativeControls
+                  useNativeControls={false}
                   volume={1}
                   isMuted={false}
                   resizeMode={ResizeMode.CONTAIN}
@@ -1965,6 +2110,39 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                   onReadyForDisplay={() => {
                     void restorePlaybackAudioMode();
                   }}
+                  onPlaybackStatusUpdate={(status) => {
+                    const position = (status as { positionMillis?: number }).positionMillis;
+                    if (typeof position !== 'number' || !Number.isFinite(position)) return;
+                    setClockMs(position);
+                    // The SAME window rule as the watch page: a trim set here is in
+                    // force here, whichever control moved the playhead.
+                    const action = trimPlaybackAction(position, trimSpan);
+                    if (action.kind === 'seek') {
+                      void reviewVideoRef.current?.setPositionAsync(action.toMs).catch(() => undefined);
+                    } else if (action.kind === 'stop') {
+                      void reviewVideoRef.current
+                        ?.pauseAsync()
+                        .then(() => reviewVideoRef.current?.setPositionAsync(action.toMs))
+                        .catch(() => undefined);
+                    }
+                  }}
+                />
+                <View style={styles.syncRow}>
+                  <TouchableOpacity
+                    style={styles.syncBtn}
+                    onPress={() => setVideoFullOpen(true)}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Play this take full screen"
+                  >
+                    <Text style={styles.syncBtnText}>{FULL_SCREEN_VIDEO_CTA}</Text>
+                  </TouchableOpacity>
+                </View>
+                <ScrubBar
+                  positionMs={clockMs}
+                  durationMs={Math.max(0, Number(ref?.durationSec) || 0) * 1000}
+                  span={trimSpan}
+                  onSeekMs={(ms) => seekPlayerTo(reviewVideoRef.current, ms)}
                 />
                 <Text style={styles.meta}>
                   {videoSizeLine(Math.max(0, Number(ref?.durationSec) || 0), ref?.sizeBytes ?? null)}
@@ -2107,6 +2285,16 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         onSaved={handleEditorSaved}
         onClose={() => setEditorOpen(false)}
       />
+      {/* vc53, ITEM 3: the review page's own full-screen window, on the same
+          in-app Modal as the watch page's (never `presentFullscreenPlayer()`). */}
+      <FullScreenVideo
+        visible={videoFullOpen}
+        uri={ref && practiceVideoIsUsable(ref) ? ref.uri : null}
+        span={trimSpan}
+        startMs={clockMs}
+        title={PRACTICE_VIDEO_ROW_TITLE}
+        onClose={() => setVideoFullOpen(false)}
+      />
     </View>
   );
 };
@@ -2181,6 +2369,26 @@ const baseStyles = StyleSheet.create({
   },
   missingText: { color: '#cfe4ff', fontSize: 13, lineHeight: 19 },
   syncRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
+  /** vc53 item 3 — the fullscreen control sits beside Play, not under it. */
+  fullScreenBtn: { marginLeft: 10 },
+  /**
+   * vc53 item 5 — THE START CONTROL: larger, round and green, directly under the
+   * Flip camera button. `minHeight`/`minWidth` keep it tappable at the WCAG size;
+   * the round system is the designer's pass, so nothing here depends on the shape.
+   */
+  startBtnRound: {
+    alignSelf: 'center',
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2ecc71',
+    marginTop: 14,
+    marginBottom: 6,
+    paddingHorizontal: 8,
+  },
+  startBtnRoundText: { color: '#0b1a12', fontSize: 18, fontWeight: '800', textAlign: 'center' },
   syncLabel: { color: '#9aa0b5', fontSize: 12, marginRight: 10 },
   syncBtn: {
     minWidth: 44,

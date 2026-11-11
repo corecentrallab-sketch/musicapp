@@ -37,7 +37,9 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { ResizeMode, Video } from 'expo-av';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ensurePlaybackAudioMode, playWithAudioFocus, restorePlaybackAudioMode } from '../services/audioSession';
+import { sheetBottomPadding } from '../services/tabBarLayout';
 import { reportAudioFailure, usableDetail } from '../services/audioDiagnostics';
 import { suggestedChords } from '../services/melodyCapture';
 import { VideoOverlayLane } from './VideoOverlayLane';
@@ -91,6 +93,16 @@ export const PracticeVideoCompare: React.FC<PracticeVideoCompareProps> = ({
 }) => {
   const { styles } = useThemedStyles(baseStyles);
   const { width: windowWidth } = useWindowDimensions();
+  /**
+   * ── vc53, ITEM 2 (the third symptom): THIS PAGE MUST REACH ITS BOTTOM ────────
+   *
+   * The owner: "'Compare with other take' opens a page that is also cut off about
+   * two-thirds of the way down." This is the same omission as Practice Tools and
+   * the Send-to sheets — a full-screen surface whose content ran to a fixed 40 px
+   * bottom margin, so the last of it sat under the device's navigation bar with
+   * nothing to scroll past. It reads the ONE shared helper now, like the sheets.
+   */
+  const insets = useSafeAreaInsets();
   const contentWidth = Math.max(0, Math.round(windowWidth) - COMPARE_PADDING_DP * 2);
 
   const pair = useMemo(
@@ -221,7 +233,7 @@ export const PracticeVideoCompare: React.FC<PracticeVideoCompareProps> = ({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
       <View style={styles.container}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: 24 + insets.top }]}>
           <TouchableOpacity
             style={styles.backBtn}
             onPress={handleClose}
@@ -233,7 +245,15 @@ export const PracticeVideoCompare: React.FC<PracticeVideoCompareProps> = ({
           <Text style={styles.title}>{COMPARE_TITLE}</Text>
         </View>
 
-        <ScrollView style={styles.page} contentContainerStyle={styles.body}>
+        {/* vc53 item 2: the body ends clear of the device's navigation bar, so the
+            last lane and its lines can be scrolled to. */}
+        <ScrollView
+          style={styles.page}
+          contentContainerStyle={[
+            styles.body,
+            { paddingBottom: sheetBottomPadding(insets.bottom) },
+          ]}
+        >
           <Text style={styles.subtitle}>{COMPARE_SUBTITLE}</Text>
           <Text style={styles.honest}>{pair.honesty}</Text>
           <Text style={styles.honest}>{pair.offlineLine}</Text>
