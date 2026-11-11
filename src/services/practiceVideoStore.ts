@@ -34,6 +34,12 @@ import {
   practiceVideoIsUsable,
   type PracticeVideoRef,
 } from './practiceVideoRef';
+// vc54 (DEFECT 1): the all-or-nothing write itself — pure, and run by the gate
+// against a fake device (services/practiceVideoSave.ts).
+import {
+  writePracticeVideoRow,
+  type PracticeVideoSavePort,
+} from './practiceVideoSave';
 import type { SavedCaptureTake } from './midiExport';
 import type { SavedPiece } from '../types';
 
@@ -160,37 +166,68 @@ export async function savePracticeVideoRow(
     title: input.title ?? PRACTICE_VIDEO_ROW_TITLE,
   });
   const piece: SavedPiece = { ...base, practiceVideo: input.videoRef };
-  try {
-    await saveRecognition(piece);
-  } catch {
-    return null;
-  }
   /**
-   * ── vc53 (A5): THE ATTACH IS PART OF THE SAVE, NOT A COURTESY ──────────────
+   * ── vc54 (DEFECT 1): THE WRITE IS ALL-OR-NOTHING, AND IT IS THE PURE ONE ────
    *
-   * The row is written FIRST and the video block attached SECOND (that order is
-   * what makes the row survive even if the attach dies). The attach's boolean used
-   * to be discarded, so a row that landed WITHOUT its practice-video block still
-   * reported "Saved to your History" — cause 2 in the vc53 brief: present in
-   * History, but not recognisable as a take. A failed attach is now a failed save,
-   * which is a state the surface can show and the user can retry.
+   * Everything this function used to do inline — write, attach, read back — now
+   * lives in `services/practiceVideoSave.ts` behind a port, because the vc53
+   * version had two silent-success paths the device could reach and no test could:
+   *
+   *   • `saveRecognition` SKIPS a row whose id is already in History and returns
+   *     void, so the read-back found the OLD row and reported a save over a take
+   *     that was never written (the owner's 2-in-3 failure, with no card);
+   *   • a video file that had not landed on disk yet produced a row pointing at
+   *     nothing, or a take silently saved without its video.
+   *
+   * The algorithm now: waits (bounded) for the video file, inserts, PATCHES the
+   * take's own blocks when the id was already there, reads the row back through
+   * the read History performs, and requires the video block that comes back to be
+   * THIS take's. One automatic retry, then null — which the surface renders as the
+   * loud card with its retry. It never returns a row it did not read back.
+   *
+   * The vc53 write queue is untouched: `insertRow` and `patchRow` still go through
+   * `storage`, and every one of those writes is serialised by `enqueueHistoryWrite`.
    */
-  if (input.videoRef) {
-    let attached = false;
-    try {
-      attached = await attachPracticeVideo(piece.id, input.videoRef);
-    } catch {
-      attached = false;
-    }
-    if (!attached) return null;
-  }
-  // THE READ-BACK. Same read History performs; no local cache, no assumption.
-  const stored = await loadPracticeVideoRow(piece.id);
-  if (!stored) return null;
-  // …and the block has to have survived the read, not just the row.
-  if (input.videoRef && !practiceVideoIsUsable(stored.practiceVideo ?? null)) return null;
-  return stored;
+  return writePracticeVideoRow(
+    { piece, take: input.take, audioUri: input.audioUri, videoRef: input.videoRef },
+    practiceVideoSavePort,
+  );
 }
+
+/**
+ * THE DEVICE SIDE OF THE SAVE (vc54). Every call here is one the app already
+ * makes elsewhere; the port exists so the algorithm above can be run against a
+ * fake device in the tier1 gate and FAILED when its rules are removed.
+ */
+const practiceVideoSavePort: PracticeVideoSavePort = {
+  readRow: (rowId) => loadPracticeVideoRow(rowId),
+  insertRow: (piece) => saveRecognition(piece),
+  patchRow: async (rowId, patch) => {
+    // The take's blocks, written onto a row that is already in History. Both
+    // writers go through the ONE History queue; a false means "the row is gone",
+    // which is a failed save here, never a shrug.
+    let ok = true;
+    if (patch.videoRef) {
+      ok = await attachPracticeVideo(rowId, patch.videoRef);
+      if (!ok) return false;
+    }
+    if (patch.take) {
+      ok = (await savePracticeVideoTake(rowId, patch.take)) && ok;
+    }
+    return ok;
+  },
+  fileExists: (uri) => practiceVideoFileExists(uri),
+  waitForFile: async (uri, timeoutMs) => {
+    const deadline = Date.now() + Math.max(0, Number(timeoutMs) || 0);
+    // Bounded poll: the camera hands back its URI when it stops, and on a slow
+    // device the file is still being flushed to disk for a moment afterwards.
+    while (Date.now() <= deadline) {
+      if (await practiceVideoFileExists(uri)) return true;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return practiceVideoFileExists(uri);
+  },
+};
 
 /**
  * Is this row really in History? The read-back the save path and the retry share,

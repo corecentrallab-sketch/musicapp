@@ -176,6 +176,8 @@ import {
   VIDEO_STAYS_ON_PHONE_LINE,
   VIDEO_SYNC_HONESTY,
   VIDEO_TAKE_FAILED_LINE,
+  VIDEO_TAKE_ON_ITS_OWN_CTA,
+  VIDEO_TAKE_ON_ITS_OWN_LINE,
   captureSyncOffsetMs,
   firstOnsetSec,
   formatOffset,
@@ -184,6 +186,7 @@ import {
   offsetFromFirstNoteTap,
   separateTakeOffset,
   videoCueCountLine,
+  videoCueEmptyLine,
   videoSizeLine,
   type VideoCueSet,
 } from '../services/videoTakeSync';
@@ -195,7 +198,7 @@ import { VideoOverlayLane } from '../components/VideoOverlayLane';
 import { FullScreenVideo, FULL_SCREEN_VIDEO_CTA } from '../components/FullScreenVideo';
 import { ScrubBar } from '../components/ScrubBar';
 import { scrubSeekTargetMs } from '../services/videoScrub';
-import { OVERLAY_LANE_LABEL } from '../services/videoOverlayLayout';
+import { OVERLAY_EMPTY_LINE, OVERLAY_LANE_LABEL } from '../services/videoOverlayLayout';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tabScreenBottomPadding } from '../services/tabBarLayout';
 import { PracticeVideoSendToSheet } from '../components/PracticeVideoSendToSheet';
@@ -1253,6 +1256,19 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     [offsetMs, ref?.durationSec, take],
   );
 
+  /**
+   * ── vc54, DEFECT 2 ── WHAT THE LANE SAYS WHEN IT HAS NOTHING TO DRAW.
+   *
+   * The lane owns no facts: it is handed cues. The surface knows whether the take
+   * held no melody at all or held notes that fall outside the video window, so it
+   * supplies the sentence (`videoCueEmptyLine`) instead of letting every empty
+   * lane claim it heard nothing.
+   */
+  const cueEmptyLine = useMemo(
+    () => videoCueEmptyLine(cueSet) ?? OVERLAY_EMPTY_LINE,
+    [cueSet],
+  );
+
   const chordRow = useMemo(() => {
     if (!take) return [];
     const suggestion = suggestedChords(take.notes, take.key);
@@ -1638,6 +1654,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
             chordRow={chordRow}
             onSeekMs={(ms) => seekPlayerTo(videoRef.current, ms)}
             onExpand={() => setNotesFullOpen(true)}
+            emptyLine={cueEmptyLine}
           />
           <Text style={styles.honest}>{VIDEO_SYNC_HONESTY}</Text>
           {videoCueCountLine(cueSet) ? (
@@ -1821,6 +1838,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               chordRow={chordRow}
               laneHeight={OVERLAY_LANE_HEIGHT * 2}
               onSeekMs={(ms) => seekPlayerTo(videoRef.current, ms)}
+              emptyLine={cueEmptyLine}
             />
             <ScrubBar
               positionMs={clockMs}
@@ -2206,15 +2224,29 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 interactive={false}
               />
             ) : null}
-            {!take && separateTakeRef.current ? (
-              <TouchableOpacity
-                style={styles.primaryBtn}
-                onPress={() => void recordSeparateTake()}
-                accessibilityRole="button"
-                accessibilityLabel="Record the take now"
-              >
-                <Text style={styles.primaryBtnText}>{'Record the take now'}</Text>
-              </TouchableOpacity>
+            {/* ── vc54, DEFECT 2: THE EMPTY TAKE IS NEVER A DEAD END ──────────────
+                This action used to be rendered ONLY when the app's own recorder
+                had failed to start (`separateTakeRef`), which is not the only way a
+                filmed take comes back with no notes: the camera and the app's
+                recorder share one microphone, and on the handset the filmed take's
+                audio can arrive silent — the owner's "I have tried x3 takes — all
+                shows the same error message", with no way forward on the screen.
+                The one path that provably reads notes on a phone is a take recorded
+                with the camera OFF, so it is offered whenever the take has no notes
+                — and it is written onto THIS row (the same row id), so the notes
+                land under this video. */}
+            {!take && !takeBusy ? (
+              <>
+                <Text style={styles.honest}>{VIDEO_TAKE_ON_ITS_OWN_LINE}</Text>
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={() => void recordSeparateTake()}
+                  accessibilityRole="button"
+                  accessibilityLabel={VIDEO_TAKE_ON_ITS_OWN_CTA}
+                >
+                  <Text style={styles.primaryBtnText}>{VIDEO_TAKE_ON_ITS_OWN_CTA}</Text>
+                </TouchableOpacity>
+              </>
             ) : null}
 
             {/* ── vc52, ITEM 4: the trim used to sit HERE, below the staff card.

@@ -30,6 +30,9 @@ import type { PracticeVideoRef } from './practiceVideoRef';
 // ONE queue for the ONE History blob (vc53, A5) — see the note over
 // `saveRecognition` and services/historyWriteQueue.ts.
 import { enqueueHistoryWrite } from './historyWriteQueue';
+// vc54 (DEFECT 1): the write REPORTS whether it inserted or found the id already
+// there, so a skipped insert can never be mistaken for a save again.
+import type { RecognitionWriteOutcome } from './practiceVideoSave';
 
 const KEYS = {
   ONBOARDING: '@notesnap/onboarding',
@@ -269,17 +272,17 @@ export async function getRecognitionCount(): Promise<number> {
  * `enqueueHistoryWrite` serialises all five (services/historyWriteQueue.ts). The
  * shape of each function is otherwise unchanged: same read, same rule, same write.
  */
-export async function saveRecognition(piece: SavedPiece): Promise<void> {
-  await enqueueHistoryWrite(async () => {
+export async function saveRecognition(piece: SavedPiece): Promise<RecognitionWriteOutcome> {
+  return enqueueHistoryWrite(async () => {
     const history = await getRecognitionHistory();
     // Avoid duplicates by piece_id
-    if (!history.some((p) => p.id === piece.id)) {
-      history.unshift(piece);
-      await AsyncStorage.setItem(
-        KEYS.RECOGNITION_HISTORY,
-        JSON.stringify(history),
-      );
-    }
+    if (history.some((p) => p.id === piece.id)) return 'existing' as RecognitionWriteOutcome;
+    history.unshift(piece);
+    await AsyncStorage.setItem(
+      KEYS.RECOGNITION_HISTORY,
+      JSON.stringify(history),
+    );
+    return 'inserted' as RecognitionWriteOutcome;
   });
 }
 

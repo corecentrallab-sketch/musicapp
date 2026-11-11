@@ -252,6 +252,9 @@
     "src/services/historyWriteQueue.ts",
     "scripts/vc53HistoryQueue.test.ts",
     "src/services/videoScrub.ts",
-    "scripts/vc53MediaControls.test.ts"
+    "scripts/vc53MediaControls.test.ts",
+    "src/services/practiceVideoSave.ts",
+    "src/services/videoTakeSync.ts",
+    "scripts/vc54TakeSaveAndCues.test.ts"
   ]
 }
