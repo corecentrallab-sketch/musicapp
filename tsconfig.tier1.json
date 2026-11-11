@@ -255,6 +255,8 @@
     "scripts/vc53MediaControls.test.ts",
     "src/services/practiceVideoSave.ts",
     "src/services/videoTakeSync.ts",
-    "scripts/vc54TakeSaveAndCues.test.ts"
+    "scripts/vc54TakeSaveAndCues.test.ts",
+    "src/services/notesLaneTimelineContract.ts",
+    "scripts/vc55NotesLaneTimeline.test.ts"
   ]
 }

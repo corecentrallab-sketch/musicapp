@@ -1686,9 +1686,16 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               vc53, ITEM 7: the red playhead is now the user's — a drag on the box
               moves the video (through the same scrub rule as the bar), and the box
               opens full screen like the video does. */}
+          {/* vc55: THE LANE DRAWS ON THE TIMELINE THE CUES WERE MADE ON.
+                This used to be the stored `ref.durationSec`, which is 0 for a row
+                whose length was never stored - and `overlayLayout` places nothing
+                on a zero-length axis, so a take of real notes reached the lane and
+                then vanished at the pixel. `cueSet.timelineSec` IS that axis
+                (`noteCuesForVideo` returns it), so the notes and the pixels can no
+                longer disagree. */}
           <VideoOverlayLane
             cues={cueSet.cues}
-            videoDurationSec={Math.max(0, Number(ref?.durationSec) || 0)}
+            videoDurationSec={cueSet.timelineSec}
             clockMs={clockMs}
             chordRow={chordRow}
             onSeekMs={(ms) => seekPlayerTo(videoRef.current, ms)}
@@ -1870,9 +1877,16 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
           subtitle={trimSpanLabel(trimSpan)}
         >
           <ScrollView contentContainerStyle={[styles.expandedBody, { minHeight: expandBoxHeight }]}>
+            {/* vc55: THE LANE DRAWS ON THE TIMELINE THE CUES WERE MADE ON.
+                This used to be the stored `ref.durationSec`, which is 0 for a row
+                whose length was never stored - and `overlayLayout` places nothing
+                on a zero-length axis, so a take of real notes reached the lane and
+                then vanished at the pixel. `cueSet.timelineSec` IS that axis
+                (`noteCuesForVideo` returns it), so the notes and the pixels can no
+                longer disagree. */}
             <VideoOverlayLane
               cues={cueSet.cues}
-              videoDurationSec={Math.max(0, Number(ref?.durationSec) || 0)}
+              videoDurationSec={cueSet.timelineSec}
               clockMs={clockMs}
               chordRow={chordRow}
               laneHeight={OVERLAY_LANE_HEIGHT * 2}
