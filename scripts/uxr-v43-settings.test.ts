@@ -20,6 +20,7 @@
 import { maskSourceComments } from '../src/services/audioFocusContract';
 import { DARK_THEME, LIGHT_THEME } from '../src/services/theme';
 import {
+  ABOUT_ROW_TITLE,
   NOISE_FILTER_VALUE,
   SETTINGS_FAQ,
   SETTINGS_GROUP_TITLES,
@@ -259,10 +260,21 @@ for (const mode of [DARK_THEME, LIGHT_THEME]) {
 // ═══════════════════════ §3 · every row resolves ═══════════════════════
 
 console.log('\n§3 NO DEAD ROWS — each row reaches a destination that exists');
+/**
+ * vc53 ITEM 6 — ABOUT IS THE LAST ROW ON THE PAGE (owner 11-11). The closed set is
+ * unchanged; only About's rendered POSITION moved, to a card at the foot of the
+ * surface. So the order is compared without About and About is then pinned to the
+ * end — the same rule `settingsRowsAreTheClosedSet` applies to the screen.
+ */
 assertEq(
-  specRowTitles(settings),
-  settingsClosedSetKeys(),
-  'the screen renders exactly the closed set, in order, once each',
+  specRowTitles(settings).filter((title) => title !== ABOUT_ROW_TITLE),
+  settingsClosedSetKeys().filter((title) => title !== ABOUT_ROW_TITLE),
+  'the screen renders exactly the closed set, in order, once each (About aside)',
+);
+assertEq(
+  specRowTitles(settings).slice(-1),
+  [ABOUT_ROW_TITLE],
+  'About NoteSnap is the LAST row on the page (vc53 item 6)',
 );
 assert(settingsRowsAreTheClosedSet(settings), 'the rendered copy matches the spec’s copy (no drift, no extra row)');
 assert(settingsHasNoDeadRows(settings), 'every row is either wired or a declared honest VALUE row');
