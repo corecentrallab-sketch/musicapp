@@ -27,6 +27,8 @@
 import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useMemo, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { sheetBottomPadding } from '../services/tabBarLayout';
 import {
   SEND_TO_HONESTY,
   SEND_TO_TITLE,
@@ -76,6 +78,8 @@ export const TakeSendToSheet: React.FC<TakeSendToSheetProps> = ({
   onClose,
 }) => {
   const { styles } = useThemedStyles(baseStyles);
+  // The device's bottom inset, so the last destination is never under the bar.
+  const insets = useSafeAreaInsets();
   const actions = useMemo(() => sendToActions(take), [take]);
   /** Which destination is working right now (null = none). */
   const [busy, setBusy] = useState<SendToKind | null>(null);
@@ -119,7 +123,10 @@ export const TakeSendToSheet: React.FC<TakeSendToSheetProps> = ({
           <Text style={styles.title}>{SEND_TO_TITLE}</Text>
         </View>
 
-        <ScrollView style={styles.page} contentContainerStyle={styles.body}>
+        <ScrollView
+          style={styles.page}
+          contentContainerStyle={[styles.body, { paddingBottom: sheetBottomPadding(insets.bottom) }]}
+        >
           <Text style={styles.honest}>{SEND_TO_HONESTY}</Text>
 
           {actions.length === 0 ? (

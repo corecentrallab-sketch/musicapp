@@ -439,15 +439,17 @@ probe('guard 10: the lane stops using the pure layout', ownLayout, LANE, () =>
   videoOverlayReadsTheCorrectedTake(SCREEN, ownLayout),
 );
 // 10b — the overlay is fed an empty cue list instead of the corrected take.
-const emptyCues = SCREEN.replace('cues={cueSet.cues}', 'cues={[]}');
+// EVERY occurrence: vc53 put a second lane on the full-screen player, so a
+// first-only replace would empty one lane and leave the other (the guard reads
+// the file, not a lane) and the probe would stop biting.
+const emptyCues = SCREEN.split('cues={cueSet.cues}').join('cues={[]}');
 probe('guard 10: the overlay is fed no cues at all', emptyCues, SCREEN, () =>
   videoOverlayReadsTheCorrectedTake(emptyCues, LANE),
 );
 // 10c — the lane grows a camera (a viewer that could record is not a viewer).
-const cameraLane = LANE.replace(
-  "import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';",
-  "import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';\nimport { CameraView } from 'expo-camera';",
-);
+// The import is PREPENDED: vc53 rewrote the lane's react-native import block, so
+// anchoring the mutation to that exact line made the probe silently stop mutating.
+const cameraLane = `import { CameraView } from 'expo-camera';\n${LANE}`;
 probe('guard 10: the overlay lane imports the camera', cameraLane, LANE, () =>
   videoOverlayReadsTheCorrectedTake(SCREEN, cameraLane),
 );

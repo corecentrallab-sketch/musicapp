@@ -12,6 +12,9 @@ import type { RootTabParamList } from '../types';
 // most visible chrome in the app, so they read the SAME shared mode as the
 // screens (services/themeStore).
 import { useThemeMode } from '../services/themeStore';
+// ONE number for the bar's height, shared with every screen that scrolls under it
+// (vc53, item 2 — see services/tabBarLayout.ts).
+import { TAB_BAR_VERTICAL_PADDING, tabBarHeight } from '../services/tabBarLayout';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
@@ -45,9 +48,9 @@ export const TabNavigator: React.FC = () => {
           backgroundColor: theme.surface,
           borderTopColor: theme.border,
           borderTopWidth: 1,
-          paddingBottom: 6 + insets.bottom,
-          paddingTop: 6,
-          height: 60 + insets.bottom,
+          paddingBottom: TAB_BAR_VERTICAL_PADDING + insets.bottom,
+          paddingTop: TAB_BAR_VERTICAL_PADDING,
+          height: tabBarHeight(insets.bottom),
         },
         tabBarActiveTintColor: theme.accent,
         tabBarInactiveTintColor: theme.subtext,

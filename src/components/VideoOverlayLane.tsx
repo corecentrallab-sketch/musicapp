@@ -19,8 +19,15 @@
  * clock, and it returns pixels; it re-times nothing and reads no video frame.
  */
 import { useThemedStyles } from '../services/themeStore';
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import {
+  PanResponder,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  type LayoutChangeEvent,
+} from 'react-native';
 import {
   OVERLAY_AWAITING_LINE,
   OVERLAY_CHORD_LABEL,
@@ -36,6 +43,11 @@ import type { VideoCue } from '../services/videoTakeSync';
 /** The lane's fixed height on the surface (the pitch rows divide it). */
 export const OVERLAY_LANE_HEIGHT = 120;
 
+/** vc53, item 7 — the lane can be opened full screen, like the video. */
+export const OVERLAY_EXPAND_CTA = 'Full screen';
+/** What a drag on the lane does, said once. */
+export const OVERLAY_SEEK_LABEL = 'Drag the playhead to move through the score';
+
 export interface VideoOverlayLaneProps {
   /** The corrected take's cues on the video's timeline (never a raw trace). */
   cues: ReadonlyArray<VideoCue>;
@@ -48,6 +60,18 @@ export interface VideoOverlayLaneProps {
   /** The lane's honest caption (from the model). */
   laneLabel?: string;
   chordLabel?: string;
+  /**
+   * vc53, item 7: THE RED PLAYHEAD IS THE USER'S. When this is supplied the lane
+   * becomes a control — a drag on it reports a position in milliseconds, and the
+   * surface moves the video there. Without it the lane stays the read-only
+   * renderer it has always been (the comparison surface passes nothing).
+   */
+  onSeekMs?: (ms: number) => void;
+  /** A taller lane for the full-screen window (the pitch rows divide it). */
+  laneHeight?: number;
+  /** Opens the full-screen window (item 7) — absent on the read-only surfaces. */
+  onExpand?: () => void;
+  expandLabel?: string;
 }
 
 export const VideoOverlayLane: React.FC<VideoOverlayLaneProps> = ({
@@ -57,20 +81,63 @@ export const VideoOverlayLane: React.FC<VideoOverlayLaneProps> = ({
   chordRow,
   laneLabel = OVERLAY_LANE_LABEL,
   chordLabel = OVERLAY_CHORD_LABEL,
+  onSeekMs,
+  laneHeight = OVERLAY_LANE_HEIGHT,
+  onExpand,
+  expandLabel = OVERLAY_EXPAND_CTA,
 }) => {
   const { styles } = useThemedStyles(baseStyles);
   const [width, setWidth] = useState(0);
+  const [dragging, setDragging] = useState(false);
+
+  /**
+   * vc53, item 7 — THE PLAYHEAD IS DRAGGABLE. The responder is built ONCE and
+   * reads the live width/duration/callback through a ref, so a rebuild cannot
+   * drop the gesture mid-drag. A vertical drag is handed back to the ScrollView
+   * (`onPanResponderTerminationRequest`), so the page still scrolls over the lane.
+   */
+  const live = useRef({ width: 0, videoDurationSec, onSeekMs });
+  live.current.videoDurationSec = videoDurationSec;
+  live.current.onSeekMs = onSeekMs;
+
+  const seekFromX = (x: number): void => {
+    const seek = live.current.onSeekMs;
+    const box = live.current.width;
+    const duration = Number(live.current.videoDurationSec);
+    if (!seek || box <= 0 || !Number.isFinite(duration) || duration <= 0) return;
+    const fraction = Math.min(1, Math.max(0, x / box));
+    seek(Math.round(fraction * duration * 1000));
+  };
+
+  const responder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 2,
+        onPanResponderTerminationRequest: () => true,
+        onPanResponderGrant: (event) => {
+          setDragging(true);
+          seekFromX(event.nativeEvent.locationX);
+        },
+        onPanResponderMove: (event) => seekFromX(event.nativeEvent.locationX),
+        onPanResponderRelease: () => setDragging(false),
+        onPanResponderTerminate: () => setDragging(false),
+      }),
+    [],
+  );
 
   const onLayout = (event: LayoutChangeEvent) => {
     const next = event.nativeEvent.layout.width;
-    if (next > 0 && Math.abs(next - width) > 0.5) setWidth(next);
+    if (next <= 0) return;
+    live.current.width = next;
+    if (Math.abs(next - width) > 0.5) setWidth(next);
   };
 
   const drawList = overlayLayout({
     cues,
     videoDurationSec,
     clockMs,
-    box: { width: Math.max(1, width), height: OVERLAY_LANE_HEIGHT, lanes: OVERLAY_MAX_LANES },
+    box: { width: Math.max(1, width), height: laneHeight, lanes: OVERLAY_MAX_LANES },
   });
   const playhead = drawList.find((item) => item.kind === 'playhead') ?? null;
   const lit = visibleCues(drawList, clockMs).map((item) => item.id);
@@ -78,8 +145,27 @@ export const VideoOverlayLane: React.FC<VideoOverlayLaneProps> = ({
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.laneLabel}>{laneLabel}</Text>
-      <View style={styles.lane} onLayout={onLayout}>
+      <View style={styles.labelRow}>
+        <Text style={styles.laneLabel}>{laneLabel}</Text>
+        {onExpand ? (
+          <TouchableOpacity
+            style={styles.expandBtn}
+            onPress={onExpand}
+            accessibilityRole="button"
+            accessibilityLabel={`${expandLabel}: ${laneLabel}`}
+          >
+            <Text style={styles.expandText}>{expandLabel}</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      <View
+        style={[styles.lane, { height: laneHeight }]}
+        onLayout={onLayout}
+        accessible={!!onSeekMs}
+        accessibilityRole={onSeekMs ? 'adjustable' : undefined}
+        accessibilityLabel={onSeekMs ? OVERLAY_SEEK_LABEL : undefined}
+        {...(onSeekMs ? responder.panHandlers : {})}
+      >
         {cues.length === 0 ? (
           <Text style={styles.empty}>{OVERLAY_EMPTY_LINE}</Text>
         ) : (
@@ -90,6 +176,7 @@ export const VideoOverlayLane: React.FC<VideoOverlayLaneProps> = ({
                 <View
                   key={item.id}
                   testID={item.id}
+                  pointerEvents="none"
                   style={[
                     styles.note,
                     lit.indexOf(item.id) >= 0 && styles.noteLit,
@@ -102,11 +189,18 @@ export const VideoOverlayLane: React.FC<VideoOverlayLaneProps> = ({
                   ]}
                 />
               ))}
-            {playhead ? <View style={[styles.playhead, { left: playhead.x }]} /> : null}
+            {playhead ? (
+              <View
+                pointerEvents="none"
+                style={[styles.playhead, dragging && styles.playheadActive, { left: playhead.x }]}
+              />
+            ) : null}
           </>
         )}
       </View>
-      <Text style={styles.awaiting}>{OVERLAY_AWAITING_LINE}</Text>
+      <Text style={styles.awaiting}>
+        {onSeekMs ? `${OVERLAY_AWAITING_LINE} ${OVERLAY_SEEK_LABEL}.` : OVERLAY_AWAITING_LINE}
+      </Text>
       {chips.length > 0 ? (
         <>
           <Text style={styles.laneLabel}>{chordLabel}</Text>
@@ -125,7 +219,18 @@ export const VideoOverlayLane: React.FC<VideoOverlayLaneProps> = ({
 
 const baseStyles = StyleSheet.create({
   wrap: { marginTop: 12 },
+  labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   laneLabel: { color: '#9aa0b5', fontSize: 12, marginBottom: 6 },
+  expandBtn: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2f4370',
+    backgroundColor: '#1b2a4a',
+  },
+  expandText: { color: '#cfe4ff', fontSize: 12, fontWeight: '700' },
   lane: {
     height: OVERLAY_LANE_HEIGHT,
     backgroundColor: '#101024',
@@ -139,6 +244,7 @@ const baseStyles = StyleSheet.create({
   note: { position: 'absolute', backgroundColor: '#4ecdc4', borderRadius: 3, opacity: 0.65 },
   noteLit: { backgroundColor: '#ffd166', opacity: 1 },
   playhead: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: '#e94560' },
+  playheadActive: { width: 4 },
   awaiting: { color: '#6f7590', fontSize: 11, marginTop: 6 },
   chordRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
   chordChip: {

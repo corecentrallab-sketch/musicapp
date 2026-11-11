@@ -165,12 +165,30 @@ export async function savePracticeVideoRow(
   } catch {
     return null;
   }
+  /**
+   * ── vc53 (A5): THE ATTACH IS PART OF THE SAVE, NOT A COURTESY ──────────────
+   *
+   * The row is written FIRST and the video block attached SECOND (that order is
+   * what makes the row survive even if the attach dies). The attach's boolean used
+   * to be discarded, so a row that landed WITHOUT its practice-video block still
+   * reported "Saved to your History" — cause 2 in the vc53 brief: present in
+   * History, but not recognisable as a take. A failed attach is now a failed save,
+   * which is a state the surface can show and the user can retry.
+   */
   if (input.videoRef) {
-    await attachPracticeVideo(piece.id, input.videoRef);
+    let attached = false;
+    try {
+      attached = await attachPracticeVideo(piece.id, input.videoRef);
+    } catch {
+      attached = false;
+    }
+    if (!attached) return null;
   }
   // THE READ-BACK. Same read History performs; no local cache, no assumption.
   const stored = await loadPracticeVideoRow(piece.id);
   if (!stored) return null;
+  // …and the block has to have survived the read, not just the row.
+  if (input.videoRef && !practiceVideoIsUsable(stored.practiceVideo ?? null)) return null;
   return stored;
 }
 
