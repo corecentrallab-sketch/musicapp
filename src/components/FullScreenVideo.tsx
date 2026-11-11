@@ -48,6 +48,16 @@ export const FULL_SCREEN_VIDEO_HINT =
   'Drag the bar to move through the take. Android BACK closes this window and leaves the page as it was.';
 export const FULL_SCREEN_VIDEO_FAILED_LINE =
   'This video could not be played on this device. The take itself is still saved in your History.';
+/**
+ * ── vc54, ITEM 3: THE CONTROL SITS ON THE VIDEO ITSELF ──────────────────────
+ *
+ * The owner: "icon on the video next build". The icon opens the same window the
+ * labelled `FULL_SCREEN_VIDEO_CTA` button opens — the icon is for the hand, the
+ * label stays under the video for the screen reader and for a first-time user who
+ * does not know the corner glyph. Both are live; neither is a dead control.
+ */
+export const FULL_SCREEN_VIDEO_ICON_LABEL = 'Play this take full screen';
+export const FULL_SCREEN_VIDEO_ICON_NAME = 'expand';
 
 export interface FullScreenVideoProps {
   visible: boolean;

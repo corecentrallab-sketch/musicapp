@@ -52,6 +52,7 @@ import {
   VC52_SCREEN_PATH,
   VC52_SETTINGS_PATH,
   VC52_STORE_PATH,
+  VC52_SAVE_MODULE_PATH,
   contrastRatio,
   copyNeverClaimsTheFileWasCut,
   playbackChecksTheFileExists,
@@ -109,6 +110,8 @@ function readRepoFile(rel: string): string {
 
 const SCREEN = readRepoFile(VC52_SCREEN_PATH);
 const STORE = readRepoFile(VC52_STORE_PATH);
+/** vc54: the writer the store's save delegates to (re-anchored below). */
+const SAVE = readRepoFile(VC52_SAVE_MODULE_PATH);
 const CLIP = readRepoFile(VC52_CLIP_MODULE_PATH);
 const SETTINGS = readRepoFile(VC52_SETTINGS_PATH);
 const APPLY = readRepoFile(VC52_APPLY_PATH);
@@ -282,11 +285,24 @@ function mutate(source: string, from: string, to: string): string {
 const guards: Guard[] = [
   {
     name: 'saveIsVerifiedByReadBack',
-    run: () => saveIsVerifiedByReadBack(STORE),
+    /**
+     * RE-ANCHORED ON vc54. The save moved out of the store into
+     * `services/practiceVideoSave.ts`, so the guard reads both files and demands
+     * BOTH halves: the store delegates through the port whose read-back is
+     * `loadPracticeVideoRow`, and the writer re-reads the row and fails on an
+     * empty read. The bite proves BOTH are load-bearing — a port that no longer
+     * reads History, and a writer that no longer reads back.
+     */
+    run: () => saveIsVerifiedByReadBack(STORE, SAVE),
     bite: () =>
       saveIsVerifiedByReadBack(
+        mutate(STORE, 'readRow: (rowId) => loadPracticeVideoRow(rowId)', 'readRow: () => null'),
+        SAVE,
+      ) ||
+      saveIsVerifiedByReadBack(
+        STORE,
         mutate(
-          mutate(STORE, 'const stored = await loadPracticeVideoRow(piece.id);', 'const stored = piece;'),
+          mutate(SAVE, 'stored = await port.readRow(rowId);', 'stored = input.piece;'),
           'if (!stored) return null;',
           'if (false) return null;',
         ),

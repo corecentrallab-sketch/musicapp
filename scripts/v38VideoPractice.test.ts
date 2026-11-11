@@ -177,7 +177,7 @@ assertEq(set.cues[0].index, 0, 'a cue addresses the note it came from');
 assertEq(set.cues[1].startSec, 2.12, 'the second cue is offset too');
 assertEq(JSON.stringify(take()), before, 'READS ONLY: the mapping never rewrites the take');
 assertEq(videoCueCountLine(null), null, 'no cue set, no count line');
-assertEq(videoCueCountLine({ cues: [], inVideoCount: 0, droppedCount: 0, totalCount: 0, droppedReason: null }), null, 'an empty take has no count line');
+assertEq(videoCueCountLine({ cues: [], inVideoCount: 0, droppedCount: 0, totalCount: 0, droppedReason: null, timelineSec: 0 }), null, 'an empty take has no count line');
 assertEq(
   videoCueCountLine(set),
   '3 of 4 notes fall inside the video',
@@ -189,7 +189,11 @@ assertEq(videoCueCountLine(noDrop), null, 'and claims nothing when nothing was d
 assertEq(noDrop.droppedReason, null, 'with no reason to give');
 const noTake = noteCuesForVideo(null, { audioOffsetMs: 0, videoDurationSec: 10 });
 assertEq(noTake.totalCount, 0, 'a video with no take draws nothing');
-assertEq(noteCuesForVideo(take(), { audioOffsetMs: 0, videoDurationSec: 0 }).inVideoCount, 0, 'a zero-length video cannot hold a cue');
+// vc54: a video with no stored length no longer discards the take's notes — they
+// draw on the take's own span (this is the owner's empty notes lane). A KNOWN
+// length still drops what falls outside it; the next line proves that.
+const zeroSet = noteCuesForVideo(take(), { audioOffsetMs: 0, videoDurationSec: 0 });
+assertEq(zeroSet.inVideoCount, zeroSet.totalCount, 'an unknown video length draws the take\u2019s own notes');
 
 console.log('\nv38 practice video — the clip’s own facts (length, size, take)');
 assertEq(videoClock(41), '0:41', 'the clock is minutes:seconds');
@@ -367,7 +371,12 @@ assertEq(clampVideoOffset('abc' as unknown as number), 0, 'a non-number offset i
 assertEq(nudgeOffset(0, 'x' as unknown as number), 0, 'a non-number nudge does not move the offset');
 assertEq(firstOnsetSec({ notes: [{ midi: 60 }] } as unknown as SavedCaptureTake), null, 'a note with no readable start is not an onset');
 assertEq(noteCuesForVideo({ notes: null } as unknown as SavedCaptureTake, { videoDurationSec: 5 }).totalCount, 0, 'a take with an unreadable note list has no cues');
-assertEq(noteCuesForVideo(take(), { audioOffsetMs: 0, videoDurationSec: Number.NaN }).inVideoCount, 0, 'a NaN duration holds nothing');
+// vc54: a NaN (unknown) video length no longer swallows the take — the notes draw
+// on the take's own span. What is still refused is an INVENTED cue: the count is
+// the take's own notes and nothing else.
+const nanSet = noteCuesForVideo(take(), { audioOffsetMs: 0, videoDurationSec: Number.NaN });
+assertEq(nanSet.inVideoCount, nanSet.totalCount, 'a NaN duration draws the take\u2019s own notes, no more');
+assert(nanSet.timelineSec > 0, 'and the timeline comes from the take, not from a NaN');
 assertEq(overlayLayout({ cues: null, videoDurationSec: 10, clockMs: 0, box: { width: 10, height: 10 } }).length, 1, 'an empty lane still draws its playhead');
 assertEq(pitchRangeFor(null).span, 1, 'a null cue list has a usable range');
 assertEq(chordStripLayout(undefined).length, 0, 'undefined chords are handled');

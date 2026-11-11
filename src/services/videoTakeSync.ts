@@ -104,6 +104,20 @@ export const VIDEO_SEPARATE_TAKE_LINE =
 export const VIDEO_SEPARATE_TAKE_OFFSET_REASON =
   'Two separate recordings start at their own beginnings; there is no shared start to measure.';
 
+/**
+ * ── vc54, DEFECT 2 ── THE ONE-MIC PROBLEM, SAID PLAINLY, WITH THE WAY OUT.
+ *
+ * A filmed take records the room through the camera's microphone. When that
+ * recording comes back with no readable melody (the camera and the app's own
+ * recorder share one microphone, and on the handset the filmed take's audio can
+ * arrive silent), the take is not a dead end: the same phrase recorded with the
+ * camera OFF goes through the one decode path the hum flow uses, and those notes
+ * are written onto the same row, under the same video.
+ */
+export const VIDEO_TAKE_ON_ITS_OWN_LINE =
+  'NoteSnap could not hear a melody in the sound the camera recorded. Play the phrase once more with the camera off — those notes are written onto this same take, under this video.';
+export const VIDEO_TAKE_ON_ITS_OWN_CTA = 'Record the notes on their own';
+
 /** The video-only outcome: the picture is kept and is still sendable (no dead end). */
 export const VIDEO_TAKE_FAILED_LINE =
   'Your video is saved and you can still send it. NoteSnap could not read a melody from this take, so there are no notes to draw.';
@@ -133,6 +147,13 @@ export interface VideoCueSet {
   totalCount: number;
   /** Why cues were dropped, or null when none were. */
   droppedReason: string | null;
+  /**
+   * ── vc54 ── THE TIMELINE THE CUES WERE MAPPED ONTO, in seconds. The video's
+   * own length when it is known; the take's own span when it is not (see
+   * `takeTimelineSec`). The surface needs it because "no cues" and "a video of
+   * unknown length" are two different things and used to read the same.
+   */
+  timelineSec: number;
 }
 
 function finiteOr(value: unknown, fallback: number): number {
@@ -238,7 +259,23 @@ export function noteCuesForVideo(
 ): VideoCueSet {
   const notes: ReadonlyArray<MidiNoteEvent> = Array.isArray(take?.notes) ? take.notes : [];
   const offsetSec = finiteOr(input?.audioOffsetMs, 0) / 1000;
-  const duration = Math.max(0, finiteOr(input?.videoDurationSec, 0));
+  /**
+   * ── vc54, DEFECT 2: AN UNKNOWN VIDEO LENGTH MUST NOT SWALLOW THE TAKE ──────
+   *
+   * This used to be `Math.max(0, videoDurationSec)` alone, and every note with
+   * `start >= duration` was dropped. So a take of twenty played notes mapped onto
+   * a video whose stored length was 0 or missing produced ZERO cues — and the
+   * lane, seeing an empty list, printed "there was no readable melody in this
+   * take", which was not true: the melody was read, and then thrown away by this
+   * line. The owner saw that sentence on every take.
+   *
+   * When the video's own length is not known, the take's own span IS the
+   * timeline: the notes are drawn on it and nothing is dropped for being past an
+   * end we do not have. A known length keeps the old drop-never-clamp rule.
+   */
+  const declared = Math.max(0, finiteOr(input?.videoDurationSec, 0));
+  const span = takeTimelineSec(take, offsetSec);
+  const duration = declared > 0 ? declared : span;
   const cues: VideoCue[] = [];
   let dropped = 0;
   notes.forEach((note, index) => {
@@ -269,7 +306,51 @@ export function noteCuesForVideo(
     droppedCount: dropped,
     totalCount: notes.length,
     droppedReason: dropped > 0 ? VIDEO_NOTES_DROPPED_LINE : null,
+    timelineSec: duration,
   };
+}
+
+/**
+ * ── vc54, DEFECT 2 ── THE TAKE'S OWN SPAN, in seconds on the video's timeline.
+ *
+ * The last moment any of the take's notes is still sounding: `max(start + len)`
+ * over the notes, with the same offset the cues use. Zero when the take has no
+ * timed note. It is the fallback timeline for a video whose own length was never
+ * stored, so a real take of a played melody can never be mapped onto a
+ * zero-length timeline and disappear.
+ */
+export function takeTimelineSec(
+  take: SavedCaptureTake | null | undefined,
+  offsetSec: number = 0,
+): number {
+  const notes: ReadonlyArray<MidiNoteEvent> = Array.isArray(take?.notes) ? take.notes : [];
+  const offset = finiteOr(offsetSec, 0);
+  let end = 0;
+  for (const note of notes) {
+    const start = Number(note?.startSec);
+    if (!Number.isFinite(start)) continue;
+    const length = Math.max(0, finiteOr(note?.durationSec, 0));
+    end = Math.max(end, start + offset + length);
+  }
+  return Math.max(0, end);
+}
+
+/**
+ * ── vc54, DEFECT 2 ── WHAT THE EMPTY LANE SAYS, AND WHY IT MATTERS.
+ *
+ * The lane printed ONE sentence whenever it had no cues: "there was no readable
+ * melody in this take". That is only true when the take holds no notes at all.
+ * A take that HAS notes but none of them inside the video window is a different
+ * fact, and it has a different remedy (line them up), so it gets its own
+ * sentence. The lane must never tell the owner it heard nothing when it did.
+ */
+export const VIDEO_NOTES_OUTSIDE_LINE =
+  'This take has notes, but none of them fall inside the video — use “Set from my first note” to line them up.';
+
+export function videoCueEmptyLine(set: VideoCueSet | null | undefined): string | null {
+  if (!set) return null;
+  if (set.cues.length > 0) return null;
+  return set.totalCount > 0 ? VIDEO_NOTES_OUTSIDE_LINE : null;
 }
 
 /** `"3 of 4 notes fall inside the video"` — the honest count under the lane. */

@@ -179,7 +179,7 @@ export function compareSide(input: CompareSideInput): CompareSide {
         audioOffsetMs: Math.round(Number(ref?.audioOffsetMs) || 0),
         videoDurationSec: durationSec,
       })
-    : { cues: [] as VideoCue[], droppedCount: 0, inVideoCount: 0, totalCount: 0, droppedReason: null };
+    : { cues: [] as VideoCue[], droppedCount: 0, inVideoCount: 0, totalCount: 0, droppedReason: null, timelineSec: 0 };
   const noteCount = Array.isArray(take?.notes) ? take.notes.length : 0;
   return {
     label,

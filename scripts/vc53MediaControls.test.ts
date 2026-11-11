@@ -86,6 +86,8 @@ function maskComments(source: string): string {
 const MODULE_PATH = 'src/services/videoScrub.ts';
 const BAR_PATH = 'src/components/ScrubBar.tsx';
 const SCREEN_PATH = 'src/screens/PracticeVideoScreen.tsx';
+/** vc54 item 3: the component that owns the fullscreen label and the icon name. */
+const COMPONENT_PATH = 'src/components/FullScreenVideo.tsx';
 const SUITE_PATH = '/tmp/tier1-test/scripts/vc53MediaControls.test.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -448,6 +450,137 @@ function testMutations(): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// vc54 ITEM 3 — THE FULLSCREEN ICON SITS ON THE VIDEO, THE LABEL STAYS UNDER IT
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GUARD 6 — THE ICON IS ON THE VIDEO, AND IT OPENS THE WINDOW.
+ *
+ * The owner: "icon on the video next build". Each clause is the bug it exists for:
+ *   • the icon is drawn INSIDE the frame that holds the player, so it is on the
+ *     video's own corner and not floating somewhere on the page;
+ *   • it is a real control — `onPress={openFullScreen}` — and `openFullScreen` is
+ *     the action that opens the full-screen window (a decorative glyph is exactly
+ *     the v51 defect: the native fullscreen icon the owner pressed and nothing
+ *     happened);
+ *   • it is 44 pt (the smallest comfortable touch target) and pinned to the TOP of
+ *     the video, never the bottom, so it can never cover the scrub bar or the notes
+ *     playhead — both of which sit UNDER the video.
+ */
+function fullScreenIconSitsOnTheVideo(screenSource: string): boolean {
+  const src = maskComments(screenSource);
+  if (src.length < 40000) return false;
+  // the one action really opens the window
+  if (src.indexOf('const openFullScreen = useCallback(() => setVideoFullOpen(true), []);') < 0) return false;
+  // the icon itself: the corner style, its own label, the one action
+  const iconAt = src.indexOf('const renderFullScreenIcon = () => (');
+  if (iconAt < 0) return false;
+  const icon = src.slice(iconAt, iconAt + 700);
+  if (icon.indexOf('style={styles.videoFullIcon}') < 0) return false;
+  if (icon.indexOf('onPress={openFullScreen}') < 0) return false;
+  if (icon.indexOf('accessibilityLabel={FULL_SCREEN_VIDEO_ICON_LABEL}') < 0) return false;
+  // every player is in a frame, and every frame carries the video AND the icon
+  const frames = src.split('<View style={styles.videoFrame}>').slice(1);
+  if (frames.length < 2) return false;
+  const everyFrameHasBoth = frames.every((segment) => {
+    const body = segment.slice(0, segment.indexOf('</View>'));
+    return body.indexOf('<Video') >= 0 && body.indexOf('{renderFullScreenIcon()}') >= 0;
+  });
+  if (!everyFrameHasBoth) return false;
+  // 44 pt, absolute, TOP corner — never bottom-anchored
+  const styleAt = src.indexOf('videoFullIcon: {');
+  if (styleAt < 0) return false;
+  const style = src.slice(styleAt, src.indexOf('}', styleAt));
+  if (style.indexOf("position: 'absolute'") < 0) return false;
+  if (style.indexOf('top:') < 0) return false;
+  if (style.indexOf('bottom:') >= 0) return false;
+  const width = /width:\s*(\d+)/.exec(style);
+  const height = /height:\s*(\d+)/.exec(style);
+  if (!width || !height) return false;
+  return Number(width[1]) >= 44 && Number(height[1]) >= 44;
+}
+
+/**
+ * GUARD 7 — THE LABELLED CONTROL UNDER THE VIDEO STAYS.
+ *
+ * The owner's answer follows the lead's recommendation: the icon is for the hand,
+ * the label is for the screen reader and for a first-time user who does not know
+ * the corner glyph. Both open the same window. Dropping the labelled button (or
+ * unwiring it) leaves the only readable route to full screen as a glyph, and the
+ * guard fails.
+ */
+function labelledFullScreenControlStays(screenSource: string, componentSource: string): boolean {
+  const src = maskComments(screenSource);
+  const component = maskComments(componentSource);
+  if (src.length < 40000 || component.length < 1000) return false;
+  // the words live in the component that owns them, and both are exported
+  if (component.indexOf('export const FULL_SCREEN_VIDEO_CTA') < 0) return false;
+  if (component.indexOf('export const FULL_SCREEN_VIDEO_ICON_LABEL') < 0) return false;
+  // …and the label is rendered on BOTH surfaces, each wired to the same action
+  let labelled = 0;
+  let wired = 0;
+  let from = 0;
+  for (;;) {
+    const at = src.indexOf('{FULL_SCREEN_VIDEO_CTA}', from);
+    if (at < 0) break;
+    labelled += 1;
+    if (src.slice(Math.max(0, at - 400), at).indexOf('onPress={openFullScreen}') >= 0) wired += 1;
+    from = at + 1;
+  }
+  return labelled >= 2 && wired === labelled;
+}
+
+function testItem3Guards(): void {
+  console.log('\n— vc54 ITEM 3: the fullscreen icon on the video, and the label under it —');
+  const screen = readRepoFile(SCREEN_PATH);
+  const component = readRepoFile(COMPONENT_PATH);
+  assert(component.length > 1000, 'the full-screen component is the real file');
+  assert(fullScreenIconSitsOnTheVideo(screen), 'GUARD 6: the icon sits on the video and opens the window');
+  assert(labelledFullScreenControlStays(screen, component),
+    'GUARD 7: the labelled fullscreen control under the video is still there and still wired');
+  // NOT VACUOUS
+  assertEq(fullScreenIconSitsOnTheVideo(''), false, 'an empty screen has no icon on its video');
+  assertEq(labelledFullScreenControlStays('', ''), false, 'empty files keep no label');
+}
+
+function testItem3Mutations(): void {
+  console.log('\n— vc54 ITEM 3 MUTATION PROBES: the icon and the label must both bite —');
+  const screen = readRepoFile(SCREEN_PATH);
+  const component = readRepoFile(COMPONENT_PATH);
+
+  // GUARD 6 — the icon is unwired, off the video, not opening anything, too small.
+  const unwiredIcon = screen.replace('onPress={openFullScreen}', 'onPress={() => undefined}');
+  probe('item 3: the on-video icon is unwired (press does nothing)',
+    unwiredIcon, screen, () => fullScreenIconSitsOnTheVideo(unwiredIcon));
+  const iconOffTheVideo = screen.replace('{renderFullScreenIcon()}', '{null}');
+  probe('item 3: the icon is no longer drawn on the video',
+    iconOffTheVideo, screen, () => fullScreenIconSitsOnTheVideo(iconOffTheVideo));
+  const deadAction = screen.replace(
+    'const openFullScreen = useCallback(() => setVideoFullOpen(true), []);',
+    'const openFullScreen = useCallback(() => undefined, []);',
+  );
+  probe('item 3: the fullscreen action opens nothing',
+    deadAction, screen, () => fullScreenIconSitsOnTheVideo(deadAction));
+  const tinyTarget = screen.replace(
+    "  videoFullIcon: {\n    position: 'absolute',\n    top: 8,\n    right: 8,\n    width: 44,",
+    "  videoFullIcon: {\n    position: 'absolute',\n    top: 8,\n    right: 8,\n    width: 24,",
+  );
+  probe('item 3: the icon is too small to hit',
+    tinyTarget, screen, () => fullScreenIconSitsOnTheVideo(tinyTarget));
+
+  // GUARD 7 — the labelled control is removed, or loses its wiring.
+  const labelGone = screen.replace('{FULL_SCREEN_VIDEO_CTA}', "{'Full screen'}");
+  probe('item 3: the labelled control is removed from one surface',
+    labelGone, screen, () => labelledFullScreenControlStays(labelGone, component));
+  const labelUnwired = screen.split('onPress={openFullScreen}').join('onPress={() => undefined}');
+  probe('item 3: the labelled control no longer opens the window',
+    labelUnwired, screen, () => labelledFullScreenControlStays(labelUnwired, component));
+  const labelRenamed = component.replace('export const FULL_SCREEN_VIDEO_CTA', 'const FULL_SCREEN_CTA_RENAMED');
+  probe('item 3: the label constant disappears from the component',
+    labelRenamed, component, () => labelledFullScreenControlStays(screen, labelRenamed));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // RUN
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -458,6 +591,8 @@ testSeekIsClampedToTheWindow();
 testReadout();
 testGuardsOnRealFiles();
 testMutations();
+testItem3Guards();
+testItem3Mutations();
 
 console.log(`\n${passes} passed, ${failures} failed`);
 if (failures > 0) process.exit(1);

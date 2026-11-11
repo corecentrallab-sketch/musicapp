@@ -72,6 +72,15 @@ export interface VideoOverlayLaneProps {
   /** Opens the full-screen window (item 7) — absent on the read-only surfaces. */
   onExpand?: () => void;
   expandLabel?: string;
+  /**
+   * ── vc54, DEFECT 2 ── WHAT AN EMPTY LANE SAYS. The renderer used to own this
+   * sentence, so every empty lane claimed "there was no readable melody in this
+   * take" — including a lane whose take HAD notes that fell outside the video
+   * window. The surface knows which of the two happened (services/videoTakeSync
+   * `videoCueEmptyLine`), so it supplies the sentence and the renderer just draws
+   * it. Absent = the original line, unchanged.
+   */
+  emptyLine?: string;
 }
 
 export const VideoOverlayLane: React.FC<VideoOverlayLaneProps> = ({
@@ -85,6 +94,7 @@ export const VideoOverlayLane: React.FC<VideoOverlayLaneProps> = ({
   laneHeight = OVERLAY_LANE_HEIGHT,
   onExpand,
   expandLabel = OVERLAY_EXPAND_CTA,
+  emptyLine = OVERLAY_EMPTY_LINE,
 }) => {
   const { styles } = useThemedStyles(baseStyles);
   const [width, setWidth] = useState(0);
@@ -167,7 +177,7 @@ export const VideoOverlayLane: React.FC<VideoOverlayLaneProps> = ({
         {...(onSeekMs ? responder.panHandlers : {})}
       >
         {cues.length === 0 ? (
-          <Text style={styles.empty}>{OVERLAY_EMPTY_LINE}</Text>
+          <Text style={styles.empty}>{emptyLine}</Text>
         ) : (
           <>
             {drawList
