@@ -36,6 +36,8 @@
 import { useThemedStyles } from '../services/themeStore';
 import React, { useCallback, useMemo, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { sheetBottomPadding } from '../services/tabBarLayout';
 import {
   VIDEO_SEND_BACK_CTA,
   VIDEO_SEND_BUSY_LABEL,
@@ -101,6 +103,8 @@ export const PracticeVideoSendToSheet: React.FC<PracticeVideoSendToSheetProps> =
   onClose,
 }) => {
   const { styles } = useThemedStyles(baseStyles);
+  // The device's bottom inset, so the last destination is never under the bar.
+  const insets = useSafeAreaInsets();
   /**
    * THE ONE DERIVATION (v47 part B): both members of the pair come out of this
    * single call, from the single window the user picked.
@@ -165,7 +169,14 @@ export const PracticeVideoSendToSheet: React.FC<PracticeVideoSendToSheetProps> =
           <Text style={styles.title}>{VIDEO_SEND_TITLE}</Text>
         </View>
 
-        <ScrollView style={styles.page} contentContainerStyle={styles.body}>
+        {/* THE LAST DESTINATION MUST BE REACHABLE (vc53, item 2). The sheet's
+            body ended 32px below its content, which is less than an Android
+            three-button navigation bar — so "Take as PDF"/"Plain summary" sat
+            under it and could not be tapped. The device inset is added here. */}
+        <ScrollView
+          style={styles.page}
+          contentContainerStyle={[styles.body, { paddingBottom: sheetBottomPadding(insets.bottom) }]}
+        >
           <Text style={styles.pairLine}>{VIDEO_SEND_PAIR_LINE}</Text>
           <Text style={styles.honest}>{SEND_TO_HONESTY}</Text>
 

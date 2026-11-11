@@ -105,6 +105,7 @@ import {
   loadPracticeVideoRow,
   persistPracticeVideo,
   practiceVideoFileExists,
+  practiceVideoRowIsStored,
   savePracticeVideoRow,
   savePracticeVideoTake,
 } from '../services/practiceVideoStore';
@@ -976,8 +977,24 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       if (!persisted.uri) setErrorLine(videoFailureRef.current ?? PRACTICE_VIDEO_NOT_KEPT_LINE);
 
       // ── PHASE B: THE NOTES, BOUNDED AND NEVER SILENT ───────────────────────
+      /**
+       * ── vc53 (A5): THE VERIFY IS REPEATED AT THE END, NOT ONLY AT THE START ──
+       *
+       * The read-back inside `savePracticeVideoRow` proves the row was in History
+       * when it was written. It cannot prove the row is still there once the take
+       * has been attached — and that is exactly the vc52 gap: the save's own
+       * read-back passed (so no failure card) and the row was gone by the time
+       * History was opened. Every exit from this flow re-reads History through the
+       * same read the History tab performs, so a row that did not survive becomes a
+       * state the surface shows and the user can retry.
+       */
+      const verifyAgain = async (): Promise<void> => {
+        const stillThere = await practiceVideoRowIsStored(saved?.id ?? rowId);
+        setSaveState(practiceVideoSaveState(stillThere));
+      };
       if (!audioCacheUri) {
         setTakeLine(VIDEO_TAKE_FAILED_LINE);
+        await verifyAgain();
         return;
       }
       setTakeBusy(true);
@@ -996,12 +1013,14 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       const derivedTake = derived.take;
       if (!derivedTake) {
         setTakeLine(derived.message ?? VIDEO_TAKE_FAILED_LINE);
+        await verifyAgain();
         return;
       }
       // The take reaches the surface FIRST (so it is never invisible), then the row.
       setRow((current) => (current && !current.take ? { ...current, take: derivedTake } : current));
       const written = await savePracticeVideoTake(rowId, derivedTake);
       setTakeLine(written ? null : VIDEO_TAKE_SAVE_FAILED_LINE);
+      await verifyAgain();
     },
     [],
   );

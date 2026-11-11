@@ -6,7 +6,9 @@
  */
 import { useThemedStyles } from '../services/themeStore';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { tabScreenBottomPadding } from '../services/tabBarLayout';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -22,9 +24,20 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 export const EditorScreen: React.FC = () => {
   const { styles, theme } = useThemedStyles(baseStyles);
   const navigation = useNavigation<Nav>();
+  // THE FOOTER IS RESERVED, NOT IGNORED (vc53, item 2). The screen used to be a
+  // plain flex column: with four cards it was taller than the space above the tab
+  // bar, so "Record your practice" was clipped exactly where the bar begins. It is
+  // a scroller now, and its content ends clear of the bar.
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: tabScreenBottomPadding(insets.bottom) },
+        ]}
+      >
       <Text style={styles.screenTitle}>Practice Tools</Text>
       <Text style={styles.screenSubtitle}>
         Tools that help you play better — no interruptions while you practice.
@@ -113,6 +126,7 @@ export const EditorScreen: React.FC = () => {
         </View>
         <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
       </Pressable>
+      </ScrollView>
     </View>
   );
 };
@@ -121,6 +135,8 @@ const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
+  },
+  scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 24,
   },

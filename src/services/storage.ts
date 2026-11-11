@@ -27,6 +27,9 @@ import type {
 } from '../types';
 import type { SavedCaptureTake } from './midiExport';
 import type { PracticeVideoRef } from './practiceVideoRef';
+// ONE queue for the ONE History blob (vc53, A5) — see the note over
+// `saveRecognition` and services/historyWriteQueue.ts.
+import { enqueueHistoryWrite } from './historyWriteQueue';
 
 const KEYS = {
   ONBOARDING: '@notesnap/onboarding',
@@ -253,16 +256,31 @@ export async function getRecognitionCount(): Promise<number> {
   return history.length;
 }
 
+/**
+ * ── vc53 (A5): EVERY WRITE TO HISTORY GOES THROUGH ONE QUEUE ────────────────
+ *
+ * The five writers below all do read→mutate→write on ONE blob, with an `await`
+ * between the read and the write. Two of them overlapping means the later write
+ * is built from a snapshot taken before the earlier one and puts the whole blob
+ * back — the earlier row is gone, nothing throws, and the caller has already been
+ * told it succeeded. That is the owner's vc52 report: a filmed take that is not
+ * in History and no failure card.
+ *
+ * `enqueueHistoryWrite` serialises all five (services/historyWriteQueue.ts). The
+ * shape of each function is otherwise unchanged: same read, same rule, same write.
+ */
 export async function saveRecognition(piece: SavedPiece): Promise<void> {
-  const history = await getRecognitionHistory();
-  // Avoid duplicates by piece_id
-  if (!history.some((p) => p.id === piece.id)) {
-    history.unshift(piece);
-    await AsyncStorage.setItem(
-      KEYS.RECOGNITION_HISTORY,
-      JSON.stringify(history),
-    );
-  }
+  await enqueueHistoryWrite(async () => {
+    const history = await getRecognitionHistory();
+    // Avoid duplicates by piece_id
+    if (!history.some((p) => p.id === piece.id)) {
+      history.unshift(piece);
+      await AsyncStorage.setItem(
+        KEYS.RECOGNITION_HISTORY,
+        JSON.stringify(history),
+      );
+    }
+  });
 }
 
 /**
@@ -279,12 +297,14 @@ export async function updateRecognitionCapture(
   capture: SavedCaptureTake,
 ): Promise<boolean> {
   if (typeof pieceId !== 'string' || pieceId.length === 0) return false;
-  const history = await getRecognitionHistory();
-  const index = history.findIndex((p) => p.id === pieceId);
-  if (index < 0) return false;
-  history[index] = { ...history[index], capture };
-  await AsyncStorage.setItem(KEYS.RECOGNITION_HISTORY, JSON.stringify(history));
-  return true;
+  return enqueueHistoryWrite(async () => {
+    const history = await getRecognitionHistory();
+    const index = history.findIndex((p) => p.id === pieceId);
+    if (index < 0) return false;
+    history[index] = { ...history[index], capture };
+    await AsyncStorage.setItem(KEYS.RECOGNITION_HISTORY, JSON.stringify(history));
+    return true;
+  });
 }
 
 /**
@@ -305,12 +325,14 @@ export async function updateRecognitionPracticeVideo(
   practiceVideo: PracticeVideoRef | null,
 ): Promise<boolean> {
   if (typeof pieceId !== 'string' || pieceId.length === 0) return false;
-  const history = await getRecognitionHistory();
-  const index = history.findIndex((p) => p.id === pieceId);
-  if (index < 0) return false;
-  history[index] = { ...history[index], practiceVideo };
-  await AsyncStorage.setItem(KEYS.RECOGNITION_HISTORY, JSON.stringify(history));
-  return true;
+  return enqueueHistoryWrite(async () => {
+    const history = await getRecognitionHistory();
+    const index = history.findIndex((p) => p.id === pieceId);
+    if (index < 0) return false;
+    history[index] = { ...history[index], practiceVideo };
+    await AsyncStorage.setItem(KEYS.RECOGNITION_HISTORY, JSON.stringify(history));
+    return true;
+  });
 }
 
 /**
@@ -332,25 +354,29 @@ export async function updateRecognitionNote(
   note: string | null,
 ): Promise<boolean> {
   if (typeof pieceId !== 'string' || pieceId.length === 0) return false;
-  const history = await getRecognitionHistory();
-  const index = history.findIndex((p) => p.id === pieceId);
-  if (index < 0) return false;
-  const next: SavedPiece = { ...history[index], takeNote: note };
-  history[index] = next;
-  await AsyncStorage.setItem(KEYS.RECOGNITION_HISTORY, JSON.stringify(history));
-  return true;
+  return enqueueHistoryWrite(async () => {
+    const history = await getRecognitionHistory();
+    const index = history.findIndex((p) => p.id === pieceId);
+    if (index < 0) return false;
+    const next: SavedPiece = { ...history[index], takeNote: note };
+    history[index] = next;
+    await AsyncStorage.setItem(KEYS.RECOGNITION_HISTORY, JSON.stringify(history));
+    return true;
+  });
 }
 
 /** Remove a single saved recognition by piece id (History tab). */
 export async function removeRecognition(pieceId: string): Promise<void> {
-  const history = await getRecognitionHistory();
-  const updated = history.filter((p) => p.id !== pieceId);
-  if (updated.length !== history.length) {
-    await AsyncStorage.setItem(
-      KEYS.RECOGNITION_HISTORY,
-      JSON.stringify(updated),
-    );
-  }
+  await enqueueHistoryWrite(async () => {
+    const history = await getRecognitionHistory();
+    const updated = history.filter((p) => p.id !== pieceId);
+    if (updated.length !== history.length) {
+      await AsyncStorage.setItem(
+        KEYS.RECOGNITION_HISTORY,
+        JSON.stringify(updated),
+      );
+    }
+  });
 }
 
 export async function getNotificationEnabled(): Promise<boolean> {
