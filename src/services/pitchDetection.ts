@@ -118,6 +118,49 @@ export interface PitchDetectionOptions {
 }
 
 /**
+ * The analysis settings ONE pass of the frame loop uses. Both loops below read
+ * them from here, so the sync read and the yielding read can never disagree
+ * about a window, a hop or a frequency bound.
+ */
+interface FrameGrid {
+  windowSamples: number;
+  hopSamples: number;
+  minFreqHz: number;
+  maxFreqHz: number;
+  rmsThreshold: number;
+}
+
+function frameGrid(sampleRate: number, opts: PitchDetectionOptions): FrameGrid {
+  const windowSamples = Math.max(64, Math.floor(opts.windowSamples ?? DEFAULT_WINDOW_SAMPLES));
+  const hopSeconds = opts.hopSeconds ?? DEFAULT_HOP_SECONDS;
+  return {
+    windowSamples,
+    hopSamples: Math.max(1, Math.round((Number.isFinite(hopSeconds) ? hopSeconds : DEFAULT_HOP_SECONDS) * sampleRate)),
+    minFreqHz: clampFreq(opts.minFreqHz, DEFAULT_MIN_FREQ_HZ),
+    maxFreqHz: clampFreq(opts.maxFreqHz, DEFAULT_MAX_FREQ_HZ),
+    rmsThreshold:
+      typeof opts.rmsThreshold === 'number' && Number.isFinite(opts.rmsThreshold)
+        ? opts.rmsThreshold
+        : SILENCE_RMS_THRESHOLD,
+  };
+}
+
+/** One frame of the grid — the same arithmetic the sync and async loops run. */
+function frameAt(
+  samples: Float32Array,
+  start: number,
+  grid: FrameGrid,
+  sampleRate: number,
+): PitchFrame {
+  const rms = rmsOf(samples, start, grid.windowSamples);
+  const midi =
+    rms < grid.rmsThreshold
+      ? null
+      : yinMidi(samples, start, grid.windowSamples, sampleRate, grid.minFreqHz, grid.maxFreqHz);
+  return { tSec: start / sampleRate, midi, rms };
+}
+
+/**
  * Track monophonic pitch across a recording, one frame per hop.
  *
  * Frames are placed on an absolute grid starting at sample 0 (tSec = start
@@ -135,23 +178,86 @@ export function detectPitchFrames(
   if (!samples || samples.length === 0) return frames;
   if (!Number.isFinite(sampleRate) || sampleRate <= 0) return frames;
 
-  const windowSamples = Math.max(64, Math.floor(opts.windowSamples ?? DEFAULT_WINDOW_SAMPLES));
-  const hopSeconds = opts.hopSeconds ?? DEFAULT_HOP_SECONDS;
-  const hopSamples = Math.max(1, Math.round((Number.isFinite(hopSeconds) ? hopSeconds : DEFAULT_HOP_SECONDS) * sampleRate));
-  const minFreqHz = clampFreq(opts.minFreqHz, DEFAULT_MIN_FREQ_HZ);
-  const maxFreqHz = clampFreq(opts.maxFreqHz, DEFAULT_MAX_FREQ_HZ);
-  const rmsThreshold =
-    typeof opts.rmsThreshold === 'number' && Number.isFinite(opts.rmsThreshold)
-      ? opts.rmsThreshold
-      : SILENCE_RMS_THRESHOLD;
-
+  const grid = frameGrid(sampleRate, opts);
   const total = samples.length;
-  if (total < windowSamples) return frames;
+  if (total < grid.windowSamples) return frames;
 
-  for (let start = 0; start + windowSamples <= total; start += hopSamples) {
-    const rms = rmsOf(samples, start, windowSamples);
-    const midi = rms < rmsThreshold ? null : yinMidi(samples, start, windowSamples, sampleRate, minFreqHz, maxFreqHz);
-    frames.push({ tSec: start / sampleRate, midi, rms });
+  for (let start = 0; start + grid.windowSamples <= total; start += grid.hopSamples) {
+    frames.push(frameAt(samples, start, grid, sampleRate));
+  }
+  return frames;
+}
+
+/**
+ * ── vc56 ── THE SAME READING, WITHOUT FREEZING THE APP (owner 11-11) ─────────
+ *
+ * THE OWNER: *"it should be ideally immediate from when the video is taken to
+ * going to another window to watch it on full screen — not a very paused delay.
+ * It looks like the app did nothing from the take to the user."*
+ *
+ * THE CAUSE, MEASURED. This loop is the notes read that runs right after a take
+ * lands on the review surface. It is pure JavaScript and it is SYNCHRONOUS: one
+ * frame per 25 ms of audio, each frame a YIN period search over 388 lags of a
+ * 2048-sample window. A 60-second take (the server's cap, `MAX_RETURN_SECONDS`)
+ * is 2,398 frames — measured at **4,178 ms of solid CPU on a server-class Node
+ * process**, and Hermes on a handset is several times slower than that. While it
+ * runs, the JS thread cannot dispatch a touch or paint a frame, so the owner's
+ * tap on the full-screen icon is not even looked at until the whole read is done:
+ * the window appears 15–20 s late, on black, looking like the app ignored him.
+ *
+ * WHAT THIS DOES. The identical arithmetic, one time slice at a time: after
+ * `PITCH_ASYNC_TIME_SLICE_MS` of work the loop hands the thread back for one
+ * macrotask, so a touch and a paint get through between slices. Same frames, same
+ * order, same numbers — `detectPitchFrames` stays exactly as it was for every
+ * caller that wants the whole read in one go.
+ */
+export const PITCH_ASYNC_TIME_SLICE_MS = 8;
+
+export interface PitchAsyncDeps {
+  /** Clock for the time slice. Overridable so the gate can prove the yield. */
+  now?: () => number;
+  /** How the loop hands the thread back. Defaults to a macrotask. */
+  yieldToUi?: () => Promise<void>;
+}
+
+/** A `setTimeout` looked up off the global, so this compiles with no DOM lib. */
+function defaultYieldToUi(): Promise<void> {
+  const host = globalThis as unknown as { setTimeout?: (fn: () => void, ms: number) => unknown };
+  const schedule = host.setTimeout;
+  if (typeof schedule !== 'function') return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    schedule(() => resolve(), 0);
+  });
+}
+
+/**
+ * `detectPitchFrames`, sliced so the UI thread keeps breathing. The result is
+ * frame-for-frame identical to the synchronous read (the gate asserts that on
+ * real samples); the only difference is that the loop yields between slices.
+ */
+export async function detectPitchFramesAsync(
+  samples: Float32Array,
+  sampleRate: number,
+  opts: PitchDetectionOptions = {},
+  deps: PitchAsyncDeps = {},
+): Promise<PitchFrame[]> {
+  const frames: PitchFrame[] = [];
+  if (!samples || samples.length === 0) return frames;
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0) return frames;
+
+  const grid = frameGrid(sampleRate, opts);
+  const total = samples.length;
+  if (total < grid.windowSamples) return frames;
+
+  const now = deps.now ?? (() => Date.now());
+  const yieldToUi = deps.yieldToUi ?? defaultYieldToUi;
+  let sliceStartedAt = now();
+  for (let start = 0; start + grid.windowSamples <= total; start += grid.hopSamples) {
+    frames.push(frameAt(samples, start, grid, sampleRate));
+    if (now() - sliceStartedAt >= PITCH_ASYNC_TIME_SLICE_MS) {
+      await yieldToUi();
+      sliceStartedAt = now();
+    }
   }
   return frames;
 }

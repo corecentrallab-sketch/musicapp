@@ -203,6 +203,7 @@ import {
   FULL_SCREEN_VIDEO_ICON_LABEL,
   FULL_SCREEN_VIDEO_ICON_NAME,
 } from '../components/FullScreenVideo';
+import { noteFullScreenTap } from '../services/videoFullScreenOpen';
 import { Ionicons } from '@expo/vector-icons';
 import { ScrubBar } from '../components/ScrubBar';
 import { scrubSeekTargetMs } from '../services/videoScrub';
@@ -1496,8 +1497,26 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
    * behind every fullscreen control on this surface — the icon drawn on the video
    * itself, and the labelled button under it. One action, so the two can never
    * drift into different behaviour, and neither is a dead control.
+   *
+   * ── vc56 ── THE PRESS IS STAMPED, AND THE PAGE LETS GO OF THE FILE ────────
+   *
+   * The owner's wait is measured from THIS press: `noteFullScreenTap()` is what
+   * the window's own timeline reports against, so the split on a handset starts at
+   * the moment he touched the icon, not at the moment the window happened to
+   * render.
+   *
+   * The page's own player is paused first. The window mounts a SECOND `expo-av`
+   * player over the same take, and a player still holding a file makes the second
+   * one slower to come up — and, if the page was playing, the take would sound
+   * twice. Letting go costs nothing: the window owns playback from here.
    */
-  const openFullScreen = useCallback(() => setVideoFullOpen(true), []);
+  const openFullScreen = useCallback(() => {
+    noteFullScreenTap();
+    void reviewVideoRef.current?.pauseAsync().catch(() => undefined);
+    void videoRef.current?.pauseAsync().catch(() => undefined);
+    setVideoPlaying(false);
+    setVideoFullOpen(true);
+  }, []);
 
   /**
    * THE ICON ON THE VIDEO. A 44 pt square in the video's OWN top-right corner,

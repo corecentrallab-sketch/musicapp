@@ -470,8 +470,17 @@ function testMutations(): void {
 function fullScreenIconSitsOnTheVideo(screenSource: string): boolean {
   const src = maskComments(screenSource);
   if (src.length < 40000) return false;
-  // the one action really opens the window
-  if (src.indexOf('const openFullScreen = useCallback(() => setVideoFullOpen(true), []);') < 0) return false;
+  /**
+   * the one action really opens the window. The SHAPE is not the guard: vc56 put
+   * a press stamp and two pauses in front of `setVideoFullOpen(true)`, and a
+   * guard pinned to the old one-liner failed on a correct fix (defect class 12).
+   * What must hold is that the action's own body opens the window.
+   */
+  const actionAt = src.indexOf('const openFullScreen = useCallback(');
+  if (actionAt < 0) return false;
+  const actionEnd = src.indexOf('}, []);', actionAt);
+  if (actionEnd < 0) return false;
+  if (src.slice(actionAt, actionEnd).indexOf('setVideoFullOpen(true)') < 0) return false;
   // the icon itself: the corner style, its own label, the one action
   const iconAt = src.indexOf('const renderFullScreenIcon = () => (');
   if (iconAt < 0) return false;
@@ -556,8 +565,8 @@ function testItem3Mutations(): void {
   probe('item 3: the icon is no longer drawn on the video',
     iconOffTheVideo, screen, () => fullScreenIconSitsOnTheVideo(iconOffTheVideo));
   const deadAction = screen.replace(
-    'const openFullScreen = useCallback(() => setVideoFullOpen(true), []);',
-    'const openFullScreen = useCallback(() => undefined, []);',
+    '    setVideoFullOpen(true);',
+    '    setVideoFullOpen(false);',
   );
   probe('item 3: the fullscreen action opens nothing',
     deadAction, screen, () => fullScreenIconSitsOnTheVideo(deadAction));

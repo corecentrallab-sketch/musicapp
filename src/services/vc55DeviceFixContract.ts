@@ -162,6 +162,83 @@ export function fullScreenSaysItIsPreparing(componentSource: string): boolean {
 }
 
 /**
+ * ── F2, THE OTHER HALF (vc56) ── THE WINDOW PAINTS BEFORE ITS PLAYER EXISTS.
+ *
+ * F2 put a spinner INSIDE the window and the owner still waited 15–20 s on a
+ * black rectangle, because the window and its `expo-av` player were created in the
+ * same React commit: the native player had to exist before the window's first
+ * frame could paint. The `<Video>` must now sit behind `playerMounted`, which only
+ * turns true once the window has painted — on real frame callbacks, with a
+ * fallback so a window whose frames never come still gets a player (a window that
+ * never plays is a dead end). The wait is also MEASURED, so the next handset
+ * report says which stage ate the time instead of guessing.
+ */
+export function fullScreenPaintsBeforeThePlayerMounts(componentSource: string): boolean {
+  const src = componentSource;
+  if (src.length < 3000) return false;
+  // The gate the component actually uses to decide, from the pure model.
+  if (src.indexOf('shouldMountFullScreenPlayer(visible, windowPainted)') < 0) return false;
+  // …and the player is really behind it: a conditional `<Video>`.
+  if (!/\{playerMounted \? \(\s*<Video/.test(src)) return false;
+  // Painted on frame callbacks (with a bounded fallback), never on a timer guess.
+  if (src.indexOf('requestAnimationFrame(tick)') < 0) return false;
+  if (src.indexOf('FULL_SCREEN_PAINT_FRAMES_BEFORE_MOUNT') < 0) return false;
+  if (src.indexOf('FULL_SCREEN_MOUNT_FALLBACK_MS') < 0) return false;
+  // The spinner is still what the window shows while it waits.
+  if (src.indexOf('fullScreenIsPreparing(prep)') < 0) return false;
+  // The split is reported, so the next report is measurement and not a guess.
+  return src.indexOf('timeline.current.line()') >= 0;
+}
+
+/**
+ * ── F2, THE ROOT CAUSE (vc56) ── THE NOTES READ NO LONGER FREEZES THE TAP.
+ *
+ * Measured: the notes read was one synchronous pass over up to 60 s of decoded
+ * audio — 2,398 YIN frames, 4,178 ms of solid CPU in Node, several times that on
+ * Hermes — on the JS thread while the review surface was on screen. The owner's
+ * tap on the full-screen icon was not dispatched until it finished. The decode
+ * seam must use the sliced read, and the blocking call must be gone.
+ */
+export function theNotesReadNoLongerFreezesTheScreen(
+  decodeSource: string,
+  pitchSource: string,
+): boolean {
+  if (decodeSource.length < 3000 || pitchSource.length < 3000) return false;
+  // The seam awaits the sliced read…
+  if (decodeSource.indexOf('await detectPitchFramesAsync(') < 0) return false;
+  // …and the blocking call is no longer what feeds the take.
+  if (/const frames = detectPitchFrames\(/.test(decodeSource)) return false;
+  // The sliced read exists, is bounded in slices, and really yields.
+  if (pitchSource.indexOf('export async function detectPitchFramesAsync(') < 0) return false;
+  if (pitchSource.indexOf('PITCH_ASYNC_TIME_SLICE_MS') < 0) return false;
+  if (pitchSource.indexOf('await yieldToUi()') < 0) return false;
+  // …and it runs the SAME frame arithmetic as the synchronous read, so the two
+  // can never drift into two readings of one take.
+  return pitchSource.indexOf('frames.push(frameAt(samples, start, grid, sampleRate))') >= 0;
+}
+
+/**
+ * ── F2, THE MEASUREMENT'S ANCHOR (vc56) ── THE PRESS IS STAMPED, AND THE PAGE
+ * LETS GO OF THE FILE.
+ *
+ * The split has to start at the press the owner made, not at the moment the
+ * window happened to render, and the page's own player must release the take
+ * before the window's second player opens it (a player still holding the file is
+ * slower to come up, and two players would sound twice).
+ */
+export function thePressIsStampedAndThePagePlayerPauses(screenSource: string): boolean {
+  const src = screenSource;
+  if (src.length < 20000) return false;
+  const def = src.indexOf('const openFullScreen = useCallback(');
+  if (def < 0) return false;
+  const body = src.slice(def, def + 700);
+  if (body.indexOf('noteFullScreenTap()') < 0) return false;
+  if (body.indexOf('reviewVideoRef.current?.pauseAsync()') < 0) return false;
+  if (body.indexOf('videoRef.current?.pauseAsync()') < 0) return false;
+  return body.indexOf('setVideoFullOpen(true)') >= 0;
+}
+
+/**
  * ── ABOUT ── THE CARD IS BUILT FROM THE SMALL GEOMETRY, AND NOTHING ELSE MOVED.
  *
  * The screen's About card must pass `compact` to its row, and its three style
