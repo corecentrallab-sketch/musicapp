@@ -50,6 +50,14 @@ import {
   fullScreenPrepOnOpen,
   type FullScreenPrepState,
 } from '../services/videoFullScreenPrep';
+import {
+  FULL_SCREEN_MOUNT_FALLBACK_MS,
+  FULL_SCREEN_PAINT_FRAMES_BEFORE_MOUNT,
+  clearFullScreenTap,
+  createFullScreenOpenTimeline,
+  shouldMountFullScreenPlayer,
+  type FullScreenOpenTimeline,
+} from '../services/videoFullScreenOpen';
 
 export const FULL_SCREEN_VIDEO_CLOSE_LABEL = 'Close the full-screen video';
 export const FULL_SCREEN_VIDEO_CTA = 'Full screen';
@@ -110,6 +118,31 @@ export const FullScreenVideo: React.FC<FullScreenVideoProps> = ({
   const reportPrep = useCallback((event: 'opened' | 'ready' | 'failed' | 'closed') => {
     setPrep((current) => fullScreenPrepOnEvent(current, event));
   }, []);
+  /**
+   * ── vc56 ── THE WINDOW PAINTS BEFORE ITS PLAYER EXISTS ─────────────────────
+   *
+   * vc55 put the spinner INSIDE the window, but the window and its `expo-av`
+   * player were created in the same React commit. Creating a player over a long
+   * local take is native work on the main thread, so the window's first painted
+   * frame waited for the player to exist — the owner saw the window arrive 15–20 s
+   * late, spinner and all, and read it as "the app did nothing".
+   *
+   * `windowPainted` is set by the frame callbacks below, and the `<Video>` is not
+   * mounted until `shouldMountFullScreenPlayer` says the window is on screen. The
+   * first thing painted is therefore the window with its spinner; the decoder
+   * comes up behind it.
+   */
+  const [windowPainted, setWindowPainted] = useState(false);
+  const playerMounted = shouldMountFullScreenPlayer(visible, windowPainted);
+  const timeline = useRef<FullScreenOpenTimeline>(createFullScreenOpenTimeline());
+  const openTimingLogged = useRef(false);
+
+  /** The measured split, once per opening: press → paint → mount → file/frame. */
+  const logOpenTiming = useCallback(() => {
+    if (openTimingLogged.current) return;
+    openTimingLogged.current = true;
+    console.log(timeline.current.line());
+  }, []);
 
   /** A seek that can never land in the trimmed-out part of the take. */
   const clampedSeek = useCallback(
@@ -128,15 +161,71 @@ export const FullScreenVideo: React.FC<FullScreenVideoProps> = ({
   useEffect(() => {
     if (!visible) {
       setPrep((current) => fullScreenPrepOnEvent(current, 'closed'));
+      setWindowPainted(false);
+      clearFullScreenTap();
       return;
     }
     setErrorLine(null);
     setPlaying(false);
     setPrep(fullScreenPrepOnOpen(uri));
+    setWindowPainted(false);
+    // A fresh timeline per opening, seeded with the press that opened it.
+    timeline.current = createFullScreenOpenTimeline();
+    openTimingLogged.current = false;
     const target = clampedSeek(Number(startMs) || 0);
     setPositionMs(target);
     void restorePlaybackAudioMode();
   }, [clampedSeek, startMs, uri, visible]);
+
+  /**
+   * ── vc56 ── LET THE WINDOW PAINT, THEN MOUNT THE PLAYER ────────────────────
+   *
+   * Two frame callbacks, because the first one can still run before the freshly
+   * mounted Modal's frame reaches the screen. The timeout is the safety net: a
+   * window whose frames never come (opened while the app is backgrounded) still
+   * gets its player, because a window that never plays is a dead end — a worse
+   * outcome than a late start.
+   */
+  useEffect(() => {
+    if (!visible) return undefined;
+    let settled = false;
+    let rafId: number | null = null;
+    let fallback: ReturnType<typeof setTimeout> | null = null;
+    let remaining = FULL_SCREEN_PAINT_FRAMES_BEFORE_MOUNT;
+
+    const paint = () => {
+      if (settled) return;
+      settled = true;
+      if (rafId !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId);
+      if (fallback !== null) clearTimeout(fallback);
+      timeline.current.mark('windowPainted');
+      setWindowPainted(true);
+    };
+    const tick = () => {
+      if (settled) return;
+      remaining -= 1;
+      if (remaining <= 0) {
+        paint();
+        return;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    fallback = setTimeout(paint, FULL_SCREEN_MOUNT_FALLBACK_MS);
+
+    return () => {
+      settled = true;
+      if (rafId !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId);
+      if (fallback !== null) clearTimeout(fallback);
+    };
+  }, [visible]);
+
+  // The player exists: stamp it, so the split can say how long the decoder took
+  // separately from how long the window itself took to appear.
+  useEffect(() => {
+    if (!playerMounted) return;
+    timeline.current.mark('playerMounted');
+  }, [playerMounted]);
 
   const handleClose = useCallback(() => {
     void player.current?.pauseAsync().catch(() => undefined);
@@ -149,14 +238,18 @@ export const FullScreenVideo: React.FC<FullScreenVideoProps> = ({
     const target = clampedSeek(Number(startMs) || 0);
     void player.current?.setPositionAsync(target).catch(() => undefined);
     // The file is in the player: the wait is over and the indicator comes down.
+    timeline.current.mark('loaded');
+    logOpenTiming();
     reportPrep('ready');
-  }, [clampedSeek, reportPrep, startMs]);
+  }, [clampedSeek, logOpenTiming, reportPrep, startMs]);
 
   /** The first frame is on screen — the same end of the wait as `onLoad`. */
   const handleReadyForDisplay = useCallback(() => {
+    timeline.current.mark('firstFrame');
+    logOpenTiming();
     reportPrep('ready');
     void restorePlaybackAudioMode();
-  }, [reportPrep]);
+  }, [logOpenTiming, reportPrep]);
 
   const toggle = useCallback(async () => {
     const video = player.current;
@@ -248,28 +341,37 @@ export const FullScreenVideo: React.FC<FullScreenVideoProps> = ({
         <View style={styles.body}>
           {uri ? (
             <View style={styles.videoWrap}>
-              <Video
-                ref={player}
-                style={styles.video}
-                source={{ uri }}
-                useNativeControls={false}
-                volume={1}
-                isMuted={false}
-                resizeMode={ResizeMode.CONTAIN}
-                progressUpdateIntervalMillis={200}
-                onLoad={handleLoad}
-                onReadyForDisplay={handleReadyForDisplay}
-                onError={(message) => {
-                  reportPrep('failed');
-                  setErrorLine(FULL_SCREEN_VIDEO_FAILED_LINE);
-                  reportAudioFailure({
-                    source: 'take-playback',
-                    reason: 'clip-load',
-                    detail: usableDetail(message),
-                  });
-                }}
-                onPlaybackStatusUpdate={onStatus}
-              />
+              {/* ── vc56 ── NO PLAYER UNTIL THE WINDOW IS ON SCREEN ────────────
+                  Mounting `expo-av` over a long take is main-thread native work,
+                  and doing it in the same commit as the window is what made the
+                  window itself arrive late. The box below is the same size, so
+                  the spinner sits exactly where the picture will be. */}
+              {playerMounted ? (
+                <Video
+                  ref={player}
+                  style={styles.video}
+                  source={{ uri }}
+                  useNativeControls={false}
+                  volume={1}
+                  isMuted={false}
+                  resizeMode={ResizeMode.CONTAIN}
+                  progressUpdateIntervalMillis={200}
+                  onLoad={handleLoad}
+                  onReadyForDisplay={handleReadyForDisplay}
+                  onError={(message) => {
+                    reportPrep('failed');
+                    setErrorLine(FULL_SCREEN_VIDEO_FAILED_LINE);
+                    reportAudioFailure({
+                      source: 'take-playback',
+                      reason: 'clip-load',
+                      detail: usableDetail(message),
+                    });
+                  }}
+                  onPlaybackStatusUpdate={onStatus}
+                />
+              ) : (
+                <View style={styles.video} />
+              )}
               {/* ── vc55, F2 ── THE WAIT, SAID OUT LOUD ────────────────────────
                   This is the black rectangle the owner sat in front of for 15–20 s.
                   While the player is coming up the window says it is preparing, so

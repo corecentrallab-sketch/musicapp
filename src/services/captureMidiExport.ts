@@ -39,7 +39,7 @@ import {
   isCaptureUnavailable,
   type SamplesProvider,
 } from './coachCapture';
-import { detectPitchFrames } from './pitchDetection';
+import { detectPitchFramesAsync } from './pitchDetection';
 import { MIDI_STRUCTURE_INVALID_MESSAGE, validateMidiStructure } from './midiStructure';
 import {
   MIDI_FAILED_MESSAGE,
@@ -213,7 +213,19 @@ async function decodeTakeFromRecording(
     return { take: null, unavailable: false, message: captureErrorMessage(err) };
   }
 
-  const frames = detectPitchFrames(captured.samples, captured.sampleRate);
+  /**
+   * ── vc56 ── THE READ THAT USED TO FREEZE THE SCREEN, SLICED ────────────────
+   *
+   * This was `detectPitchFrames` — a single synchronous pass. On a 60-second take
+   * that is ~2,400 YIN period searches, measured at 4,178 ms of solid CPU in Node
+   * (and several times that on a handset's Hermes), all of it on the JS thread
+   * while the review surface was on screen and the owner was pressing the
+   * full-screen icon. The tap was not looked at until the read finished, which is
+   * the 15–20 s of "the app did nothing". The sliced read produces the SAME frames
+   * (the gate compares them frame for frame) and hands the thread back between
+   * slices, so the window opens on the press.
+   */
+  const frames = await detectPitchFramesAsync(captured.samples, captured.sampleRate);
   const take = buildCaptureTake(frames, {
     tempoBpm: input.tempoBpm,
     capturedAt:

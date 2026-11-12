@@ -26,9 +26,17 @@ import {
   aboutCardIsSmaller,
   anEmptyLaneOffersTheCameraOffTake,
   anUnknownVideoLengthIsNeverTheReason,
+  fullScreenPaintsBeforeThePlayerMounts,
   fullScreenSaysItIsPreparing,
   noCopyBlamesTheCameraForTheNotes,
+  theNotesReadNoLongerFreezesTheScreen,
+  thePressIsStampedAndThePagePlayerPauses,
 } from '../src/services/vc55DeviceFixContract';
+import {
+  createFullScreenOpenTimeline,
+  shouldMountFullScreenPlayer,
+} from '../src/services/videoFullScreenOpen';
+import { detectPitchFrames, detectPitchFramesAsync } from '../src/services/pitchDetection';
 import {
   FULL_SCREEN_PREPARING_CTA,
   FULL_SCREEN_PREPARING_HINT,
@@ -61,6 +69,8 @@ const FULLSCREEN = read(VC55_FULLSCREEN_PATH);
 const SETTINGS = read(VC55_SETTINGS_PATH);
 const MODEL = read(VC55_SYNC_MODEL_PATH);
 const ABOUT_LAYOUT = read(VC55_ABOUT_LAYOUT_PATH);
+const PITCH_SRC = read('src/services/pitchDetection.ts');
+const DECODE_SRC = read('src/services/captureMidiExport.ts');
 
 let passes = 0;
 let failures = 0;
@@ -288,11 +298,174 @@ function testTheGuardsBite(): void {
   );
 }
 
-testTheThreeEmptyCases();
-testThePreparingState();
-testTheAboutCard();
-testTheWiring();
-testTheGuardsBite();
+// ─────────────────────────────────────────────────────────────────────────────
+// F2, THE OTHER HALF (vc56) — THE WINDOW OPENS ON THE PRESS
+// ─────────────────────────────────────────────────────────────────────────────
 
-console.log(`\n${passes} passed, ${failures} failed (${passes + failures} checks)`);
-if (failures > 0) process.exit(1);
+function audio(seconds: number, rate: number, hz: number): Float32Array {
+  const n = Math.round(seconds * rate);
+  const samples = new Float32Array(n);
+  for (let i = 0; i < n; i += 1) samples[i] = 0.4 * Math.sin((2 * Math.PI * hz * i) / rate);
+  return samples;
+}
+
+async function testTheOpenPath(): Promise<void> {
+  console.log('\nF2b — THE WINDOW PAINTS BEFORE THE PLAYER (pure)');
+  assert(
+    shouldMountFullScreenPlayer(true, false) === false &&
+      shouldMountFullScreenPlayer(true, true) === true &&
+      shouldMountFullScreenPlayer(false, true) === false,
+    'the player is mounted only once the window is OPEN and PAINTED — never with the window',
+  );
+
+  const timeline = createFullScreenOpenTimeline(() => 1000, 500);
+  timeline.mark('windowPainted', 620);
+  timeline.mark('playerMounted', 700);
+  timeline.mark('loaded', 1900);
+  timeline.mark('firstFrame', 1950);
+  const split = timeline.split();
+  assert(
+    split.tapToPaintMs === 120 &&
+      split.paintToMountMs === 80 &&
+      split.mountToLoadedMs === 1200 &&
+      split.mountToFirstFrameMs === 1250 &&
+      split.tapToLoadedMs === 1400,
+    'the split measures press -> paint -> mount -> file -> frame, in ms',
+  );
+  assert(
+    timeline.line().indexOf('[fullscreen-open]') === 0 &&
+      timeline.line().indexOf('tap->paint=120ms') > 0 &&
+      timeline.line().indexOf('paint->mount=80ms') > 0,
+    'the whole split is reported on ONE tagged console line',
+  );
+
+  const partial = createFullScreenOpenTimeline(() => 0, null);
+  partial.mark('windowPainted', 10);
+  assert(
+    partial.split().tapToPaintMs === null && partial.split().mountToLoadedMs === null,
+    'a stage that never happened reads UNKNOWN, never 0 ms',
+  );
+
+  const twice = createFullScreenOpenTimeline(() => 0, 0);
+  twice.mark('windowPainted', 5);
+  twice.mark('windowPainted', 900);
+  assert(
+    twice.at('windowPainted') === 5,
+    'a stage stamped twice keeps its FIRST time, so a re-render cannot inflate the split',
+  );
+
+  console.log('\nF2c — THE NOTES READ NO LONGER FREEZES THE TAP (pure + real samples)');
+  const samples = audio(1.5, 22050, 440);
+  const blocking = detectPitchFrames(samples, 22050);
+  let yields = 0;
+  const sliced = await detectPitchFramesAsync(samples, 22050, {}, {
+    yieldToUi: () => {
+      yields += 1;
+      return Promise.resolve();
+    },
+  });
+  const identical =
+    sliced.length === blocking.length &&
+    sliced.length > 0 &&
+    sliced.every(
+      (frame, i) =>
+        frame.tSec === blocking[i].tSec &&
+        frame.midi === blocking[i].midi &&
+        frame.rms === blocking[i].rms,
+    );
+  assert(identical, `the sliced read returns the SAME frames as the blocking read (${sliced.length} frames)`);
+  assert(yields > 0, `the sliced read really hands the thread back (${yields} yields over 1.5 s of audio)`);
+
+  let fakeNow = 0;
+  let forcedYields = 0;
+  await detectPitchFramesAsync(samples, 22050, {}, {
+    now: () => {
+      fakeNow += 8;
+      return fakeNow;
+    },
+    yieldToUi: () => {
+      forcedYields += 1;
+      return Promise.resolve();
+    },
+  });
+  assert(forcedYields > 10, `the slice is bounded in TIME, not in frames (${forcedYields} slices)`);
+
+  console.log('\nF2d — THE SHIPPED WIRING (real source)');
+  assert(
+    fullScreenPaintsBeforeThePlayerMounts(FULLSCREEN),
+    'the window mounts its player behind the painted gate, on frame callbacks, and reports the split',
+  );
+  assert(
+    theNotesReadNoLongerFreezesTheScreen(DECODE_SRC, PITCH_SRC),
+    'the decode seam awaits the sliced read and the blocking call is gone',
+  );
+  assert(
+    thePressIsStampedAndThePagePlayerPauses(SCREEN),
+    'the press is stamped for the split, and the page player lets go of the file first',
+  );
+
+  console.log('\nF2b/c/d — THE GUARDS BITE (mutated source)');
+  const playerFirst = FULLSCREEN.replace('{playerMounted ? (', '{true ? (');
+  assert(
+    playerFirst !== FULLSCREEN && fullScreenPaintsBeforeThePlayerMounts(playerFirst) === false,
+    'GUARD F2b bites: a player mounted in the same commit as the window is rejected',
+  );
+  const ungated = FULLSCREEN.replace(
+    'shouldMountFullScreenPlayer(visible, windowPainted)',
+    'true',
+  );
+  assert(
+    ungated !== FULLSCREEN && fullScreenPaintsBeforeThePlayerMounts(ungated) === false,
+    'GUARD F2b bites: a window with no paint gate at all is rejected',
+  );
+  const noTiming = FULLSCREEN.split('timeline.current.line()').join('undefined');
+  assert(
+    noTiming !== FULLSCREEN && fullScreenPaintsBeforeThePlayerMounts(noTiming) === false,
+    'GUARD F2b bites: a window that opens without measuring itself is rejected',
+  );
+  const blockingBack = DECODE_SRC.replace(
+    'await detectPitchFramesAsync(captured.samples, captured.sampleRate)',
+    'detectPitchFrames(captured.samples, captured.sampleRate)',
+  );
+  assert(
+    blockingBack !== DECODE_SRC &&
+      theNotesReadNoLongerFreezesTheScreen(blockingBack, PITCH_SRC) === false,
+    'GUARD F2c bites: the blocking read put back into the seam is rejected',
+  );
+  const noYield = PITCH_SRC.split('await yieldToUi()').join('undefined');
+  assert(
+    noYield !== PITCH_SRC && theNotesReadNoLongerFreezesTheScreen(DECODE_SRC, noYield) === false,
+    'GUARD F2c bites: a "sliced" read that never yields is rejected',
+  );
+  const noStamp = SCREEN.split('    noteFullScreenTap();').join('');
+  assert(
+    noStamp !== SCREEN && thePressIsStampedAndThePagePlayerPauses(noStamp) === false,
+    'GUARD F2d bites: a press that is not stamped is rejected',
+  );
+  const noRelease = SCREEN.replace(
+    '    void reviewVideoRef.current?.pauseAsync().catch(() => undefined);\n',
+    '',
+  );
+  assert(
+    noRelease !== SCREEN && thePressIsStampedAndThePagePlayerPauses(noRelease) === false,
+    'GUARD F2d bites: a page player still holding the file is rejected',
+  );
+  assert(
+    fullScreenPaintsBeforeThePlayerMounts('const nothing = 1;') === false &&
+      theNotesReadNoLongerFreezesTheScreen('const nothing = 1;', 'const nothing = 1;') === false &&
+      thePressIsStampedAndThePagePlayerPauses('const nothing = 1;') === false,
+    'every new guard rejects an empty file instead of passing vacuously',
+  );
+}
+
+void (async () => {
+  testTheThreeEmptyCases();
+  testThePreparingState();
+  testTheAboutCard();
+  testTheWiring();
+  testTheGuardsBite();
+  await testTheOpenPath();
+
+  console.log(`\n${passes} passed, ${failures} failed (${passes + failures} checks)`);
+  if (failures > 0) process.exit(1);
+})();
