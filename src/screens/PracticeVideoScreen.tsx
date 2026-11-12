@@ -192,6 +192,16 @@ import {
   videoSizeLine,
   type VideoCueSet,
 } from '../services/videoTakeSync';
+/**
+ * ── vc57 (D21) ── HOW FAR THE NOTES REACH. One constant, stated on the record
+ * surface before a take and on the take itself when it runs past the coverage. The
+ * number is never typed on this screen: services/notesCoverage.ts owns it, and the
+ * tier1 gate fails on a second hardcoded 60 anywhere in the practice-video path.
+ */
+import {
+  NOTES_COVERAGE_RECORD_LINE,
+  notesCoverageLaneNotice,
+} from '../services/notesCoverage';
 import { OVERLAY_LANE_HEIGHT } from '../components/VideoOverlayLane';
 import { VideoOverlayLane } from '../components/VideoOverlayLane';
 // vc53, items 3/4/7: the full-screen player, the draggable scrub bar and the
@@ -1301,6 +1311,21 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     [cueSet],
   );
 
+  /**
+   * ── vc57 (D21) ── HOW FAR THE NOTES REACH, ON THE TAKE ITSELF.
+   *
+   * The owner: the lane must not leave a user "thinking they have as much time as
+   * they need". `cueSet.timelineSec` is the same axis the lane draws on, so the
+   * sentence and the pixels cannot disagree about how long the take is; the
+   * sentence itself comes from services/notesCoverage.ts, where the one constant
+   * lives. Null on a take inside the coverage - a limit the user does not have is
+   * not worth a line.
+   */
+  const coverageLine = useMemo(
+    () => notesCoverageLaneNotice(cueSet.timelineSec),
+    [cueSet.timelineSec],
+  );
+
   const chordRow = useMemo(() => {
     if (!take) return [];
     const suggestion = suggestedChords(take.notes, take.key);
@@ -1746,6 +1771,10 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
             onExpand={() => setNotesFullOpen(true)}
             emptyLine={cueEmptyLine}
           />
+          {/* vc57 (D21): the take is longer than the notes cover, and the lane says
+              so where it happens - in the app's own voice, about the app's window,
+              pointing at the trim that is right above. */}
+          {coverageLine ? <Text style={styles.windowLine}>{coverageLine}</Text> : null}
           {/* ── vc55, N6 ── AN EMPTY LANE IS NEVER A DEAD END ──────────────────
               The owner: "does it offer the camera-off take instead of being a dead
               end?" The sentence above the lane says what happened; this is the way
@@ -1956,6 +1985,9 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               onSeekMs={(ms) => seekPlayerTo(videoRef.current, ms)}
               emptyLine={cueEmptyLine}
             />
+            {/* vc57 (D21): the same sentence on the full-screen notes window, so the
+                limit never depends on which of the two lanes the user is looking at. */}
+            {coverageLine ? <Text style={styles.windowLine}>{coverageLine}</Text> : null}
             <ScrubBar
               positionMs={clockMs}
               durationMs={Math.max(0, Number(ref?.durationSec) || 0) * 1000}
@@ -1978,6 +2010,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
           <Text style={styles.honest}>{VIDEO_RECORD_HONESTY}</Text>
           <Text style={styles.honest}>{VIDEO_STAYS_ON_PHONE_LINE}</Text>
           <Text style={styles.honest}>{PRACTICE_VIDEO_MAX_LINE}</Text>
+          <Text style={styles.honest}>{NOTES_COVERAGE_RECORD_LINE}</Text>
           <TouchableOpacity
             style={styles.primaryBtn}
             onPress={() => void requestPermission()}
@@ -2010,6 +2043,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         <Text style={styles.honest}>{VIDEO_RECORD_HONESTY}</Text>
         <Text style={styles.honest}>{VIDEO_STAYS_ON_PHONE_LINE}</Text>
         <Text style={styles.honest}>{PRACTICE_VIDEO_MAX_LINE}</Text>
+        <Text style={styles.honest}>{NOTES_COVERAGE_RECORD_LINE}</Text>
 
         {phase !== 'review' ? (
           <View style={styles.preview}>

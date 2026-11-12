@@ -262,6 +262,8 @@
     "src/services/videoFullScreenOpen.ts",
     "src/services/aboutCardLayout.ts",
     "src/services/vc55DeviceFixContract.ts",
-    "scripts/vc55DeviceFixes.test.ts"
+    "scripts/vc55DeviceFixes.test.ts",
+    "src/services/notesCoverage.ts",
+    "scripts/vc57NotesCoverage.test.ts"
   ]
 }
