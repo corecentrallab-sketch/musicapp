@@ -243,10 +243,18 @@ function testTheGuardsBite(): void {
     deadPlay !== FULLSCREEN && fullScreenSaysItIsPreparing(deadPlay) === false,
     'GUARD F2 bites: a Play control that looks live while preparing is rejected',
   );
-  const guessedWait = FULLSCREEN.replace("reportPrep('ready')", 'undefined');
+  // BOTH ends of the wait (onLoad and the first frame) report ready, so the
+  // probe has to take them all out — `replace` only ever took the first one,
+  // which left the guard satisfied and this probe failing.
+  const guessedWait = FULLSCREEN.split("reportPrep('ready')").join('undefined');
   assert(
     guessedWait !== FULLSCREEN && fullScreenSaysItIsPreparing(guessedWait) === false,
     'GUARD F2 bites: a window that never ends its wait on the player\'s word is rejected',
+  );
+  const ctaStillSaysPlay = FULLSCREEN.split('FULL_SCREEN_PREPARING_CTA').join("'Play'");
+  assert(
+    ctaStillSaysPlay !== FULLSCREEN && fullScreenSaysItIsPreparing(ctaStillSaysPlay) === false,
+    'GUARD F2 bites: a Play control still labelled Play while it waits is rejected',
   );
 
   // About — the big card put back.
@@ -262,6 +270,13 @@ function testTheGuardsBite(): void {
   assert(
     inlinedNumbers !== SETTINGS && aboutCardIsSmaller(inlinedNumbers) === false,
     'GUARD ABOUT bites: the old 52/10 numbers written back into the style are rejected',
+  );
+  const ungatedCompact = SETTINGS.split('compact && styles.aboutRowCompact').join(
+    'styles.aboutRowCompact',
+  );
+  assert(
+    ungatedCompact !== SETTINGS && aboutCardIsSmaller(ungatedCompact) === false,
+    'GUARD ABOUT bites: a compact row style that any row can wear is rejected',
   );
 
   // A screen that stopped rendering the surfaces at all must not pass vacuously.

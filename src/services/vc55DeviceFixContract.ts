@@ -148,7 +148,10 @@ export function fullScreenSaysItIsPreparing(componentSource: string): boolean {
   if (src.indexOf('fullScreenIsPreparing(prep)') < 0) return false;
   if (src.indexOf('<ActivityIndicator') < 0) return false;
   if (src.indexOf('{FULL_SCREEN_PREPARING_LINE}') < 0) return false;
-  if (src.indexOf('{FULL_SCREEN_PREPARING_CTA}') < 0) return false;
+  // The identifier, not a spelling of the JSX around it: the shipped button
+  // reads `fullScreenIsPreparing(prep) ? FULL_SCREEN_PREPARING_CTA : …`, so a
+  // guard demanding `{FULL_SCREEN_PREPARING_CTA}` rejected the real file.
+  if (src.indexOf('FULL_SCREEN_PREPARING_CTA') < 0) return false;
   // The wait ENDS on the player's own word — the file loaded, or the first frame
   // is on screen. Not on a timer, which would be a guess.
   if (src.indexOf("reportPrep('ready')") < 0) return false;
@@ -170,9 +173,15 @@ export function aboutCardIsSmaller(settingsSource: string): boolean {
   if (src.length < 20000) return false;
   // The About row itself is the compact one.
   if (!/title="About NoteSnap"[\s\S]{0,240}compact\b/.test(src)) return false;
-  // …and only the About card uses the compact row style.
-  const uses = src.split('styles.aboutRowCompact').length - 1;
-  if (uses !== 1) return false;
+  // …and the compact row style is only ever reached through the `compact` prop,
+  // so no other row can wear it. The About card uses it on BOTH of its rows, so
+  // counting occurrences (it demanded exactly one) rejected the real file.
+  const compactUses = src.split('styles.aboutRowCompact').length - 1;
+  if (compactUses < 1) return false;
+  for (const line of src.split('\n')) {
+    if (line.indexOf('styles.aboutRowCompact') < 0) continue;
+    if (line.indexOf('compact &&') < 0) return false;
+  }
   const row = styleBlock(src, 'aboutRowCompact');
   if (row === null) return false;
   if (row.indexOf('minHeight: ABOUT_ROW_MIN_HEIGHT') < 0) return false;

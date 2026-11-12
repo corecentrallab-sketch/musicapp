@@ -424,11 +424,34 @@ function testWiring(): void {
     screen.indexOf('videoCueEmptyLine(cueSet)') >= 0,
     'and it comes from what actually happened to the take',
   );
-  const noTake = screen.indexOf('{!take && !takeBusy ? (');
-  assert(noTake >= 0, 'a take with no notes is not a dead end');
+  // N6 — an empty lane is not a dead end. Anchored to the IDENTIFIERS that carry
+  // the behaviour (the CTA constant, the gate helper, the handler) and to the two
+  // surfaces that must offer it — never to the exact spelling of a condition. A
+  // guard pinned to source text dies the moment that text is improved, which is
+  // what happened here: the shipped review-page gate is
+  // `(!take || take.notes.length === 0) && !takeBusy` — deliberately WIDER than
+  // the `!take` this guard used to spell out — and the handler is
+  // `recordNotesOnTheirOwn` (the camera-off take), not `recordSeparateTake`.
+  const ctaMarker = 'void recordNotesOnTheirOwn()';
+  const ctaSites: number[] = [];
+  for (let at = screen.indexOf(ctaMarker); at >= 0; at = screen.indexOf(ctaMarker, at + 1)) {
+    ctaSites.push(at);
+  }
+  assertEq(ctaSites.length, 2, 'the camera-off take is offered on both surfaces (review and watch)');
+  const gates = ctaSites.map((at) => screen.slice(Math.max(0, at - 900), at + 260));
   assert(
-    noTake >= 0 && screen.slice(noTake, noTake + 900).indexOf('recordSeparateTake()') >= 0,
-    'it offers the camera-off take, which is written onto the same row',
+    gates.every((gate) => gate.indexOf('VIDEO_TAKE_ON_ITS_OWN_CTA') >= 0),
+    'each one is a real button carrying the camera-off CTA',
+  );
+  assert(
+    gates.some((gate) => gate.indexOf('emptyLaneNeedsAnAction(cueSet)') >= 0),
+    'the watch page offers it exactly when the lane has nothing to draw',
+  );
+  assert(
+    gates.some(
+      (gate) => gate.indexOf('!take') >= 0 && gate.indexOf('take.notes.length === 0') >= 0,
+    ),
+    'the review page offers it when there is no take OR the take came back with no notes',
   );
 
   const lane = readRepoFile('src/components/VideoOverlayLane.tsx');

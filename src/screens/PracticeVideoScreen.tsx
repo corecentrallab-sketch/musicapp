@@ -1207,8 +1207,8 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
    * the surface says exactly that. The save path itself is not touched.
    */
   const recordNotesOnTheirOwn = useCallback(async () => {
-    // Named, not inlined: the screen's own `if (phase === 'playback') {` is the
-    // mode test the render reads, and the v39 probe mutates exactly that text.
+    // Named, not inlined: the v39 guard treats the FIRST mode test in this file
+    // as the render branch, so a second copy written out here would shadow it.
     const startedFromTheWatchPage = phase === 'playback';
     if (startedFromTheWatchPage) {
       rowIdRef.current = null;
