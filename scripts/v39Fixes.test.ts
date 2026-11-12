@@ -92,9 +92,36 @@ function readAppFile(rel: string): string {
   const path = require('path');
   return fs.readFileSync(path.join(repoRoot(), rel), 'utf8') as string;
 }
-/** Replace the first occurrence — the shape every probe below uses. */
+/** Is `at` inside a comment, rather than in code the app actually runs? */
+function startsInsideAComment(source: string, at: number): boolean {
+  const lineStart = source.lastIndexOf('\n', at - 1) + 1;
+  const before = source.slice(lineStart, at);
+  const trimmed = before.trim();
+  return (
+    trimmed.startsWith('//') ||
+    trimmed.startsWith('/*') ||
+    trimmed.startsWith('*') ||
+    before.indexOf('//') >= 0
+  );
+}
+
+/**
+ * Replace the first occurrence **in code** — the shape every probe below uses.
+ *
+ * Not simply the first occurrence anywhere. A comment that quotes the anchor
+ * text (e.g. one explaining the v39 mode test by writing it out) moves the first
+ * match into the comment: the mutation then edits prose, nothing that renders
+ * changes, the guard stays true, and the probe reports green without biting.
+ * That is how vc55's screen comment silently killed the "playback branch stops
+ * being the mode test" probe. Anchors are skipped inside comments; if no code
+ * match is left, the source comes back unchanged and the probe's own
+ * `mutated !== original` assertion fails loudly instead of passing blind.
+ */
 function mutate(source: string, from: string, to: string): string {
-  const at = source.indexOf(from);
+  let at = source.indexOf(from);
+  while (at >= 0 && startsInsideAComment(source, at)) {
+    at = source.indexOf(from, at + from.length);
+  }
   if (at < 0) return source;
   return source.slice(0, at) + to + source.slice(at + from.length);
 }
@@ -234,6 +261,34 @@ console.log('\nv39 fixes — the mutation probes');
 function probe(label: string, mutated: string, original: string, guard: () => boolean): void {
   assert(mutated !== original, `${label}: the mutation really changed the source`);
   assertEq(guard(), false, `MUTATION FAILS THE GUARD — ${label}`);
+}
+
+// ── THE HARNESS ITSELF ────────────────────────────────────────────────────────
+// A probe only means something if its mutation lands on code the app runs. The
+// vc55 screen comment quoted the v39 mode test verbatim, the first match moved
+// into the comment, and the probe went green without biting. This asserts the
+// harness now skips a comment that quotes the anchor.
+{
+  const harnessSample = [
+    'const a = 1;',
+    '// the render reads `if (phase === \'playback\') {` — quoted on purpose',
+    "if (phase === 'playback') {",
+    '  return <Video />;',
+    '}',
+  ].join('\n');
+  const harnessMutated = mutate(harnessSample, "if (phase === 'playback') {", 'if (false) {');
+  assert(
+    harnessMutated.indexOf("  if (phase === 'playback') {") < 0,
+    'HARNESS: the anchor is mutated in the code, not in the comment that quotes it',
+  );
+  assert(
+    harnessMutated.indexOf("// the render reads `if (phase === 'playback') {`") >= 0,
+    'HARNESS: the comment quoting the anchor is left untouched',
+  );
+  assert(
+    harnessMutated.indexOf('  return <Video />;') >= 0,
+    'HARNESS: the code around the anchor survives the mutation',
+  );
 }
 
 const screenWithoutAppend = mutate(SCAN_SCREEN, 'appendScanSessionPage(sessionId, photo.uri)', 'readOnlyPage(sessionId)');

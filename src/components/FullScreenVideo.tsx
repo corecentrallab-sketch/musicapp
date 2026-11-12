@@ -22,7 +22,7 @@
  * handed a uri, a window and a start position and owns nothing else.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ResizeMode, Video } from 'expo-av';
@@ -40,6 +40,16 @@ import {
   type TakeTrimSpan,
 } from '../services/takeClipTag';
 import { ScrubBar } from './ScrubBar';
+import {
+  FULL_SCREEN_PREPARING_CTA,
+  FULL_SCREEN_PREPARING_HINT,
+  FULL_SCREEN_PREPARING_LINE,
+  fullScreenCanPlay,
+  fullScreenIsPreparing,
+  fullScreenPrepOnEvent,
+  fullScreenPrepOnOpen,
+  type FullScreenPrepState,
+} from '../services/videoFullScreenPrep';
 
 export const FULL_SCREEN_VIDEO_CLOSE_LABEL = 'Close the full-screen video';
 export const FULL_SCREEN_VIDEO_CTA = 'Full screen';
@@ -87,6 +97,19 @@ export const FullScreenVideo: React.FC<FullScreenVideoProps> = ({
   const [playing, setPlaying] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorLine, setErrorLine] = useState<string | null>(null);
+  /**
+   * ── vc55, F2 ── THE WINDOW SAYS IT IS PREPARING ────────────────────────────
+   *
+   * The owner waited 15–20 s on a black rectangle with a dead Play button. This
+   * state is `preparing` from the moment the window opens until the player
+   * reports its file (`onLoad`) or its first frame (`onReadyForDisplay`), and it
+   * drives a spinner + a sentence over the video area — and a Play control that
+   * is disabled rather than tappable-but-dead.
+   */
+  const [prep, setPrep] = useState<FullScreenPrepState>(() => fullScreenPrepOnOpen(uri));
+  const reportPrep = useCallback((event: 'opened' | 'ready' | 'failed' | 'closed') => {
+    setPrep((current) => fullScreenPrepOnEvent(current, event));
+  }, []);
 
   /** A seek that can never land in the trimmed-out part of the take. */
   const clampedSeek = useCallback(
@@ -100,30 +123,47 @@ export const FullScreenVideo: React.FC<FullScreenVideoProps> = ({
   );
 
   // Every open starts from where the page's playhead was, and never from a
-  // position the trim excludes.
+  // position the trim excludes. It also starts a fresh PREPARING wait, so the
+  // indicator is up from the first frame the window paints.
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      setPrep((current) => fullScreenPrepOnEvent(current, 'closed'));
+      return;
+    }
     setErrorLine(null);
     setPlaying(false);
+    setPrep(fullScreenPrepOnOpen(uri));
     const target = clampedSeek(Number(startMs) || 0);
     setPositionMs(target);
     void restorePlaybackAudioMode();
-  }, [clampedSeek, startMs, visible]);
+  }, [clampedSeek, startMs, uri, visible]);
 
   const handleClose = useCallback(() => {
     void player.current?.pauseAsync().catch(() => undefined);
     setPlaying(false);
+    reportPrep('closed');
     onClose();
-  }, [onClose]);
+  }, [onClose, reportPrep]);
 
   const handleLoad = useCallback(() => {
     const target = clampedSeek(Number(startMs) || 0);
     void player.current?.setPositionAsync(target).catch(() => undefined);
-  }, [clampedSeek, startMs]);
+    // The file is in the player: the wait is over and the indicator comes down.
+    reportPrep('ready');
+  }, [clampedSeek, reportPrep, startMs]);
+
+  /** The first frame is on screen — the same end of the wait as `onLoad`. */
+  const handleReadyForDisplay = useCallback(() => {
+    reportPrep('ready');
+    void restorePlaybackAudioMode();
+  }, [reportPrep]);
 
   const toggle = useCallback(async () => {
     const video = player.current;
-    if (!video || busy) return;
+    // A window that is still preparing (or has no file) refuses the press: the
+    // Play control is disabled, and the handler refuses too, so a stale tap on a
+    // disabled-looking control can never reach a player with no file in it.
+    if (!video || busy || !fullScreenCanPlay(prep)) return;
     setBusy(true);
     setErrorLine(null);
     try {
@@ -151,7 +191,7 @@ export const FullScreenVideo: React.FC<FullScreenVideoProps> = ({
     } finally {
       setBusy(false);
     }
-  }, [busy, playing, positionMs, span]);
+  }, [busy, playing, positionMs, prep, span]);
 
   const onSeekMs = useCallback((ms: number) => {
     const target = clampedSeek(ms);
@@ -207,26 +247,42 @@ export const FullScreenVideo: React.FC<FullScreenVideoProps> = ({
 
         <View style={styles.body}>
           {uri ? (
-            <Video
-              ref={player}
-              style={styles.video}
-              source={{ uri }}
-              useNativeControls={false}
-              volume={1}
-              isMuted={false}
-              resizeMode={ResizeMode.CONTAIN}
-              progressUpdateIntervalMillis={200}
-              onLoad={handleLoad}
-              onError={(message) => {
-                setErrorLine(FULL_SCREEN_VIDEO_FAILED_LINE);
-                reportAudioFailure({
-                  source: 'take-playback',
-                  reason: 'clip-load',
-                  detail: usableDetail(message),
-                });
-              }}
-              onPlaybackStatusUpdate={onStatus}
-            />
+            <View style={styles.videoWrap}>
+              <Video
+                ref={player}
+                style={styles.video}
+                source={{ uri }}
+                useNativeControls={false}
+                volume={1}
+                isMuted={false}
+                resizeMode={ResizeMode.CONTAIN}
+                progressUpdateIntervalMillis={200}
+                onLoad={handleLoad}
+                onReadyForDisplay={handleReadyForDisplay}
+                onError={(message) => {
+                  reportPrep('failed');
+                  setErrorLine(FULL_SCREEN_VIDEO_FAILED_LINE);
+                  reportAudioFailure({
+                    source: 'take-playback',
+                    reason: 'clip-load',
+                    detail: usableDetail(message),
+                  });
+                }}
+                onPlaybackStatusUpdate={onStatus}
+              />
+              {/* ── vc55, F2 ── THE WAIT, SAID OUT LOUD ────────────────────────
+                  This is the black rectangle the owner sat in front of for 15–20 s.
+                  While the player is coming up the window says it is preparing, so
+                  the surface is never frozen-looking and never silent — and it
+                  claims no duration, because the app cannot measure one. */}
+              {fullScreenIsPreparing(prep) ? (
+                <View style={styles.preparing} pointerEvents="none">
+                  <ActivityIndicator size="large" color="#4ecdc4" />
+                  <Text style={styles.preparingLine}>{FULL_SCREEN_PREPARING_LINE}</Text>
+                  <Text style={styles.preparingHint}>{FULL_SCREEN_PREPARING_HINT}</Text>
+                </View>
+              ) : null}
+            </View>
           ) : (
             <View style={styles.missing}>
               <Text style={styles.meta}>{FULL_SCREEN_VIDEO_FAILED_LINE}</Text>
@@ -235,13 +291,26 @@ export const FullScreenVideo: React.FC<FullScreenVideoProps> = ({
 
           <View style={styles.controls}>
             <Pressable
-              style={({ pressed }) => [styles.playButton, pressed && styles.playButtonPressed]}
+              style={({ pressed }) => [
+                styles.playButton,
+                pressed && styles.playButtonPressed,
+                !fullScreenCanPlay(prep) && styles.playButtonOff,
+              ]}
               onPress={() => void toggle()}
-              disabled={!uri || busy}
+              disabled={!uri || busy || !fullScreenCanPlay(prep)}
               accessibilityRole="button"
-              accessibilityLabel={playing ? 'Pause the video' : 'Play the video'}
+              accessibilityLabel={
+                fullScreenIsPreparing(prep)
+                  ? FULL_SCREEN_PREPARING_LINE
+                  : playing
+                    ? 'Pause the video'
+                    : 'Play the video'
+              }
+              accessibilityState={{ disabled: !uri || busy || !fullScreenCanPlay(prep) }}
             >
-              <Text style={styles.playButtonText}>{playing ? 'Pause' : 'Play'}</Text>
+              <Text style={styles.playButtonText}>
+                {fullScreenIsPreparing(prep) ? FULL_SCREEN_PREPARING_CTA : playing ? 'Pause' : 'Play'}
+              </Text>
             </Pressable>
             <View style={styles.scrub}>
               <ScrubBar
@@ -287,7 +356,30 @@ const baseStyles = StyleSheet.create({
   },
   closeButtonPressed: { backgroundColor: '#1b2a4a' },
   body: { flex: 1, paddingHorizontal: 12, paddingBottom: 12 },
+  /** vc55 F2 — the player and its "preparing" overlay share this box. */
+  videoWrap: { flex: 1, borderRadius: 10, overflow: 'hidden' },
   video: { flex: 1, backgroundColor: '#000000', borderRadius: 10 },
+  preparing: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: 'rgba(18, 18, 43, 0.86)',
+  },
+  preparingLine: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 14,
+    textAlign: 'center',
+  },
+  preparingHint: {
+    color: '#9aa0b5',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 8,
+    textAlign: 'center',
+  },
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
   controls: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
   playButton: {
@@ -300,6 +392,8 @@ const baseStyles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   playButtonPressed: { opacity: 0.8 },
+  /** vc55 F2 — a control that cannot be pressed looks like it, not like a bug. */
+  playButtonOff: { opacity: 0.5 },
   playButtonText: { color: '#101024', fontSize: 16, fontWeight: '800' },
   scrub: { flex: 1, marginLeft: 12 },
   meta: { color: '#cfe4ff', fontSize: 13, lineHeight: 19, marginTop: 10 },
