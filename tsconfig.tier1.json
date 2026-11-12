@@ -257,6 +257,10 @@
     "src/services/videoTakeSync.ts",
     "scripts/vc54TakeSaveAndCues.test.ts",
     "src/services/notesLaneTimelineContract.ts",
-    "scripts/vc55NotesLaneTimeline.test.ts"
+    "scripts/vc55NotesLaneTimeline.test.ts",
+    "src/services/videoFullScreenPrep.ts",
+    "src/services/aboutCardLayout.ts",
+    "src/services/vc55DeviceFixContract.ts",
+    "scripts/vc55DeviceFixes.test.ts"
   ]
 }

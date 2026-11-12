@@ -178,7 +178,9 @@ import {
   VIDEO_TAKE_FAILED_LINE,
   VIDEO_TAKE_ON_ITS_OWN_CTA,
   VIDEO_TAKE_ON_ITS_OWN_LINE,
+  VIDEO_NOTES_ON_ITS_OWN_NEW_TAKE_LINE,
   captureSyncOffsetMs,
+  emptyLaneNeedsAnAction,
   firstOnsetSec,
   formatOffset,
   noteCuesForVideo,
@@ -1194,6 +1196,29 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     await keepTake(stopped.uri, true);
   }, [keepTake, recorder]);
 
+  /**
+   * ── vc55, N6 ── THE CAMERA-OFF TAKE, FROM EITHER SURFACE ─────────────────
+   *
+   * The review page writes the camera-off take onto the row on screen (its video
+   * is still in `videoUriRef`, so the save carries it). The WATCH page is a row
+   * that is already saved with its own video: a camera-off take started there
+   * carries no video at all, so the save would clear that row's video ref. It is
+   * therefore saved as its own take and this row is left untouched — the line on
+   * the surface says exactly that. The save path itself is not touched.
+   */
+  const recordNotesOnTheirOwn = useCallback(async () => {
+    // Named, not inlined: the screen's own `if (phase === 'playback') {` is the
+    // mode test the render reads, and the v39 probe mutates exactly that text.
+    const startedFromTheWatchPage = phase === 'playback';
+    if (startedFromTheWatchPage) {
+      rowIdRef.current = null;
+      videoUriRef.current = null;
+      audioUriRef.current = null;
+      elapsedRef.current = 0;
+    }
+    await recordSeparateTake();
+  }, [phase, recordSeparateTake]);
+
   const handleRecordAgain = useCallback(() => {
     armedRef.current = false;
     rowIdRef.current = null;
@@ -1702,6 +1727,25 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
             onExpand={() => setNotesFullOpen(true)}
             emptyLine={cueEmptyLine}
           />
+          {/* ── vc55, N6 ── AN EMPTY LANE IS NEVER A DEAD END ──────────────────
+              The owner: "does it offer the camera-off take instead of being a dead
+              end?" The sentence above the lane says what happened; this is the way
+              out, on the surface where the lane is blank. The sentence and the
+              action come from the same cue set, so they can never disagree. */}
+          {emptyLaneNeedsAnAction(cueSet) ? (
+            <View style={styles.missingCard}>
+              <Text style={styles.missingText}>{cueEmptyLine}</Text>
+              <Text style={styles.missingText}>{VIDEO_NOTES_ON_ITS_OWN_NEW_TAKE_LINE}</Text>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => void recordNotesOnTheirOwn()}
+                accessibilityRole="button"
+                accessibilityLabel={VIDEO_TAKE_ON_ITS_OWN_CTA}
+              >
+                <Text style={styles.primaryBtnText}>{VIDEO_TAKE_ON_ITS_OWN_CTA}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
           <Text style={styles.honest}>{VIDEO_SYNC_HONESTY}</Text>
           {videoCueCountLine(cueSet) ? (
             <Text style={styles.meta}>{`${VIDEO_NOTES_DROPPED_LINE} — ${videoCueCountLine(cueSet)}`}</Text>
@@ -2291,12 +2335,12 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 with the camera OFF, so it is offered whenever the take has no notes
                 — and it is written onto THIS row (the same row id), so the notes
                 land under this video. */}
-            {!take && !takeBusy ? (
+            {(!take || take.notes.length === 0) && !takeBusy ? (
               <>
                 <Text style={styles.honest}>{VIDEO_TAKE_ON_ITS_OWN_LINE}</Text>
                 <TouchableOpacity
                   style={styles.primaryBtn}
-                  onPress={() => void recordSeparateTake()}
+                  onPress={() => void recordNotesOnTheirOwn()}
                   accessibilityRole="button"
                   accessibilityLabel={VIDEO_TAKE_ON_ITS_OWN_CTA}
                 >

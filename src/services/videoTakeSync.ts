@@ -107,16 +107,41 @@ export const VIDEO_SEPARATE_TAKE_OFFSET_REASON =
 /**
  * ── vc54, DEFECT 2 ── THE ONE-MIC PROBLEM, SAID PLAINLY, WITH THE WAY OUT.
  *
- * A filmed take records the room through the camera's microphone. When that
- * recording comes back with no readable melody (the camera and the app's own
- * recorder share one microphone, and on the handset the filmed take's audio can
- * arrive silent), the take is not a dead end: the same phrase recorded with the
- * camera OFF goes through the one decode path the hum flow uses, and those notes
- * are written onto the same row, under the same video.
+ * The notes are read from the take's own `.m4a` recording (`audioCacheUri`), made
+ * by the app's recorder — NOT from the camera's soundtrack. On the handset that
+ * recording can come back with no readable melody (the camera and the app's own
+ * recorder share one microphone), and the take is then not a dead end: the same
+ * phrase recorded with the camera OFF goes through the one decode path the hum
+ * flow uses, and those notes are written onto the same row, under the same video.
+ *
+ * ── vc55, D22 ── THE SENTENCE USED TO NAME THE WRONG RECORDING. It said "the
+ * sound the camera recorded", which is not where the notes come from — a wrong
+ * cause stated confidently (defect class 11). It now names the take's audio.
  */
 export const VIDEO_TAKE_ON_ITS_OWN_LINE =
-  'NoteSnap could not hear a melody in the sound the camera recorded. Play the phrase once more with the camera off — those notes are written onto this same take, under this video.';
+  'NoteSnap could not hear a melody in the audio it recorded for this take. Play the phrase once more with the camera off — those notes are written onto this same take, under this video.';
 export const VIDEO_TAKE_ON_ITS_OWN_CTA = 'Record the notes on their own';
+
+/**
+ * ── vc55, N6 ── THE SAME WAY OUT, ON THE WATCH PAGE.
+ *
+ * On the review page the camera-off take is written onto the row on screen. The
+ * watch page is a row that is already saved WITH its video, so a camera-off take
+ * started there is saved as its own take — and the line says so rather than
+ * promising notes under a video they will not appear under.
+ */
+export const VIDEO_NOTES_ON_ITS_OWN_NEW_TAKE_LINE =
+  'Play the phrase once more with the camera off — those notes are saved as their own take, and this video stays exactly as it is.';
+
+/**
+ * ── vc55, N5 ── WHAT THE EMPTY LANE SAYS WHEN THERE WAS NO MELODY AT ALL.
+ *
+ * The owner's row: record a take of silence or speech and the lane must say no
+ * melody was heard — not that notes fell outside the window. This is the sentence
+ * for a take that holds no notes at all, and it is deliberately NOT the same
+ * sentence as `VIDEO_NOTES_OUTSIDE_LINE` (which is about notes that exist).
+ */
+export const VIDEO_NO_MELODY_LINE = 'No melody was heard in this take.';
 
 /** The video-only outcome: the picture is kept and is still sendable (no dead end). */
 export const VIDEO_TAKE_FAILED_LINE =
@@ -343,6 +368,17 @@ export function takeTimelineSec(
  * A take that HAS notes but none of them inside the video window is a different
  * fact, and it has a different remedy (line them up), so it gets its own
  * sentence. The lane must never tell the owner it heard nothing when it did.
+ *
+ * ── vc55, N5 ── AND THE OTHER HALF, WHICH WAS STILL WRONG ON THE HANDSET. This
+ * function returned `null` for a take with no notes at all, so the sentence fell
+ * back to the LANE's own default — one fixed line that the owner read as "notes
+ * outside the window" on a take of silence. The three cases are now decided in
+ * one place and read differently:
+ *   • no notes in the take at all   → VIDEO_NO_MELODY_LINE;
+ *   • notes, but none on this video → VIDEO_NOTES_OUTSIDE_LINE (legitimate: the
+ *     take does hold notes and they can be lined up);
+ *   • an unknown video length       → NEVER a reason (the cue builder falls back
+ *     to the take's own span, so nothing is dropped for it).
  */
 export const VIDEO_NOTES_OUTSIDE_LINE =
   'This take has notes, but none of them fall inside the video — use “Set from my first note” to line them up.';
@@ -350,7 +386,20 @@ export const VIDEO_NOTES_OUTSIDE_LINE =
 export function videoCueEmptyLine(set: VideoCueSet | null | undefined): string | null {
   if (!set) return null;
   if (set.cues.length > 0) return null;
-  return set.totalCount > 0 ? VIDEO_NOTES_OUTSIDE_LINE : null;
+  return set.totalCount > 0 ? VIDEO_NOTES_OUTSIDE_LINE : VIDEO_NO_MELODY_LINE;
+}
+
+/**
+ * ── vc55, N6 ── AN EMPTY LANE IS NEVER A DEAD END (standing owner rule).
+ *
+ * True exactly when the lane has nothing to draw, which is when the surface owes
+ * the user a real action — the camera-off take — instead of a sentence with
+ * nowhere to go. Derived from the same cue set the lane draws, so the sentence
+ * and the action can never disagree.
+ */
+export function emptyLaneNeedsAnAction(set: VideoCueSet | null | undefined): boolean {
+  if (!set) return true;
+  return set.cues.length === 0;
 }
 
 /** `"3 of 4 notes fall inside the video"` — the honest count under the lane. */

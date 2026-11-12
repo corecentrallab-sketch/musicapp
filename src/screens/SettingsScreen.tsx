@@ -180,6 +180,16 @@ import { createCheckoutSession, checkEntitlement } from '../services/api';
 // opened, so "Your Plan", "Upgrade", the tier names, the prices and the checkout
 // cards are all absent. Flipping the constant restores every one of them.
 import { BILLING_ENABLED } from '../services/billingMode';
+import {
+  ABOUT_CARD_MARGIN_TOP,
+  ABOUT_CARD_PADDING_H,
+  ABOUT_CARD_PADDING_V,
+  ABOUT_ROW_MIN_HEIGHT,
+  ABOUT_ROW_PADDING_V,
+  ABOUT_STAMP_FONT_SIZE,
+  ABOUT_STAMP_LINE_HEIGHT,
+  ABOUT_STAMP_PADDING_TOP,
+} from '../services/aboutCardLayout';
 import { track } from '../services/analytics';
 import { getDeviceId } from '../services/device';
 // The app's light/dark choice (v33 §F2, owner 10-04 email batch: "a dark/light
@@ -1373,6 +1383,7 @@ export const SettingsScreen: React.FC = () => {
           onPress={openAbout}
           hint="Shows the version and what this build does"
           chevron
+          compact
         />
         {/* v43 item B1 — THE BUILD STAMP, under the About row. Step 0 of every
             owner checklist from v43 on: this line must read the version you were
@@ -1430,6 +1441,16 @@ interface SpecRowProps {
   chevron?: boolean;
   /** The hairline LINE above this row (every row but the card's first). */
   divider?: boolean;
+  /**
+   * ── vc55 ── A TIGHTER ROW, FOR THE ONE CARD THAT ASKED FOR IT.
+   *
+   * The owner: "The About Notesnap box can be made smaller. It's currently
+   * unnecessarily large." Only the About card at the foot of the page passes
+   * this; every other row keeps the §3 geometry untouched. The numbers come
+   * from services/aboutCardLayout, so the card's height is a computed value the
+   * gate can check rather than a number buried in this sheet.
+   */
+  compact?: boolean;
 }
 
 const SpecRow: React.FC<SpecRowProps> = ({
@@ -1438,6 +1459,7 @@ const SpecRow: React.FC<SpecRowProps> = ({
   title,
   sub,
   value,
+  compact,
   onPress,
   hint,
   chevron,
@@ -1468,7 +1490,7 @@ const SpecRow: React.FC<SpecRowProps> = ({
       {divider ? <View style={[styles.specDivider, { backgroundColor: palette.LINE }]} /> : null}
       {onPress ? (
         <Pressable
-          style={styles.specRow}
+          style={[styles.specRow, compact && styles.aboutRowCompact]}
           onPress={onPress}
           accessibilityRole="button"
           accessibilityHint={hint}
@@ -1476,7 +1498,7 @@ const SpecRow: React.FC<SpecRowProps> = ({
           {content}
         </Pressable>
       ) : (
-        <View style={styles.specRow} accessibilityRole="text">
+        <View style={[styles.specRow, compact && styles.aboutRowCompact]} accessibilityRole="text">
           {content}
         </View>
       )}
@@ -1489,7 +1511,13 @@ const SpecRow: React.FC<SpecRowProps> = ({
  *  specRowTitle / specRowSub / specRowValue / specDivider). */
 type SpecRowStyles = Pick<
   typeof baseStyles,
-  'specRow' | 'specRowCopy' | 'specRowTitle' | 'specRowSub' | 'specRowValue' | 'specDivider'
+  | 'specRow'
+  | 'specRowCopy'
+  | 'specRowTitle'
+  | 'specRowSub'
+  | 'specRowValue'
+  | 'specDivider'
+  | 'aboutRowCompact'
 >;
 
 const baseStyles = StyleSheet.create({
@@ -1767,20 +1795,29 @@ const baseStyles = StyleSheet.create({
   /* v43 item B1 — the build stamp: the quietest type on the screen, but
      selectable, so a tester can copy it into a report. */
   buildStamp: {
-    fontSize: 12,
+    // vc55 — the stamp is a quiet line, not a block: 11 pt on 15 dp leading.
+    fontSize: ABOUT_STAMP_FONT_SIZE,
     color: '#8a8ab0',
-    lineHeight: 17,
+    lineHeight: ABOUT_STAMP_LINE_HEIGHT,
     paddingHorizontal: 4,
-    paddingTop: 8,
+    paddingTop: ABOUT_STAMP_PADDING_TOP,
   },
 
-  /** vc53 item 6 — the About card at the foot of the page. */
+  /** vc53 item 6 — the About card at the foot of the page.
+   *  vc55 — and SMALLER (owner 11-11: "unnecessarily large"). Its height is
+   *  services/aboutCardLayout's computed number; nothing else on the screen
+   *  reads these values. */
   aboutTail: {
-    marginTop: 20,
+    marginTop: ABOUT_CARD_MARGIN_TOP,
     borderRadius: 16,
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingHorizontal: ABOUT_CARD_PADDING_H,
+    paddingVertical: ABOUT_CARD_PADDING_V,
+  },
+  /** vc55 — the About row only: 44 dp minimum, 6 dp of vertical padding. */
+  aboutRowCompact: {
+    minHeight: ABOUT_ROW_MIN_HEIGHT,
+    paddingVertical: ABOUT_ROW_PADDING_V,
   },
   bottomSpacer: {
     height: 40,

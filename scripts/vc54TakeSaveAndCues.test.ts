@@ -47,6 +47,7 @@ import {
   type RecognitionWriteOutcome,
 } from '../src/services/practiceVideoSave';
 import {
+  VIDEO_NO_MELODY_LINE,
   VIDEO_NOTES_OUTSIDE_LINE,
   noteCuesForVideo,
   takeTimelineSec,
@@ -367,13 +368,24 @@ function testNotesDrawWithAnUnknownVideoLength(): void {
     'and the lane says the notes are outside the window — never "there was no readable melody"',
   );
 
-  // A take with no notes at all keeps the original sentence (null = the lane default).
+  // ── vc55, N5 ── A take with NO NOTES AT ALL is a third case, and it now has
+  // its own sentence. Until vc55 this returned null and the lane's fixed default
+  // was printed instead — which the owner read as "notes outside the window" on a
+  // take of silence. The note-less take must say no melody was heard.
   const empty = noteCuesForVideo({ notes: [], capturedAt: '2026-11-11T10:00:00.000Z' } as any, {
     audioOffsetMs: 0,
     videoDurationSec: 20,
   });
   assertEq(empty.cues.length, 0, 'a take with no notes has no cues');
-  assertEq(videoCueEmptyLine(empty), null, 'and the lane keeps its own "no melody" sentence');
+  assertEq(
+    videoCueEmptyLine(empty),
+    VIDEO_NO_MELODY_LINE,
+    'and it says NO MELODY WAS HEARD — not that notes fell outside the window (vc55, N5)',
+  );
+  assert(
+    videoCueEmptyLine(empty) !== VIDEO_NOTES_OUTSIDE_LINE,
+    'the note-less sentence is not the outside-the-window sentence',
+  );
 
   assertEq(takeTimelineSec(TAKE, 0), 2.6, 'the take’s own span is its last note’s end');
   assertEq(takeTimelineSec(null, 0), 0, 'and it is zero when there is no take');
