@@ -123,10 +123,15 @@ export const VIDEO_SEPARATE_TAKE_OFFSET_REASON =
  *
  * ── vc55, D22 ── THE SENTENCE USED TO NAME THE WRONG RECORDING. It said "the
  * sound the camera recorded", which is not where the notes come from — a wrong
- * cause stated confidently (defect class 11). It now names the take's audio.
+ * cause stated confidently (defect class 11). It then named the take's audio.
+ *
+ * ── vc59 ── THE OPENING SENTENCE IS GONE (owner 11-15). The review page prints
+ * `VIDEO_NO_MELODY_LINE` above this card, so "NoteSnap could not hear a melody
+ * in the audio it recorded for this take." said the same thing twice. What is
+ * left is the way out, and it still promises where those notes land.
  */
 export const VIDEO_TAKE_ON_ITS_OWN_LINE =
-  'NoteSnap could not hear a melody in the audio it recorded for this take. Play the phrase once more with the camera off — those notes are written onto this same take, under this video.';
+  'Play the phrase once more with the camera off — those notes are written onto this same take, under this video.';
 export const VIDEO_TAKE_ON_ITS_OWN_CTA = 'Record the notes on their own';
 
 /**

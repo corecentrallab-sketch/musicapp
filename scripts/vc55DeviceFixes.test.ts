@@ -207,13 +207,22 @@ function testTheWiring(): void {
 function testTheGuardsBite(): void {
   console.log('\nTHE GUARDS BITE (mutated real source)');
 
-  // D22 — the wrong-cause sentence put back, word for word.
+  // D22 — the wrong cause put back in front of the copy that remains. vc59 dropped
+  // the opening sentence this used to mutate, so the bite now hangs on the sentence
+  // still shipped — and it is spliced AROUND that sentence, never over it, so the
+  // positive arm stays satisfied and only the camera-blame arm can reject. The
+  // anchor must match exactly once: a rewrite of the copy fails here instead of
+  // silently mutating a comment and reporting green (defect class 14).
+  const d22Anchor =
+    'Play the phrase once more with the camera off — those notes are written onto this same take';
   const blamedCamera = MODEL.replace(
-    'NoteSnap could not hear a melody in the audio it recorded for this take.',
-    'NoteSnap could not hear a melody in the sound the camera recorded.',
+    d22Anchor,
+    'NoteSnap could not hear a melody in the sound the camera recorded. ' + d22Anchor,
   );
   assert(
-    blamedCamera !== MODEL && noCopyBlamesTheCameraForTheNotes(blamedCamera) === false,
+    MODEL.split(d22Anchor).length === 2 &&
+      blamedCamera !== MODEL &&
+      noCopyBlamesTheCameraForTheNotes(blamedCamera) === false,
     'GUARD D22 bites: "the sound the camera recorded" is rejected',
   );
 
