@@ -216,6 +216,56 @@ export function recordSurfaceStatesTheLimit(source: string): boolean {
 }
 
 /**
+ * GUARD 1b — THE RECORD-BODY LINE IS IN THE VISIBLE TREE, ABOVE THE CAMERA
+ * (vc58, C1).
+ *
+ * THE OWNER'S vc57 PASS, C1: the line was in the shipped bundle and was never seen
+ * on the handset. It DID render — as the fifth of five stacked 12 px grey body
+ * lines, immediately under the "Up to 3 minutes" sentence — so a guard that counts
+ * `{NOTES_COVERAGE_RECORD_LINE}` occurrences stayed green while the line was
+ * invisible to the person it was written for. Counting occurrences is not the same
+ * as being seen, and that is the defect this guard exists for.
+ *
+ * IT ASKS THE PLACEMENT QUESTION INSTEAD:
+ *   • exactly ONE render of the line sits between the record body's title and the
+ *     camera preview — above the camera, so it is on screen without scrolling;
+ *   • it is a BARE SIBLING element: `<Text …>…</Text>` on its own line, at the same
+ *     JSX depth as the copy around it — not inside a conditional that is false
+ *     before recording, not inside a fragment, not behind `phase === …`.
+ * The second half is a brace-depth test: a `{cond ? (` wrapper leaves the depth at
+ * 1 when the render is reached, and the render is rejected.
+ */
+export function theRecordBodyShowsTheLimitAboveTheCamera(source: string): boolean {
+  const text = maskCommentsKeepingLines(typeof source === 'string' ? source : '');
+  const cameraAt = text.indexOf('<View style={styles.preview}>');
+  if (cameraAt < 0) return false;
+  // The LAST record-body title before the camera — the permission gate has its own.
+  const titleAt = text.lastIndexOf('{PRACTICE_VIDEO_SCREEN_TITLE}', cameraAt);
+  if (titleAt < 0) return false;
+  const aboveTheCamera = text.slice(titleAt, cameraAt);
+  const renders = aboveTheCamera
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.indexOf('{NOTES_COVERAGE_RECORD_LINE}') >= 0);
+  if (renders.length !== 1) return false;
+  const render = renders[0];
+  if (render.indexOf('<Text') !== 0) return false;
+  if (render.slice(-'</Text>'.length) !== '</Text>') return false;
+  const before = aboveTheCamera.slice(0, aboveTheCamera.indexOf(render));
+  return jsxBraceDepth(before) === 0;
+}
+
+/** Open JSX braces in a slice — a conditional wrapper leaves this above zero. */
+function jsxBraceDepth(text: string): number {
+  let depth = 0;
+  for (const character of text) {
+    if (character === '{') depth += 1;
+    else if (character === '}') depth -= 1;
+  }
+  return depth;
+}
+
+/**
  * GUARD 2 — EVERY LANE STATES THE LIMIT WHEN THE TAKE IS LONGER THAN IT.
  *
  * The lane is rendered twice (the watch page and the full-screen notes window) and

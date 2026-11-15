@@ -266,6 +266,8 @@
     "src/services/notesCoverage.ts",
     "scripts/vc57NotesCoverage.test.ts",
     "src/services/vc58NotesRegressionContract.ts",
-    "scripts/vc58NotesRegression.test.ts"
+    "scripts/vc58NotesRegression.test.ts",
+    "src/services/vc58RecordScreenContract.ts",
+    "scripts/vc58RecordScreen.test.ts"
   ]
 }

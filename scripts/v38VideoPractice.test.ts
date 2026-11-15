@@ -360,7 +360,10 @@ assertEq(videoSummaryText({ video: null, take: null }).indexOf('No notes were re
 
 console.log('\nv38 practice video — the honest plane (decision 4)');
 assert(VIDEO_SYNC_HONESTY.indexOf('video picture itself carries no notes') >= 0, 'the honesty line denies the picture carries notes');
-assert(VIDEO_RECORD_HONESTY.indexOf('not the source of the notes') >= 0, 'the record screen says where the notes come from');
+// vc58 (owner 11-13): the owner KEPT the first line and DELETED the rest of that
+// paragraph, so this guard follows the copy instead of being deleted with it.
+assert(VIDEO_RECORD_HONESTY.indexOf('NoteSnap is listening to your take.') === 0, 'the record screen keeps the line the owner kept');
+assert(VIDEO_RECORD_HONESTY.indexOf('not the source of the notes') < 0, 'and the rest of that paragraph is gone, as the owner asked');
 assert(VIDEO_OWN_TAKE_ONLY_LINE.indexOf('never reads the notes off the picture') >= 0, 'own-take-only is stated, not implied');
 assert(VIDEO_SEPARATE_TAKE_LINE.indexOf('separate take') >= 0, 'decision 2 says when a separate take was used');
 assert(VIDEO_TAKE_FAILED_LINE.indexOf('still send it') >= 0, 'a video whose melody could not be read is still sendable');
