@@ -179,6 +179,11 @@ import {
   VIDEO_TAKE_ON_ITS_OWN_CTA,
   VIDEO_TAKE_ON_ITS_OWN_LINE,
   VIDEO_NOTES_ON_ITS_OWN_NEW_TAKE_LINE,
+  // vc59 (D24/D25): the verdict the surface speaks when the read heard nothing,
+  // and the two sentences of the camera-off take's own record window.
+  VIDEO_NO_MELODY_LINE,
+  VIDEO_NOTES_ON_ITS_OWN_PLAY_LINE,
+  VIDEO_NOTES_ON_ITS_OWN_STOP_CTA,
   captureSyncOffsetMs,
   emptyLaneNeedsAnAction,
   firstOnsetSec,
@@ -244,6 +249,16 @@ export type PracticeVideoPhase =
    */
   | 'count_in'
   | 'recording'
+  /**
+   * ── vc59 (D25) ── THE CAMERA-OFF TAKE'S OWN RECORD WINDOW.
+   *
+   * `recordSeparateTake` used to start the recorder and stop it on the very next
+   * line, so the user could never play the phrase: the take was a few tens of
+   * milliseconds of whatever happened to be in the room. This phase is that take's
+   * record window — the recorder running, a clock, the level meter and a Stop the
+   * user presses — with NO camera mounted at all (that is the point of the take).
+   */
+  | 'notes_only'
   | 'keeping'
   | 'review'
   | 'blocked'
@@ -475,6 +490,13 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   const recordingStartedAtRef = useRef(0);
   /** Stop is idempotent: the auto-stop and the Stop button cannot both run it. */
   const stoppingRef = useRef(false);
+  /**
+   * ── vc59 (D25) ── THE CAMERA-OFF TAKE'S START STAMP.
+   * The window's clock is measured from this one stamp, exactly as the filming
+   * clock is measured from `recordingStartedAtRef`: a re-render or a slow tick can
+   * never move it, and the take's length is a measurement rather than a guess.
+   */
+  const notesOnlyStartedAtRef = useRef(0);
 
   /**
    * DECISION 1's STAMPS. Each capture stamp is taken at the moment its recorder
@@ -1069,7 +1091,20 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         setTakeBusy(false);
         const derivedTake = derived.take;
         if (!derivedTake) {
-          setTakeLine(derived.message ?? VIDEO_TAKE_FAILED_LINE);
+          /**
+           * ── vc59 (D24) ── THE READ RAN, AND THE SURFACE SPEAKS ITS OWN VERDICT.
+           *
+           * `derived.message` is the MIDI EXPORT's sentence ("…to write a MIDI
+           * file…"), and this is not an export — it is the page the user lands on
+           * straight after a take. When the read ran and heard nothing, the surface
+           * now says so in the words the WATCH page already uses
+           * (`VIDEO_NO_MELODY_LINE`). The decoder-unavailable case is a different
+           * fact and keeps its own honest sentence, because there the app never
+           * got to listen at all.
+           */
+          setTakeLine(
+            derived.unavailable ? derived.message ?? VIDEO_TAKE_FAILED_LINE : VIDEO_NO_MELODY_LINE,
+          );
           await verifyAgain();
           return;
         }
@@ -1231,24 +1266,81 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
    * DECISION 2's SECOND HALF. The video already carries its own sound; this films
    * nothing more and records ONLY the take, so the notes have a source without the
    * video being silent or the take being invented.
+   *
+   * ── vc59 (D25) ── THIS OPENS A WINDOW; IT DOES NOT STOP ITSELF.
+   *
+   * This function used to call `startRecording()` and then, on the very next line,
+   * stop it again: the user was never given the chance to play the phrase, so the
+   * take could only ever come back empty ("Recording was empty") or land them back
+   * where they started. It now opens the camera-off record window (`notes_only`)
+   * and returns — the stop belongs to the Stop control the user presses
+   * (`stopSeparateTake`), which is the only thing that ends this take.
    */
   const recordSeparateTake = useCallback(async () => {
     setErrorLine(null);
     setLine(VIDEO_SEPARATE_TAKE_LINE);
+    notesOnlyStartedAtRef.current = Date.now();
+    elapsedRef.current = 0;
+    stoppingRef.current = false;
+    setElapsedSec(0);
+    setPhase('notes_only');
     const started = await recorder.startRecording();
     if (!started) {
+      // NO WINDOW WITHOUT A RECORDER (vc59): a window with nothing recording is a
+      // worse dead end than the one this replaces. The reason is on the surface
+      // (`errorLine` renders on the review body) and the user is put back where
+      // they pressed the CTA.
       const failure = recorder.takeStartFailure();
       setErrorLine(failure?.message ?? null);
-      return;
+      setPhase('review');
     }
-    const stopped = await recorder.stopRecording();
+  }, [recorder]);
+
+  /**
+   * ── vc59 (D25) ── THE STOP THE USER PRESSES.
+   *
+   * One control, one outcome: the recorder stops, and the take it produced is kept
+   * through the SAME `keepTake` the review page has always used (`pairedSeparately`
+   * true — these notes come from their own take, never from the camera's sound).
+   * It is idempotent through the same `stoppingRef` the filming Stop uses, so a
+   * double press cannot keep two takes.
+   */
+  const stopSeparateTake = useCallback(async () => {
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
+    let stopped: Awaited<ReturnType<typeof recorder.stopRecording>> = null;
+    try {
+      stopped = await recorder.stopRecording();
+    } catch {
+      stopped = null;
+    }
     if (!stopped) {
       const failure = recorder.takeStopFailure();
       setErrorLine(failure?.message ?? null);
+      setPhase('review');
       return;
     }
     await keepTake(stopped.uri, true);
   }, [keepTake, recorder]);
+
+  /**
+   * ── vc59 (D25) ── THE CAMERA-OFF WINDOW'S CLOCK.
+   *
+   * The filming clock is driven by the recording phase's own effect; this take
+   * films nothing, so it needs its own ticker. Measured from the one stamp taken
+   * when the window opened, and it only ever DRAWS — the take's length is measured
+   * again at Stop from the same stamp.
+   */
+  useEffect(() => {
+    if (phase !== 'notes_only') return undefined;
+    const startedAt = notesOnlyStartedAtRef.current || Date.now();
+    const timer = setInterval(() => {
+      const seconds = recordingElapsedSec(startedAt, Date.now());
+      elapsedRef.current = seconds;
+      setElapsedSec(seconds);
+    }, 250);
+    return () => clearInterval(timer);
+  }, [phase]);
 
   /**
    * ── vc55, N6 ── THE CAMERA-OFF TAKE, FROM EITHER SURFACE ─────────────────
@@ -1300,6 +1392,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     setTakeBusy(false);
     videoFailureRef.current = null;
     recordingStartedAtRef.current = 0;
+    notesOnlyStartedAtRef.current = 0;
     stoppingRef.current = false;
     setPhase('permissions');
     // The camera remounts with the record body, so it is not ready yet — and the
@@ -2100,6 +2193,18 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     );
   }
 
+  /**
+   * ── vc59 (D25) ── THE CAMERA IS UP ONLY WHERE IT HAS A JOB.
+   *
+   * The preview used to render for every phase except `review`. The camera-off
+   * retake was one of the others, so pressing "Record the notes on their own" on
+   * the WATCH page put a LIVE CAMERA on screen for a take that films nothing — the
+   * page appeared to flip into the record layout mid-flow. The gate is now one
+   * named fact, used by both the preview and the flip row, so a camera-off take can
+   * never show a preview and can never offer to flip one.
+   */
+  const cameraUp = phase !== 'review' && phase !== 'notes_only';
+
   return (
     <View style={styles.container}>
       {/* vc53, item 2: the record/review page reserves the device's bottom inset,
@@ -2122,7 +2227,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
             NOTES_COVERAGE_RECORD_LINE, from the one constant. */}
         <Text style={styles.coverageLine}>{NOTES_COVERAGE_RECORD_LINE}</Text>
 
-        {phase !== 'review' ? (
+        {cameraUp ? (
           <View style={styles.preview}>
             {/* vc49: `facing` is STATE, never a literal — the owner's report was
                 "i could not turn it around to face me". `mode="video"` and the
@@ -2144,7 +2249,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
             under a running `recordAsync`, which loses the recording. The line
             under it says which way the camera is pointing, and while it is
             locked it says why. */}
-        {phase !== 'review' ? (
+        {cameraUp ? (
           <View style={styles.flipRow}>
             <TouchableOpacity
               style={[styles.flipBtn, flipLocked && styles.flipBtnOff]}
@@ -2305,6 +2410,35 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 />
               ))}
             </View>
+          </>
+        ) : null}
+        {/* ── vc59 (D25): THE CAMERA-OFF TAKE'S OWN RECORD WINDOW ────────────────
+            The owner's defect: the CTA started the recorder and stopped it on the
+            next line, so the phrase was never played and the take could only come
+            back empty. This is the window it should always have been — what to do,
+            the running clock, the same level meter the filming screen uses, and the
+            Stop the user presses to end the take. NO CAMERA: `cameraUp` is false in
+            this phase, so the preview and the flip row are not mounted at all. */}
+        {phase === 'notes_only' ? (
+          <>
+            <Text style={styles.meta}>{VIDEO_NOTES_ON_ITS_OWN_PLAY_LINE}</Text>
+            <Text style={styles.timer}>{recordingClock(elapsedSec)}</Text>
+            <View style={styles.levelRow}>
+              {recorder.liveLevels.slice(-LIVE_LEVEL_BARS).map((level, index) => (
+                <View
+                  key={`notes-level-${index}`}
+                  style={[styles.levelBar, { height: levelHeight(level) }]}
+                />
+              ))}
+            </View>
+            <TouchableOpacity
+              style={styles.notesOnlyStopBtn}
+              onPress={() => void stopSeparateTake()}
+              accessibilityRole="button"
+              accessibilityLabel={VIDEO_NOTES_ON_ITS_OWN_STOP_CTA}
+            >
+              <Text style={styles.stopBtnText}>{VIDEO_NOTES_ON_ITS_OWN_STOP_CTA}</Text>
+            </TouchableOpacity>
           </>
         ) : null}
         {phase === 'keeping' ? (
@@ -2756,6 +2890,20 @@ const baseStyles = StyleSheet.create({
     marginTop: 16,
   },
   stopBtnText: { color: '#ffffff', fontSize: 17, fontWeight: '800' },
+  /**
+   * ── vc59 (D25): THE CAMERA-OFF WINDOW'S OWN STOP ─────────────────────────
+   * The same shape and colour as the filming Stop, under its OWN key: the record
+   * surface must keep exactly one `styles.stopBtn` (vc58's guard counts them), and
+   * this is a different control in a different phase — not a copy of that one.
+   */
+  notesOnlyStopBtn: {
+    backgroundColor: '#e94560',
+    borderRadius: 999,
+    minHeight: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
   /** The Start control (v39 fix 2) — the same big, obvious shape as Stop. */
   startBtn: {
     backgroundColor: '#2fbf71',

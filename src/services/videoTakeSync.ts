@@ -123,10 +123,15 @@ export const VIDEO_SEPARATE_TAKE_OFFSET_REASON =
  *
  * ── vc55, D22 ── THE SENTENCE USED TO NAME THE WRONG RECORDING. It said "the
  * sound the camera recorded", which is not where the notes come from — a wrong
- * cause stated confidently (defect class 11). It now names the take's audio.
+ * cause stated confidently (defect class 11). It then named the take's audio.
+ *
+ * ── vc59 ── THE OPENING SENTENCE IS GONE (owner 11-15). The review page prints
+ * `VIDEO_NO_MELODY_LINE` above this card, so "NoteSnap could not hear a melody
+ * in the audio it recorded for this take." said the same thing twice. What is
+ * left is the way out, and it still promises where those notes land.
  */
 export const VIDEO_TAKE_ON_ITS_OWN_LINE =
-  'NoteSnap could not hear a melody in the audio it recorded for this take. Play the phrase once more with the camera off — those notes are written onto this same take, under this video.';
+  'Play the phrase once more with the camera off — those notes are written onto this same take, under this video.';
 export const VIDEO_TAKE_ON_ITS_OWN_CTA = 'Record the notes on their own';
 
 /**
@@ -139,6 +144,18 @@ export const VIDEO_TAKE_ON_ITS_OWN_CTA = 'Record the notes on their own';
  */
 export const VIDEO_NOTES_ON_ITS_OWN_NEW_TAKE_LINE =
   'Play the phrase once more with the camera off — those notes are saved as their own take, and this video stays exactly as it is.';
+
+/**
+ * ── vc59, D25 ── THE CAMERA-OFF TAKE'S OWN RECORD WINDOW.
+ *
+ * The CTA above used to call a function that started the recorder and stopped it
+ * on the very next line: the user was never given the chance to play the phrase,
+ * so the take could only ever be "empty". The window it now opens says what to do
+ * and carries the Stop the user presses — these are the two sentences it needs.
+ */
+export const VIDEO_NOTES_ON_ITS_OWN_PLAY_LINE =
+  'Play or sing the phrase now — the notes are being recorded. Press Stop when you have finished.';
+export const VIDEO_NOTES_ON_ITS_OWN_STOP_CTA = 'Stop recording the notes';
 
 /**
  * ── vc55, N5 ── WHAT THE EMPTY LANE SAYS WHEN THERE WAS NO MELODY AT ALL.

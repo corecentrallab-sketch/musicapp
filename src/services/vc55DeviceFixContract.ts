@@ -103,8 +103,11 @@ export function noCopyBlamesTheCameraForTheNotes(modelSource: string): boolean {
   if (/the sound the camera recorded/i.test(src)) return false;
   if (/notes? (come|comes) from the camera/i.test(src)) return false;
   if (/camera'?s microphone[^.]{0,60}(notes|melody)/i.test(src)) return false;
-  // …and the sentence that replaced it names the take's own recording.
-  return /audio it recorded for this take/i.test(src);
+  // …and the copy that is left still says where those notes land: on this same
+  // take, under this video. (vc59 dropped the opening sentence that named the
+  // take's audio — the review page prints VIDEO_NO_MELODY_LINE instead — so the
+  // positive arm reads the sentence that remains.)
+  return /those notes are written onto this same take/i.test(src);
 }
 
 /**
