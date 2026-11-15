@@ -264,6 +264,8 @@
     "src/services/vc55DeviceFixContract.ts",
     "scripts/vc55DeviceFixes.test.ts",
     "src/services/notesCoverage.ts",
-    "scripts/vc57NotesCoverage.test.ts"
+    "scripts/vc57NotesCoverage.test.ts",
+    "src/services/vc58NotesRegressionContract.ts",
+    "scripts/vc58NotesRegression.test.ts"
   ]
 }

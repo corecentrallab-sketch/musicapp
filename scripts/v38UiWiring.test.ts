@@ -384,9 +384,12 @@ probe('guard 5: nothing is persisted before the row is written', rowFirst, SCREE
 // 6a — a second decode of the same audio.
 // vc50: the decode now runs inside the bounded `settleWithin(...)` wrapper, so the
 // mutation anchors on the CALL, not on the surrounding `const derived = await`.
+// vc58: the call is no longer inline in `settleWithin` — it is bound to `read`
+// first, so a late read can still be applied after the bound. The mutation anchors
+// on the STATEMENT, and a missing anchor fails loudly rather than passing.
 const secondDecode = SCREEN.replace(
-  'deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt }),',
-  'deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt }), deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt }),',
+  'const read = deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt });',
+  'const read = deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt });\n      void deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt });',
 );
 probe('guard 6: the take is decoded twice', secondDecode, SCREEN, () => videoUsesTheOneDecodeSeam(secondDecode));
 // 6b — the screen grows its own network route.
