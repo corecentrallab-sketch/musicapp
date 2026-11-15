@@ -241,9 +241,26 @@ export function practiceVideoChipLine(ref: PracticeVideoRef | null | undefined):
     : `${PRACTICE_VIDEO_CHIP_LABEL} · ${clock}`;
 }
 
-/** DECISION 3's own line for the record screen. */
-export const PRACTICE_VIDEO_MAX_LINE =
-  'Up to 3 minutes per practice video — you can stop at any time.';
+/**
+ * ── THE TIPS BLOCK (vc58, owner 11-13, verbatim) ────────────────────────────
+ *
+ * The owner's own words, as a Tip block on the record screen — what to do before a
+ * take so the take is the one they meant to film. It is INFORMATION in the app's
+ * voice, not a warning: the label is plain and the body is the owner's sentences,
+ * unedited (including "before hand").
+ */
+export const PRACTICE_VIDEO_TIPS_LABEL = 'Tips';
+export const PRACTICE_VIDEO_TIPS_BODY =
+  'Turn off all your notifications for recording your NoteSnap video take. Then do a soundcheck and playback. Check any introductory script before hand if you are recording or sharing. Then try performing the piece in one whole take.';
+
+/**
+ * vc58: THE PRE-RECORD "UP TO 3 MINUTES" SENTENCE IS DELETED (owner 11-13: "Up to
+ * 3 minutes per …" — the whole sentence). The cap itself is untouched and still
+ * stated where it BITES, on the recording surface: `practiceVideoRemainingLine()`
+ * counts it down from `PRACTICE_VIDEO_MAX_SECONDS`, and the past-a-minute warning
+ * names it. The export surface's copy (`maxRecordingLine()`) is a different screen
+ * and is untouched.
+ */
 
 /** The remaining-time line while recording (0:00 means the cap is reached). */
 export function practiceVideoRemainingLine(elapsedSec: number): string {

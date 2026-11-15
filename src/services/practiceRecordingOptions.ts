@@ -46,8 +46,12 @@ export const COUNT_IN_OPTIONS: readonly number[] = [0, 3, 5];
 export const COUNT_IN_DEFAULT = 0;
 
 export const COUNT_IN_LABEL = 'Count-in before filming';
-export const COUNT_IN_HINT =
-  'A countdown before anything is recorded, so you can put the phone down and pick up your instrument. Nothing is filmed during it, so your notes stay lined up with the video.';
+/**
+ * vc58 (owner, 11-13): THE COUNT-IN EXPLANATION IS DELETED from the record screen —
+ * "A countdown before anything …", the whole sentence. The control, its three
+ * choices and the count-in's own honest line while it runs (`COUNT_IN_HONESTY`) are
+ * all untouched; only the paragraph under the chips is gone.
+ */
 export const COUNT_IN_OFF_LABEL = 'Off';
 /** Said while the countdown runs — the honest reason it cannot move the notes. */
 export const COUNT_IN_HONESTY =

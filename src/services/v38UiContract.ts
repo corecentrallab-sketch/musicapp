@@ -194,7 +194,11 @@ export function videoRecordingIsBounded(screenSource: string): boolean {
   if (options.indexOf('maxDuration: PRACTICE_VIDEO_MAX_SECONDS') < 0) return false;
   if (options.indexOf('maxFileSize: PRACTICE_VIDEO_MAX_FILE_BYTES') < 0) return false;
   if (src.indexOf('practiceVideoRemainingLine(') < 0) return false;
-  if (src.indexOf('PRACTICE_VIDEO_MAX_LINE') < 0) return false;
+  // vc58 (owner 11-13): the pre-record "Up to 3 minutes per practice video" sentence
+  // is DELETED from the record screen. The cap must still be stated where it BITES,
+  // so the guard follows the sentence to the recording surface's own warning line
+  // rather than being deleted with it.
+  if (src.indexOf('stops itself at three minutes') < 0) return false;
   return src.indexOf('PRACTICE_VIDEO_MAX_SECONDS') >= 0;
 }
 

@@ -76,15 +76,22 @@ export const VIDEO_OFFSET_PLUS_LABEL = '+';
 export const VIDEO_READING_LINE = 'Reading your take…';
 
 /**
- * THE HONEST LINE ON EVERY RECORDING SURFACE (decision 4). It states the source
- * of the notes and the fact that the picture is not analysed.
+ * THE HONEST LINE ON EVERY RECORDING SURFACE (decision 4).
+ *
+ * vc58 (owner, 11-13, verbatim): KEEP the first line, DELETE the rest of that
+ * paragraph. So this is ONE sentence now — the "the notes come from the sound, not
+ * the picture" half was the rest of it and is gone from the record screen. That
+ * truth is not lost: `VIDEO_OWN_TAKE_ONLY_LINE` and `VIDEO_SYNC_HONESTY` still state
+ * it, on the surfaces that explain where the notes came from.
  */
-export const VIDEO_RECORD_HONESTY =
-  'NoteSnap is listening to your take. The notes you see afterwards come from what it hears in the sound — the video is the picture, not the source of the notes.';
+export const VIDEO_RECORD_HONESTY = 'NoteSnap is listening to your take.';
 
-/** The storage promise the owner asked to be visible on the record screen. */
+/**
+ * The storage promise, in the owner's own words (vc58, 11-13: the owner asked for
+ * "for your privacy" in it, verbatim).
+ */
 export const VIDEO_STAYS_ON_PHONE_LINE =
-  'This video stays on your phone until you share it yourself.';
+  'The video stays on your phone for your privacy until you share it yourself.';
 
 /** The locked scope: only the user's OWN take is filmed here (decision 4). */
 export const VIDEO_OWN_TAKE_ONLY_LINE =

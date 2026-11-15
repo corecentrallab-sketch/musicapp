@@ -65,7 +65,8 @@ import { persistMelodyAudio } from '../services/melodyStore';
 import {
   PRACTICE_VIDEO_MAX_FILE_BYTES,
   PRACTICE_VIDEO_MAX_SECONDS,
-  PRACTICE_VIDEO_MAX_LINE,
+  PRACTICE_VIDEO_TIPS_BODY,
+  PRACTICE_VIDEO_TIPS_LABEL,
   PRACTICE_VIDEO_RECORD_AGAIN_CTA,
   PRACTICE_VIDEO_SCREEN_TITLE,
   PRACTICE_VIDEO_START_FAILED_LINE,
@@ -137,7 +138,6 @@ import {
   CAMERA_FRONT_LINE,
   COUNT_IN_CANCEL_CTA,
   COUNT_IN_HONESTY,
-  COUNT_IN_HINT,
   COUNT_IN_LABEL,
   COUNT_IN_OPTIONS,
   FLIP_CAMERA_CTA,
@@ -2078,8 +2078,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
           <Text style={styles.honest}>{PRACTICE_VIDEO_PERMISSION_LINE}</Text>
           <Text style={styles.honest}>{VIDEO_RECORD_HONESTY}</Text>
           <Text style={styles.honest}>{VIDEO_STAYS_ON_PHONE_LINE}</Text>
-          <Text style={styles.honest}>{PRACTICE_VIDEO_MAX_LINE}</Text>
-          <Text style={styles.honest}>{NOTES_COVERAGE_RECORD_LINE}</Text>
+          <Text style={styles.coverageLine}>{NOTES_COVERAGE_RECORD_LINE}</Text>
           <TouchableOpacity
             style={styles.primaryBtn}
             onPress={() => void requestPermission()}
@@ -2111,8 +2110,17 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         <Text style={styles.title}>{PRACTICE_VIDEO_SCREEN_TITLE}</Text>
         <Text style={styles.honest}>{VIDEO_RECORD_HONESTY}</Text>
         <Text style={styles.honest}>{VIDEO_STAYS_ON_PHONE_LINE}</Text>
-        <Text style={styles.honest}>{PRACTICE_VIDEO_MAX_LINE}</Text>
-        <Text style={styles.honest}>{NOTES_COVERAGE_RECORD_LINE}</Text>
+        {/* ── vc58, C1: THE COVERAGE INDICATOR, ABOVE THE CAMERA ───────────────
+            The owner's vc57 pass (C1): the line was in the shipped bundle but was
+            never seen on the handset. It was the FIFTH of five stacked 12 px grey
+            body lines, immediately after the "Up to 3 minutes" sentence — it read
+            as the tail of that block of fine print and was the one line the owner
+            did not report. It is now its own line, in its own slightly larger ink,
+            as the LAST thing before the camera: on screen without scrolling, and
+            in the same voice as the copy around it (information, not a warning
+            banner — no card, no border, no warning colour). The words are still
+            NOTES_COVERAGE_RECORD_LINE, from the one constant. */}
+        <Text style={styles.coverageLine}>{NOTES_COVERAGE_RECORD_LINE}</Text>
 
         {phase !== 'review' ? (
           <View style={styles.preview}>
@@ -2154,6 +2162,25 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               {flipLocked ? FLIP_LOCKED_LINE : facing === 'front' ? CAMERA_FRONT_LINE : CAMERA_BACK_LINE}
             </Text>
           </View>
+        ) : null}
+
+        {/* ── vc58, ITEM 3: THE STOP BUTTON, DIRECTLY UNDER THE FLIP ───────────
+            The owner (11-13): once filming has begun, the red Stop sits under the
+            greyed-out Flip Camera button so it is reachable one-handed while
+            filming. It is the SAME control — same phase, same `handleStop`, same
+            style — moved from the bottom of the recording block to here. It is a
+            stacked sibling of the flip row, never `position: 'absolute'`, so it
+            cannot overlap the Flip button, the footer or the count-in; and the
+            pre-record layout is untouched (nothing renders here before filming). */}
+        {phase === 'recording' ? (
+          <TouchableOpacity
+            style={styles.stopBtn}
+            onPress={() => void handleStop()}
+            accessibilityRole="button"
+            accessibilityLabel="Stop filming"
+          >
+            <Text style={styles.stopBtnText}>{PRACTICE_VIDEO_STOP_CTA}</Text>
+          </TouchableOpacity>
         ) : null}
 
         {/* ── vc53, ITEM 5: THE START CONTROL, DIRECTLY UNDER THE FLIP ─────────
@@ -2202,7 +2229,6 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                   </TouchableOpacity>
                 ))}
               </View>
-              <Text style={styles.honest}>{COUNT_IN_HINT}</Text>
 
               <Text style={styles.optionLabel}>{RECORDING_LENGTH_LABEL}</Text>
               <View style={styles.chipRow}>
@@ -2224,6 +2250,18 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
             {/* vc53, ITEM 5: the Start control now sits ABOVE this block, directly
                 under the Flip camera button (see the round green button above). */}
           </>
+        ) : null}
+
+        {/* ── vc58, ITEM 2: THE TIPS BLOCK (owner 11-13, verbatim) ──────────────
+            The owner's own words, as a Tip block on the record screen. It sits
+            under the pre-record options rather than above the camera, so the
+            camera — the thing the user came here for — keeps its place at the top
+            of the page. Plain label, plain body: information, not a warning. */}
+        {phase === 'permissions' ? (
+          <View style={styles.tipsBlock}>
+            <Text style={styles.tipsLabel}>{PRACTICE_VIDEO_TIPS_LABEL}</Text>
+            <Text style={styles.tipsBody}>{PRACTICE_VIDEO_TIPS_BODY}</Text>
+          </View>
         ) : null}
         {/* ── vc49: THE COUNT-IN, ON SCREEN (owner 11-03) ──────────────────────
             A large, unmistakable countdown. It is deliberately VISIBLE rather
@@ -2267,14 +2305,6 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 />
               ))}
             </View>
-            <TouchableOpacity
-              style={styles.stopBtn}
-              onPress={() => void handleStop()}
-              accessibilityRole="button"
-              accessibilityLabel="Stop filming"
-            >
-              <Text style={styles.stopBtnText}>{PRACTICE_VIDEO_STOP_CTA}</Text>
-            </TouchableOpacity>
           </>
         ) : null}
         {phase === 'keeping' ? (
@@ -2571,6 +2601,23 @@ const baseStyles = StyleSheet.create({
   expandedBody: { paddingHorizontal: 16, paddingVertical: 12 },
   title: { color: '#ffffff', fontSize: 22, fontWeight: '800', marginBottom: 8 },
   honest: { color: '#9aa0b5', fontSize: 12, lineHeight: 18, marginTop: 6 },
+  /**
+   * ── vc58, C1: THE COVERAGE INDICATOR'S OWN LINE ────────────────────────
+   * Not a warning banner and not `warn` (that is the amber "past a minute" line):
+   * this is information, so it keeps the body's voice and only steps up one size
+   * and one shade so a thumb-scroll sees it. Both literals are in
+   * `services/themeApply.ts`, so light mode repaints it.
+   */
+  coverageLine: { color: '#cfe4ff', fontSize: 14, lineHeight: 20, marginTop: 10 },
+  /** The Tips block (vc58, item 2): a quiet card, not a warning. */
+  tipsBlock: {
+    backgroundColor: '#1b2a4a',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 16,
+  },
+  tipsLabel: { color: '#cfe4ff', fontSize: 14, fontWeight: '800', marginBottom: 6 },
+  tipsBody: { color: '#9aa0b5', fontSize: 12, lineHeight: 18 },
   meta: { color: '#cfe4ff', fontSize: 13, lineHeight: 19, marginTop: 10 },
   error: { color: '#ffb4b4', fontSize: 12, lineHeight: 18, marginTop: 10 },
   /**
