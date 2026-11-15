@@ -141,6 +141,18 @@ export const VIDEO_NOTES_ON_ITS_OWN_NEW_TAKE_LINE =
   'Play the phrase once more with the camera off — those notes are saved as their own take, and this video stays exactly as it is.';
 
 /**
+ * ── vc59, D25 ── THE CAMERA-OFF TAKE'S OWN RECORD WINDOW.
+ *
+ * The CTA above used to call a function that started the recorder and stopped it
+ * on the very next line: the user was never given the chance to play the phrase,
+ * so the take could only ever be "empty". The window it now opens says what to do
+ * and carries the Stop the user presses — these are the two sentences it needs.
+ */
+export const VIDEO_NOTES_ON_ITS_OWN_PLAY_LINE =
+  'Play or sing the phrase now — the notes are being recorded. Press Stop when you have finished.';
+export const VIDEO_NOTES_ON_ITS_OWN_STOP_CTA = 'Stop recording the notes';
+
+/**
  * ── vc55, N5 ── WHAT THE EMPTY LANE SAYS WHEN THERE WAS NO MELODY AT ALL.
  *
  * The owner's row: record a take of silence or speech and the lane must say no
