@@ -183,12 +183,12 @@ import {
   emptyLaneNeedsAnAction,
   firstOnsetSec,
   formatOffset,
+  laneEmptyLine,
   noteCuesForVideo,
   nudgeOffset,
   offsetFromFirstNoteTap,
   separateTakeOffset,
   videoCueCountLine,
-  videoCueEmptyLine,
   videoSizeLine,
   type VideoCueSet,
 } from '../services/videoTakeSync';
@@ -313,7 +313,7 @@ export const VIDEO_PLAYBACK_FAILED_LINE =
 export const VIDEO_CAPTURE_FAILED_LINE =
   'The camera did not hand back a video file, so there is no video for this take. Your notes are kept and you can film again.';
 export const VIDEO_TAKE_READING_LINE = 'Reading the notes out of your take…';
-export const VIDEO_TAKE_TIMEOUT_LINE =
+export const VIDEO_TAKE_STILL_READING_LINE =
   'Reading the notes from this take took too long, so we stopped waiting. Your video and its audio are saved — you can try the notes again from the take.';
 export const VIDEO_TAKE_SAVE_FAILED_LINE =
   'The notes were read but could not be saved onto this take. Your video and its audio are saved.';
@@ -463,6 +463,13 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
    */
   const [takeLine, setTakeLine] = useState<string | null>(null);
   const [takeBusy, setTakeBusy] = useState(false);
+  /**
+   * ── vc58, N1 ── IS THE READ STILL WANTED? `keepTake` now lets a slow read
+   * finish in the background instead of throwing it away at the bound, so a
+   * result that lands after the user has started a NEW take must be dropped
+   * rather than written onto the wrong row.
+   */
+  const readAliveRef = useRef(true);
   const videoFailureRef = useRef<string | null>(null);
   /** The take's own start stamp, so its length never depends on a ticker. */
   const recordingStartedAtRef = useRef(0);
@@ -1047,28 +1054,64 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       }
       setTakeBusy(true);
       setTakeLine(VIDEO_TAKE_READING_LINE);
-      let derived: Awaited<ReturnType<typeof deriveCaptureTakeFromRecording>>;
-      try {
-        derived = await settleWithin(
-          deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt }),
-          TAKE_DECODE_TIMEOUT_MS,
-          { take: null, unavailable: true, message: VIDEO_TAKE_TIMEOUT_LINE },
-        );
-      } catch {
-        derived = { take: null, unavailable: false, message: VIDEO_TAKE_FAILED_LINE };
-      }
-      setTakeBusy(false);
-      const derivedTake = derived.take;
-      if (!derivedTake) {
-        setTakeLine(derived.message ?? VIDEO_TAKE_FAILED_LINE);
+      readAliveRef.current = true;
+
+      /**
+       * ── vc58, N1 ── THE ONE PLACE A READ LANDS, EARLY OR LATE.
+       *
+       * Nothing about the surface's verdict lives outside this function, so a read
+       * that arrives after `TAKE_DECODE_TIMEOUT_MS` goes through exactly the same
+       * steps as one that arrives inside it.
+       */
+      const applyDerivedTake = async (
+        derived: Awaited<ReturnType<typeof deriveCaptureTakeFromRecording>>,
+      ): Promise<void> => {
+        setTakeBusy(false);
+        const derivedTake = derived.take;
+        if (!derivedTake) {
+          setTakeLine(derived.message ?? VIDEO_TAKE_FAILED_LINE);
+          await verifyAgain();
+          return;
+        }
+        // The take reaches the surface FIRST (so it is never invisible), then the row.
+        setRow((current) => (current && !current.take ? { ...current, take: derivedTake } : current));
+        const written = await savePracticeVideoTake(rowId, derivedTake);
+        setTakeLine(written ? null : VIDEO_TAKE_SAVE_FAILED_LINE);
         await verifyAgain();
+      };
+
+      const read = deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt });
+      let settled: Awaited<ReturnType<typeof deriveCaptureTakeFromRecording>> | null = null;
+      try {
+        settled = await settleWithin(read, TAKE_DECODE_TIMEOUT_MS, null);
+      } catch {
+        settled = { take: null, unavailable: false, message: VIDEO_TAKE_FAILED_LINE };
+      }
+      if (settled) {
+        await applyDerivedTake(settled);
         return;
       }
-      // The take reaches the surface FIRST (so it is never invisible), then the row.
-      setRow((current) => (current && !current.take ? { ...current, take: derivedTake } : current));
-      const written = await savePracticeVideoTake(rowId, derivedTake);
-      setTakeLine(written ? null : VIDEO_TAKE_SAVE_FAILED_LINE);
-      await verifyAgain();
+      /**
+       * ── vc58, N1 ── THE BOUND IS NOT A VERDICT ON THE MELODY (vc56 regression).
+       *
+       * `settleWithin` used to resolve to `{ take: null }` here, and `take: null` is
+       * the surface's word for "this take held no melody" — so a read that simply
+       * took longer than the bound told the owner his take had no melody in it. On
+       * vc54 this could not fire: the read was synchronous and owned the JS thread,
+       * so its timer could not run until the read was over. vc56 sliced the read,
+       * the timer can now run, and a slow-but-good read became a false "no melody
+       * was heard". The bound now only decides when the surface STOPS WAITING
+       * QUIETLY: the read keeps running, the lane says it is still reading (never a
+       * verdict), and the take is applied when it lands.
+       */
+      setTakeLine(VIDEO_TAKE_STILL_READING_LINE);
+      void read
+        .then((late) => (readAliveRef.current ? applyDerivedTake(late) : undefined))
+        .catch(() => {
+          if (!readAliveRef.current) return;
+          setTakeBusy(false);
+          setTakeLine(VIDEO_TAKE_FAILED_LINE);
+        });
     },
     [],
   );
@@ -1231,6 +1274,8 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   }, [phase, recordSeparateTake]);
 
   const handleRecordAgain = useCallback(() => {
+    // vc58: a read still running for the take being replaced must not land.
+    readAliveRef.current = false;
     armedRef.current = false;
     rowIdRef.current = null;
     audioUriRef.current = null;
@@ -1289,13 +1334,27 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   );
 
   // DECISION 4: the cues come from the take the EDITOR saved, never a raw trace.
+  /**
+   * ── vc58, C2/C3 ── THE TIMELINE KNOWS THE LENGTH THIS SESSION MEASURED.
+   *
+   * `noteCuesForVideo` falls back to the TAKE's own span when the video's length was
+   * never stored — and a take whose notes are not read yet has no span, so the axis
+   * was 0, the lane drew on nothing and the coverage notice (which reads the SAME
+   * axis, `cueSet.timelineSec`) had no length to compare and said nothing. That is
+   * the row C2/C3 came back on. The filmed seconds measured at Stop (vc50,
+   * `elapsedSec`) are a measurement the surface already holds, so they are handed in
+   * as the fallback — one axis, still, so the sentence and the pixels cannot
+   * disagree.
+   */
+  const measuredTakeSec = Math.max(0, Number(elapsedSec) || 0);
   const cueSet: VideoCueSet = useMemo(
     () =>
       noteCuesForVideo(take, {
         audioOffsetMs: offsetMs,
         videoDurationSec: Math.max(0, Number(ref?.durationSec) || 0),
+        fallbackDurationSec: measuredTakeSec,
       }),
-    [offsetMs, ref?.durationSec, take],
+    [measuredTakeSec, offsetMs, ref?.durationSec, take],
   );
 
   /**
@@ -1306,9 +1365,19 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
    * supplies the sentence (`videoCueEmptyLine`) instead of letting every empty
    * lane claim it heard nothing.
    */
+  /**
+   * ── vc58, N1 ── "NO MELODY WAS HEARD" IS A VERDICT, NOT A LOADING STATE.
+   *
+   * `takeBusy` is true exactly while the notes read is in flight. While it is,
+   * `row.take` is null and the cue set is empty — the same shape a take that really
+   * held no melody has, and vc55 made that shape say "No melody was heard in this
+   * take." Since vc56 the read yields, so this surface PAINTS in that state for as
+   * long as the read runs. `laneEmptyLine` reads the in-flight flag and says it is
+   * still reading instead; the verdict is only spoken once the read has finished.
+   */
   const cueEmptyLine = useMemo(
-    () => videoCueEmptyLine(cueSet) ?? OVERLAY_EMPTY_LINE,
-    [cueSet],
+    () => laneEmptyLine(cueSet, takeBusy) ?? OVERLAY_EMPTY_LINE,
+    [cueSet, takeBusy],
   );
 
   /**

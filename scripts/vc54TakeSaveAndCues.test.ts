@@ -421,8 +421,10 @@ function testWiring(): void {
     'the surface supplies the lane’s empty sentence (both lanes)',
   );
   assert(
-    screen.indexOf('videoCueEmptyLine(cueSet)') >= 0,
-    'and it comes from what actually happened to the take',
+    // vc58: the sentence is still the take's own, and now it also knows whether
+    // the read is still running (`takeBusy`) — the vc57 handset row N1.
+    screen.indexOf('laneEmptyLine(cueSet, takeBusy)') >= 0,
+    'and it comes from what actually happened to the take, including a read still running',
   );
   // N6 — an empty lane is not a dead end. Anchored to the IDENTIFIERS that carry
   // the behaviour (the CTA constant, the gate helper, the handler) and to the two

@@ -280,7 +280,22 @@ export function formatOffset(ms: number): string {
  */
 export function noteCuesForVideo(
   take: SavedCaptureTake | null | undefined,
-  input: { audioOffsetMs?: number; videoDurationSec: number },
+  input: {
+    audioOffsetMs?: number;
+    videoDurationSec: number;
+    /**
+     * ── vc58, C2/C3 ── THE LENGTH THE SURFACE MEASURED ITSELF.
+     *
+     * The fallback timeline below is the TAKE's span, and a take whose notes are
+     * still being read has no span — so the axis was 0, the lane drew on nothing,
+     * and the coverage notice (which reads this same `timelineSec`) had no length to
+     * compare and said nothing. The surface hands in the filmed seconds it measured
+     * at Stop (vc50), so a take that really ran past the coverage always has an axis
+     * to say so on. Still ONE axis: the cues, the lane and the sentence all use the
+     * `timelineSec` this function returns.
+     */
+    fallbackDurationSec?: number;
+  },
 ): VideoCueSet {
   const notes: ReadonlyArray<MidiNoteEvent> = Array.isArray(take?.notes) ? take.notes : [];
   const offsetSec = finiteOr(input?.audioOffsetMs, 0) / 1000;
@@ -300,7 +315,8 @@ export function noteCuesForVideo(
    */
   const declared = Math.max(0, finiteOr(input?.videoDurationSec, 0));
   const span = takeTimelineSec(take, offsetSec);
-  const duration = declared > 0 ? declared : span;
+  const measured = Math.max(0, finiteOr(input?.fallbackDurationSec, 0));
+  const duration = declared > 0 ? declared : Math.max(span, measured);
   const cues: VideoCue[] = [];
   let dropped = 0;
   notes.forEach((note, index) => {
@@ -387,6 +403,47 @@ export function videoCueEmptyLine(set: VideoCueSet | null | undefined): string |
   if (!set) return null;
   if (set.cues.length > 0) return null;
   return set.totalCount > 0 ? VIDEO_NOTES_OUTSIDE_LINE : VIDEO_NO_MELODY_LINE;
+}
+
+/**
+ * ── vc58, N1 ── THE LANE MUST NOT SAY "NO MELODY" WHILE IT IS STILL LISTENING.
+ *
+ * THE OWNER, vc57 HANDSET PASS: *"Watch with Notes says no melody was heard"* on a
+ * take that recorded a melody — the same row that PASSED on vc54.
+ *
+ * WHY IT PASSED ON vc54 AND FAILED ON vc57. The notes read used to be one
+ * synchronous pass on the JS thread (vc54 and before): while it ran, the thread
+ * could not paint, so the review surface never rendered a lane without its notes —
+ * the take arrived, the read blocked, and the next frame already had the notes on
+ * it. vc56 sliced that read so the window opens on the press (D23), and the slice
+ * hands the thread back every 8 ms — which means the surface NOW PAINTS DURING THE
+ * READ, with `row.take === null` and an empty cue set. vc55 had just changed what
+ * an empty lane says in that state: `videoCueEmptyLine` returns
+ * `VIDEO_NO_MELODY_LINE` for a cue set with no notes, so for the whole length of
+ * the read the lane told the owner "No melody was heard in this take." about a take
+ * whose melody was being read at that very moment. Nothing was wrong with the read.
+ *
+ * The two states are different facts and they now read differently:
+ *   • the read is still running  → VIDEO_NOTES_STILL_READING_LINE (no verdict);
+ *   • the read finished, no notes → VIDEO_NO_MELODY_LINE (the honest verdict).
+ *
+ * `reading` is the surface's own in-flight flag, so it cannot drift from the read.
+ */
+export const VIDEO_NOTES_STILL_READING_LINE =
+  'Reading the notes from this take — they appear here as soon as the read finishes.';
+
+/**
+ * The lane's empty sentence, decided by the SAME cue set the lane draws plus
+ * whether the read is still in flight. Null when the lane has something to draw
+ * (the lane owns no facts; it is handed cues).
+ */
+export function laneEmptyLine(
+  set: VideoCueSet | null | undefined,
+  reading: boolean,
+): string | null {
+  if (set && set.cues.length > 0) return null;
+  if (reading) return VIDEO_NOTES_STILL_READING_LINE;
+  return videoCueEmptyLine(set);
 }
 
 /**

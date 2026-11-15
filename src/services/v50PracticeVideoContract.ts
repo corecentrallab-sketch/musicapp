@@ -249,7 +249,17 @@ export function takeCannotBeDropped(screenSource: string): boolean {
   // The decode is BOUNDED, and both its failure and its timeout are sentences.
   if (keep.indexOf('settleWithin(') < 0) return false;
   if (keep.indexOf('TAKE_DECODE_TIMEOUT_MS') < 0) return false;
-  if (keep.indexOf('VIDEO_TAKE_TIMEOUT_LINE') < 0) return false;
+  // ── vc58 (N1) ── THE BOUND IS NOT A VERDICT ON THE TAKE.
+  // This clause used to demand `VIDEO_TAKE_TIMEOUT_LINE`, the sentence shown when
+  // the decode outlived `TAKE_DECODE_TIMEOUT_MS` — but that sentence came with a
+  // `take: null`, and `take: null` is the surface's word for "no melody was heard".
+  // A slow-but-good read was therefore DROPPED at the bound and reported as a take
+  // with no melody in it (the owner's vc57 row N1). The rule this guard exists for
+  // — a completed take is never dropped — is now stated twice as strongly: the
+  // surface says it is still reading, AND the read's own take is applied when it
+  // lands, through the same landing path an early take uses.
+  if (keep.indexOf('VIDEO_TAKE_STILL_READING_LINE') < 0) return false;
+  if (keep.indexOf('applyDerivedTake(late)') < 0) return false;
   if (keep.indexOf('VIDEO_TAKE_FAILED_LINE') < 0) return false;
   if (keep.indexOf('setTakeLine(') < 0) return false;
   // The take reaches the surface AND the row (a take that is only in React
