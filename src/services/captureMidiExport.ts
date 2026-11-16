@@ -40,6 +40,9 @@ import {
   type SamplesProvider,
 } from './coachCapture';
 import { detectPitchFramesAsync } from './pitchDetection';
+// vc60: the level verdict (nothing recorded / decode failed / no melody) is decided
+// in ONE pure place, so every surface that reads a take speaks the same facts.
+import { TAKE_NO_SOUND_LINE, levelIsNoSound, takeLevelDbFS } from './takeReadVerdict';
 import { MIDI_STRUCTURE_INVALID_MESSAGE, validateMidiStructure } from './midiStructure';
 import {
   MIDI_FAILED_MESSAGE,
@@ -168,6 +171,17 @@ export interface ExportRecordingInput {
   tempoBpm?: number;
   /** ISO timestamp for the stored take (defaults to now). */
   capturedAt?: string;
+  /**
+   * ── vc60 ── THE LEVEL THE RECORDER MEASURED WHILE IT RECORDED, in dBFS.
+   *
+   * OPTIONAL and additive: a caller that does not measure (every caller before
+   * vc60) leaves it out and nothing changes. A caller that does — the
+   * practice-video screen hands in `stopRecording()`'s own
+   * `diagnostics.peakDbFS` — gets the honest "nothing was recorded" verdict
+   * instead of a take with no sound in it being reported as "no melody was heard"
+   * (services/takeReadVerdict.ts).
+   */
+  peakDbFS?: number | null;
 }
 
 /** What reading a recording into a take produced (see deriveCaptureTakeFromRecording). */
@@ -178,6 +192,22 @@ export interface DerivedTake {
   unavailable: boolean;
   /** One honest sentence when there is no usable take (`take` is null). */
   message: string | null;
+  /**
+   * ── vc60 ── THE DECODE ITSELF FAILED (offline, HTTP error, a timeout).
+   *
+   * NOT the same fact as `unavailable` (this build has no reader) and NOT a verdict
+   * on the melody: the app never heard the take at all. Before vc60 both this and a
+   * take of nothing printed "No melody was heard in this take."
+   */
+  decodeFailed?: boolean;
+  /**
+   * ── vc60 ── THE LEVEL SAYS THE TAKE HOLDS NO SOUND.
+   *
+   * Measured by the recorder's own metering, or (when that was not available) by
+   * the decoder's `peak` — never by file size or duration, which cannot tell a
+   * quiet take from a loud one. See services/takeReadVerdict.ts.
+   */
+  noSound?: boolean;
 }
 
 /**
@@ -202,6 +232,26 @@ async function decodeTakeFromRecording(
     return { take: null, unavailable: false, message: MIDI_FAILED_MESSAGE };
   }
 
+  /**
+   * ── vc60 ── NOTHING WAS RECORDED IS ITS OWN FACT, AND IT IS FREE TO ESTABLISH ──
+   *
+   * The recorder meters every take (`isMeteringEnabled: true`, sampled every 200 ms,
+   * turned into `peakDbFS` at stop). When the caller hands that in and it sits at or
+   * below the sound floor, there is nothing to read and nothing to upload: the take
+   * is answered honestly and the decode is never asked to pronounce on a melody it
+   * could not have heard. A caller that does not measure is untouched (null = not
+   * measured = no verdict — see takeReadVerdict.ts).
+   */
+  const meteredLevel = takeLevelDbFS({ meteredDbFS: input?.peakDbFS ?? null });
+  if (levelIsNoSound(meteredLevel)) {
+    return {
+      take: null,
+      unavailable: false,
+      noSound: true,
+      message: TAKE_NO_SOUND_LINE,
+    };
+  }
+
   const provider = deps.samplesProvider ?? createDefaultSamplesProvider();
   let captured;
   try {
@@ -210,7 +260,35 @@ async function decodeTakeFromRecording(
     if (isCaptureUnavailable(err)) {
       return { take: null, unavailable: true, message: MIDI_UNAVAILABLE_MESSAGE };
     }
-    return { take: null, unavailable: false, message: captureErrorMessage(err) };
+    /**
+     * ── vc60 ── A FAILED DECODE IS NOT A VERDICT ON THE MELODY.
+     *
+     * This used to come back indistinguishable from a take of nothing, so an
+     * offline phone told the owner "No melody was heard in this take." The flag is
+     * the fact; the surface picks the sentence (takeReadVerdict.takeReadLine).
+     */
+    return {
+      take: null,
+      unavailable: false,
+      decodeFailed: true,
+      message: captureErrorMessage(err),
+    };
+  }
+
+  /**
+   * ── vc60 ── THE DECODER'S OWN LEVEL, WHEN THE RECORDER COULD NOT MEASURE ─────
+   *
+   * The same verdict from the other end of the seam: the server reports the peak of
+   * the PCM it decoded (any container), so a take that decoded to nothing is called
+   * nothing here too. Only consulted when the device's metering gave no answer.
+   */
+  if (!levelIsNoSound(meteredLevel) && levelIsNoSound(takeLevelDbFS({ decodedPeak: captured?.peak ?? null }))) {
+    return {
+      take: null,
+      unavailable: false,
+      noSound: true,
+      message: TAKE_NO_SOUND_LINE,
+    };
   }
 
   /**

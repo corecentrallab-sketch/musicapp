@@ -223,6 +223,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { ScrubBar } from '../components/ScrubBar';
 import { scrubSeekTargetMs } from '../services/videoScrub';
 import { OVERLAY_EMPTY_LINE, OVERLAY_LANE_LABEL } from '../services/videoOverlayLayout';
+// vc60: the one place a read's verdict becomes a sentence (spec §2).
+import { takeReadLine, takeReadOutcome } from '../services/takeReadVerdict';
+// vc60: the opt-in on-device decoder probe (spec §4). Mounted only by this card's
+// own control; the notes read never touches it.
+import { TakeDecoderProbeCard } from '../components/TakeDecoderProbeCard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tabScreenBottomPadding } from '../services/tabBarLayout';
 import { PracticeVideoSendToSheet } from '../components/PracticeVideoSendToSheet';
@@ -934,7 +939,19 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
    * pair is written to History as ONE row.
    */
   const keepTake = useCallback(
-    async (audioCacheUri: string | null, pairedSeparately: boolean) => {
+    async (audioCacheUri: string | null, pairedSeparately: boolean,
+      /**
+       * ── vc60 ── WHAT THE RECORDER MEASURED WHILE IT RECORDED (dBFS).
+       *
+       * `stopRecording()` already returns this (`diagnostics.peakDbFS`, from the
+       * metering every take enables) and nothing on this surface used it. It is the
+       * only honest way to tell a take of nothing from a take of playing: a
+       * compressed .m4a of 60 seconds of nothing has the same SHAPE, the same
+       * extension and a non-zero size as one of 60 seconds of music. Null when the
+       * recorder could not measure, and null means "no verdict".
+       */
+      measuredPeakDbFS: number | null = null,
+    ) => {
       setPhase('keeping');
       setLine(PRACTICE_VIDEO_KEEPING_LINE);
       setErrorLine(null);
@@ -1103,7 +1120,10 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
            * got to listen at all.
            */
           setTakeLine(
-            derived.unavailable ? derived.message ?? VIDEO_TAKE_FAILED_LINE : VIDEO_NO_MELODY_LINE,
+            takeReadLine(takeReadOutcome(derived), {
+              unavailableMessage: derived.message,
+              fallbackFailedLine: VIDEO_TAKE_FAILED_LINE,
+            }),
           );
           await verifyAgain();
           return;
@@ -1115,7 +1135,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         await verifyAgain();
       };
 
-      const read = deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt });
+      const read = deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt, peakDbFS: measuredPeakDbFS });
       let settled: Awaited<ReturnType<typeof deriveCaptureTakeFromRecording>> | null = null;
       try {
         settled = await settleWithin(read, TAKE_DECODE_TIMEOUT_MS, null);
@@ -1190,7 +1210,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     if (stopFailure) setErrorLine(stopFailure.message);
     const pairedSeparately = separateTakeRef.current;
     try {
-      await keepTake(audio?.uri ?? null, pairedSeparately);
+      await keepTake(audio?.uri ?? null, pairedSeparately, audio?.diagnostics?.peakDbFS ?? null);
     } catch {
       /**
        * NO SILENT FAILURE (vc50). This `await` used to be the last statement of a
@@ -2651,6 +2671,15 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 <Text style={styles.secondaryBtnText}>{'Correct the notes ›'}</Text>
               </TouchableOpacity>
             ) : null}
+
+            {/* ── vc60 ── THE OPT-IN DECODER PROBE (spec §4, VC59-DECODER-PROBE.md).
+                A MEASUREMENT, not a feature: it decodes this take's own audio on the
+                device, once, and prints one line — file size, decoded length, the
+                Float32 footprint, the PCM16 footprint, the decode's wall clock, the
+                JS heap when it is really measurable, and whether the app survived.
+                Nothing runs until it is pressed, it writes nothing, and the notes lane
+                never calls it (scripts/vc60DecoderProbe.test.ts asserts both). */}
+            <TakeDecoderProbeCard uri={ref?.uri ?? audioUriRef.current} />
 
             <TouchableOpacity
               style={styles.primaryBtn}

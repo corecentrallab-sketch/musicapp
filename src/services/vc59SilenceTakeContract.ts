@@ -130,9 +130,10 @@ export function theCameraOffRetakeWaitsForTheUserToStop(screenSource: string): b
  * THE PROPERTY:
  *   • the MIDI export's no-melody sentence is not on this surface at all — not
  *     imported, not rendered, not passed through a variable;
- *   • the one landing path (`applyDerivedTake`) sets `VIDEO_NO_MELODY_LINE` when the
- *     read produced no take, and keeps `derived.unavailable`'s own message for the
- *     read that could not run;
+ *   • the one landing path (`applyDerivedTake`) asks the ONE reader
+ *     (`takeReadLine(takeReadOutcome(derived), …)`, services/takeReadVerdict.ts) for
+ *     its words, and hands the export's own message over only as
+ *     `unavailableMessage` — the read that could not run;
  *   • and that sentence reaches the page: the review surface renders `takeLine`
  *     while the read is NOT in flight — which is exactly the state a finished read
  *     leaves behind, and the state the user lands in.
@@ -148,9 +149,19 @@ export function theSurfaceSpeaksItsOwnNoMelodySentence(screenSource: string): bo
   if (at < 0) return false;
   const body = functionBody(src, at);
   if (body.length === 0) return false;
-  if (body.indexOf('VIDEO_NO_MELODY_LINE') < 0) return false;
-  // The read that never ran keeps its own honest sentence.
-  if (body.indexOf('derived.unavailable') < 0) return false;
+  /**
+   * vc60 ROUTED THE SENTENCE THROUGH ONE READER, and the property survived the
+   * rewrite: the landing path no longer names `VIDEO_NO_MELODY_LINE` itself, it
+   * asks `takeReadLine(takeReadOutcome(derived), …)` — and the export's own message
+   * reaches that reader ONLY as `unavailableMessage`, the read that never ran. A
+   * read that ran and heard nothing still gets the lane's own sentence, which the
+   * reader returns (services/takeReadVerdict.ts). The guard follows the WIRING, not
+   * the deleted line of text: a guard keyed to exact source text goes green by
+   * dying, which is the one way it can lie.
+   */
+  if (body.indexOf('takeReadLine(takeReadOutcome(derived)') < 0) return false;
+  // The read that never ran keeps its own honest sentence — and nothing else does.
+  if (body.indexOf('unavailableMessage: derived.message') < 0) return false;
 
   // …and it reaches the review page when the read has finished and there is no take.
   if (src.indexOf('{!takeBusy && takeLine ?') < 0) return false;
