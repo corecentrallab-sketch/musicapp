@@ -138,6 +138,41 @@ export function encodePcm16Base64(samples: Float32Array): string {
   return buffer.toString("base64");
 }
 
+/**
+ * ── vc60 ── THE LEVEL OF A DECODED TAKE: `{ peak, rmsDb }`.
+ *
+ * ADDITIVE DIAGNOSTICS, not contract fields: the app's `coachCapture.ts` reads the
+ * five contract fields and ignores everything else, so a client that does not know
+ * about these is unaffected. They exist so the app can tell "this take held no
+ * melody" from "this take held no sound at all" — two different facts with two
+ * different sentences — and so the measurement covers any container the server can
+ * decode, not only the ones the device's own metering could watch.
+ *
+ * `peak` is the largest absolute sample (0…1). `rmsDb` is the RMS in dBFS, i.e.
+ * <= 0 dBFS, and NULL for a digitally silent take: the logarithm there is
+ * -Infinity, and -Infinity is not JSON — a made-up floor number would be worse
+ * than saying nothing.
+ */
+export function decodedLevel(samples: Float32Array): {
+  peak: number;
+  rmsDb: number | null;
+} {
+  let peak = 0;
+  let sumSquares = 0;
+  const count = samples.length;
+  for (let i = 0; i < count; i++) {
+    const value = Number(samples[i]) || 0;
+    const magnitude = value < 0 ? -value : value;
+    if (magnitude > peak) peak = magnitude;
+    sumSquares += value * value;
+  }
+  const rms = count > 0 ? Math.sqrt(sumSquares / count) : 0;
+  return {
+    peak: Math.round(peak * 1e6) / 1e6,
+    rmsDb: rms > 0 ? Math.round(20 * Math.log10(rms) * 100) / 100 : null,
+  };
+}
+
 /** Decode a recorded practice take into the PCM16 JSON the coach card expects. */
 export async function handleCoachPcm(req: Request): Promise<Response> {
   try {
@@ -209,6 +244,17 @@ export async function handleCoachPcm(req: Request): Promise<Response> {
     const durationSec = pcm.length / COACH_TARGET_SAMPLE_RATE;
     const pcm16Base64 = encodePcm16Base64(pcm);
 
+    // ── vc60: THE LEVEL OF WHAT WE DECODED, AS TWO ADDITIVE FIELDS ─────────────
+    // WHY. The app has to be able to tell "the take held no melody" apart from
+    // "the take held no SOUND" (vc60 spec §2), and it can only do that from a
+    // level measurement. The device's own recorder metering covers the .m4a it
+    // recorded, but not every container and not every path — this route has the
+    // decoded mono in hand here, so the measurement is free and covers any
+    // format we can decode. `peak` is the largest absolute sample (0..1);
+    // `rmsDb` is the RMS in dBFS (<= 0; null for a digitally silent take, where
+    // the log is -Infinity and a number would be a lie).
+    const level = decodedLevel(pcm);
+
     console.log(
       `[coach-pcm] decoded ${audioBuffer.length}B → ${pcm.length} samples ` +
         `(${durationSec.toFixed(2)}s @ ${COACH_TARGET_SAMPLE_RATE}Hz mono, ` +
@@ -226,6 +272,9 @@ export async function handleCoachPcm(req: Request): Promise<Response> {
       sourceSampleRate,
       sourceChannels,
       truncated,
+      // vc60 — additive level of the PCM we are returning (see decodedLevel).
+      peak: level.peak,
+      rmsDb: level.rmsDb,
     });
   } catch (err) {
     // Never leak a stack trace to the client; log it for the function logs.
