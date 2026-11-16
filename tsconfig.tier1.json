@@ -270,6 +270,11 @@
     "src/services/vc58RecordScreenContract.ts",
     "scripts/vc58RecordScreen.test.ts",
     "src/services/vc59SilenceTakeContract.ts",
+    "src/services/takeReadVerdict.ts",
+    "src/services/takeDecoderProbe.ts",
+    "src/services/vc60Contract.ts",
+    "scripts/vc60TakeStaffAndLane.test.ts",
+    "scripts/vc60DecoderProbe.test.ts",
     "scripts/vc59SilenceTake.test.ts"
   ]
 }

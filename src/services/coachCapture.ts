@@ -43,6 +43,22 @@ export interface CapturedSamples {
   samples: Float32Array;
   sampleRate: number;
   durationSec: number;
+  /**
+   * ── vc60 ── THE LEVEL THE DECODER MEASURED, when it reported one.
+   *
+   * ADDITIVE and OPTIONAL: the five contract fields above are all this seam ever
+   * needed, and every existing caller keeps working without these. They are here
+   * so the read can tell "this take held no melody" apart from "this take held no
+   * sound at all" (see captureMidiExport.ts `decodeTakeFromRecording`), and so
+   * that fact covers ANY container the server can decode — not only the ones the
+   * device's own recorder metering could watch.
+   *
+   * `peak` is the largest absolute sample (0…1); `rmsDb` is dBFS (<= 0), or null
+   * when the decoder could not measure it. Both null when the server did not send
+   * them (an older deployment), which means "not measured" — never "no sound".
+   */
+  peak?: number | null;
+  rmsDb?: number | null;
 }
 
 /** Turns a finished recording into samples. The single injection point. */
@@ -168,6 +184,9 @@ export function createRemoteDecodeProvider(deps: {
           pcm16Base64?: string;
           channels?: number;
           durationSec?: number;
+          /** vc60, additive: the decoder's own level measurement (see CapturedSamples). */
+          peak?: number;
+          rmsDb?: number | null;
           error?: string;
         };
         if (!payload || payload.success === false) {
@@ -194,6 +213,15 @@ export function createRemoteDecodeProvider(deps: {
             typeof payload.durationSec === 'number' && payload.durationSec > 0
               ? payload.durationSec
               : declaredDurationSec ?? durationOf(coach.samples, coach.sampleRate),
+          // vc60: absent (an older deployment) reads as "not measured", never as 0.
+          peak:
+            typeof payload.peak === 'number' && Number.isFinite(payload.peak)
+              ? payload.peak
+              : null,
+          rmsDb:
+            typeof payload.rmsDb === 'number' && Number.isFinite(payload.rmsDb)
+              ? payload.rmsDb
+              : null,
         };
       }
 

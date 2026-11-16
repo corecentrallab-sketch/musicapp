@@ -26,9 +26,10 @@
  */
 import { useThemedStyles } from '../services/themeStore';
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { AbcScoreView } from './AbcScoreView';
 import { ExpandScoreButton } from './ExpandScoreButton';
+import { ScoreLengthLine } from './ScoreLengthLine';
 import { autoCleanTake } from '../services/melodyCapture';
 import {
   STAFF_CAPTION,
@@ -106,6 +107,29 @@ export interface TakeStaffCardProps {
    * Without it the card is exactly what it was.
    */
   onExpand?: (() => void) | null;
+  /**
+   * ── vc60 ── THE WINDOW THE STAFF MAY OCCUPY (owner: "only ~4 bars").
+   *
+   * THE DIAGNOSIS. The take's staves were the ONE score surface in the app that
+   * never got the whole-work treatment (v39 Part 2): they were non-interactive (so
+   * the WebView could not scroll itself) and, when the document's height message did
+   * not land, the box stayed at its 132px floor with `overflow: 'hidden'`. A staff
+   * line is about four bars at phone width, so the take looked TRUNCATED when it was
+   * only clipped — and there was no escape hatch of any kind.
+   *
+   * THE FIX, in two halves and no new renderer:
+   *   • `wholeWork` on both staves, so the viewer picks its band from the document it
+   *     measured (services/scoreHeight.ts): a take that fits is laid out in full, and
+   *     a take taller than the ceiling is handed this viewport and scrolls ITSELF —
+   *     every bar reachable even if the height message never arrives;
+   *   • the honest length line beside the staff ("Bars 1–12 of 12"), computed from the
+   *     take's own ABC by services/scoreLength.ts, so a genuinely short take and a
+   *     clipped render can be told apart on the handset without another round trip.
+   *
+   * Optional: a host that knows its own visible area passes it; otherwise the window
+   * height is the best available answer (the same fallback AbcScoreView uses).
+   */
+  viewportHeight?: number;
 }
 
 export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
@@ -115,8 +139,14 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
   title,
   interactive = false,
   onExpand,
+  viewportHeight,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
+  /** vc60: the window a whole-work staff that does not fit is handed (see the prop). */
+  const window = useWindowDimensions();
+  const measuredViewport = Math.round(Number(viewportHeight));
+  const staffViewport =
+    Number.isFinite(measuredViewport) && measuredViewport > 0 ? measuredViewport : window.height;
   const rows = useMemo(() => {
     const notes = Array.isArray(take?.notes) ? take!.notes : [];
     // The cleaned line comes from the app's ONE cleaning pass, fed the same
@@ -165,12 +195,18 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
         <>
           {/* 1. THE RAW TRACE — dimmed, labelled as exactly what it is. */}
           <Text style={styles.rowLabel}>{rows.rawLabel}</Text>
+          {/* vc60: THE LENGTH, BESIDE THE STAFF AND FROM THE TAKE ITSELF. "Bars 1–4
+              of 4" is a short take and says so; "Bars 1–12 of 12" is a whole take the
+              box used to clip at four. */}
+          <ScoreLengthLine abc={rows.rawAbc ?? ''} style={styles.lengthLine} />
           <View style={styles.staffBox}>
             <AbcScoreView
               abc={rows.rawAbc ?? ''}
               ink={TAKE_STAFF_RAW_INK}
               background={TAKE_STAFF_PAPER}
               interactive={interactive}
+              wholeWork
+              viewportHeight={staffViewport}
             />
           </View>
           <Text style={styles.honesty}>{STAFF_RAW_HONESTY}</Text>
@@ -191,6 +227,8 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
               ink={TAKE_STAFF_CLEANED_INK}
               background={TAKE_STAFF_PAPER}
               interactive={interactive}
+              wholeWork
+              viewportHeight={staffViewport}
             />
           </View>
           <Text style={styles.honesty}>{STAFF_CLEANED_HONESTY}</Text>
@@ -248,6 +286,8 @@ const baseStyles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
   },
+  /** vc60: the honest length line, directly under the row label it belongs to. */
+  lengthLine: { marginTop: 2, marginBottom: 2 },
   honesty: { color: '#7d7d99', fontSize: 11, lineHeight: 16, marginTop: 6 },
   dividerRow: {
     flexDirection: 'row',

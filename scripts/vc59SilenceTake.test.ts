@@ -130,9 +130,12 @@ function testTheGuardsBite(): void {
   );
 
   // (d) D24 put back: the landing surface prints the export's own message.
+  // vc60 moved the sentence behind the one reader, so the mutation removes the
+  // ROUTING (the call that picks the verdict's words) and prints the export's
+  // message straight into the lane instead — the defect, in today's source.
   const exportSentence = SCREEN.replace(
-    '            derived.unavailable ? derived.message ?? VIDEO_TAKE_FAILED_LINE : VIDEO_NO_MELODY_LINE,',
-    '            derived.message ?? VIDEO_TAKE_FAILED_LINE,',
+    'takeReadLine(takeReadOutcome(derived), {',
+    'derived.message ?? VIDEO_TAKE_FAILED_LINE, {',
   );
   assert(
     exportSentence !== SCREEN &&

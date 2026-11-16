@@ -388,8 +388,8 @@ probe('guard 5: nothing is persisted before the row is written', rowFirst, SCREE
 // first, so a late read can still be applied after the bound. The mutation anchors
 // on the STATEMENT, and a missing anchor fails loudly rather than passing.
 const secondDecode = SCREEN.replace(
-  'const read = deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt });',
-  'const read = deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt });\n      void deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt });',
+  'const read = deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt, peakDbFS: measuredPeakDbFS });',
+  'const read = deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt, peakDbFS: measuredPeakDbFS });\n      void deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt, peakDbFS: measuredPeakDbFS });',
 );
 probe('guard 6: the take is decoded twice', secondDecode, SCREEN, () => videoUsesTheOneDecodeSeam(secondDecode));
 // 6b — the screen grows its own network route.

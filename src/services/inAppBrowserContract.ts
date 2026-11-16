@@ -227,6 +227,17 @@ export const INLINE_APP_RENDERED_WEBVIEWS: readonly string[] = [
    * BACK-closable overlay in front of a tuner that never showed one.
    */
   'src/screens/TunerScreen.tsx',
+  /**
+   * The vc60 DECODER PROBE's note reader (TakeDecoderProbeCard, on the
+   * practice-video review page): the same class again — `source={{ html:
+   * TUNER_DECODER_HTML }}`, the same inline constant with no URL, no fetch and no
+   * script src, parked off-screen at 2×2 behind `pointerEvents="none"`, and
+   * mounted only after the user presses the probe control. Nothing in it is a page
+   * a user can reach or navigate, so there is nothing to return FROM, and a Modal
+   * wrapper would put a BACK-closable overlay in front of a review page that never
+   * showed one.
+   */
+  'src/components/TakeDecoderProbeCard.tsx',
 ];
 
 /** True when `path` is one of the app's own inline (non-navigable) WebView renderers. */
