@@ -275,6 +275,10 @@
     "src/services/vc60Contract.ts",
     "scripts/vc60TakeStaffAndLane.test.ts",
     "scripts/vc60DecoderProbe.test.ts",
-    "scripts/vc59SilenceTake.test.ts"
+    "scripts/vc59SilenceTake.test.ts",
+    "src/services/takeReadClock.ts",
+    "src/services/takeReadTimings.ts",
+    "src/services/takeNotationReader.ts",
+    "scripts/vc61ReadClockTimingsReader.test.ts"
   ]
 }
