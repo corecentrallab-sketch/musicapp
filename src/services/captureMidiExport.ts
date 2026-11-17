@@ -40,6 +40,8 @@ import {
   type SamplesProvider,
 } from './coachCapture';
 import { detectPitchFramesAsync } from './pitchDetection';
+// vc61 (spec §2): the stage names this pipeline reports as each one finishes.
+import type { TakeReadStage } from './takeReadTimings';
 // vc60: the level verdict (nothing recorded / decode failed / no melody) is decided
 // in ONE pure place, so every surface that reads a take speaks the same facts.
 import { TAKE_NO_SOUND_LINE, levelIsNoSound, takeLevelDbFS } from './takeReadVerdict';
@@ -70,6 +72,16 @@ export interface MidiExportDeps {
   writeFile?: (name: string, bytes: Uint8Array) => Promise<string>;
   /** Hand the file to the OS (default: expo-sharing). */
   shareFile?: (fileUri: string, title: string) => Promise<void>;
+  /**
+   * ── vc61 (spec §2) ── ONE MEASURED SPAN, AS EACH STAGE OF THE READ FINISHES.
+   *
+   * A measurement, not a behaviour: nothing about how a take is read changes, and a caller
+   * that does not pass this (every caller before vc61) is untouched. The stages that are
+   * separable HERE are reported here; the provider reports its own two (`upload`,
+   * `clientDecode`), and the staff draw is not measurable at all in this build — see
+   * services/takeReadTimings.ts, which says so in the code rather than inventing a number.
+   */
+  onStage?: (stage: TakeReadStage, ms: number) => void;
 }
 
 /** Write the SMF bytes into the cache directory and return the file URI. */
@@ -252,10 +264,20 @@ async function decodeTakeFromRecording(
     };
   }
 
-  const provider = deps.samplesProvider ?? createDefaultSamplesProvider();
+  const provider = deps.samplesProvider ?? createDefaultSamplesProvider({ onStage: deps.onStage });
   let captured;
+  /**
+   * ── vc61 (spec §2) ── THE `upload` SPAN, MEASURED.
+   *
+   * Everything from here to the answer is ONE awaited call: the multipart POST, the server's
+   * decode of the file and the response coming back. The client cannot see inside it, so it
+   * is timed as one span and labelled as one — the server's decode is INSIDE this number,
+   * never a separate figure invented for it.
+   */
+  const uploadStartedAt = Date.now();
   try {
     captured = await provider(uri);
+    deps.onStage?.('upload', Date.now() - uploadStartedAt);
   } catch (err) {
     if (isCaptureUnavailable(err)) {
       return { take: null, unavailable: true, message: MIDI_UNAVAILABLE_MESSAGE };
@@ -303,7 +325,10 @@ async function decodeTakeFromRecording(
    * (the gate compares them frame for frame) and hands the thread back between
    * slices, so the window opens on the press.
    */
+  const pitchStartedAt = Date.now();
   const frames = await detectPitchFramesAsync(captured.samples, captured.sampleRate);
+  deps.onStage?.('pitch', Date.now() - pitchStartedAt);
+  const buildStartedAt = Date.now();
   const take = buildCaptureTake(frames, {
     tempoBpm: input.tempoBpm,
     capturedAt:
@@ -311,6 +336,7 @@ async function decodeTakeFromRecording(
         ? input.capturedAt
         : new Date().toISOString(),
   });
+  deps.onStage?.('build', Date.now() - buildStartedAt);
   if (!take) {
     return { take: null, unavailable: false, message: MIDI_NO_MELODY_MESSAGE };
   }

@@ -39,6 +39,9 @@ import {
 } from './wavCapture';
 
 /** What every capture path must hand the coach: mono, coach sample rate. */
+// vc61 (spec §2): the stage names the provider reports.
+import type { TakeReadStage } from './takeReadTimings';
+
 export interface CapturedSamples {
   samples: Float32Array;
   sampleRate: number;
@@ -121,6 +124,15 @@ export function createRemoteDecodeProvider(deps: {
   fetchImpl?: typeof fetch;
   /** Override for tests: route not deployed is reported as unavailable. */
   unavailableStatuses?: number[];
+  /**
+   * ── vc61 (spec §2) ── THE PHONE'S OWN WORK AFTER THE ANSWER, MEASURED.
+   *
+   * `clientDecode` is base64 PCM16 → Float32 plus the resample to the coach rate. It is the
+   * one part of this provider that is separable from the round trip, so it is the one part
+   * reported; the POST itself (and the server's decode inside it) is timed by the caller as
+   * the single `upload` span. A caller that passes nothing is untouched.
+   */
+  onStage?: (stage: TakeReadStage, ms: number) => void;
 } = {}): SamplesProvider {
   const baseUrl = (deps.baseUrl ?? getApiBaseUrl?.() ?? '').replace(/\/+$/, '');
   const fetchImpl = deps.fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
@@ -198,6 +210,7 @@ export function createRemoteDecodeProvider(deps: {
           );
         }
         const channels = payload.channels === 2 ? 2 : 1;
+        const unpackStartedAt = Date.now();
         const decoded = decodePcm16Base64(payload.pcm16Base64, channels);
         const coach = toCoachSamples({
           samples: decoded,
@@ -206,6 +219,7 @@ export function createRemoteDecodeProvider(deps: {
               ? payload.sampleRate
               : COACH_TARGET_SAMPLE_RATE,
         });
+        deps.onStage?.('clientDecode', Date.now() - unpackStartedAt);
         return {
           samples: coach.samples,
           sampleRate: coach.sampleRate,
@@ -227,11 +241,13 @@ export function createRemoteDecodeProvider(deps: {
 
       // WAV (or any byte body we can still sniff as RIFF/WAVE).
       const buffer = await response.arrayBuffer();
+      const unpackStartedAt = Date.now();
       const decoded = decodeWavToFloat32(new Uint8Array(buffer));
       const coach = toCoachSamples({
         samples: decoded.samples,
         sampleRate: decoded.sampleRate,
       });
+      deps.onStage?.('clientDecode', Date.now() - unpackStartedAt);
       return {
         samples: coach.samples,
         sampleRate: coach.sampleRate,
@@ -254,7 +270,10 @@ export function createRemoteDecodeProvider(deps: {
  * Set EXPO_PUBLIC_COACH_DECODE=off to disable the network path entirely (e.g.
  * for an offline demo build): the card then goes straight to the honest state.
  */
-export function createDefaultSamplesProvider(): SamplesProvider {
+export function createDefaultSamplesProvider(deps: {
+  /** vc61 (spec §2): the caller's stage recorder, passed straight through. */
+  onStage?: (stage: TakeReadStage, ms: number) => void;
+} = {}): SamplesProvider {
   const flag = (process.env.EXPO_PUBLIC_COACH_DECODE ?? '').toLowerCase();
   if (flag === 'off' || flag === '0' || flag === 'false') {
     return async () => {
@@ -263,7 +282,7 @@ export function createDefaultSamplesProvider(): SamplesProvider {
       );
     };
   }
-  return createRemoteDecodeProvider();
+  return createRemoteDecodeProvider({ onStage: deps.onStage });
 }
 
 /** True when a thrown error means "no decoder in this build" (not a failure). */

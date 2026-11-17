@@ -230,8 +230,9 @@ function testTheGuardBites(): void {
   );
 
   // (h) The review page stops mounting the probe at all (a probe that cannot be run
-  //     measures nothing).
-  const notMounted = SCREEN.replace('<TakeDecoderProbeCard uri={ref?.uri ?? audioUriRef.current} />', '');
+  //     measures nothing). The mount is a multi-line JSX tag, so the mutation removes
+  //     the tag itself rather than one exact single-line spelling of it.
+  const notMounted = SCREEN.split('<TakeDecoderProbeCard').join('');
   assert(
     notMounted !== SCREEN &&
       theProbeIsOptIn({ ...INPUT, screen: notMounted }) === false,

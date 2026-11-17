@@ -236,15 +236,52 @@ export function videoIsPersistedBeforeAnyRowReferencesIt(
 
 /**
  * `deriveCaptureTakeFromRecording` is the app's only decode seam (recording URI →
- * the backend decoder → the pitch tracker → the take). This screen must use it
- * exactly ONCE and must not bring its own decoder, pitch tracker or network route
- * — a second reading of the same audio is how two surfaces start disagreeing
- * about what the user played.
+ * the backend decoder → the pitch tracker → the take). Every reading this screen
+ * makes of a take's audio must travel it, and the screen must not bring its own
+ * decoder, pitch tracker or network route — a second SEAM is how two surfaces
+ * start disagreeing about what the user played.
+ *
+ * ── vc61 RE-ANCHOR (D26, spec §1.4) ─────────────────────────────────────────
+ * This guard used to demand EXACTLY ONE call site. vc61 adds a second call of the
+ * SAME seam — "Try the read again" re-runs the read on the take already on screen,
+ * with no new recording — so a call-site count now fails the shipped screen for
+ * doing exactly what the spec asked for. The count was always a PROXY for the real
+ * rule, and the proxy is what broke: what must be ONE is the SEAM, not the number
+ * of times it is used. So the guard now demands
+ *   (a) the seam is really CALLED (an imported-but-dead seam decodes nothing), and
+ *   (b) every decode route in the screen is that ONE seam — a second decoder under
+ *       ANY name fails, which the old call-site count could not see unless the
+ *       second decoder happened to repeat the seam's own name.
+ * The pitch-tracker, import and network clauses are unchanged.
  */
+export const THE_ONE_DECODE_SEAM = 'deriveCaptureTakeFromRecording';
+
+/**
+ * The names in `source` that turn a recording into notes — a decode route, however
+ * it is spelled. `stopRecording(` (a recorder method) and `applyDerivedTake(` (a
+ * local apply) are not routes: the name must START like a read AND say what it reads.
+ */
+function decodeRouteNames(source: string): string[] {
+  const names: string[] = [];
+  const call = /(?:^|[^A-Za-z0-9_$])([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g;
+  let match = call.exec(source);
+  while (match) {
+    const name = match[1];
+    const startsLikeARead = /^(decode|derive|transcribe|detect)/i.test(name);
+    const saysWhatItReads = /(take|audio|pcm|pitch|melody|recording|notes)/i.test(name);
+    if (startsLikeARead && saysWhatItReads && names.indexOf(name) < 0) names.push(name);
+    match = call.exec(source);
+  }
+  return names;
+}
+
 export function videoUsesTheOneDecodeSeam(screenSource: string): boolean {
   const src = maskComments(screenSource);
   if (src.length < 6000) return false;
-  if (countOf(src, 'deriveCaptureTakeFromRecording(') !== 1) return false;
+  if (countOf(src, `${THE_ONE_DECODE_SEAM}(`) < 1) return false;
+  for (const route of decodeRouteNames(src)) {
+    if (route !== THE_ONE_DECODE_SEAM) return false;
+  }
   if (src.indexOf("from '../services/captureMidiExport'") < 0) return false;
   if (src.indexOf('pitchDetection') >= 0) return false;
   if (src.indexOf('detectPitchFrames') >= 0) return false;

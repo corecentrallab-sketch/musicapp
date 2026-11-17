@@ -233,6 +233,26 @@ import { tabScreenBottomPadding } from '../services/tabBarLayout';
 import { PracticeVideoSendToSheet } from '../components/PracticeVideoSendToSheet';
 import { PracticeVideoCompare, type CompareTakeSide } from '../components/PracticeVideoCompare';
 import { TakeStaffCard } from '../components/TakeStaffCard';
+// vc61 (spec §1/§3): the read's clock, the way out of a stuck read, and the full-screen reader.
+import {
+  READ_CLOCK_TICK_MS,
+  READ_RETRY_CTA,
+  READ_START_ANOTHER_CTA,
+  readClockLine,
+  readIsStalled,
+  medianThroughput as medianReadThroughput,
+  readProgress,
+  throughputFromRead,
+} from '../services/takeReadClock';
+import {
+  createStageRecorder,
+  finishReadTiming,
+  pushReadTiming,
+  type TakeReadTiming,
+} from '../services/takeReadTimings';
+import { loadReadThroughput, rememberReadThroughput } from '../services/takeReadThroughput';
+import { notationReaderPositionKey } from '../services/takeNotationReader';
+import { TakeNotationReader } from '../components/TakeNotationReader';
 // THE FULL-SCREEN READING WINDOW (v43 fix batch, slice 3, item E7). The row's
 // staff is card-width inside a scrolling page; this screen hands the shared
 // opener to the card and renders the one window itself.
@@ -938,6 +958,126 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
    * decode seam, the video is copied into the app's documents directory, and the
    * pair is written to History as ONE row.
    */
+  /**
+   * ── vc61 (spec §1) ── THE READ GETS A CLOCK, AND A WAY OUT ────────────────────
+   *
+   * THE OWNER, 11-17: *"the user also needs to be made aware that the sample is being
+   * processed… like some sort of countdown"*, and on row 5: *"he cannot [do another take] as
+   * you have to wait a long time for the notes to be processed."*
+   *
+   * Nothing about HOW a take is read changes — it is the same network POST — the wait is made
+   * visible, measurable and escapable:
+   *   • `readClockMs` ticks while `takeBusy`, and the lane prints elapsed seconds always plus
+   *     a remaining estimate ONLY when this device has finished a read before
+   *     (services/takeReadClock: never a countdown that runs out and sits at zero);
+   *   • `readStalled` turns on when the wait stops being normal, which is when the retry and
+   *     the new-take control appear beside it;
+   *   • `retryTakeRead` re-runs the read on the SAME take's stored audio — no new recording.
+   */
+  const [readClockMs, setReadClockMs] = useState(0);
+  const [readStalled, setReadStalled] = useState(false);
+  const [readFailed, setReadFailed] = useState(false);
+  const [readAudioSec, setReadAudioSec] = useState<number | null>(null);
+  const [readTimings, setReadTimings] = useState<TakeReadTiming[]>([]);
+  const [deviceThroughput, setDeviceThroughput] = useState<number[]>([]);
+  const readClockStartRef = useRef(0);
+  // vc61 part 3: the full-screen reader, and the ABC it draws (the take's own).
+  const [notationOpen, setNotationOpen] = useState(false);
+  const [readerAbc, setReaderAbc] = useState<string>('');
+
+  /** This device's read speed, remembered between sessions (never sent anywhere). */
+  useEffect(() => {
+    let cancelled = false;
+    void loadReadThroughput().then((samples) => {
+      if (!cancelled && samples.length > 0) setDeviceThroughput(samples);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** The live clock: it only DRAWS, and it stops the moment the read does. */
+  useEffect(() => {
+    if (!takeBusy) return undefined;
+    const timer = setInterval(() => {
+      const elapsed = Math.max(0, Date.now() - readClockStartRef.current);
+      setReadClockMs(elapsed);
+      if (readIsStalled(elapsed)) setReadStalled(true);
+    }, READ_CLOCK_TICK_MS);
+    return () => clearInterval(timer);
+  }, [takeBusy]);
+
+  /**
+   * ── vc61 (spec §1.4) ── "TRY THE READ AGAIN", ON THE SAME TAKE ────────────────
+   *
+   * The escape hatch for the row-5 trap, and the ONLY control that re-runs a read: it uses the
+   * take's own stored audio (`row.audioUri`, written when the take was kept) so no new
+   * recording is needed, and it writes the result onto the row on screen. Guarded, not
+   * decorative — scripts/vc61ReadClockAndReader.test.ts asserts this function reaches
+   * `deriveCaptureTakeFromRecording`.
+   */
+  const retryTakeRead = useCallback(() => {
+    const target = row;
+    const uri = target?.audioUri ?? null;
+    if (!target || !uri) return;
+    const recorder = createStageRecorder();
+    const startedAt = Date.now();
+    readClockStartRef.current = startedAt;
+    setReadClockMs(0);
+    setReadStalled(false);
+    setReadFailed(false);
+    setTakeBusy(true);
+    setTakeLine(VIDEO_TAKE_READING_LINE);
+    const read = deriveCaptureTakeFromRecording(
+      { uri, capturedAt: target.ref?.filmedAt, peakDbFS: null },
+      { onStage: recorder.record },
+    );
+    void read
+      .then(async (derived) => {
+        const elapsedMs = Math.max(0, Date.now() - startedAt);
+        setReadTimings((history) =>
+          pushReadTiming(
+            history,
+            finishReadTiming({
+              stages: recorder.stages,
+              totalMs: elapsedMs,
+              audioSec: readAudioSec,
+            }),
+          ),
+        );
+        const sample = throughputFromRead({ audioSec: readAudioSec, readMs: elapsedMs });
+        if (sample !== null) {
+          void rememberReadThroughput(deviceThroughput, sample).then((next) =>
+            setDeviceThroughput(next),
+          );
+        }
+        setTakeBusy(false);
+        setReadStalled(false);
+        if (!derived.take) {
+          setReadFailed(!derived.unavailable);
+          setTakeLine(
+            takeReadLine(takeReadOutcome(derived), {
+              unavailableMessage: derived.message,
+              fallbackFailedLine: VIDEO_TAKE_FAILED_LINE,
+            }),
+          );
+          return;
+        }
+        const take_ = derived.take;
+        setRow((current) =>
+          current && current.rowId === target.rowId ? { ...current, take: take_ } : current,
+        );
+        const written = await savePracticeVideoTake(target.rowId, take_);
+        setTakeLine(written ? null : VIDEO_TAKE_SAVE_FAILED_LINE);
+      })
+      .catch(() => {
+        setTakeBusy(false);
+        setReadStalled(false);
+        setReadFailed(true);
+        setTakeLine(VIDEO_TAKE_FAILED_LINE);
+      });
+  }, [deviceThroughput, readAudioSec, row]);
+
   const keepTake = useCallback(
     async (audioCacheUri: string | null, pairedSeparately: boolean,
       /**
@@ -1094,6 +1234,16 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       setTakeBusy(true);
       setTakeLine(VIDEO_TAKE_READING_LINE);
       readAliveRef.current = true;
+      /**
+       * vc61: the clock starts HERE (the press that starts the read), and the take's own
+       * measured length is what the estimate is computed from — `durationSec` was measured at
+       * Stop from the camera's start stamp, so it is a real number, not a guess.
+       */
+      readClockStartRef.current = Date.now();
+      setReadClockMs(0);
+      setReadStalled(false);
+      setReadFailed(false);
+      setReadAudioSec(durationSec > 0 ? durationSec : null);
 
       /**
        * ── vc58, N1 ── THE ONE PLACE A READ LANDS, EARLY OR LATE.
@@ -1102,10 +1252,42 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
        * that arrives after `TAKE_DECODE_TIMEOUT_MS` goes through exactly the same
        * steps as one that arrives inside it.
        */
+      const stageRecorder = createStageRecorder();
+      const readStartedAt = Date.now();
       const applyDerivedTake = async (
         derived: Awaited<ReturnType<typeof deriveCaptureTakeFromRecording>>,
       ): Promise<void> => {
         setTakeBusy(false);
+        setReadStalled(false);
+        /**
+         * ── vc61 (spec §2) ── THE MEASUREMENT, TAKEN FOR EVERY FINISHED READ ──────────
+         *
+         * Real elapsed milliseconds, measured on the device: the pipeline reports the stages
+         * it can separate (`upload`, `clientDecode`, `pitch`, `build`) and the whole read is
+         * timed here. The staff draw is NOT separable in this build and is left as `?` — see
+         * services/takeReadTimings.ts. The device's throughput is kept so the next read can
+         * offer an honest remaining time.
+         */
+        const readElapsedMs = Math.max(0, Date.now() - readStartedAt);
+        setReadTimings((history) =>
+          pushReadTiming(
+            history,
+            finishReadTiming({
+              stages: stageRecorder.stages,
+              totalMs: readElapsedMs,
+              audioSec: durationSec > 0 ? durationSec : null,
+            }),
+          ),
+        );
+        const throughputSample = throughputFromRead({
+          audioSec: durationSec > 0 ? durationSec : null,
+          readMs: readElapsedMs,
+        });
+        if (throughputSample !== null) {
+          void rememberReadThroughput(deviceThroughput, throughputSample).then((next) =>
+            setDeviceThroughput(next),
+          );
+        }
         const derivedTake = derived.take;
         if (!derivedTake) {
           /**
@@ -1135,7 +1317,10 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         await verifyAgain();
       };
 
-      const read = deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt, peakDbFS: measuredPeakDbFS });
+      const read = deriveCaptureTakeFromRecording(
+        { uri: audioCacheUri, capturedAt, peakDbFS: measuredPeakDbFS },
+        { onStage: stageRecorder.record },
+      );
       let settled: Awaited<ReturnType<typeof deriveCaptureTakeFromRecording>> | null = null;
       try {
         settled = await settleWithin(read, TAKE_DECODE_TIMEOUT_MS, null);
@@ -1165,6 +1350,8 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
         .catch(() => {
           if (!readAliveRef.current) return;
           setTakeBusy(false);
+          setReadStalled(false);
+          setReadFailed(true);
           setTakeLine(VIDEO_TAKE_FAILED_LINE);
         });
     },
@@ -2617,7 +2804,46 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 score sits BELOW the clip now (owner: "the notation score recorded
                 can go lower in the page"). */}
             {takeBusy ? <Text style={styles.meta}>{VIDEO_TAKE_READING_LINE}</Text> : null}
+            {/* ── vc61 ── THE CLOCK: elapsed always, a remaining time only when it is
+                earned (this device has finished a read before). A countdown that ran out and
+                sat at zero would be worse than none, so before the first read the line says
+                what the app actually knows — the ceiling. */}
+            {takeBusy ? (
+              <Text style={styles.meta}>
+                {readClockLine(
+                  readProgress({
+                    elapsedMs: readClockMs,
+                    audioSec: readAudioSec,
+                    throughput: medianReadThroughput(deviceThroughput),
+                  }),
+                )}
+              </Text>
+            ) : null}
             {!takeBusy && takeLine ? <Text style={styles.honest}>{takeLine}</Text> : null}
+            {/* ── vc61 (spec §1.3/§1.4) ── THE WAY OUT, IN THE PLACE THE PROGRESS LINE SITS.
+                A failed or stalled read must not trap the user: the retry re-runs the read on
+                THIS take (no new recording), and the new-take control is never disabled by an
+                in-flight read — it is the owner's row-5 complaint, answered. */}
+            {readStalled || readFailed ? (
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={retryTakeRead}
+                accessibilityRole="button"
+                accessibilityLabel={READ_RETRY_CTA}
+              >
+                <Text style={styles.secondaryBtnText}>{READ_RETRY_CTA}</Text>
+              </TouchableOpacity>
+            ) : null}
+            {takeBusy || readStalled ? (
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={handleRecordAgain}
+                accessibilityRole="button"
+                accessibilityLabel={READ_START_ANOTHER_CTA}
+              >
+                <Text style={styles.secondaryBtnText}>{READ_START_ANOTHER_CTA}</Text>
+              </TouchableOpacity>
+            ) : null}
             {!takeBusy && !takeLine && !take ? (
               <Text style={styles.honest}>{VIDEO_TAKE_FAILED_LINE}</Text>
             ) : null}
@@ -2628,6 +2854,11 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 chordHonestLine={null}
                 title={PRACTICE_VIDEO_ROW_TITLE}
                 interactive={false}
+                // vc61 (spec §3): the card's own full-screen affordance opens the reader.
+                onExpand={(abc) => {
+                  setReaderAbc(abc);
+                  setNotationOpen(true);
+                }}
               />
             ) : null}
             {/* ── vc54, DEFECT 2: THE EMPTY TAKE IS NEVER A DEAD END ──────────────
@@ -2679,7 +2910,11 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 JS heap when it is really measurable, and whether the app survived.
                 Nothing runs until it is pressed, it writes nothing, and the notes lane
                 never calls it (scripts/vc60DecoderProbe.test.ts asserts both). */}
-            <TakeDecoderProbeCard uri={ref?.uri ?? audioUriRef.current} />
+            {/* vc61 (spec §2): the last read's stage timings, beside the decoder probe. */}
+            <TakeDecoderProbeCard
+              uri={ref?.uri ?? audioUriRef.current}
+              readTimings={readTimings}
+            />
 
             <TouchableOpacity
               style={styles.primaryBtn}
@@ -2734,6 +2969,16 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       />
       {/* vc53, ITEM 3: the review page's own full-screen window, on the same
           in-app Modal as the watch page's (never `presentFullscreenPlayer()`). */}
+      {/* ── vc61 (spec §3) ── THE FULL-SCREEN NOTATION READER. The take's own ABC, full
+          bleed, with the length line always on screen and the position remembered per take.
+          It draws the same notes the card draws; it never re-reads, re-cleans or saves. */}
+      <TakeNotationReader
+        visible={notationOpen}
+        onClose={() => setNotationOpen(false)}
+        abc={readerAbc}
+        title={PRACTICE_VIDEO_ROW_TITLE}
+        positionKey={notationReaderPositionKey({ rowId: row?.rowId ?? null, abc: readerAbc })}
+      />
       <FullScreenVideo
         visible={videoFullOpen}
         uri={ref && practiceVideoIsUsable(ref) ? ref.uri : null}

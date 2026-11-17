@@ -62,7 +62,7 @@ export function notesCoverageClock(seconds: number = NOTES_COVERAGE_SECONDS): st
  */
 export function notesCoverageRecordLine(seconds: number = NOTES_COVERAGE_SECONDS): string {
   const coverage = Math.max(0, Math.round(Number(seconds) || 0));
-  return `The notes cover the first ${coverage} seconds of a take. Film for longer and the video keeps going, but the notes stop at ${notesCoverageClock(coverage)}.`;
+  return `NoteSnap reads the first ${notesCoverageClock(coverage)} of a take. Film for longer and the video keeps going, but the notes stop at ${notesCoverageClock(coverage)}.`;
 }
 
 /** The record surface's line, from the one constant. */
@@ -76,9 +76,12 @@ export const NOTES_COVERAGE_RECORD_LINE = notesCoverageRecordLine();
  * wrong" is the disclaimer, said plainly), and it is never a dead end: it names the
  * trim, which is a real control on the surface the lane sits on.
  */
-export function notesCoverageLaneLine(seconds: number = NOTES_COVERAGE_SECONDS): string {
+export function notesCoverageLaneLine(
+  seconds: number = NOTES_COVERAGE_SECONDS,
+  timelineSec: number = NOTES_COVERAGE_SECONDS,
+): string {
   const coverage = Math.max(0, Math.round(Number(seconds) || 0));
-  return `The notes run to ${coverage} seconds and stop there — that is the whole window NoteSnap asks for, not anything you played wrong. Trim the clip to the part the notes cover.`;
+  return `Notes cover the first ${notesCoverageClock(coverage)} of this ${notesCoverageClock(timelineSec)} take. That is as far as NoteSnap reads, not anything you played wrong. Trim the clip to the part the notes cover.`;
 }
 
 /** The lane's line, from the one constant. */
@@ -109,7 +112,7 @@ export function notesCoverageLaneNotice(
   coverage: number = NOTES_COVERAGE_SECONDS,
 ): string | null {
   return takeIsLongerThanTheNotesCover(timelineSec, coverage)
-    ? notesCoverageLaneLine(coverage)
+    ? notesCoverageLaneLine(coverage, timelineSec)
     : null;
 }
 

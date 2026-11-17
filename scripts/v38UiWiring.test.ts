@@ -381,17 +381,20 @@ probe('guard 5: nothing is persisted before the row is written', rowFirst, SCREE
   videoIsPersistedBeforeAnyRowReferencesIt(rowFirst, STORE),
 );
 
-// 6a — a second decode of the same audio.
-// vc50: the decode now runs inside the bounded `settleWithin(...)` wrapper, so the
-// mutation anchors on the CALL, not on the surrounding `const derived = await`.
-// vc58: the call is no longer inline in `settleWithin` — it is bound to `read`
-// first, so a late read can still be applied after the bound. The mutation anchors
-// on the STATEMENT, and a missing anchor fails loudly rather than passing.
-const secondDecode = SCREEN.replace(
-  'const read = deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt, peakDbFS: measuredPeakDbFS });',
-  'const read = deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt, peakDbFS: measuredPeakDbFS });\n      void deriveCaptureTakeFromRecording({ uri: audioCacheUri, capturedAt, peakDbFS: measuredPeakDbFS });',
+// 6a — the take is read through a SECOND decode seam.
+// vc61 (spec §1.4) added a second call of the SAME seam — "Try the read again" on
+// the take already on screen — so "the take is decoded twice" is now the shipped
+// behaviour, and the old call-count anchor no longer exists in the screen. The
+// defect this guard exists for is a second SEAM, so the mutation grows one beside
+// the retry's own read. It anchors on the retry's first line, and a missing anchor
+// fails loudly (probe's first assertion) rather than passing quietly.
+const secondSeam = SCREEN.replace(
+  'const target = row;',
+  'const target = row;\n    const secondRead = decodeTakeFromRecording({ uri: target?.audioUri ?? null });',
 );
-probe('guard 6: the take is decoded twice', secondDecode, SCREEN, () => videoUsesTheOneDecodeSeam(secondDecode));
+probe('guard 6: the take is decoded through a second seam', secondSeam, SCREEN, () =>
+  videoUsesTheOneDecodeSeam(secondSeam),
+);
 // 6b — the screen grows its own network route.
 const networkedScreen = SCREEN.replace(
   'const cameraRef = useRef<CameraView>(null);',

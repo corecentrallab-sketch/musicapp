@@ -133,8 +133,10 @@ function testTheGuardsBite(): void {
   // vc60 moved the sentence behind the one reader, so the mutation removes the
   // ROUTING (the call that picks the verdict's words) and prints the export's
   // message straight into the lane instead — the defect, in today's source.
-  const exportSentence = SCREEN.replace(
-    'takeReadLine(takeReadOutcome(derived), {',
+  // vc61 renders the reader on a SECOND surface too, so the mutation must reach
+  // EVERY occurrence — editing the first match anywhere can edit the wrong render
+  // and leave the guard's subject untouched (defect class 14).
+  const exportSentence = SCREEN.split('takeReadLine(takeReadOutcome(derived), {').join(
     'derived.message ?? VIDEO_TAKE_FAILED_LINE, {',
   );
   assert(

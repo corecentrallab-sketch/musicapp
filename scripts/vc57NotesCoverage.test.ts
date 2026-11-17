@@ -105,25 +105,25 @@ function testTheConstant(): void {
 
   const record = notesCoverageRecordLine();
   assert(
-    record.indexOf('60 seconds') >= 0 && record.indexOf('1:00') >= 0,
-    `the record surface's line carries the coverage: "${record}"`,
+    record.indexOf('1:00') >= 0,
+    `the record surface's line carries the coverage as a clock: "${record}"`,
   );
   // THE LINE IS DERIVED, NOT TYPED: hand it a different number and it changes.
   const recordAt90 = notesCoverageRecordLine(90);
   assert(
-    recordAt90.indexOf('90 seconds') >= 0 && recordAt90.indexOf('60') < 0,
-    `the record line is built from the number it is given, not a typed 60: "${recordAt90}"`,
+    recordAt90.indexOf('1:30') >= 0 && recordAt90.indexOf('1:00') < 0,
+    `the record line is built from the number it is given, not a typed 1:00: "${recordAt90}"`,
   );
 
   const lane = notesCoverageLaneLine();
   const laneAt90 = notesCoverageLaneLine(90);
   assert(
-    lane.indexOf('60 seconds') >= 0,
-    `the lane's line carries the coverage: "${lane}"`,
+    lane.indexOf('1:00') >= 0,
+    `the lane's line carries the coverage as a clock: "${lane}"`,
   );
   assert(
-    laneAt90.indexOf('90 seconds') >= 0 && laneAt90.indexOf('60') < 0,
-    `the lane's line is built from the number it is given, not a typed 60: "${laneAt90}"`,
+    laneAt90.indexOf('1:30') >= 0 && lane.indexOf('1:30') < 0,
+    `the lane's line is built from the number it is given, not a typed 1:00: "${laneAt90}"`,
   );
 
   // One definition, in one module, and nowhere else in the practice-video path.
@@ -159,7 +159,7 @@ function testTheMechanism(): void {
   );
   const notice = notesCoverageLaneNotice(120);
   assert(
-    typeof notice === 'string' && notice.indexOf('60 seconds') >= 0,
+    typeof notice === 'string' && notice.indexOf('1:00') >= 0,
     `a two-minute take gets the sentence: "${String(notice)}"`,
   );
 

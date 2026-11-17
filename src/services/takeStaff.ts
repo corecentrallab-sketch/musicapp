@@ -44,10 +44,10 @@ export const FLAT_ORDER: readonly StaffLetter[] = ['B', 'E', 'A', 'D', 'G', 'C',
 export const AUTO_CLEAN_DIVIDER_LABEL = 'auto-clean ✦';
 /** Said instead of a staff when a take held no notes at all. */
 export const STAFF_EMPTY_LINE =
-  'There is no staff to draw for this take — it held no notes.';
+  'There is no notation for this take — no notes were heard in it.';
 /** The honest line under the raw staff: it is what the tracker heard, unedited. */
 export const STAFF_RAW_HONESTY =
-  'This is the take exactly as the tracker heard it — no cleaning applied.';
+  'This is your take exactly as NoteSnap heard it — nothing has been cleaned up yet.';
 /** The honest line under the cleaned staff (never a studio-transcription claim). */
 export const STAFF_CLEANED_HONESTY =
   'Auto-cleaned: pitches moved onto the detected key and onsets onto the beat — a hummed take, not a transcription.';
