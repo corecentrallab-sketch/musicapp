@@ -149,7 +149,11 @@ export function finishReadTiming(input: {
   audioSec?: number | null;
   at?: string;
 }): TakeReadTiming {
-  const total = Number(input?.totalMs);
+  // AN UNMEASURED TOTAL IS NULL, NOT ZERO. `Number(null)` is 0, which would print a
+  // real-looking `total=0ms` for a read nobody timed — the same invention the draw is
+  // left out to avoid. Only a number that was actually handed in can be a measurement.
+  const rawTotal = input?.totalMs;
+  const total = rawTotal === null || rawTotal === undefined ? Number.NaN : Number(rawTotal);
   const audio = Number(input?.audioSec);
   return {
     at: typeof input?.at === 'string' && input.at.length > 0 ? input.at : new Date().toISOString(),

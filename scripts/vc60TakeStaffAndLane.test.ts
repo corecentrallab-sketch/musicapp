@@ -205,7 +205,9 @@ function testTheGuardsBite(): void {
   );
 
   // (e) GUARD 2: the screen stops asking the verdict module at all.
-  const noChooser = SCREEN.replace('takeReadLine(takeReadOutcome(derived)', 'derived.message ?? (derived');
+  // vc61 renders the reader on a SECOND surface too, so every occurrence has to go
+  // — replacing the first match alone leaves the guard's subject in place.
+  const noChooser = SCREEN.split('takeReadLine(takeReadOutcome(derived)').join('derived.message ?? (derived');
   assert(
     noChooser !== SCREEN && theSurfacePicksItsSentence(noChooser) === false,
     'GUARD 2 bites: a surface that decides its own sentence is rejected',

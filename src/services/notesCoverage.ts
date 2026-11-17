@@ -81,7 +81,7 @@ export function notesCoverageLaneLine(
   timelineSec: number = NOTES_COVERAGE_SECONDS,
 ): string {
   const coverage = Math.max(0, Math.round(Number(seconds) || 0));
-  return `Notes cover the first ${notesCoverageClock(coverage)} of this ${notesCoverageClock(timelineSec)} take. Trim the clip to the part the notes cover.`;
+  return `Notes cover the first ${notesCoverageClock(coverage)} of this ${notesCoverageClock(timelineSec)} take. That is as far as NoteSnap reads, not anything you played wrong. Trim the clip to the part the notes cover.`;
 }
 
 /** The lane's line, from the one constant. */

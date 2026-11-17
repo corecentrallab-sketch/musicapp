@@ -589,7 +589,7 @@ function testTheCopy(): void {
   const coverageLine = notesCoverageLaneLine(NOTES_COVERAGE_SECONDS, 30);
   assertEq(
     coverageLine,
-    'Notes cover the first 1:00 of this 0:30 take. Trim the clip to the part the notes cover.',
+    'Notes cover the first 1:00 of this 0:30 take. That is as far as NoteSnap reads, not anything you played wrong. Trim the clip to the part the notes cover.',
     'the coverage line states the two real numbers in plain English',
   );
   assert(
@@ -640,7 +640,7 @@ function testTheLists(): void {
   ]) {
     assertEq(TIER1_TSCONFIG.indexOf(`"${module}"`) >= 0, true, `${module} is in the tier1 type-check`);
   }
-  assertEq(countOf(PACKAGE_JSON, `scripts/${suiteName}.test.js`) === 1, true, 'this suite runs exactly once');
+  assertEq(countOf(PACKAGE_JSON, `scripts/${suiteName}.js`) === 1, true, 'this suite runs exactly once');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -659,7 +659,9 @@ function testTheProbes(): void {
     readClockIsWiredToTheRealRead(fabricatedClock),
   );
   // 1c — the clock loses the take's own length (no estimate can be earned).
-  const lengthlessClock = SCREEN.replace('audioSec: readAudioSec,', 'audioSec: null,');
+  // The screen feeds the estimate from three places; every one of them has to go, or
+  // replacing the first match alone leaves the guard's subject standing.
+  const lengthlessClock = SCREEN.split('audioSec: readAudioSec,').join('audioSec: null,');
   probe('part 1: the clock loses the take’s length', lengthlessClock, SCREEN, () =>
     readClockIsWiredToTheRealRead(lengthlessClock),
   );
@@ -699,10 +701,10 @@ function testTheProbes(): void {
     readStagesAreMeasured(inventedUpload, CAPTURE_SEAM),
   );
   // 4b — the recorder never reaches the provider (the stages are recorded nowhere).
-  const unmeasuredClient = CAPTURE_SEAM.replace(
+  // The seam records the decode on two paths, so every occurrence goes.
+  const unmeasuredClient = CAPTURE_SEAM.split(
     'deps.onStage?.(\'clientDecode\', Date.now() - unpackStartedAt);',
-    'void 0;',
-  );
+  ).join('void 0;');
   probe('part 2: the phone’s own decode is not measured', unmeasuredClient, CAPTURE_SEAM, () =>
     readStagesAreMeasured(SHIPPED_READ, unmeasuredClient),
   );
@@ -712,7 +714,8 @@ function testTheProbes(): void {
     theTimingsAreShownOnTheProbeCard(PROBE_CARD, hiddenTimings),
   );
   // 4d — the history is not kept (one read only, nothing to compare).
-  const noHistory = SCREEN.replace('pushReadTiming(', 'pushReadTimingOnce(');
+  // The screen pushes on two paths; both have to go for the history to be gone.
+  const noHistory = SCREEN.split('pushReadTiming(').join('pushReadTimingOnce(');
   probe('part 2: the last few reads are not kept', noHistory, SCREEN, () =>
     theTimingsAreShownOnTheProbeCard(PROBE_CARD, noHistory),
   );
