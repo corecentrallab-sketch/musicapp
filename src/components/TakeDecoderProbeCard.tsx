@@ -29,6 +29,13 @@ import * as FileSystem from 'expo-file-system';
 import { WebView } from 'react-native-webview';
 import { useThemedStyles } from '../services/themeStore';
 import {
+  READ_DRAW_NOT_MEASURED_NOTE,
+  READ_TIMINGS_LABEL,
+  readTimingsAudioLine,
+  readTimingsLine,
+  type TakeReadTiming,
+} from '../services/takeReadTimings';
+import {
   PROBE_CTA,
   PROBE_FAILED_LINE,
   PROBE_HINT,
@@ -54,6 +61,15 @@ export const PROBE_TIMEOUT_MS = 120000;
 export interface TakeDecoderProbeCardProps {
   /** The take's audio file — the video file when it has one, else the .m4a. */
   uri: string | null | undefined;
+  /**
+   * ── vc61 (spec §2) ── WHERE THE TIME WENT, FOR THE READS THAT HAVE FINISHED.
+   *
+   * The probe above answers "can this phone decode a whole take on its own"; this answers the
+   * other question the owner's *"almost unusable"* raised: which stage of the SHIPPED read is
+   * eating the seconds. Newest first, so a slow read sits beside the fast one it beat. It is
+   * display only — nothing here runs, reads a file or changes a take.
+   */
+  readTimings?: ReadonlyArray<TakeReadTiming> | null;
 }
 
 /** Bytes in a base64 payload, without decoding it. */
@@ -72,7 +88,10 @@ function probeMime(uri: string): string {
   return 'audio/mp4';
 }
 
-export const TakeDecoderProbeCard: React.FC<TakeDecoderProbeCardProps> = ({ uri }) => {
+export const TakeDecoderProbeCard: React.FC<TakeDecoderProbeCardProps> = ({
+  uri,
+  readTimings,
+}) => {
   const { styles } = useThemedStyles(baseStyles);
   const [armed, setArmed] = useState(false);
   const [running, setRunning] = useState(false);
@@ -200,6 +219,25 @@ export const TakeDecoderProbeCard: React.FC<TakeDecoderProbeCardProps> = ({ uri 
 
   return (
     <View style={styles.card}>
+      {/* ── vc61 (spec §2) ── THE READ'S OWN STAGE TIMINGS, NEWEST FIRST. Real elapsed
+          milliseconds measured on this phone; `?` for a stage that was not measured, and the
+          staff draw is never invented (see services/takeReadTimings.ts). */}
+      <Text style={styles.label}>{READ_TIMINGS_LABEL}</Text>
+      {(readTimings ?? []).length === 0 ? (
+        <Text style={styles.hint}>{readTimingsLine(null)}</Text>
+      ) : (
+        (readTimings ?? []).map((timing, index) => (
+          <View key={`${timing.at}-${index}`}>
+            <Text style={styles.line} selectable>
+              {readTimingsLine(timing)}
+            </Text>
+            {readTimingsAudioLine(timing) ? (
+              <Text style={styles.detail}>{readTimingsAudioLine(timing)}</Text>
+            ) : null}
+          </View>
+        ))
+      )}
+      <Text style={styles.risk}>{READ_DRAW_NOT_MEASURED_NOTE}</Text>
       <Text style={styles.label}>{PROBE_LABEL}</Text>
       <Text style={styles.hint}>{PROBE_HINT}</Text>
       <Pressable

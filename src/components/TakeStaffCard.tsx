@@ -106,7 +106,7 @@ export interface TakeStaffCardProps {
    * editor's read-only original view): none of them has to re-invent the button.
    * Without it the card is exactly what it was.
    */
-  onExpand?: (() => void) | null;
+  onExpand?: ((abc: string) => void) | null;
   /**
    * ── vc60 ── THE WINDOW THE STAFF MAY OCCUPY (owner: "only ~4 bars").
    *
@@ -169,7 +169,12 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <Text style={styles.caption}>{STAFF_CAPTION}</Text>
-        {onExpand && hasStaff ? <ExpandScoreButton onPress={onExpand} testID="take-staff-expand" /> : null}
+        {onExpand && hasStaff ? (
+          <ExpandScoreButton
+            onPress={() => onExpand(rows.cleanedAbc ?? rows.rawAbc ?? '')}
+            testID="take-staff-expand"
+          />
+        ) : null}
       </View>
 
       {/* ── THE CHORD ROW (above the staff, as the notation would carry it) ──
