@@ -103,6 +103,7 @@ import {
   shouldStartEditorDrag,
 } from '../services/editorGestures';
 import { AbcScoreView } from './AbcScoreView';
+import { READER_SCALE } from '../services/abcHtml';
 import { ExpandScoreButton } from './ExpandScoreButton';
 import { FullScreenScore, useFullScreenScoreBox } from './FullScreenScore';
 import { SCORE_EXPAND_READONLY_LABEL } from '../services/scoreExpand';
@@ -1521,6 +1522,9 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
           interactive={false}
           wholeWork
           viewportHeight={expandBoxHeight}
+          // D27: THE READER DRAWS BIGGER. Unset everywhere else, so the card this
+          // window covers still fits its box exactly as it did.
+          readerScale={READER_SCALE}
         />
       </ScrollView>
     </FullScreenScore>

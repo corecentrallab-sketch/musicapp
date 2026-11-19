@@ -130,6 +130,13 @@ export interface TakeStaffCardProps {
    * height is the best available answer (the same fallback AbcScoreView uses).
    */
   viewportHeight?: number;
+  /**
+   * THE FULL-SCREEN READER'S SCALE (D27). Passed straight through to both staves
+   * by the window that opens this card full screen, so the reader draws the SAME
+   * take bigger and pans sideways. UNSET = the card, unchanged: the take still
+   * fits its box.
+   */
+  readerScale?: number;
 }
 
 export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
@@ -140,6 +147,7 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
   interactive = false,
   onExpand,
   viewportHeight,
+  readerScale,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   /** vc60: the window a whole-work staff that does not fit is handed (see the prop). */
@@ -212,6 +220,7 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
               interactive={interactive}
               wholeWork
               viewportHeight={staffViewport}
+              readerScale={readerScale}
             />
           </View>
           <Text style={styles.honesty}>{STAFF_RAW_HONESTY}</Text>
@@ -234,6 +243,7 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
               interactive={interactive}
               wholeWork
               viewportHeight={staffViewport}
+              readerScale={readerScale}
             />
           </View>
           <Text style={styles.honesty}>{STAFF_CLEANED_HONESTY}</Text>

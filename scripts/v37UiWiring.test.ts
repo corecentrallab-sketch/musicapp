@@ -133,6 +133,7 @@ const EDITOR = 'src/components/TakeCorrectionEditor.tsx';
 const HISTORY = 'src/screens/HistoryScreen.tsx';
 const NOTATION = 'src/screens/NotationEditorScreen.tsx';
 const ABC_VIEW = 'src/components/AbcScoreView.tsx';
+const ABC_HTML = 'src/services/abcHtml.ts';
 // Items 4–6 of the same batch read these real files.
 const RESULT_SURFACE = 'src/components/RecognitionResultView.tsx';
 const PIECE_PAGE = 'src/screens/PieceDetailScreen.tsx';
@@ -151,6 +152,7 @@ const editorSource = readAppFile(EDITOR);
 const historySource = readAppFile(HISTORY);
 const notationSource = readAppFile(NOTATION);
 const abcViewSource = readAppFile(ABC_VIEW);
+const abcHtmlSource = readAppFile(ABC_HTML);
 // Items 7–8: the tab page, the Send-to surface, the device half and the two models.
 const tabsViewSource = readAppFile(TAKE_TABS_VIEW);
 const sendSheetSource = readAppFile(TAKE_SEND_SHEET);
@@ -212,7 +214,7 @@ assertEq(
 
 console.log('\nv37 item 2 — the score measures itself, the box grows, and the original comes back');
 assertEq(
-  scoreViewerReportsItsOwnHeight(abcViewSource),
+  scoreViewerReportsItsOwnHeight(abcHtmlSource, abcViewSource),
   true,
   'AbcScoreView injects the probe, reads the message, and applies the height off the flex axis',
 );
@@ -395,11 +397,10 @@ assertEq(
 
 const v36Viewer = abcViewSource
   .replace("from '../services/scoreHeight'", "from '../services/scoreWhatever'")
-  .replace('${abcHeightProbeScript()}', '')
   .replace('        onMessage={handleMessage}', '');
 assert(v36Viewer !== abcViewSource, 'the v36-viewer fixture changed the real score view');
 assertEq(
-  scoreViewerReportsItsOwnHeight(v36Viewer),
+  scoreViewerReportsItsOwnHeight(abcHtmlSource, v36Viewer),
   false,
   'PRE-FIX: a viewer that neither injects the probe nor reads a message FAILS scoreViewerReportsItsOwnHeight',
 );
@@ -505,13 +506,14 @@ assertEq(
   'MUTATION: a deferred open that loses the row id FAILS historyDoorOpensTheEditorOutsideThePressEvent',
 );
 
-// MUTATION 7: the viewer stops injecting the measuring probe.
-const noProbe = abcViewSource.replace('${abcHeightProbeScript()}', '');
-assert(noProbe !== abcViewSource, 'mutation 7 changed the real score view');
+// MUTATION 7: the document stops injecting the measuring probe (D27 moved the
+// document out of the component, so the mutation goes where the injection is).
+const noProbe = abcHtmlSource.split('${abcHeightProbeScript()}').join('');
+assert(noProbe !== abcHtmlSource, 'mutation 7 changed the real document builder');
 assertEq(
-  scoreViewerReportsItsOwnHeight(noProbe),
+  scoreViewerReportsItsOwnHeight(noProbe, abcViewSource),
   false,
-  'MUTATION: a viewer whose document never measures itself FAILS scoreViewerReportsItsOwnHeight',
+  'MUTATION: a document that never measures itself FAILS scoreViewerReportsItsOwnHeight',
 );
 
 // MUTATION 8: the viewer applies a height but stays on the flex axis (nothing grows).
@@ -521,7 +523,7 @@ const stillFlexed = abcViewSource.replace(
 );
 assert(stillFlexed !== abcViewSource, 'mutation 8 changed the real score view');
 assertEq(
-  scoreViewerReportsItsOwnHeight(stillFlexed),
+  scoreViewerReportsItsOwnHeight(abcHtmlSource, stillFlexed),
   false,
   'MUTATION: a height applied without leaving the flex axis FAILS scoreViewerReportsItsOwnHeight',
 );
@@ -533,7 +535,7 @@ const guessed = abcViewSource.replace(
 );
 assert(guessed !== abcViewSource, 'mutation 9 changed the real score view');
 assertEq(
-  scoreViewerReportsItsOwnHeight(guessed),
+  scoreViewerReportsItsOwnHeight(abcHtmlSource, guessed),
   false,
   'MUTATION: a viewer that parses the message inline FAILS scoreViewerReportsItsOwnHeight',
 );
@@ -602,7 +604,7 @@ assertEq(
   false,
   'an empty History screen opens no editor',
 );
-assertEq(scoreViewerReportsItsOwnHeight(''), false, 'an empty viewer reports no height');
+assertEq(scoreViewerReportsItsOwnHeight('', ''), false, 'an empty viewer reports no height');
 assertEq(notationEditorGrowsTheScoreBox(''), false, 'an empty notation editor grows no box');
 assertEq(
   notationEditorCanRevertToTheOriginalScore(''),

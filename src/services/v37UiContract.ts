@@ -218,6 +218,8 @@ export function historyDoorOpensTheEditorOutsideThePressEvent(historySource: str
 
 /**
  * 2a. THE VIEWER MEASURES AND REPORTS ITS OWN DOCUMENT (v37 item 2).
+ * `htmlSource` is src/services/abcHtml.ts — the document builder D27 moved out
+ * of the component, and the only place the probe can be injected now.
  * `abcViewSource` is src/components/AbcScoreView.tsx.
  *
  * Four facts, each one a silent way for the fix to be inert:
@@ -231,11 +233,16 @@ export function historyDoorOpensTheEditorOutsideThePressEvent(historySource: str
  *     `flexBasis: 0`, which WINS over a `height` on the main axis, so a fix that
  *     set only `height` would change nothing at all.
  */
-export function scoreViewerReportsItsOwnHeight(abcViewSource: string): boolean {
+export function scoreViewerReportsItsOwnHeight(
+  htmlSource: string,
+  abcViewSource: string,
+): boolean {
+  const doc = maskComments(htmlSource);
   const src = maskComments(abcViewSource);
+  if (doc.length < 1200) return false;
   if (src.length < 2000) return false;
+  if (doc.indexOf('abcHeightProbeScript()') < 0) return false;
   if (src.indexOf("from '../services/scoreHeight'") < 0) return false;
-  if (src.indexOf('abcHeightProbeScript()') < 0) return false;
   if (src.indexOf('onMessage={') < 0) return false;
   if (src.indexOf('abcHeightFromMessage(event.nativeEvent.data)') < 0) return false;
   if (

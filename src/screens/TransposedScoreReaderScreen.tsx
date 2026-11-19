@@ -53,6 +53,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import { AbcScoreView } from '../components/AbcScoreView';
+import { READER_SCALE } from '../services/abcHtml';
 import { SampleBadge } from '../components/SampleBadge';
 import { ScoreLengthLine } from '../components/ScoreLengthLine';
 import { addAbcToLibrary } from '../services/libraryStore';
@@ -419,7 +420,15 @@ export const TransposedScoreReaderScreen: React.FC<Props> = ({ navigation, route
         keyboardShouldPersistTaps="handled"
         onLayout={(layout) => setScoreAreaHeight(Math.round(layout.nativeEvent.layout.height))}
       >
-        <AbcScoreView abc={abc} wholeWork viewportHeight={scoreAreaHeight} />
+        <AbcScoreView
+          abc={abc}
+          wholeWork
+          viewportHeight={scoreAreaHeight}
+          // D27: THE FULL-SCREEN READER DRAWS BIGGER AND PANS SIDEWAYS. This is
+          // the one screen the owner could not read; the card it replaces passes
+          // no `readerScale` and is unchanged.
+          readerScale={READER_SCALE}
+        />
       </ScrollView>
 
       {/* THE STICKY FOOTER — always visible while the score scrolls, because the

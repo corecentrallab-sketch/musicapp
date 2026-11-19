@@ -30,17 +30,21 @@ import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'reac
 import { WebView } from 'react-native-webview';
 import {
   abcHeightFromMessage,
-  abcHeightProbeScript,
   abcReaderContainerHeight,
   abcScoreContainerHeight,
   scoreReaderBand,
 } from '../services/scoreHeight';
-import { ABCJS_BASIC_MIN_JS } from '../assets/abcjsBasic';
+import {
+  ABC_DEFAULT_BACKGROUND,
+  ABC_DEFAULT_INK,
+  generateAbcHtml,
+  generateAbcReaderHtml,
+  READER_MIN_SCALE,
+  READER_SCALE,
+} from '../services/abcHtml';
 
 /** The ink a score is drawn in when the caller names none (near-black on paper). */
-export const ABC_DEFAULT_INK = '#0b1220';
-/** The paper a score is drawn on when the caller names none. */
-export const ABC_DEFAULT_BACKGROUND = '#ffffff';
+export { ABC_DEFAULT_INK, ABC_DEFAULT_BACKGROUND } from '../services/abcHtml';
 /**
  * THE FLOOR THIS VIEWER CAN NEVER COLLAPSE BELOW (v36 fix 3).
  *
@@ -131,85 +135,43 @@ interface AbcScoreViewProps {
    * scrolling the score itself, and the sticky footer never has to move.
    */
   viewportHeight?: number;
+  /**
+   * THE FULL-SCREEN READER'S SCALE (D27, owner 11-17: *"I am unable to read the
+   * score as the print is so compressed… This really needs a fix."*).
+   *
+   * UNSET = THE CARD, and every existing call site is unchanged: the document
+   * keeps `responsive: 'resize'` and `max-width: 100%`, so the score still FITS
+   * its card. SET (the reader's call sites pass `READER_SCALE`) = THE READER
+   * DOCUMENT: `responsive` off (abcjs throws `scale` away when it is on), a fixed
+   * `staffwidth` so a system holds at most four bars, `scale` for genuinely
+   * bigger notes, and no width cap — so the drawing is wider than the phone and
+   * the WebView pans sideways to the last bar.
+   *
+   * THE BOX. A reader drawing is wider AND taller than its box, so in this mode
+   * the viewer always behaves like the whole-work `self-scroll` band: it is given
+   * the visible area (`viewportHeight`) and scrolls BOTH ways inside it, with no
+   * touch shield — a shield would hand the pan straight back to the page and the
+   * last bar would be unreachable.
+   */
+  readerScale?: number;
 }
 
 /**
  * Build the HTML document that renders the given ABC to SVG, scaled to fit the
- * container width.
+ * container width — THE CARD DOCUMENT.
  *
  * v43 slice 2 (A4): the ABCjs renderer is INLINED from the app's own bundle —
  * `rendererScript` defaults to `ABCJS_BASIC_MIN_JS` (src/assets/abcjsBasic.ts,
  * abcjs 6.2.3, MIT). The document therefore carries no remote URL at all, which
  * is what makes an offline render possible; `scripts/v43Slice2.test.ts` fails if
  * a CDN host ever comes back into this function or anywhere in `src/`.
+ *
+ * D27: the builder itself now lives in `src/services/abcHtml.ts` (pure, so the
+ * pixel harness can render the REAL document in a headless browser and measure
+ * it), which also owns the READER document the full-screen window draws. This
+ * re-export keeps every existing import and guard exactly where it was.
  */
-export function generateAbcHtml(
-  abc: string,
-  ink: string = ABC_DEFAULT_INK,
-  background: string = ABC_DEFAULT_BACKGROUND,
-  rendererScript: string = ABCJS_BASIC_MIN_JS,
-): string {
-  const abcJson = JSON.stringify(abc);
-  const inkJson = JSON.stringify(ink);
-  const backgroundJson = JSON.stringify(background);
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; min-height: 100%; background: ${background}; }
-  body { padding: 12px 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-  #paper { display: flex; flex-direction: column; align-items: center; }
-  #paper svg { max-width: 100%; height: auto !important; }
-  /* The caller's ink, applied to every drawn shape: staff lines (stroked paths),
-     noteheads (filled paths), beams and the title text. */
-  #paper svg path, #paper svg text, #paper svg tspan, #paper svg rect,
-  #paper svg line, #paper svg polyline, #paper svg polygon, #paper svg ellipse {
-    fill: ${ink}; stroke: ${ink};
-  }
-  #error {
-    display: none; color: #e94560; font-size: 14px; text-align: center;
-    padding: 24px 16px; line-height: 1.5;
-  }
-</style>
-</head>
-<body>
-  <div id="paper"></div>
-  <div id="error">Could not render this ABC score.</div>
-<script>${rendererScript}</script>
-<script>
-  (function () {
-    var abc = ${abcJson};
-    var ink = ${inkJson};
-    var errorBox = document.getElementById('error');
-    try {
-      if (!window.ABCJS || typeof window.ABCJS.renderAbc !== 'function') {
-        // Honest failure, on screen. The renderer is bundled, so this can only
-        // happen if the bundle in this build is damaged — never because the
-        // phone is offline. Silence here was the whole bug: an empty staff.
-        errorBox.textContent = 'The score renderer did not load in this build.';
-        errorBox.style.display = 'block';
-      } else {
-        window.ABCJS.renderAbc('paper', abc, {
-          responsive: 'resize',
-          paddingtop: 0,
-          paddingbottom: 0,
-          add_classes: true,
-          foregroundColor: ink
-        });
-      }
-    } catch (e) {
-      errorBox.textContent = 'Could not render this ABC score.';
-      errorBox.style.display = 'block';
-    }
-  })();
-</script>
-${abcHeightProbeScript()}
-</body>
-</html>`;
-}
+export { generateAbcHtml } from '../services/abcHtml';
 
 /**
  * The WebView's rendering key for a score (v33 §F5b, owner 10-04).
@@ -247,6 +209,7 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   onDocumentHeight,
   wholeWork = false,
   viewportHeight,
+  readerScale,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   /** The reader's viewport (the box a whole-work document that does not fit is
@@ -257,10 +220,31 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   const measuredViewport = Math.round(Number(viewportHeight));
   const viewport =
     Number.isFinite(measuredViewport) && measuredViewport > 0 ? measuredViewport : window.height;
+  /**
+   * WHICH DOCUMENT THIS VIEWER DRAWS (D27). Unset `readerScale` = the card, byte
+   * for byte what it always was. Set = the reader: `scale` on, `responsive` off,
+   * no width cap.
+   */
+  const reader = typeof readerScale === 'number' && Number.isFinite(readerScale) && readerScale > 0;
+  /**
+   * A reader is never drawn smaller than `READER_MIN_SCALE` (D27 spec §2/§5): the
+   * whole point of the mode is notes the owner can read, so a stray prop can
+   * shrink the drawing but never back below the floor that failed vc61.
+   */
+  const readerScaleValue = reader ? Math.max(READER_MIN_SCALE, readerScale) : READER_SCALE;
   // Use the abc text (and the ink, which changes the document) as a rendering
   // key so a fresh WebView reloads whenever the score or its colour changes.
-  const html = useMemo(() => generateAbcHtml(abc, ink, background), [abc, ink, background]);
-  const key = useMemo(() => abcRenderKey(abc, ink, background), [abc, ink, background]);
+  const html = useMemo(
+    () =>
+      reader
+        ? generateAbcReaderHtml(abc, ink, background, undefined, readerScaleValue)
+        : generateAbcHtml(abc, ink, background),
+    [abc, ink, background, reader, readerScaleValue],
+  );
+  const key = useMemo(
+    () => `${abcRenderKey(abc, ink, background)}${reader ? `-r${readerScaleValue}` : ''}`,
+    [abc, ink, background, reader, readerScaleValue],
+  );
   /**
    * THE DOCUMENT'S OWN HEIGHT (v37 item 2). It is keyed on `abcRenderKey` on
    * purpose: a new ABC (or a new ink/paper) is a NEW document, so the height the
@@ -277,11 +261,19 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
    * itself — every bar reachable, nothing clipped). A non-whole-work viewer never
    * takes this path at all, so every existing call site keeps today's behaviour.
    */
-  const readerBand = wholeWork
-    ? scoreReaderBand(measured && measured.key === key ? measured.height : null)
-    : null;
-  const appliedHeight =
-    measured && measured.key === key
+  const readerBand = reader
+    ? // D27: a reader drawing is wider than its box by design, so the WebView is
+      // ALWAYS the scroller — both ways — whatever height the document reports.
+      ('self-scroll' as const)
+    : wholeWork
+      ? scoreReaderBand(measured && measured.key === key ? measured.height : null)
+      : null;
+  const appliedHeight = reader
+    ? // THE READER'S BOX IS THE VISIBLE AREA: the document scrolls inside it, so a
+      // sideways pan and a downward scroll both land on the WebView, and the
+      // reader's own page never has to move.
+      Math.max(ABC_MIN_HEIGHT, viewport)
+    : measured && measured.key === key
       ? wholeWork
         ? // THE READER'S BOX: the full document inline, or a screen-sized window
           // the document scrolls inside (scoreHeight.ts, abcReaderContainerHeight).
@@ -302,9 +294,11 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
    * only in the `self-scroll` band — where the document does not fit its box and
    * the WebView is the ONLY thing that can reach the tail. In the `page` band the
    * document is fully laid out and the reader's own page scrolls it, so the touch
-   * shield stays in charge exactly as it is everywhere else.
+   * shield stays in charge exactly as it is everywhere else. THE READER IS ALWAYS
+   * THE SELF-SCROLL BAND: the last bar is only reachable if the WebView takes the
+   * pan, and the shield would swallow it.
    */
-  const viewerInteractive = wholeWork ? readerBand === 'self-scroll' : interactive;
+  const viewerInteractive = reader ? true : wholeWork ? readerBand === 'self-scroll' : interactive;
 
   /**
    * The document posts `{ type: 'abc-score-height', height }` (see

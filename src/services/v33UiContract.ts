@@ -178,19 +178,24 @@ export function staffIsTheUsersOwnTake(flowSource: string, windowSource: string)
  * (`foregroundColor`) and into the document's own CSS, and the WebView reloads
  * when it changes.
  *
- * `viewSource` is src/components/AbcScoreView.tsx.
+ * The document builder no longer lives in the component (D27 moved it out so a
+ * headless browser can measure it), so the seam is checked where it now is:
+ * `htmlSource` is src/services/abcHtml.ts, `viewSource` is
+ * src/components/AbcScoreView.tsx.
  */
-export function abcViewHasInkSeam(viewSource: string): boolean {
-  const masked = maskComments(viewSource);
-  if (masked.length < 1200) return false;
-  if (!/export function generateAbcHtml\(\s*abc: string,\s*ink: string/.test(masked)) return false;
-  if (masked.indexOf('foregroundColor: ink') < 0) return false;
+export function abcViewHasInkSeam(htmlSource: string, viewSource: string): boolean {
+  const builder = maskComments(htmlSource);
+  const view = maskComments(viewSource);
+  if (builder.length < 1200) return false;
+  if (view.length < 1200) return false;
+  if (!/export function generateAbcHtml\(\s*abc: string,\s*ink: string/.test(builder)) return false;
+  if (builder.indexOf('foregroundColor: ink') < 0) return false;
   // The document's own CSS takes the same ink, so lines and text follow too.
-  if (!/fill: \$\{ink\}/.test(masked)) return false;
-  if (masked.indexOf('background: ${background}') < 0) return false;
+  if (!/fill: \$\{ink\}/.test(builder)) return false;
+  if (builder.indexOf('background: ${background}') < 0) return false;
   // The prop exists and is threaded through the render + the WebView key.
-  if (masked.indexOf('ink?: string') < 0) return false;
-  if (masked.indexOf('generateAbcHtml(abc, ink, background)') < 0) return false;
+  if (view.indexOf('ink?: string') < 0) return false;
+  if (view.indexOf('generateAbcHtml(abc, ink, background)') < 0) return false;
   return true;
 }
 

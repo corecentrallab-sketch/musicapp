@@ -160,10 +160,12 @@ export function readerEntryPointExists(editorSource: string): boolean {
 export function readerShowsTheWholeWork(input: {
   screen: string;
   viewer: string;
+  html: string;
 }): boolean {
   const screen = maskComments(input?.screen ?? '');
   const viewer = maskComments(input?.viewer ?? '');
-  if (screen.length < 4000 || viewer.length < 4000) return false;
+  const html = maskComments(input?.html ?? '');
+  if (screen.length < 4000 || viewer.length < 4000 || html.length < 1200) return false;
   const tag = openingTag(screen, 'AbcScoreView');
   if (tag.length === 0) return false;
   if (!/\bwholeWork\b/.test(tag)) return false;
@@ -176,8 +178,10 @@ export function readerShowsTheWholeWork(input: {
   if (viewer.indexOf("'self-scroll'") < 0) return false;
   // The v37 behaviour must survive for every OTHER call site: the pinned probe and
   // the pinned clamp call (asserted in full by v37UiContract) are re-checked here
-  // only for presence, so a reader rewrite cannot quietly drop them.
-  if (viewer.indexOf('abcHeightProbeScript()') < 0) return false;
+  // only for presence, so a reader rewrite cannot quietly drop them. The probe is
+  // INJECTED by the document builder — src/services/abcHtml.ts since D27 moved it
+  // out of the component — so it is looked for there.
+  if (html.indexOf('abcHeightProbeScript()') < 0) return false;
   return viewer.indexOf('abcScoreContainerHeight({') >= 0;
 }
 
@@ -603,14 +607,18 @@ function jsxBlockAt(src: string, at: number): string {
  * that still looked like a score. This guards the renderer, not the caller, so a
  * future call site cannot inherit a truncating document.
  */
-export function viewerRendersTheWholeAbc(viewerSource: string): boolean {
+export function viewerRendersTheWholeAbc(htmlSource: string, viewerSource: string): boolean {
+  const doc = maskComments(htmlSource ?? '');
   const src = maskComments(viewerSource ?? '');
-  if (src.length < 4000) return false;
-  if (src.indexOf('const abcJson = JSON.stringify(abc);') < 0) return false;
-  if (src.indexOf('var abc = ${abcJson};') < 0) return false;
-  if (src.indexOf("renderAbc('paper', abc,") < 0) return false;
-  // No truncation of the score anywhere in the viewer (a slice of an ABC string is
-  // never a score: it loses bars, and often the `K:` line with them).
-  if (/\babc\.(?:slice|substring|substr|split|replace)\s*\(/.test(src)) return false;
-  return src.indexOf('abcHeightProbeScript()') >= 0;
+  if (doc.length < 1200 || src.length < 4000) return false;
+  if (doc.indexOf('const abcJson = JSON.stringify(abc);') < 0) return false;
+  if (doc.indexOf('var abc = ${abcJson};') < 0) return false;
+  if (doc.indexOf("renderAbc('paper', abc,") < 0) return false;
+  if (doc.indexOf('abcHeightProbeScript()') < 0) return false;
+  // No truncation of the score anywhere on the path (a slice of an ABC string is
+  // never a score: it loses bars, and often the `K:` line with them) — checked on
+  // BOTH sources, because the viewer could slice the ABC before the document is built.
+  const slice = /\babc\.(?:slice|substring|substr|split|replace)\s*\(/;
+  if (slice.test(doc)) return false;
+  return !slice.test(src);
 }

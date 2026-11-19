@@ -259,6 +259,7 @@ assertEq(
 // ─────────────────── slice C — the take drawn as a staff ───────────────────
 const STAFF_CARD = 'src/components/TakeStaffCard.tsx';
 const ABC_VIEW = 'src/components/AbcScoreView.tsx';
+const ABC_HTML = 'src/services/abcHtml.ts';
 
 const staffConflict = (() => {
   try {
@@ -268,6 +269,7 @@ const staffConflict = (() => {
   }
 })();
 const f5AbcViewSource = readAppFile(ABC_VIEW);
+const abcHtmlSource = readAppFile(ABC_HTML);
 
 console.log('\nslice C — the take as notation (dimmed raw + crisp auto-cleaned)');
 assert(staffConflict.length > 1500, `read ${STAFF_CARD} (${staffConflict.length} chars)`);
@@ -282,7 +284,7 @@ assertEq(
   'the staff is built from the decoded take and handed in through the window slot',
 );
 assertEq(
-  abcViewHasInkSeam(f5AbcViewSource),
+  abcViewHasInkSeam(abcHtmlSource, f5AbcViewSource),
   true,
   'the one renderer grew the ink seam (foregroundColor + CSS + reload key)',
 );
@@ -324,16 +326,25 @@ assertEq(
   'MUTATION: a card that cleans the take itself FAILS staffCardDrawsBothRows',
 );
 // MUTATION 12: the ink seam is dropped from the renderer (the raw/cleaned
-// distinction would silently become one colour).
-const noOption = f5AbcViewSource.replace('foregroundColor: ink', 'foregroundColor: "#000000"');
-assert(noOption !== f5AbcViewSource, 'the ink-option mutation changed the real renderer');
+// distinction would silently become one colour). Both documents are hit, so the
+// mutation cannot survive on the reader's copy of the option.
+const noOption = abcHtmlSource
+  .split('foregroundColor: ink')
+  .join('foregroundColor: "#000000"');
+assert(noOption !== abcHtmlSource, 'the ink-option mutation changed the real renderer');
 assertEq(
-  abcViewHasInkSeam(noOption),
+  abcViewHasInkSeam(noOption, f5AbcViewSource),
   false,
   'MUTATION: a renderer that ignores the ink FAILS abcViewHasInkSeam',
 );
+// MUTATION 12b: the renderer loses its ink parameter (the pre-v33 signature).
+const noInkParam = abcHtmlSource.replace(
+  /(export function generateAbcHtml\(\s*abc: string,\s*)ink: string/,
+  '$1colour: string',
+);
+assert(noInkParam !== abcHtmlSource, 'the ink-parameter mutation changed the real renderer');
 assertEq(
-  abcViewHasInkSeam('<div>export function generateAbcHtml(abc: string) { return abc; }</div>'),
+  abcViewHasInkSeam(noInkParam, f5AbcViewSource),
   false,
   'MUTATION: the pre-v33 renderer signature FAILS abcViewHasInkSeam',
 );
