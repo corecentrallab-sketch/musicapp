@@ -1,0 +1,31 @@
+{
+  // vc62 (D26) — the targeted type-check for the coach/pcm change. The whole-project
+  // `tsc -p tsconfig.json` is OOM-killed on this box (see the skill
+  // `site-repo-gate-and-targeted-tsc`), so the files this change touches are checked
+  // through this small config instead. `~/*` is the repo's alias and must be declared
+  // here (the CLI form cannot express it: TS6064).
+  //
+  // Run: node_modules/.bin/tsc -p tsconfig.vc62-check.json
+  // Clean means: no `error TS` lines other than the `bun:test` noise the skill
+  // documents (tsconfig.json sets `types: ["vite/client"]`, so a `bun:test` import in a
+  // colocated test always reports "Cannot find module 'bun:test'").
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    // This repo imports its own modules with the `.ts` extension (`~/services/x.ts`),
+    // so the targeted config has to allow it. `noEmit` above is the prerequisite.
+    "allowImportingTsExtensions": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": { "~/*": ["./src/*"] }
+  },
+  "include": [
+    "src/services/pitchDetection.ts",
+    "src/services/coach-pcm-handler.ts",
+    "src/services/coach-pcm.test.ts"
+  ]
+}
