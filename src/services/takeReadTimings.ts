@@ -29,12 +29,28 @@
  * PURE: no react, no react-native, no fs, no network. Asserted by
  * scripts/vc61ReadClockAndReader.test.ts.
  */
+import {
+  readNetworkLine,
+  serverTimingsLine,
+  type NetworkReadResult,
+  type ServerReadTimings,
+} from './readNetwork';
 
-/** The stages the current code can actually time. */
+/**
+ * The stages the current code can actually time.
+ *
+ * ── vc62 (D26) ── `pitch` now usually costs the phone NOTHING, because the server
+ * returns the frames (`captureMidiExport.ts`). The stage is still recorded — a
+ * measured ~0 ms of device work is the honest number, and it is the one that shows
+ * the fix worked — and `pitchSource` says whose work it was.
+ */
 export type TakeReadStage = 'upload' | 'clientDecode' | 'pitch' | 'build';
 
 /** Every stage key the timings line can print, including the two that are not separable. */
 export type TakeReadLineStage = TakeReadStage | 'total' | 'draw';
+
+/** vc62: whose pass produced the frames the take was built from. */
+export type PitchSource = 'server' | 'device';
 
 /** One read, as measured. */
 export interface TakeReadTiming {
@@ -46,6 +62,18 @@ export interface TakeReadTiming {
   stages: Partial<Record<TakeReadStage, number>>;
   /** The whole read, press to result, in milliseconds. */
   totalMs: number | null;
+  /**
+   * ── vc62 ── WHICH TAKE THIS READ TIMED (D30), and where its frames came from.
+   *
+   * `label` is `services/takeReadLabel.ts`'s sentence for the take the read was
+   * started on, so a clock or a timing row can never be mistaken for another take's.
+   * `pitchSource` marks the pitch span as the server's work or the phone's; `server`
+   * carries the spans the ROUTE measured, and `network` the round trip itself.
+   */
+  label?: string | null;
+  pitchSource?: PitchSource | null;
+  server?: ServerReadTimings | null;
+  network?: NetworkReadResult | null;
 }
 
 /** How many reads are kept for comparison. */
@@ -83,9 +111,12 @@ export function timingValue(value: unknown): string {
  * THE ONE LINE the card prints for a read:
  *
  *   read: total=8400ms upload=6100ms unpack=180ms pitch=1900ms build=220ms draw=?
+ *   read: total=1500ms upload=1400ms unpack=180ms pitch=1ms@server build=220ms draw=?
  *
  * Key order is fixed so two builds can be compared by eye, and every stage that was not
- * measured is `?` rather than a guess.
+ * measured is `?` rather than a guess. `@server` / `@device` is appended to the pitch span
+ * (vc62) only when the read recorded whose pass it was — an older record prints exactly as
+ * it did before.
  */
 export function readTimingsLine(timing: TakeReadTiming | null | undefined): string {
   const value = timing ?? null;
@@ -94,9 +125,27 @@ export function readTimingsLine(timing: TakeReadTiming | null | undefined): stri
   const parts = READ_STAGE_KEYS.map(({ stage, key }) => {
     if (stage === 'total') return `${key}=${timingValue(value.totalMs)}`;
     if (stage === 'draw') return `${key}=?`;
-    return `${key}=${timingValue(stages[stage])}`;
+    const source = stage === 'pitch' && value.pitchSource ? `@${value.pitchSource}` : '';
+    return `${key}=${timingValue(stages[stage])}${source}`;
   });
   return `read: ${parts.join(' ')}`;
+}
+
+/**
+ * ── vc62 (D26/D32) ── WHAT THE SERVER AND THE WIRE SAID, BESIDE THE READ.
+ *
+ * Two real measurements, never invented: the spans the ROUTE reported for this
+ * answer (`server: decode=… pitch=… total=…`) and the round trip as the phone saw
+ * it (`net: HTTP 200 · sent … · got …`, or `net: stopped after 40s (AbortError)`).
+ * Null when neither exists — an older deployment says nothing rather than zeros.
+ */
+export function readTimingsServerLine(timing: TakeReadTiming | null | undefined): string | null {
+  const value = timing ?? null;
+  if (!value) return null;
+  const server = serverTimingsLine(value.server ?? null);
+  const net = readNetworkLine(value.network ?? null);
+  const parts = [server, net].filter((part): part is string => !!part);
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 /** The take's own length beside the line, so a slow read can be scaled by what it read. */
@@ -148,6 +197,11 @@ export function finishReadTiming(input: {
   totalMs: number | null | undefined;
   audioSec?: number | null;
   at?: string;
+  /** vc62: which take this read timed, and where its frames came from. */
+  label?: string | null;
+  pitchSource?: PitchSource | null;
+  server?: ServerReadTimings | null;
+  network?: NetworkReadResult | null;
 }): TakeReadTiming {
   // AN UNMEASURED TOTAL IS NULL, NOT ZERO. `Number(null)` is 0, which would print a
   // real-looking `total=0ms` for a read nobody timed — the same invention the draw is
@@ -155,10 +209,17 @@ export function finishReadTiming(input: {
   const rawTotal = input?.totalMs;
   const total = rawTotal === null || rawTotal === undefined ? Number.NaN : Number(rawTotal);
   const audio = Number(input?.audioSec);
+  const source = input?.pitchSource === 'server' || input?.pitchSource === 'device' ? input.pitchSource : null;
   return {
     at: typeof input?.at === 'string' && input.at.length > 0 ? input.at : new Date().toISOString(),
     audioSec: Number.isFinite(audio) && audio > 0 ? audio : null,
     stages: { ...(input?.stages ?? {}) },
     totalMs: Number.isFinite(total) && total >= 0 ? Math.round(total) : null,
+    // vc62 — additive: absent fields stay absent (null), so an older caller's timing
+    // prints exactly the line it printed before.
+    label: typeof input?.label === 'string' && input.label.length > 0 ? input.label : null,
+    pitchSource: source,
+    server: input?.server ?? null,
+    network: input?.network ?? null,
   };
 }

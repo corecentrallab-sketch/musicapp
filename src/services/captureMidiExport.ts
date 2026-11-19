@@ -40,6 +40,9 @@ import {
   type SamplesProvider,
 } from './coachCapture';
 import { detectPitchFramesAsync } from './pitchDetection';
+// vc62 (D26/D32): the round trip as measured on this phone — the frames the server
+// computed, its own spans, and what actually happened on the wire.
+import type { NetworkReadResult, ServerReadTimings } from './readNetwork';
 // vc61 (spec §2): the stage names this pipeline reports as each one finishes.
 import type { TakeReadStage } from './takeReadTimings';
 // vc60: the level verdict (nothing recorded / decode failed / no melody) is decided
@@ -220,6 +223,19 @@ export interface DerivedTake {
    * quiet take from a loud one. See services/takeReadVerdict.ts.
    */
   noSound?: boolean;
+  /**
+   * ── vc62 (D26) ── WHERE THE PITCH FRAMES CAME FROM.
+   *
+   * `'server'` is the fast path this build exists for: the route returns the frames
+   * (a port of this app's own tracker), so the phone never runs its own YIN pass.
+   * `'device'` is the offline fallback — the same arithmetic as before, and the
+   * reason an offline phone still reads a take. Null when no read produced frames.
+   */
+  pitchSource?: 'server' | 'device' | null;
+  /** vc62: the spans the server measured for this answer (null = it sent none). */
+  serverTimings?: ServerReadTimings | null;
+  /** vc62: the round trip itself — status, error name, bytes, timeout. */
+  network?: NetworkReadResult | null;
 }
 
 /**
@@ -294,6 +310,9 @@ async function decodeTakeFromRecording(
       unavailable: false,
       decodeFailed: true,
       message: captureErrorMessage(err),
+      // vc62: the round trip that failed, so the surface can print what actually
+      // happened (status, error name, bytes, the deadline) instead of "failed".
+      network: networkOf(err),
     };
   }
 
@@ -324,9 +343,24 @@ async function decodeTakeFromRecording(
    * the 15–20 s of "the app did nothing". The sliced read produces the SAME frames
    * (the gate compares them frame for frame) and hands the thread back between
    * slices, so the window opens on the press.
+   *
+   * ── vc62 (D26) ── AND NOW THE PHONE DOES NOT RUN IT AT ALL, WHEN IT CAN ─────
+   *
+   * The route returns `notes`: the frames a PORT of this very tracker computed,
+   * over the exact samples it returned. So the fast path is "use them and skip the
+   * pass entirely" — that pass is the 15–25 s the owner called "almost unusable".
+   * The device pass below is UNCHANGED and still runs whenever the route is
+   * unreachable, is an older deployment, or sent a payload we cannot fully trust:
+   * offline is a promised feature and must still read a take.
    */
   const pitchStartedAt = Date.now();
-  const frames = await detectPitchFramesAsync(captured.samples, captured.sampleRate);
+  const serverFrames = captured?.frames ?? null;
+  const frames =
+    Array.isArray(serverFrames) && serverFrames.length > 0
+      ? serverFrames
+      : await detectPitchFramesAsync(captured.samples, captured.sampleRate);
+  const pitchSource: 'server' | 'device' =
+    Array.isArray(serverFrames) && serverFrames.length > 0 ? 'server' : 'device';
   deps.onStage?.('pitch', Date.now() - pitchStartedAt);
   const buildStartedAt = Date.now();
   const take = buildCaptureTake(frames, {
@@ -338,9 +372,30 @@ async function decodeTakeFromRecording(
   });
   deps.onStage?.('build', Date.now() - buildStartedAt);
   if (!take) {
-    return { take: null, unavailable: false, message: MIDI_NO_MELODY_MESSAGE };
+    return {
+      take: null,
+      unavailable: false,
+      message: MIDI_NO_MELODY_MESSAGE,
+      pitchSource,
+      serverTimings: captured?.serverTimings ?? null,
+      network: captured?.network ?? null,
+    };
   }
-  return { take, unavailable: false, message: null };
+  return {
+    take,
+    unavailable: false,
+    message: null,
+    pitchSource,
+    serverTimings: captured?.serverTimings ?? null,
+    network: captured?.network ?? null,
+  };
+}
+
+/** The round trip carried by a failed read, when the error carries one. */
+function networkOf(err: unknown): NetworkReadResult | null {
+  const carried = (err as { network?: unknown } | null)?.network;
+  if (!carried || typeof carried !== 'object') return null;
+  return carried as NetworkReadResult;
 }
 
 /**

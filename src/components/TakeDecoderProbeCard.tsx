@@ -33,17 +33,21 @@ import {
   READ_TIMINGS_LABEL,
   readTimingsAudioLine,
   readTimingsLine,
+  readTimingsServerLine,
   type TakeReadTiming,
 } from '../services/takeReadTimings';
+import { takeReadLabelLine } from '../services/takeReadLabel';
 import {
   PROBE_CTA,
   PROBE_FAILED_LINE,
   PROBE_HINT,
   PROBE_LABEL,
+  PROBE_MAX_READ_BYTES,
   PROBE_RISK_LINE,
   PROBE_RUNNING_LINE,
   hermesHeapBytes,
   probeLine,
+  probeReadBoundLine,
 } from '../services/takeDecoderProbe';
 import {
   TUNER_DECODER_HTML,
@@ -97,6 +101,8 @@ export const TakeDecoderProbeCard: React.FC<TakeDecoderProbeCardProps> = ({
   const [running, setRunning] = useState(false);
   const [line, setLine] = useState<string | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
+  /** vc62 (D29): how much of the file this attempt actually read. */
+  const [readBound, setReadBound] = useState<string | null>(null);
   const webRef = useRef<WebView<{}> | null>(null);
   const readyRef = useRef(false);
   const queuedRef = useRef<string | null>(null);
@@ -179,6 +185,7 @@ export const TakeDecoderProbeCard: React.FC<TakeDecoderProbeCardProps> = ({
     setRunning(true);
     setLine(null);
     setDetail(null);
+    setReadBound(null);
     try {
       let bytes: number | null = null;
       try {
@@ -188,12 +195,23 @@ export const TakeDecoderProbeCard: React.FC<TakeDecoderProbeCardProps> = ({
         bytes = null;
       }
       fileBytesRef.current = bytes;
-      // The whole file, base64 — the same mechanism the tuner uses. A big take is
-      // exactly what this probe is testing, so nothing is trimmed here.
+      /**
+       * ── vc62 (D29) ── A CAPPED READ, NEVER THE WHOLE FILE IN ONE CALL ────────
+       *
+       * This used to read the entire take as one base64 string. A 3-minute camera
+       * file is ~1 GB, so base64 alone is ~1.34 GB against a 256 MB JS heap: the
+       * probe crashed on the very read it was written to measure, on vc61 again.
+       * `position`/`length` are the file system's own window, so the read is bounded
+       * before a byte reaches the heap, and the line below says how much was read.
+       */
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
+        position: 0,
+        length: PROBE_MAX_READ_BYTES,
       });
       if (!mountedRef.current) return;
+      const readBytes = base64Bytes(base64);
+      setReadBound(probeReadBoundLine({ fileBytes: bytes, readBytes }));
       counterRef.current += 1;
       const id = `probe-${counterRef.current}`;
       pendingRef.current = id;
@@ -228,9 +246,19 @@ export const TakeDecoderProbeCard: React.FC<TakeDecoderProbeCardProps> = ({
       ) : (
         (readTimings ?? []).map((timing, index) => (
           <View key={`${timing.at}-${index}`}>
+            {/* ── vc62 (D30) ── WHICH TAKE THIS READ TIMED, above its own line. */}
+            {takeReadLabelLine(timing.label ?? null) ? (
+              <Text style={styles.detail}>{takeReadLabelLine(timing.label ?? null)}</Text>
+            ) : null}
             <Text style={styles.line} selectable>
               {readTimingsLine(timing)}
             </Text>
+            {/* ── vc62 (D26/D32) ── THE SERVER'S SPANS AND THE ROUND TRIP ITSELF. */}
+            {readTimingsServerLine(timing) ? (
+              <Text style={styles.hint} selectable>
+                {readTimingsServerLine(timing)}
+              </Text>
+            ) : null}
             {readTimingsAudioLine(timing) ? (
               <Text style={styles.detail}>{readTimingsAudioLine(timing)}</Text>
             ) : null}
@@ -251,6 +279,13 @@ export const TakeDecoderProbeCard: React.FC<TakeDecoderProbeCardProps> = ({
       </Pressable>
       <Text style={styles.risk}>{PROBE_RISK_LINE}</Text>
       {running ? <Text style={styles.running}>{PROBE_RUNNING_LINE}</Text> : null}
+      {/* vc62 (D29): how much of the file this attempt read — a capped read is not
+          the same measurement as a whole-file one, so it is said out loud. */}
+      {readBound ? (
+        <Text style={styles.detail} selectable>
+          {readBound}
+        </Text>
+      ) : null}
       {line ? (
         <Text style={styles.line} selectable>
           {line}
@@ -319,3 +354,17 @@ const baseStyles = StyleSheet.create({
   },
   web: { width: 2, height: 2, backgroundColor: 'transparent' },
 });
+
+/**
+ * ── vc62 (D29) ── HOW MANY FILE BYTES A BASE64 STRING CARRIES ─────────────────
+ *
+ * Four characters hold three bytes, and a `=` pad takes one character's worth off.
+ * Counted, not guessed: this number is printed as the probe's own measurement, so it
+ * has to be the arithmetic of the string in hand rather than the size we asked for.
+ */
+function base64Bytes(base64: string): number {
+  const text = typeof base64 === 'string' ? base64 : '';
+  if (text.length === 0) return 0;
+  const padding = text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((text.length * 3) / 4) - padding);
+}

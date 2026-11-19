@@ -48,6 +48,42 @@ export const PROBE_RISK_LINE =
 export const PROBE_FAILED_LINE =
   'probe: the decode did not finish — the app did not survive it or the reader never answered.';
 
+/**
+ * ── vc62 (D29) ── THE PROBE READS A CAPPED PREFIX, NOT THE WHOLE FILE ─────────
+ *
+ * The vc60/61 probe read the take's whole file as ONE base64 string
+ * (`FileSystem.readAsStringAsync(uri, {encoding: Base64})`). A 3-minute camera
+ * file is ~1 GB, so base64 alone is ~1.34 GB against a 256 MB JS heap: the probe
+ * could not survive the read it was written to measure, and it still crashed on
+ * vc61. This is the cap. 12 MB of file bytes is ~16 MB of base64 — comfortably
+ * inside the heap — and it is enough of a container for the decoder to open, which
+ * is what the probe is asking.
+ */
+export const PROBE_MAX_READ_BYTES = 12 * 1024 * 1024;
+
+/**
+ * WHAT THE PROBE ACTUALLY READ, SAID OUT LOUD:
+ *
+ *   read: the whole 2.9MB file
+ *   read: the first 12.0MB of 1.34GB (the rest is not loaded — this is a capped read)
+ *
+ * A capped read is not the same measurement as a whole-file one, so the line says
+ * which it was rather than letting the numbers be compared as if they were equal.
+ */
+export function probeReadBoundLine(input: {
+  fileBytes?: number | null;
+  readBytes?: number | null;
+} | null | undefined): string {
+  const file = Number(input?.fileBytes);
+  const read = Number(input?.readBytes);
+  const fileKnown = Number.isFinite(file) && file > 0;
+  const readKnown = Number.isFinite(read) && read > 0;
+  if (!readKnown) return 'read: nothing was loaded from the file.';
+  if (fileKnown && read >= file) return `read: the whole ${mb(file)} file`;
+  if (fileKnown) return `read: the first ${mb(read)} of ${mb(file)} (the rest is not loaded — this is a capped read)`;
+  return `read: the first ${mb(read)} (the file's own size could not be measured)`;
+}
+
 /** One finished (or failed) attempt, as measured. */
 export interface ProbeFacts {
   /** The file's size on disk, in bytes (null when it could not be read). */

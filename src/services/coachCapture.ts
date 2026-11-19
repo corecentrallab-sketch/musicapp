@@ -41,6 +41,18 @@ import {
 /** What every capture path must hand the coach: mono, coach sample rate. */
 // vc61 (spec §2): the stage names the provider reports.
 import type { TakeReadStage } from './takeReadTimings';
+// vc62 (D26/D32): the frames the route now computes for us, and the honest record of
+// the round trip (status, error name, bytes, the server's own spans).
+import type { PitchFrame } from './pitchDetection';
+import {
+  READ_REQUEST_TIMEOUT_MS,
+  READ_TIMEOUT_LINE,
+  parseServerNotes,
+  parseServerTimings,
+  type NetworkReadResult,
+  type ServerReadTimings,
+} from './readNetwork';
+import * as FileSystem from 'expo-file-system';
 
 export interface CapturedSamples {
   samples: Float32Array;
@@ -62,6 +74,39 @@ export interface CapturedSamples {
    */
   peak?: number | null;
   rmsDb?: number | null;
+  /**
+   * ── vc62 (D26) ── THE PITCH FRAMES, WHEN THE SERVER COMPUTED THEM.
+   *
+   * The route runs a PORT of this app's own tracker (`pitchDetection.ts`) over the
+   * exact samples it returns, so these ARE the frames `detectPitchFramesAsync`
+   * would have produced — and the phone no longer spends 15–25 s producing them.
+   * Null when the route is an older deployment, the payload was unusable, or the
+   * read never reached the route: the caller then does the device pass, which is
+   * the offline path and stays a promised feature.
+   */
+  frames?: PitchFrame[] | null;
+  /** vc62: the spans the SERVER measured for this answer (null = not sent). */
+  serverTimings?: ServerReadTimings | null;
+  /** vc62: the round trip itself, as measured on this phone. */
+  network?: NetworkReadResult | null;
+}
+
+/**
+ * ── vc62 (D32) ── THE READ THAT FAILED, WITH ITS OWN ROUND TRIP ATTACHED.
+ *
+ * A plain Error cannot carry the measurement, and the surface needs it: without
+ * it a failed read can only say "something went wrong", which is exactly the
+ * state in which the retry control never appeared. `network` is null only when the
+ * failure happened before any request was made.
+ */
+export class CoachReadFailedError extends Error {
+  network: NetworkReadResult | null;
+
+  constructor(message: string, network: NetworkReadResult | null = null) {
+    super(message);
+    this.name = 'CoachReadFailedError';
+    this.network = network;
+  }
 }
 
 /** Turns a finished recording into samples. The single injection point. */
@@ -133,10 +178,29 @@ export function createRemoteDecodeProvider(deps: {
    * the single `upload` span. A caller that passes nothing is untouched.
    */
   onStage?: (stage: TakeReadStage, ms: number) => void;
+  /**
+   * ── vc62 (D32) ── HOW LONG THE READ MAY HOLD THE SCREEN BEFORE IT IS CALLED DEAD.
+   *
+   * Defaults to `READ_REQUEST_TIMEOUT_MS` (40 s — the measured answers are 1–4 s, so this
+   * only ever fires on a stalled connection). When it fires the read FAILS with a sentence
+   * and a retry, instead of a clock that runs for ever: that is the difference between a
+   * slow read and a hung one, and before vc62 the app could not tell them apart.
+   */
+  timeoutMs?: number;
+  /**
+   * vc62: the upload's size, measured before the request. Injectable so the figure can be
+   * proven without a device; the default asks the file system, and `null` means "not
+   * measured" (never zero).
+   */
+  fileSizeImpl?: (uri: string) => Promise<number | null>;
 } = {}): SamplesProvider {
   const baseUrl = (deps.baseUrl ?? getApiBaseUrl?.() ?? '').replace(/\/+$/, '');
   const fetchImpl = deps.fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
   const unavailableStatuses = deps.unavailableStatuses ?? [404, 405, 501, 503];
+  const timeoutMs =
+    typeof deps.timeoutMs === 'number' && Number.isFinite(deps.timeoutMs) && deps.timeoutMs > 0
+      ? deps.timeoutMs
+      : READ_REQUEST_TIMEOUT_MS;
 
   return async function remoteDecodeProvider(uri, meta) {
     if (!fetchImpl) {
@@ -159,18 +223,63 @@ export function createRemoteDecodeProvider(deps: {
       type: mimeFromUri(uri),
     } as unknown as Blob);
 
+    /**
+     * ── vc62 (D32) ── THE DEADLINE, AND THE HONEST RECORD OF THE ROUND TRIP ──────
+     *
+     * Before this the request had no `AbortController` and no timeout, so a slow read
+     * and a hung read were the same state: the screen waited on a clock that never
+     * failed, which is exactly why "Try the read again" never had a failure to appear
+     * on. Now the request is abortable, the abort is OURS (`timedOut`), and every
+     * outcome — an answer, a status, a thrown error, the deadline — is recorded with
+     * its measured bytes so the probe card can print it.
+     */
+    const bytesSent = await measureUploadBytes(uri, deps.fileSizeImpl);
+    const controller =
+      typeof AbortController === 'function' ? new AbortController() : null;
+    let timedOut = false;
+    const timer = controller
+      ? setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs)
+      : null;
+
     let response: Response;
     try {
       response = await fetchImpl(`${baseUrl}${COACH_PCM_PATH}`, {
         method: 'POST',
         body: form,
+        signal: controller?.signal,
         // Do NOT set Content-Type: FormData sets the multipart boundary itself.
       });
-    } catch {
-      throw new Error(
-        'Could not reach the coach decoder. Check your connection and try again.',
+    } catch (err) {
+      const errorName = err instanceof Error && err.name ? err.name : 'Error';
+      throw new CoachReadFailedError(
+        timedOut
+          ? READ_TIMEOUT_LINE
+          : 'Could not reach the coach decoder. Check your connection and try again.',
+        {
+          httpStatus: null,
+          errorName,
+          timedOut,
+          bytesSent,
+          bytesReceived: null,
+          serverTimings: null,
+        },
       );
+    } finally {
+      if (timer) clearTimeout(timer);
     }
+
+    const bytesReceived = responseBytes(response);
+    const networkBase: NetworkReadResult = {
+      httpStatus: response.status,
+      errorName: null,
+      timedOut: false,
+      bytesSent,
+      bytesReceived,
+      serverTimings: null,
+    };
 
     if (unavailableStatuses.includes(response.status)) {
       throw new CoachCaptureUnavailableError(
@@ -178,7 +287,10 @@ export function createRemoteDecodeProvider(deps: {
       );
     }
     if (!response.ok) {
-      throw new Error(`The coach decoder rejected that take (HTTP ${response.status}).`);
+      throw new CoachReadFailedError(
+        `The coach decoder rejected that take (HTTP ${response.status}).`,
+        networkBase,
+      );
     }
 
     const declaredDurationSec =
@@ -199,16 +311,32 @@ export function createRemoteDecodeProvider(deps: {
           /** vc60, additive: the decoder's own level measurement (see CapturedSamples). */
           peak?: number;
           rmsDb?: number | null;
+          /** vc62, additive: the frames the route computed, and its own spans. */
+          notes?: unknown;
+          timings?: unknown;
           error?: string;
         };
         if (!payload || payload.success === false) {
-          throw new Error(payload?.error ?? 'The coach decoder could not read that take.');
+          throw new CoachReadFailedError(
+            payload?.error ?? 'The coach decoder could not read that take.',
+            networkBase,
+          );
         }
         if (typeof payload.pcm16Base64 !== 'string' || !payload.pcm16Base64) {
           throw new CoachCaptureUnavailableError(
             'The coach decoder returned no audio to score.',
           );
         }
+        /**
+         * ── vc62 (D26) ── THE SERVER'S FRAMES AND ITS OWN SPANS ─────────────────
+         *
+         * Both are validated whole (`parseServerNotes` returns null for anything it
+         * cannot fully trust) and both are OPTIONAL: an older deployment sends
+         * neither, `frames` is null, and the caller does the device pass — the
+         * offline path, which is a promised feature and stays untouched.
+         */
+        const serverNotes = parseServerNotes(payload);
+        const serverTimings = parseServerTimings(payload);
         const channels = payload.channels === 2 ? 2 : 1;
         const unpackStartedAt = Date.now();
         const decoded = decodePcm16Base64(payload.pcm16Base64, channels);
@@ -236,6 +364,10 @@ export function createRemoteDecodeProvider(deps: {
             typeof payload.rmsDb === 'number' && Number.isFinite(payload.rmsDb)
               ? payload.rmsDb
               : null,
+          // vc62: the frames the phone no longer has to compute, when they came.
+          frames: serverNotes,
+          serverTimings,
+          network: { ...networkBase, serverTimings },
         };
       }
 
@@ -253,13 +385,60 @@ export function createRemoteDecodeProvider(deps: {
         sampleRate: coach.sampleRate,
         durationSec:
           declaredDurationSec ?? durationOf(coach.samples, coach.sampleRate),
+        // A WAV body carries no frames: the device does its own pass, as before.
+        frames: null,
+        serverTimings: null,
+        network: networkBase,
       };
     } catch (err) {
       if (err instanceof CoachCaptureUnavailableError) throw err;
+      if (err instanceof CoachReadFailedError) throw err;
       if (err instanceof WavDecodeError) throw new CoachCaptureUnavailableError(err.message);
-      throw err instanceof Error ? err : new Error('Could not decode that take.');
+      throw err instanceof Error ? new CoachReadFailedError(err.message, networkBase) : new CoachReadFailedError('Could not decode that take.', networkBase);
     }
   };
+}
+
+/**
+ * ── vc62 ── HOW BIG THE UPLOAD WAS, MEASURED BEFORE IT IS SENT ────────────────
+ *
+ * `null` means "not measured" — never 0. The default asks the file system for the
+ * file's own size (the same question the probe card asks), and an injectable seam
+ * lets the gate prove the figure without a device.
+ */
+export async function measureUploadBytes(
+  uri: string,
+  fileSizeImpl?: (uri: string) => Promise<number | null>,
+): Promise<number | null> {
+  try {
+    const size = fileSizeImpl
+      ? await fileSizeImpl(uri)
+      : await defaultFileSize(uri);
+    const value = Number(size);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The file system's answer for a file's size, or null when it cannot say. */
+async function defaultFileSize(uri: string): Promise<number | null> {
+  const info = await FileSystem.getInfoAsync(uri);
+  const size = (info as { size?: unknown })?.size;
+  const value = Number(size);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** The answer's size from its own header, or null when the server sent none. */
+function responseBytes(response: Response): number | null {
+  try {
+    const header = response.headers?.get?.('content-length') ?? null;
+    if (!header) return null;
+    const value = Number(header);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
