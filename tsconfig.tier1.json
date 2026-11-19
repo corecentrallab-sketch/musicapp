@@ -279,6 +279,9 @@
     "src/services/takeReadClock.ts",
     "src/services/takeReadTimings.ts",
     "src/services/takeNotationReader.ts",
-    "scripts/vc61ReadClockTimingsReader.test.ts"
+    "scripts/vc61ReadClockTimingsReader.test.ts",
+    "src/services/readNetwork.ts",
+    "src/services/takeReadLabel.ts",
+    "scripts/vc62ServerNotesRead.test.ts"
   ]
 }

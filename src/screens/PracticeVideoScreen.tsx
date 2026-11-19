@@ -250,6 +250,8 @@ import {
   pushReadTiming,
   type TakeReadTiming,
 } from '../services/takeReadTimings';
+// vc62 (D30/D26): the take's own label, and whose pitch pass a read used.
+import { takeReadLabel } from '../services/takeReadLabel';
 import { loadReadThroughput, rememberReadThroughput } from '../services/takeReadThroughput';
 import { notationReaderPositionKey } from '../services/takeNotationReader';
 import { TakeNotationReader } from '../components/TakeNotationReader';
@@ -1042,6 +1044,16 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               stages: recorder.stages,
               totalMs: elapsedMs,
               audioSec: readAudioSec,
+              // vc62 (D30/D26): WHICH TAKE THIS READ TIMED, and whose pitch pass it
+              // was. Built from the take's own filmed stamp and its measured length,
+              // so a row can never be read as another take's.
+              label: takeReadLabel({
+                filmedAt: target.ref?.filmedAt ?? null,
+                durationSec: readAudioSec,
+              }),
+              pitchSource: derived.pitchSource ?? null,
+              server: derived.serverTimings ?? null,
+              network: derived.network ?? null,
             }),
           ),
         );
@@ -1276,6 +1288,16 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               stages: stageRecorder.stages,
               totalMs: readElapsedMs,
               audioSec: durationSec > 0 ? durationSec : null,
+              // vc62 (D30/D26): the label and the source of the frames, per read.
+              label: takeReadLabel({
+                // This read is of the take just filmed, so its own start stamp IS the
+                // filmed stamp (`capturedAt`, taken at Stop and written to the row).
+                filmedAt: capturedAt ?? null,
+                durationSec: durationSec > 0 ? durationSec : null,
+              }),
+              pitchSource: derived?.pitchSource ?? null,
+              server: derived?.serverTimings ?? null,
+              network: derived?.network ?? null,
             }),
           ),
         );
