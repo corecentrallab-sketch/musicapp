@@ -259,6 +259,7 @@ import { TakeNotationReader } from '../components/TakeNotationReader';
 // staff is card-width inside a scrolling page; this screen hands the shared
 // opener to the card and renders the one window itself.
 import { FullScreenScore, useFullScreenScoreBox } from '../components/FullScreenScore';
+import { READER_SCALE } from '../services/abcHtml';
 import { TakeCorrectionEditor } from '../components/TakeCorrectionEditor';
 
 /**
@@ -2256,6 +2257,10 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                   chordHonestLine={null}
                   title={PRACTICE_VIDEO_ROW_TITLE}
                   interactive={false}
+                  // D27: the full-screen reader draws the same take BIGGER and pans
+                  // sideways. The card behind this window passes no `readerScale`,
+                  // so the card itself is unchanged.
+                  readerScale={READER_SCALE}
                 />
               ) : null}
             </ScrollView>

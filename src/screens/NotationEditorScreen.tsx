@@ -26,6 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import { AbcScoreView } from '../components/AbcScoreView';
+import { READER_SCALE } from '../services/abcHtml';
 import { ExpandScoreButton } from '../components/ExpandScoreButton';
 import { FullScreenScore, useFullScreenScoreBox } from '../components/FullScreenScore';
 import { canExpandScore, scoreExpandSubtitle } from '../services/scoreExpand';
@@ -622,7 +623,14 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
       subtitle={scoreExpandSubtitle({ from: keyLabels.from, to: keyLabels.to })}
     >
       <ScrollView contentContainerStyle={styles.expandBody}>
-        <AbcScoreView abc={transposedAbc} wholeWork viewportHeight={expandBoxHeight} />
+        <AbcScoreView
+          abc={transposedAbc}
+          wholeWork
+          viewportHeight={expandBoxHeight}
+          // D27: the reader draws bigger and pans sideways; the card above it is
+          // untouched (no `readerScale`), so it still fits its box.
+          readerScale={READER_SCALE}
+        />
       </ScrollView>
     </FullScreenScore>
     </>
