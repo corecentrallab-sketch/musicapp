@@ -429,7 +429,7 @@ export const TransposedScoreReaderScreen: React.FC<Props> = ({ navigation, route
           // no `readerScale` and is unchanged.
           readerScale={READER_SCALE}
         />
-
+      </ScrollView>
 
       {/* THE STICKY FOOTER — always visible while the score scrolls, because the
           action that can lose work must never hide (UX round 1 item 1). */}

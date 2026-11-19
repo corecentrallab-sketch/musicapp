@@ -9,9 +9,16 @@
  * are about the SHAPE of the two documents and about which call sites ask for
  * the reader, because that is where D27 actually lives.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { generateAbcHtml, generateAbcReaderHtml, readerLayout, READER_MIN_SCALE, READER_SCALE } from '../src/services/abcHtml';
+
+// The tier1 tsconfig compiles with `types: []`, so there are no Node typings —
+// same convention as the repo's other source-scan suites.
+declare const require: (name: string) => any;
+declare const process: { cwd(): string; exit(code: number): void };
+declare const console: { log(...args: unknown[]): void };
+
+const fs = require('fs');
+const path = require('path');
 
 let failures = 0;
 function ok(name: string, condition: boolean, detail?: string): void {
@@ -23,9 +30,12 @@ function ok(name: string, condition: boolean, detail?: string): void {
   }
 }
 
-const root = join(__dirname, '..');
-function read(path: string): string {
-  return readFileSync(join(root, path), 'utf8');
+// The gate compiles this file to /tmp/tier1-test/scripts, so `__dirname` is not
+// the repo: the source-scan reads resolve against the working directory, like
+// every other UI contract suite in this repo (the gate runs from the repo root).
+const root = process.cwd();
+function read(rel: string): string {
+  return String(fs.readFileSync(path.join(root, rel), 'utf8'));
 }
 
 const abc = 'X:1\nT:t\nM:4/4\nL:1/8\nK:C\nCDEF GABc|\n';
