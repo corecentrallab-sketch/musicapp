@@ -123,6 +123,8 @@ const PURE = readAppFile(READER_PURE_MODULE_PATH);
 const SHARE = readAppFile(READER_SHARE_MODULE_PATH);
 const SHARE_DEVICE = readAppFile(READER_SHARE_DEVICE_PATH);
 const VIEWER = readAppFile(READER_VIEWER_PATH);
+// The document builder D27 moved out of the component — the probe is injected there.
+const HTML = readAppFile('src/services/abcHtml.ts');
 const EDITOR = readAppFile(READER_EDITOR_PATH);
 const APP = readAppFile(READER_APP_PATH);
 const TYPES = readAppFile(READER_TYPES_PATH);
@@ -231,7 +233,7 @@ assertEq(readerSourceCount(readerSources), 4, 'the sweep covers the reader four 
 console.log('\nv39 reader — the guards');
 assertEq(readerRouteIsRegistered({ app: APP, types: TYPES }), true, 'App.tsx mounts the reader route and the param list is typed');
 assertEq(readerEntryPointExists(EDITOR), true, 'the editor opens it with the CURRENT transposed ABC');
-assertEq(readerShowsTheWholeWork({ screen: SCREEN, viewer: VIEWER }), true, 'the reader renders the whole work and the viewer implements the band');
+assertEq(readerShowsTheWholeWork({ screen: SCREEN, viewer: VIEWER, html: HTML }), true, 'the reader renders the whole work and the viewer implements the band');
 assertEq(readerSavesThroughTheLibrary({ screen: SCREEN, editor: EDITOR }), true, 'save goes through the Library store, named by the shared builder');
 assertEq(readerSharesThroughThePlatform({ screen: SCREEN, device: SHARE_DEVICE, pure: SHARE }), true, 'share goes through the platform sheet, with an honest failure line');
 assertEq(readerLabelsASample({ screen: SCREEN, editor: EDITOR }), true, 'both surfaces say when a score is an excerpt');
@@ -248,7 +250,7 @@ assertEq(v39ModuleStaysPure(SHARE), true, 'scoreShare.ts stays pure');
 console.log('\nv39 reader — the guards are not vacuous (empty input)');
 assertEq(readerRouteIsRegistered({ app: '', types: '' }), false, 'empty sources register nothing');
 assertEq(readerEntryPointExists(''), false, 'an empty editor has no door');
-assertEq(readerShowsTheWholeWork({ screen: '', viewer: '' }), false, 'empty sources show nothing');
+assertEq(readerShowsTheWholeWork({ screen: '', viewer: '', html: '' }), false, 'empty sources show nothing');
 assertEq(readerSavesThroughTheLibrary({ screen: '', editor: '' }), false, 'empty sources save nothing');
 assertEq(readerSharesThroughThePlatform({ screen: '', device: '', pure: '' }), false, 'empty sources share nothing');
 assertEq(readerLabelsASample({ screen: '', editor: '' }), false, 'empty sources label nothing');
@@ -312,15 +314,21 @@ probe('the editor stops flagging samples', editorWithoutTheSampleFlag, EDITOR, (
 // tag, so removing the prop is exactly the mutation it must catch.
 const screenWithoutWholeWork = mutate(SCREEN, 'wholeWork', 'inlineOnly');
 probe('the reader forgets wholeWork', screenWithoutWholeWork, SCREEN, () =>
-  readerShowsTheWholeWork({ screen: screenWithoutWholeWork, viewer: VIEWER }),
+  readerShowsTheWholeWork({ screen: screenWithoutWholeWork, viewer: VIEWER, html: HTML }),
 );
 const viewerWithoutTheBand = mutate(VIEWER, 'scoreReaderBand(', 'clampScoreHeight(');
 probe('the viewer stops asking which band it is in', viewerWithoutTheBand, VIEWER, () =>
-  readerShowsTheWholeWork({ screen: SCREEN, viewer: viewerWithoutTheBand }),
+  readerShowsTheWholeWork({ screen: SCREEN, viewer: viewerWithoutTheBand, html: HTML }),
 );
 const viewerWithoutTheHandOff = mutate(VIEWER, 'scrollEnabled={viewerInteractive}', 'scrollEnabled={false}');
 probe('the viewer stops handing the gesture to the WebView', viewerWithoutTheHandOff, VIEWER, () =>
-  readerShowsTheWholeWork({ screen: SCREEN, viewer: viewerWithoutTheHandOff }),
+  readerShowsTheWholeWork({ screen: SCREEN, viewer: viewerWithoutTheHandOff, html: HTML }),
+);
+// R3 — the probe the band's measurement rides on is injected by the DOCUMENT
+// (src/services/abcHtml.ts since D27 moved the builder out of the component).
+const htmlWithoutTheProbe = mutate(HTML, '${abcHeightProbeScript()}', '');
+probe('the document stops injecting the measuring probe', htmlWithoutTheProbe, HTML, () =>
+  readerShowsTheWholeWork({ screen: SCREEN, viewer: VIEWER, html: htmlWithoutTheProbe }),
 );
 // R4 — save through the Library store, both surfaces on the shared builder.
 const screenWithItsOwnWrite = mutate(SCREEN, 'addAbcToLibrary({', 'writeOwnItem({');

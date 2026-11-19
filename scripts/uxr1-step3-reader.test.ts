@@ -147,6 +147,8 @@ function chainHolds(): boolean {
 
 const SCREEN = readAppFile(READER_SCREEN_PATH);
 const VIEWER = readAppFile(READER_VIEWER_PATH);
+// The document builder D27 moved out of the component — the probe is injected there.
+const HTML = readAppFile('src/services/abcHtml.ts');
 const EDITOR = readAppFile(READER_EDITOR_PATH);
 const KEY_CONTROL = readAppFile(READER_KEY_CONTROL_MODULE_PATH);
 
@@ -215,7 +217,7 @@ assertEq(
   'and every bar survives that round trip',
 );
 assertEq(
-  viewerRendersTheWholeAbc(VIEWER),
+  viewerRendersTheWholeAbc(HTML, VIEWER),
   true,
   'the viewer renders the whole ABC it is given and never slices it',
 );
@@ -312,7 +314,7 @@ assertEq(
 );
 
 console.log('\nuxr1 step 3 — the reader’s wiring (live source, comments masked)');
-assertEq(readerShowsTheWholeWork({ screen: SCREEN, viewer: VIEWER }), true, 'the reader still mounts a whole-work viewer');
+assertEq(readerShowsTheWholeWork({ screen: SCREEN, viewer: VIEWER, html: HTML }), true, 'the reader still mounts a whole-work viewer');
 assertEq(readerKeyControlIsWired(SCREEN), true, 'the key chip, both steppers and the pure re-key plan are wired');
 assertEq(readerUnsavedStateIsVisible(SCREEN), true, 'the unsaved line and the plan-based save are wired');
 assertEq(readerGuardsTheBackOut(SCREEN), true, 'the route’s own back-out guard is wired');
@@ -397,18 +399,18 @@ probe('the box rule clips a whole work at 4000px instead of handing the scroll o
   }),
 );
 // 1.1 — the viewer truncates the score it was given.
-const viewerWithASlice = mutate(
-  VIEWER,
+const htmlWithASlice = mutate(
+  HTML,
   'const abcJson = JSON.stringify(abc);',
   'const abcJson = JSON.stringify(abc.slice(0, 200));',
 );
-probe('the viewer renders only the first slice of the ABC', viewerWithASlice, VIEWER, () =>
-  viewerRendersTheWholeAbc(viewerWithASlice),
+probe('the document renders only the first slice of the ABC', htmlWithASlice, HTML, () =>
+  viewerRendersTheWholeAbc(htmlWithASlice, VIEWER),
 );
 // 1.1 — the reader forgets wholeWork.
 const screenWithoutWholeWork = mutate(SCREEN, 'wholeWork', 'inlineOnly');
 probe('the reader forgets wholeWork', screenWithoutWholeWork, SCREEN, () =>
-  readerShowsTheWholeWork({ screen: screenWithoutWholeWork, viewer: VIEWER }),
+  readerShowsTheWholeWork({ screen: screenWithoutWholeWork, viewer: VIEWER, html: HTML }),
 );
 // 1.2 — the steppers.
 const screenWithoutTheSteppers = mutate(

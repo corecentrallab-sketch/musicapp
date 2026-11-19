@@ -133,22 +133,25 @@ function pickerTests(): void {
 function bundledRendererTests(): void {
   console.log('\nthe score renderer ships inside the app (offline)');
   const view = readSource(ABC_VIEW);
+  // The document builder D27 moved out of the component: the bundled renderer and
+  // the default script param live here now.
+  const html = readSource('src/services/abcHtml.ts');
   const asset = readSource(ABC_ASSET);
   assert(asset.length > 100000, `${ABC_ASSET} carries the whole abcjs bundle (${asset.length} chars)`);
   assert(
-    rendererIsBundled({ viewSource: view, assetSource: asset }),
-    'AbcScoreView inlines the bundled abcjs and carries no CDN host',
+    rendererIsBundled({ viewSource: html, assetSource: asset }),
+    'the document builder inlines the bundled abcjs and carries no CDN host',
   );
   assert(
-    !/cdn\.jsdelivr\.net/.test(view),
-    'the jsdelivr script tag is gone from AbcScoreView',
+    !/cdn\.jsdelivr\.net/.test(view) && !/cdn\.jsdelivr\.net/.test(html),
+    'the jsdelivr script tag is gone from both the viewer and the builder',
   );
   assert(
-    /rendererScript: string = ABCJS_BASIC_MIN_JS/.test(view),
+    /rendererScript: string = ABCJS_BASIC_MIN_JS/.test(html),
     'generateAbcHtml inlines the renderer by default (synchronous, no asset fetch)',
   );
   assert(
-    (view.match(/window\.ABCJS/g) ?? []).length > 0 && view.includes('did not load in this build'),
+    (html.match(/window\.ABCJS/g) ?? []).length > 0 && html.includes('did not load in this build'),
     'a missing renderer now says so on screen instead of showing an empty staff',
   );
   // Mutation probes.
@@ -160,7 +163,7 @@ function bundledRendererTests(): void {
     'a CDN script tag fails the guard',
   );
   assert(
-    !rendererIsBundled({ viewSource: view, assetSource: 'export const ABCJS_BASIC_MIN_JS = "x";' }),
+    !rendererIsBundled({ viewSource: html, assetSource: 'export const ABCJS_BASIC_MIN_JS = "x";' }),
     'an empty bundle fails the guard',
   );
 
