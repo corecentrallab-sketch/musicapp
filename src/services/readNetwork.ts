@@ -66,6 +66,11 @@ export interface NetworkReadResult {
 }
 
 function finiteOrNull(value: unknown): number | null {
+  // ABSENT IS NOT ZERO. `Number(null)` and `Number('')` are both 0, so a measurement
+  // nobody took used to print a real-looking `0B` / `0ms` on the line — the same
+  // invented figure this module exists to avoid. Only a value that was actually
+  // handed over can be a number here.
+  if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) return null;
   return number;

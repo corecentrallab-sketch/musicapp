@@ -1290,7 +1290,9 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               audioSec: durationSec > 0 ? durationSec : null,
               // vc62 (D30/D26): the label and the source of the frames, per read.
               label: takeReadLabel({
-                filmedAt: target?.ref?.filmedAt ?? null,
+                // This read is of the take just filmed, so its own start stamp IS the
+                // filmed stamp (`capturedAt`, taken at Stop and written to the row).
+                filmedAt: capturedAt ?? null,
                 durationSec: durationSec > 0 ? durationSec : null,
               }),
               pitchSource: derived?.pitchSource ?? null,

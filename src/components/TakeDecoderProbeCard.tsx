@@ -76,12 +76,20 @@ export interface TakeDecoderProbeCardProps {
   readTimings?: ReadonlyArray<TakeReadTiming> | null;
 }
 
-/** Bytes in a base64 payload, without decoding it. */
+/**
+ * ── vc62 (D29) ── HOW MANY FILE BYTES A BASE64 STRING CARRIES ─────────────────
+ *
+ * Four characters hold three bytes, and a `=` pad takes one character's worth off.
+ * Counted, not guessed: this number is printed as the probe's own measurement, so it
+ * has to be the arithmetic of the string in hand rather than the size we asked for.
+ * The floor at zero matters for a capped read: a header-only fragment can round to
+ * nothing, and a negative byte count is not a measurement.
+ */
 function base64Bytes(payload: string): number {
   const text = typeof payload === 'string' ? payload : '';
   if (text.length === 0) return 0;
   const padding = text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0;
-  return Math.floor((text.length * 3) / 4) - padding;
+  return Math.max(0, Math.floor((text.length * 3) / 4) - padding);
 }
 
 /** The MIME the page sniffs against (Chromium decides from the bytes). */
@@ -354,17 +362,3 @@ const baseStyles = StyleSheet.create({
   },
   web: { width: 2, height: 2, backgroundColor: 'transparent' },
 });
-
-/**
- * ── vc62 (D29) ── HOW MANY FILE BYTES A BASE64 STRING CARRIES ─────────────────
- *
- * Four characters hold three bytes, and a `=` pad takes one character's worth off.
- * Counted, not guessed: this number is printed as the probe's own measurement, so it
- * has to be the arithmetic of the string in hand rather than the size we asked for.
- */
-function base64Bytes(base64: string): number {
-  const text = typeof base64 === 'string' ? base64 : '';
-  if (text.length === 0) return 0;
-  const padding = text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0;
-  return Math.max(0, Math.floor((text.length * 3) / 4) - padding);
-}
