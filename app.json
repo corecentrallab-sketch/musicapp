@@ -2,7 +2,7 @@
   "expo": {
     "name": "NoteSnap: Sheet Music",
     "slug": "notesnap",
-    "version": "0.1.53",
+    "version": "0.1.54",
     "orientation": "default",
     "scheme": "notesnap",
     "icon": "./assets/icon.png",
@@ -34,8 +34,8 @@
         "android.permission.CAMERA",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
-      "versionCode": 62,
-      "versionName": "0.1.53"
+      "versionCode": 63,
+      "versionName": "0.1.54"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -66,7 +66,8 @@
           }
         }
       ],
-      "./plugins/withAndroidBackCompat"
+      "./plugins/withAndroidBackCompat",
+      "./plugins/withWifiNotRequired"
     ],
     "extra": {
       "eas": {

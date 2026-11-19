@@ -21,7 +21,7 @@
  */
 
 /** The commit the release slice stamps in. PLACEHOLDER — see the banner above. */
-export const BUILD_SHA: string = '44b9086';
+export const BUILD_SHA: string = 'fdfcdc3';
 
 /** True while the placeholder is still in place (the release slice must see false). */
 export const BUILD_SHA_IS_PLACEHOLDER = BUILD_SHA === '0000000';
