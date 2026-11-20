@@ -262,8 +262,11 @@ function theTimingsAreShownOnTheProbeCard(cardSource: string, screenSource: stri
   if (src.indexOf('finishReadTiming({') < 0) return false;
   if (src.indexOf('pushReadTiming(') < 0) return false;
   if (src.indexOf('readTimings={readTimings}') < 0) return false;
-  if (src.indexOf('{ onStage: stageRecorder.record }') < 0) return false;
-  return src.indexOf('{ onStage: recorder.record }') >= 0;
+  // vc65: the callback still feeds the ONE recorder in both read paths — its shape now
+  // also names the step the read has reached (`setReadStep`), so the span recorder is
+  // called from inside it rather than handed over as the `onStage` value itself.
+  if (src.indexOf('stageRecorder.record(stage, ms);') < 0) return false;
+  return src.indexOf('recorder.record(stage, ms);') >= 0;
 }
 
 /** The new modules add no network, no storage and nothing native. */

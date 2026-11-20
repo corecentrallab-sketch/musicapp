@@ -48,6 +48,9 @@ import type { TakeReadStage } from './takeReadTimings';
 // vc60: the level verdict (nothing recorded / decode failed / no melody) is decided
 // in ONE pure place, so every surface that reads a take speaks the same facts.
 import { TAKE_NO_SOUND_LINE, levelIsNoSound, takeLevelDbFS } from './takeReadVerdict';
+// vc65 (owner 11-17): the fallback is ANNOUNCED, not silent — see takeReadProgress.ts.
+import { readFallbackNotice } from './takeReadProgress';
+import type { ReadFallbackNotice } from './takeReadProgress';
 import { MIDI_STRUCTURE_INVALID_MESSAGE, validateMidiStructure } from './midiStructure';
 import {
   MIDI_FAILED_MESSAGE,
@@ -85,6 +88,16 @@ export interface MidiExportDeps {
    * services/takeReadTimings.ts, which says so in the code rather than inventing a number.
    */
   onStage?: (stage: TakeReadStage, ms: number) => void;
+  /**
+   * ── vc65 (owner 11-17) ── THE FALLBACK, REPORTED THE MOMENT IT TAKES OVER.
+   *
+   * When the route answers without notes, the phone runs its own pitch pass. That is a
+   * real 15–25 s of work and it used to happen in complete silence, so the user saw a
+   * clock counting for no stated reason. This is called BEFORE that pass starts, with the
+   * reason and the sentence to print — see services/takeReadProgress.ts. A caller that
+   * does not pass it is untouched: the read itself is unchanged.
+   */
+  onPitchFallback?: (notice: ReadFallbackNotice) => void;
 }
 
 /** Write the SMF bytes into the cache directory and return the file URI. */
@@ -354,6 +367,21 @@ async function decodeTakeFromRecording(
    * offline is a promised feature and must still read a take.
    */
   const pitchStartedAt = Date.now();
+  /**
+   * ── vc65 (owner 11-17) ── THE FALLBACK IS SAID BEFORE IT RUNS, NOT AFTER ──────
+   *
+   * This pass is the 15–25 s the owner experiences as "still processing" with nothing on
+   * screen to explain it. The notice goes out HERE — before the work starts — so the
+   * surface can name the reason while the user is waiting, not after the wait is over.
+   */
+  const framesFromServer = captured?.frames ?? null;
+  if (!(Array.isArray(framesFromServer) && framesFromServer.length > 0)) {
+    const notice = readFallbackNotice({
+      pitchSource: 'device',
+      network: captured?.network ?? null,
+    });
+    if (notice) deps.onPitchFallback?.(notice);
+  }
   const serverFrames = captured?.frames ?? null;
   const frames =
     Array.isArray(serverFrames) && serverFrames.length > 0
