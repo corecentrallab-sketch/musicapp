@@ -107,18 +107,29 @@ export const FullScreenScore: React.FC<FullScreenScoreProps> = ({
       statusBarTranslucent
       animationType="fade"
       onRequestClose={onClose}
+      /* ── D37: LANDSCAPE ────────────────────────────────────────────────────
+         A reading window is the one surface in the app that WANTS the phone
+         sideways (the whole point of a wide staff). A React Native modal does
+         not follow the device unless it is told which orientations it may be
+         presented in, so it stayed in the orientation it was opened in and a
+         rotated phone got a window drawn for the old one. */
+      supportedOrientations={['portrait', 'landscape']}
     >
       <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.header}>
           <View style={styles.headerText}>
-            <Text style={styles.title} numberOfLines={1}>
+            {/* ── D37: NO CLIPPED HEADER TEXT ─────────────────────────────────
+                Both of these were pinned to ONE line. A work's name plus the
+                "Transposed · Am → Bm" chip is more than one line on a phone in
+                landscape, so the title was ellipsised and the chip cut off —
+                text the user cannot read is text the window lost. They wrap
+                now, and the header grows to fit them. */}
+            <Text style={styles.title} numberOfLines={2}>
               {title ?? 'Score'}
             </Text>
             {subtitle ? (
               <View style={styles.chip}>
-                <Text style={styles.chipText} numberOfLines={1}>
-                  {subtitle}
-                </Text>
+                <Text style={styles.chipText}>{subtitle}</Text>
               </View>
             ) : null}
           </View>

@@ -42,6 +42,7 @@ import {
   READER_MIN_SCALE,
   READER_SCALE,
 } from '../services/abcHtml';
+import { readerViewportKey, readerZoomProps } from '../services/scoreReaderViewport';
 
 /** The ink a score is drawn in when the caller names none (near-black on paper). */
 export { ABC_DEFAULT_INK, ABC_DEFAULT_BACKGROUND } from '../services/abcHtml';
@@ -232,6 +233,22 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
    * shrink the drawing but never back below the floor that failed vc61.
    */
   const readerScaleValue = reader ? Math.max(READER_MIN_SCALE, readerScale) : READER_SCALE;
+  /**
+   * ── D37 ── A ROTATION IS A NEW DOCUMENT, AND A READER CAN BE PINCHED.
+   *
+   * `viewportKey` carries the window's own size into the WebView's key, so
+   * turning the phone rebuilds the reader's document at the size it is now in
+   * instead of leaving it laid out for the width it was built at (the landscape
+   * half of the owner's 11-17 report). Empty for the card — a card reflows
+   * itself (`responsive: 'resize'`) and must keep the document it has.
+   *
+   * `zoomProps` is the Android WebView's built-in zoom, without its +/− widget:
+   * the document has always allowed `user-scalable=yes`, but a WebView ignores a
+   * pinch unless built-in zoom is on. Empty for the card, so no card starts
+   * zooming under a page that scrolls.
+   */
+  const viewportKey = reader ? readerViewportKey(window.width, window.height) : '';
+  const zoomProps = readerZoomProps(reader);
   // Use the abc text (and the ink, which changes the document) as a rendering
   // key so a fresh WebView reloads whenever the score or its colour changes.
   const html = useMemo(
@@ -242,8 +259,9 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
     [abc, ink, background, reader, readerScaleValue],
   );
   const key = useMemo(
-    () => `${abcRenderKey(abc, ink, background)}${reader ? `-r${readerScaleValue}` : ''}`,
-    [abc, ink, background, reader, readerScaleValue],
+    () =>
+      `${abcRenderKey(abc, ink, background)}${reader ? `-r${readerScaleValue}` : ''}${reader ? viewportKey : ''}`,
+    [abc, ink, background, reader, readerScaleValue, viewportKey],
   );
   /**
    * THE DOCUMENT'S OWN HEIGHT (v37 item 2). It is keyed on `abcRenderKey` on
@@ -338,6 +356,9 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
         domStorageEnabled
         mixedContentMode="always"
         scrollEnabled={viewerInteractive}
+        // D37: a READER is pinch-zoomable (and keeps the WebView's own +/−
+        // widget hidden); the card spreads nothing and is unchanged.
+        {...zoomProps}
         androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
         pointerEvents={viewerInteractive ? 'auto' : 'none'}
         onMessage={handleMessage}

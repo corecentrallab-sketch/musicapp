@@ -260,8 +260,10 @@ function mutationProbes(): void {
     // vc50 re-anchor: the not-kept line now names the failure reason, so the
     // mutation follows the live text. Still inside `keepTake`, which is the
     // callback the guard inspects.
-    'if (!persisted.uri) setErrorLine(videoFailureRef.current ?? PRACTICE_VIDEO_NOT_KEPT_LINE);',
-    'if (!persisted.uri) setErrorLine(videoFailureRef.current ?? PRACTICE_VIDEO_NOT_KEPT_LINE);\n      setEditorOpen(true);',
+    // D38 re-anchor: the not-kept line is now set through `fail` (which carries the
+    // block that will say it), so the mutation follows the live text.
+    'if (!persisted.uri) fail(videoFailureRef.current ?? PRACTICE_VIDEO_NOT_KEPT_LINE, null);',
+    'if (!persisted.uri) fail(videoFailureRef.current ?? PRACTICE_VIDEO_NOT_KEPT_LINE, null);\n      setEditorOpen(true);',
   );
   assertEq(
     recordFlowOffersTheTrim(autoEditor),

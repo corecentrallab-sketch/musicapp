@@ -199,7 +199,18 @@ export function generateAbcReaderHtml(
     `  /* THE READER PANS SIDEWAYS (D27). No max-width cap, no centring: the
      drawing is as wide as the music needs and the WebView scrolls it. */
   #paper { display: block; }
-  #paper svg { max-width: none !important; height: auto !important; }`,
+  #paper svg { max-width: none !important; height: auto !important; }
+  /* ── D37: THE DOCUMENT IS AS WIDE AS THE DRAWING, NOT AS WIDE AS THE PHONE ──
+     The shell pins html/body to 'width: 100%', which is right for the CARD (the
+     drawing is capped to the card) and wrong for the reader: a drawing wider
+     than the viewport overflowed a body whose width was already fixed, so the
+     right-hand end of every system — the last bar, and any text drawn over it —
+     could not be reached by panning at all, however far the user dragged. The
+     body is now its own content width (never narrower than the screen), so the
+     WebView's scroll width IS the drawing's width and the last pixel is
+     reachable. The card document does not carry these rules. */
+  html { width: max-content; }
+  body { width: max-content; min-width: 100vw; }`,
     `window.ABCJS.renderAbc('paper', abc, {
           scale: ${layout.scale},
           staffwidth: ${layout.staffwidth},
