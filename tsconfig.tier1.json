@@ -289,6 +289,7 @@
     "scripts/d27ReaderScale.test.ts",
     "src/services/takeProbeSource.ts",
     "src/services/vc64ProbeSourceContract.ts",
-    "scripts/vc64ProbeSource.test.ts"
+    "scripts/vc64ProbeSource.test.ts",
+    "scripts/vc64TunerBand.test.ts"
   ]
 }

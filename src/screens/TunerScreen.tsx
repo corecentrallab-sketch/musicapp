@@ -49,6 +49,7 @@ import {
   TUNER_LISTENING_LINE,
   TUNER_LISTEN_AGAIN_CTA,
   TUNER_LISTEN_CTA,
+  TUNER_PITCH_BAND,
   TUNER_SILENT_LINE,
   TUNER_TAKE_MS,
   TUNER_UNCLEAR_LINE,
@@ -253,7 +254,10 @@ export const TunerScreen: React.FC = () => {
         if (!mountedRef.current) return;
         try {
           const samples = decodePcm16Base64(reply.pcm16Base64, reply.channels);
-          const next = tunerReadingFromTake(samples, reply.sampleRate);
+          // The TUNER's own band, not the melody band: drop-D (73.4 Hz) and a
+          // 7-string's low B (61.7 Hz) sit under the melody floor and stopped
+          // reading when that floor was added for hum takes (vc64 / D39).
+          const next = tunerReadingFromTake(samples, reply.sampleRate, TUNER_PITCH_BAND);
           setReading(next);
           setStatus('idle');
           setMessage(
