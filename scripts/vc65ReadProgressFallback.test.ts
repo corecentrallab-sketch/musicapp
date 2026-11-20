@@ -108,11 +108,14 @@ function progressIsTheReadsOwnAndShownWhileItRuns(screenSource: string, modelSou
   const model = maskComments(modelSource);
   if (src.length < 6000 || model.length < 500) return false;
 
-  // (a) The surface prints the model's step line, gated on the read being in flight.
+  // (a) The surface prints the model's step line, gated on the read being in flight. The gate
+  //     and the render are ONE JSX expression (`{takeBusy ? <Text …>{readStepLine(readStep)}`),
+  //     so a label that was never drawn — or one that stayed up after the read finished —
+  //     fails here.
   const stepAt = src.indexOf('readStepLine(readStep)');
   if (stepAt < 0) return false;
-  const gateAt = src.lastIndexOf('{takeBusy ? (', stepAt);
-  if (gateAt < 0 || stepAt - gateAt > 400) return false;
+  const gateAt = src.lastIndexOf('{takeBusy ? <Text', stepAt);
+  if (gateAt < 0 || stepAt - gateAt > 120) return false;
 
   // (b) The step is the READ's own stage callback, in every read path.
   if (countOf(src, 'onStage: (stage, ms) => {') !== 2) return false;
@@ -148,10 +151,17 @@ function theFallbackIsAnnouncedNotSilent(exportSource: string, screenSource: str
   const scr = maskComments(screenSource);
   if (src.length < 3000 || scr.length < 6000) return false;
 
-  // (a) The notice is the model's, built from the real facts of this read.
-  if (src.indexOf('readFallbackNotice({') < 0) return false;
-  if (src.indexOf("pitchSource: 'device',") < 0) return false;
-  if (src.indexOf('network: captured?.network ?? null,') < 0) return false;
+  // (a) The notice is the model's, built from the real facts of this read — the round trip is
+  //     read INSIDE the `readFallbackNotice({ … })` call. Anchored to the call on purpose: the
+  //     returned object carries a `network:` of its own, and a file-wide search would let that
+  //     one stand in for the notice's and hide the notice losing its reason.
+  const noticeAt = src.indexOf('readFallbackNotice({');
+  if (noticeAt < 0) return false;
+  const noticeEnd = src.indexOf('});', noticeAt);
+  if (noticeEnd < 0) return false;
+  const noticeCall = src.slice(noticeAt, noticeEnd);
+  if (noticeCall.indexOf("pitchSource: 'device',") < 0) return false;
+  if (noticeCall.indexOf('network: captured?.network ?? null,') < 0) return false;
 
   // (b) It goes out through the seam's callback, BEFORE the device pass runs.
   const callAt = src.indexOf('deps.onPitchFallback?.(notice);');
