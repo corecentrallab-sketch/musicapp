@@ -232,8 +232,17 @@ function staffTests(): void {
     title: 'My melody',
   });
   assert(!!rows.rawAbc && rows.rawAbc.indexOf('K:G') >= 0, 'the staff is written in the take key (K:G)');
-  assert(!!rows.cleanedAbc && rows.cleanedAbc.indexOf('T:My melody (auto-cleaned)') >= 0, 'the cleaned staff names itself honestly');
-  assert(!!rows.rawAbc && rows.rawAbc.indexOf('(as hummed)') >= 0, 'and so does the raw trace');
+  // vc64: the take's NAME is the card's own heading, never a title inside the ABC.
+  // abcjs draws a `T:` line as a giant centred title that the staff box clips — the
+  // owner saw it as "video (as humn" across the card. The header now carries no title.
+  assert(
+    !!rows.cleanedAbc && rows.cleanedAbc.indexOf('T:') < 0,
+    'the cleaned staff carries NO ABC title — the card heading names it',
+  );
+  assert(
+    !!rows.rawAbc && rows.rawAbc.indexOf('T:') < 0 && rows.rawAbc.indexOf('as hummed') < 0,
+    'and neither does the raw trace',
+  );
   assertEq(rows.chordRow, ['G', 'C', 'D'], 'the chord row carries the take’s suggested chords');
   assertEq(rows.dividerLabel, AUTO_CLEAN_DIVIDER_LABEL, 'the divider is the design’s auto-clean line');
   assertEq(rows.noteCount, 4, 'the row reports how many notes it drew');
