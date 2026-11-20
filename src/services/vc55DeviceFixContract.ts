@@ -216,8 +216,11 @@ export function theNotesReadNoLongerFreezesTheScreen(
   if (pitchSource.indexOf('PITCH_ASYNC_TIME_SLICE_MS') < 0) return false;
   if (pitchSource.indexOf('await yieldToUi()') < 0) return false;
   // …and it runs the SAME frame arithmetic as the synchronous read, so the two
-  // can never drift into two readings of one take.
-  return pitchSource.indexOf('frames.push(frameAt(samples, start, grid, sampleRate))') >= 0;
+  // can never drift into two readings of one take. Since vc64/D39 that call also
+  // hands the frame the band-limited analysis copy, and BOTH loops must make it —
+  // so count the calls: one loop drifting to its own arithmetic is still caught.
+  const frameCall = 'frames.push(frameAt(samples, analysis, start, grid, sampleRate))';
+  return pitchSource.split(frameCall).length - 1 >= 2;
 }
 
 /**

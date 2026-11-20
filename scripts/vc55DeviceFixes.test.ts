@@ -446,6 +446,23 @@ async function testTheOpenPath(): Promise<void> {
     noYield !== PITCH_SRC && theNotesReadNoLongerFreezesTheScreen(DECODE_SRC, noYield) === false,
     'GUARD F2c bites: a "sliced" read that never yields is rejected',
   );
+  // vc64/D39: both loops hand the frame the band-limited analysis copy. Drop that
+  // from ONE loop and the guard must reject it — the two reads would otherwise be
+  // free to drift into two readings of one take.
+  const firstFrameCall = PITCH_SRC.indexOf('frames.push(frameAt(samples, analysis, start, grid, sampleRate))');
+  const driftedLoop =
+    firstFrameCall < 0
+      ? PITCH_SRC
+      : PITCH_SRC.slice(0, firstFrameCall) +
+        'frames.push(frameAt(samples, start, grid, sampleRate))' +
+        PITCH_SRC.slice(
+          firstFrameCall + 'frames.push(frameAt(samples, analysis, start, grid, sampleRate))'.length,
+        );
+  assert(
+    driftedLoop !== PITCH_SRC &&
+      theNotesReadNoLongerFreezesTheScreen(DECODE_SRC, driftedLoop) === false,
+    'GUARD F2c bites: a loop with its own frame arithmetic is rejected',
+  );
   const noStamp = SCREEN.split('    noteFullScreenTap();').join('');
   assert(
     noStamp !== SCREEN && thePressIsStampedAndThePagePlayerPauses(noStamp) === false,

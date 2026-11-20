@@ -284,6 +284,7 @@
     "src/services/readNetwork.ts",
     "src/services/takeReadLabel.ts",
     "scripts/vc62ServerNotesRead.test.ts",
+    "scripts/vc64OnDeviceBand.test.ts",
     "src/services/abcHtml.ts",
     "scripts/d27ReaderScale.test.ts",
     "src/services/takeProbeSource.ts",
