@@ -54,6 +54,10 @@ import {
   buildTunerDecodeMessage,
   parseTunerDecoderReply,
 } from '../services/tunerDecoder';
+import {
+  pickTakeProbeSource,
+  takeProbeSourceLine,
+} from '../services/takeProbeSource';
 
 /**
  * How long the probe waits for the decoder page before it calls the attempt dead.
@@ -63,8 +67,19 @@ import {
 export const PROBE_TIMEOUT_MS = 120000;
 
 export interface TakeDecoderProbeCardProps {
-  /** The take's audio file — the video file when it has one, else the .m4a. */
-  uri: string | null | undefined;
+  /**
+   * ── vc64 (D34) ── THE TAKE'S AUDIO FILE, AND THE VIDEO ONLY AS THE FALLBACK.
+   *
+   * The card used to take ONE pre-decided `uri`, and the review page handed it
+   * `ref?.uri ?? audioUriRef.current` — the camera video whenever the take had one.
+   * A capped read of an MP4 prefix has no index for the tail, so the decode could
+   * never finish on a real take and the probe reported a device limit that was not
+   * there. The card now takes both files and lets `pickTakeProbeSource` decide:
+   * AUDIO FIRST, video only when the take has no separate audio copy.
+   */
+  audioUri: string | null | undefined;
+  /** The camera video — read only when there is no audio copy (see above). */
+  videoUri?: string | null;
   /**
    * ── vc61 (spec §2) ── WHERE THE TIME WENT, FOR THE READS THAT HAVE FINISHED.
    *
@@ -101,10 +116,23 @@ function probeMime(uri: string): string {
 }
 
 export const TakeDecoderProbeCard: React.FC<TakeDecoderProbeCardProps> = ({
-  uri,
+  audioUri,
+  videoUri,
   readTimings,
 }) => {
   const { styles } = useThemedStyles(baseStyles);
+  /**
+   * ── vc64 (D34) ── THE FILE THIS PROBE READS IS DECIDED HERE, ONCE ────────────
+   *
+   * AUDIO FIRST: the take's own .m4a is a few MB for 3 minutes and decodes in one
+   * read. The video is the fallback for a take whose audio copy could not be made,
+   * and `sourceLine` says on the card which of the two was read — the sentence that
+   * was missing when the card claimed "this take's own audio" while the code read
+   * the film.
+   */
+  const source = pickTakeProbeSource({ audioUri, videoUri });
+  const sourceLine = takeProbeSourceLine(source);
+  const uri = source?.uri ?? null;
   const [armed, setArmed] = useState(false);
   const [running, setRunning] = useState(false);
   const [line, setLine] = useState<string | null>(null);
@@ -276,6 +304,9 @@ export const TakeDecoderProbeCard: React.FC<TakeDecoderProbeCardProps> = ({
       <Text style={styles.risk}>{READ_DRAW_NOT_MEASURED_NOTE}</Text>
       <Text style={styles.label}>{PROBE_LABEL}</Text>
       <Text style={styles.hint}>{PROBE_HINT}</Text>
+      {/* ── vc64 (D34) ── WHICH FILE THIS PRESS READS, before it is pressed: the
+          take's audio, or — only when there is no audio copy — the camera video. */}
+      <Text style={styles.source}>{sourceLine}</Text>
       <Pressable
         style={[styles.button, running && styles.buttonBusy]}
         onPress={() => void run()}
@@ -330,6 +361,8 @@ const baseStyles = StyleSheet.create({
   },
   label: { color: '#a0a0b8', fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
   hint: { color: '#7d7d99', fontSize: 11, lineHeight: 16, marginTop: 6 },
+  /** vc64 (D34): which file the probe reads — said before the press, not after. */
+  source: { color: '#4ecdc4', fontSize: 11, lineHeight: 16, marginTop: 6 },
   risk: { color: '#7d7d99', fontSize: 11, lineHeight: 16, marginTop: 6 },
   button: {
     marginTop: 10,

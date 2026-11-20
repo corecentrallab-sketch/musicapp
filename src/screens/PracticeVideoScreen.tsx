@@ -2938,8 +2938,16 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 Nothing runs until it is pressed, it writes nothing, and the notes lane
                 never calls it (scripts/vc60DecoderProbe.test.ts asserts both). */}
             {/* vc61 (spec §2): the last read's stage timings, beside the decoder probe. */}
+            {/* ── vc64 (D34) ── THE PROBE READS THE TAKE'S AUDIO, NOT THE FILM.
+                It used to be handed `ref?.uri ?? audioUriRef.current` — the camera
+                video whenever the take had one — and a capped read of an MP4 prefix
+                has no index for the tail, so the decode could never finish on a real
+                take and the card reported a device limit that was not there. The
+                audio file goes FIRST; the video is passed only as the fallback for a
+                take with no audio copy, and the card prints which one it read. */}
             <TakeDecoderProbeCard
-              uri={ref?.uri ?? audioUriRef.current}
+              audioUri={audioUriRef.current}
+              videoUri={ref?.uri ?? null}
               readTimings={readTimings}
             />
 
