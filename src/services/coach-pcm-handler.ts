@@ -31,8 +31,25 @@
 // NOTE ON PRIVACY: this route is decode-and-return. It never writes the upload
 // to storage (unlike /api/recognize and /api/hum, whose debug persistence is
 // gated behind PERSIST_RECOGNIZE_AUDIO) and never logs the audio bytes.
+//
+// ── vc62 (D26) ── THE PITCH PASS COMES FROM HERE NOW ────────────────────────
+// The owner: the read is *"almost unusable"*. Measured on this route, not
+// guessed: a 78-second take answers in 4.07 s, so the network is not the
+// bottleneck — the PHONE is, because after this route returns, the app runs its
+// own YIN pass over the whole take (~2,400 period searches, ~4.2 s of solid CPU
+// in Node and several times that on a handset). So this route now also returns
+//   • `notes`   — the pitch frames the device would have computed, from a PORT of
+//                 the app's own tracker (`services/pitchDetection.ts`), so the
+//                 client can skip its own pass and get the same frames;
+//   • `timings` — { decodeMs, pitchMs, totalMs }, measured here, so the app's
+//                 probe card can print real numbers instead of guessing.
+// ADDITIVE, and the fallback path is intact: `pcm16Base64` is still returned and
+// a client that does not know about `notes` (or cannot reach this route at all)
+// still does its own pass on the device — offline is a promised feature.
+// The 60-second answer cap and the 4 MB upload cap are UNCHANGED (owner 11-11).
 // ---------------------------------------------------------------------------
 import { decodeToMonoSamples } from "~/services/fpcalc.ts";
+import { detectPitchFrames, type PitchFrame } from "~/services/pitchDetection.ts";
 
 /** Path the app posts to (mirrors coachCapture.ts COACH_PCM_PATH). */
 export const COACH_PCM_PATH = "/api/coach/pcm";
@@ -138,8 +155,58 @@ export function encodePcm16Base64(samples: Float32Array): string {
   return buffer.toString("base64");
 }
 
+/**
+ * ── vc60 ── THE LEVEL OF A DECODED TAKE: `{ peak, rmsDb }`.
+ *
+ * ADDITIVE DIAGNOSTICS, not contract fields: the app's `coachCapture.ts` reads the
+ * five contract fields and ignores everything else, so a client that does not know
+ * about these is unaffected. They exist so the app can tell "this take held no
+ * melody" from "this take held no sound at all" — two different facts with two
+ * different sentences — and so the measurement covers any container the server can
+ * decode, not only the ones the device's own metering could watch.
+ *
+ * `peak` is the largest absolute sample (0…1). `rmsDb` is the RMS in dBFS, i.e.
+ * <= 0 dBFS, and NULL for a digitally silent take: the logarithm there is
+ * -Infinity, and -Infinity is not JSON — a made-up floor number would be worse
+ * than saying nothing.
+ */
+export function decodedLevel(samples: Float32Array): {
+  peak: number;
+  rmsDb: number | null;
+} {
+  let peak = 0;
+  let sumSquares = 0;
+  const count = samples.length;
+  for (let i = 0; i < count; i++) {
+    const value = Number(samples[i]) || 0;
+    const magnitude = value < 0 ? -value : value;
+    if (magnitude > peak) peak = magnitude;
+    sumSquares += value * value;
+  }
+  const rms = count > 0 ? Math.sqrt(sumSquares / count) : 0;
+  return {
+    peak: Math.round(peak * 1e6) / 1e6,
+    rmsDb: rms > 0 ? Math.round(20 * Math.log10(rms) * 100) / 100 : null,
+  };
+}
+
+/**
+ * ── vc62 (D26) ── THE SPANS THIS ROUTE MEASURED, IN MILLISECONDS.
+ *
+ * `decodeMs` is the container decode + resample; `pitchMs` is the ported tracker
+ * over the PCM we are returning; `totalMs` is the whole request's work here. Real
+ * elapsed milliseconds, never an estimate — the app's probe card prints them so
+ * the next speed question is aimed by numbers instead of by a guess.
+ */
+export interface CoachPcmTimings {
+  decodeMs: number;
+  pitchMs: number;
+  totalMs: number;
+}
+
 /** Decode a recorded practice take into the PCM16 JSON the coach card expects. */
 export async function handleCoachPcm(req: Request): Promise<Response> {
+  const requestStartedAt = Date.now();
   try {
     if (req.method !== "POST") {
       // 405 (not 200) so a GET never looks like a working decoder; the app
@@ -177,6 +244,8 @@ export async function handleCoachPcm(req: Request): Promise<Response> {
     let mono: Float32Array;
     let sourceSampleRate: number;
     let sourceChannels: number;
+    // ── vc62: the decode span, measured from the moment the bytes are in hand.
+    const decodeStartedAt = Date.now();
     try {
       const decoded = await decodeToMonoSamples(audioBuffer);
       mono = decoded.mono;
@@ -208,11 +277,40 @@ export async function handleCoachPcm(req: Request): Promise<Response> {
 
     const durationSec = pcm.length / COACH_TARGET_SAMPLE_RATE;
     const pcm16Base64 = encodePcm16Base64(pcm);
+    const decodeMs = Date.now() - decodeStartedAt;
+
+    // ── vc60: THE LEVEL OF WHAT WE DECODED, AS TWO ADDITIVE FIELDS ─────────────
+    // WHY. The app has to be able to tell "the take held no melody" apart from
+    // "the take held no SOUND" (vc60 spec §2), and it can only do that from a
+    // level measurement. The device's own recorder metering covers the .m4a it
+    // recorded, but not every container and not every path — this route has the
+    // decoded mono in hand here, so the measurement is free and covers any
+    // format we can decode. `peak` is the largest absolute sample (0..1);
+    // `rmsDb` is the RMS in dBFS (<= 0; null for a digitally silent take, where
+    // the log is -Infinity and a number would be a lie).
+    const level = decodedLevel(pcm);
+
+    // ── vc62 (D26) ── THE PITCH PASS, HERE, ON THE PCM WE ARE RETURNING ────────
+    // WHY. This is the work the phone used to do after the answer arrived, and it
+    // is the work that made the read feel unusable: ~2,400 YIN period searches on
+    // a 60-second take. The tracker is a PORT of the app's own
+    // (`services/pitchDetection.ts`), run over exactly the samples the client
+    // receives, at exactly the coach rate — so the frames are the frames the
+    // device would have computed, and the client skips its own pass.
+    const pitchStartedAt = Date.now();
+    const notes: PitchFrame[] = detectPitchFrames(pcm, COACH_TARGET_SAMPLE_RATE);
+    const pitchMs = Date.now() - pitchStartedAt;
+    const timings: CoachPcmTimings = {
+      decodeMs,
+      pitchMs,
+      totalMs: Date.now() - requestStartedAt,
+    };
 
     console.log(
       `[coach-pcm] decoded ${audioBuffer.length}B → ${pcm.length} samples ` +
         `(${durationSec.toFixed(2)}s @ ${COACH_TARGET_SAMPLE_RATE}Hz mono, ` +
-        `source ${sourceSampleRate}Hz/${sourceChannels}ch${truncated ? ", truncated" : ""})`,
+        `source ${sourceSampleRate}Hz/${sourceChannels}ch${truncated ? ", truncated" : ""}) ` +
+        `notes=${notes.length} decode=${decodeMs}ms pitch=${pitchMs}ms total=${timings.totalMs}ms`,
     );
 
     // Contract fields first; the source_* / truncated keys are additive
@@ -226,6 +324,14 @@ export async function handleCoachPcm(req: Request): Promise<Response> {
       sourceSampleRate,
       sourceChannels,
       truncated,
+      // vc60 — additive level of the PCM we are returning (see decodedLevel).
+      peak: level.peak,
+      rmsDb: level.rmsDb,
+      // vc62 — additive: the pitch frames the device would have computed, and the
+      // spans this route measured. A client that ignores them still gets the
+      // contract fields above and does its own pass on the device.
+      notes,
+      timings,
     });
   } catch (err) {
     // Never leak a stack trace to the client; log it for the function logs.
