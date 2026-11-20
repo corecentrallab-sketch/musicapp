@@ -26,25 +26,57 @@
 //
 // Algorithm: YIN-lite (square-difference function, cumulative-mean normalisation,
 // parabolic interpolation), on a sliding window with an RMS silence gate.
+//
+// ── vc64 (D39) — THE PASS REPORTS THE MELODY, NOT THE ROOM ──────────────────
+// The owner: *"that may be an anomaly from the detector — samples are not usually
+// (or ever) that low within the playing range."* He was right, and it reproduced on
+// demand: three clips with an identical 220 Hz hum, only the rumble differing, came
+// back 57 / 33 / 38 — the last two are the 55 Hz and 80 Hz rumble, not the hum.
+// A phone take's handling noise and room rumble sit below ~100 Hz, and the unbanded
+// search let them win outright, three octaves below the melody.
+//
+// Three changes, all in the ESTIMATION only — the returned PCM and the frame grid are
+// untouched, so the app's fallback path is unaffected:
+//   1. BAND-LIMIT: a 4th-order high-pass at 85 Hz before detection, so rumble is
+//      attenuated (≈-18 dB at 55 Hz) before any period search sees it.
+//   2. SEARCH BAND: 80–1200 Hz — bass to whistle. A period outside it cannot be
+//      returned at all, so a 55 Hz rumble has nowhere to be reported from.
+//   3. HARMONIC PREFERENCE: among candidates whose periodicity is near-equal, take
+//      the one whose harmonics carry the energy in the 200–2000 Hz band — the band a
+//      melody actually lives in — instead of defaulting to the lowest one.
+// The honest failure is unchanged: silence, or a take that is only rumble, still
+// returns `midi: null` rather than a confident low guess.
 // ---------------------------------------------------------------------------
 
 /**
  * Analysis window, in samples. 2048 samples ≈ 93 ms at 22.05 kHz — long enough
- * for a stable period estimate down to ~55 Hz, short enough to follow a melody.
+ * for a stable period estimate down to ~80 Hz, short enough to follow a melody.
  */
 export const DEFAULT_WINDOW_SAMPLES = 2048;
 /** Frame hop. 25 ms = 40 frames/second — finer than any rhythm tolerance. */
 export const DEFAULT_HOP_SECONDS = 0.025;
-/** Lowest pitch we will report (A1). */
-export const DEFAULT_MIN_FREQ_HZ = 55;
-/** Highest pitch we will report (roughly F#6 — above a soprano's top). */
-export const DEFAULT_MAX_FREQ_HZ = 1500;
+/** Lowest pitch we will report (E2, ≈82 Hz). vc64/D39: was 55 Hz, which let rumble win. */
+export const DEFAULT_MIN_FREQ_HZ = 80;
+/** Highest pitch we will report (roughly D6 — above a soprano's top). vc64/D39: was 1500. */
+export const DEFAULT_MAX_FREQ_HZ = 1200;
 /** RMS silence gate: quieter than this is `midi: null`, not a confident guess. */
 export const SILENCE_RMS_THRESHOLD = 0.01;
 /** YIN absolute threshold: the first dip below this is taken as the period. */
 export const YIN_THRESHOLD = 0.2;
 /** When nothing dips below YIN_THRESHOLD, accept the global minimum below this. */
 export const YIN_FALLBACK_THRESHOLD = 0.45;
+/**
+ * High-pass corner for the detection copy, in Hz (vc64/D39). Handling noise, wind
+ * and room rumble live below this; a 220 Hz hum is 8 dB down at nothing here.
+ */
+export const HIGHPASS_CUTOFF_HZ = 85;
+/** The band a candidate's harmonics must carry energy in to be preferred (vc64/D39). */
+export const HARMONIC_BAND_LOW_HZ = 200;
+export const HARMONIC_BAND_HIGH_HZ = 2000;
+/** How many harmonics of a candidate we score. */
+const HARMONIC_COUNT = 8;
+/** Weight of the in-band harmonics against the candidate's own fundamental. */
+const HARMONIC_WEIGHT = 0.35;
 
 /** MIDI number of A4. */
 export const A4_MIDI = 69;
@@ -68,6 +100,8 @@ export interface PitchDetectionOptions {
   maxFreqHz?: number;
   /** RMS below which a frame is silence (default SILENCE_RMS_THRESHOLD). */
   rmsThreshold?: number;
+  /** High-pass corner applied to the detection copy only (default HIGHPASS_CUTOFF_HZ). */
+  highPassHz?: number;
 }
 
 interface FrameGrid {
@@ -76,6 +110,7 @@ interface FrameGrid {
   minFreqHz: number;
   maxFreqHz: number;
   rmsThreshold: number;
+  highPassHz: number;
 }
 
 /** Frequency (Hz) → MIDI note number as a float (440 Hz → 69). */
@@ -106,7 +141,132 @@ function frameGrid(sampleRate: number, opts: PitchDetectionOptions): FrameGrid {
       typeof opts.rmsThreshold === "number" && Number.isFinite(opts.rmsThreshold)
         ? opts.rmsThreshold
         : SILENCE_RMS_THRESHOLD,
+    highPassHz: clampFreq(opts.highPassHz, HIGHPASS_CUTOFF_HZ),
   };
+}
+
+/** One biquad section, transposed direct form II coefficients. */
+interface Biquad {
+  b0: number;
+  b1: number;
+  b2: number;
+  a1: number;
+  a2: number;
+}
+
+/**
+ * RBJ cookbook 2nd-order high-pass at `cutoffHz` with the given Q. Two of these in
+ * cascade make the 4th-order (24 dB/oct) slope the band-limit wants.
+ */
+function highPassSection(sampleRate: number, cutoffHz: number, q: number): Biquad {
+  const w0 = (2 * Math.PI * cutoffHz) / sampleRate;
+  const cos = Math.cos(w0);
+  const alpha = Math.sin(w0) / (2 * q);
+  const a0 = 1 + alpha;
+  return {
+    b0: (1 + cos) / 2 / a0,
+    b1: -(1 + cos) / a0,
+    b2: (1 + cos) / 2 / a0,
+    a1: (-2 * cos) / a0,
+    a2: (1 - alpha) / a0,
+  };
+}
+
+/**
+ * A COPY OF THE TAKE WITH THE ROOM REMOVED (vc64/D39): 4th-order Butterworth
+ * high-pass at `cutoffHz`, run over the whole signal so the filter state carries
+ * across frames. Only the pitch search sees this; the PCM we return, and the RMS
+ * level of each frame, are the untouched take.
+ */
+export function highPassForDetection(
+  samples: Float32Array,
+  sampleRate: number,
+  cutoffHz: number = HIGHPASS_CUTOFF_HZ,
+): Float32Array {
+  const out = new Float32Array(samples.length);
+  out.set(samples);
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0 || samples.length === 0) {
+    return out;
+  }
+  // Butterworth 4th-order = two sections at these Qs.
+  const sections = [
+    highPassSection(sampleRate, cutoffHz, 0.5411961),
+    highPassSection(sampleRate, cutoffHz, 1.306563),
+  ];
+  for (const { b0, b1, b2, a1, a2 } of sections) {
+    let x1 = 0;
+    let x2 = 0;
+    let y1 = 0;
+    let y2 = 0;
+    for (let i = 0; i < out.length; i++) {
+      const x0 = Number.isFinite(out[i]) ? (out[i] as number) : 0;
+      const y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1;
+      x1 = x0;
+      y2 = y1;
+      y1 = y0;
+      out[i] = y0;
+    }
+  }
+  return out;
+}
+
+/**
+ * Magnitude of `freq` in one Hann-windowed analysis window (Goertzel), normalised by
+ * the window's coherent gain so a score is comparable across candidates.
+ */
+function bandMagnitude(
+  samples: Float32Array,
+  start: number,
+  windowSamples: number,
+  sampleRate: number,
+  freq: number,
+): number {
+  const coeff = 2 * Math.cos((2 * Math.PI * freq) / sampleRate);
+  let s1 = 0;
+  let s2 = 0;
+  let windowSum = 0;
+  for (let i = 0; i < windowSamples; i++) {
+    const w = windowSamples > 1 ? 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (windowSamples - 1)) : 1;
+    windowSum += w;
+    const x = samples[start + i];
+    const s0 = (Number.isFinite(x) ? (x as number) : 0) * w + coeff * s1 - s2;
+    s2 = s1;
+    s1 = s0;
+  }
+  const power = s1 * s1 + s2 * s2 - coeff * s1 * s2;
+  return windowSum > 0 ? Math.sqrt(Math.max(0, power)) / (windowSum / 2) : 0;
+}
+
+/**
+ * HOW MUCH OF A CANDIDATE'S HARMONIC SERIES IS ACTUALLY IN THE MELODY BAND
+ * (vc64/D39): the candidate's own fundamental, plus the magnitudes of harmonics
+ * 2..8 that fall inside 200–2000 Hz, weighted below the fundamental.
+ *
+ * The fundamental is the anchor on purpose. A note's harmonics are shared with its
+ * subharmonics — 110 Hz and 220 Hz have the *same* in-band series (220, 440, …) — so
+ * a score built only from in-band harmonics cannot tell a hum from its own
+ * subharmonic, and the tie then goes to whichever is lower, which is the defect
+ * itself. Weighting the fundamental means a candidate with no energy where it claims
+ * to be cannot out-score one that is really there.
+ */
+function harmonicScore(
+  samples: Float32Array,
+  start: number,
+  windowSamples: number,
+  sampleRate: number,
+  hz: number,
+): number {
+  const nyquist = sampleRate / 2;
+  let harmonics = 0;
+  for (let k = 2; k <= HARMONIC_COUNT; k++) {
+    const f = hz * k;
+    if (f > nyquist) break;
+    if (f < HARMONIC_BAND_LOW_HZ || f > HARMONIC_BAND_HIGH_HZ) continue;
+    harmonics += bandMagnitude(samples, start, windowSamples, sampleRate, f);
+  }
+  const fundamental = bandMagnitude(samples, start, windowSamples, sampleRate, hz);
+  return fundamental + HARMONIC_WEIGHT * harmonics;
 }
 
 /** Root-mean-square of one window of float samples. */
@@ -121,7 +281,9 @@ function rmsOf(samples: Float32Array, start: number, windowSamples: number): num
 
 /**
  * YIN-lite pitch estimate for one window, as a MIDI number (float) or null.
- * Same steps, same thresholds, same arithmetic as the app's `yinMidi`.
+ * Same square-difference / cumulative-mean / parabolic-interpolation arithmetic as
+ * the app's `yinMidi`, but run over the BAND-LIMITED copy and choosing between
+ * near-equal candidates on harmonic energy (vc64/D39 — see the file header).
  */
 function yinMidi(
   samples: Float32Array,
@@ -156,11 +318,17 @@ function yinMidi(
     norm[tau] = running <= 0 ? 1 : (diff[tau] * tau) / running;
   }
 
+  // ── vc64/D39: THE APP'S OWN CHOICE FIRST, THEN AN UPWARD-ONLY CORRECTION ────
+  // Primary read: the same rule as the app's tracker — the first (highest-pitched)
+  // dip below YIN_THRESHOLD, else the strongest dip. Keeping this as the primary is
+  // what stops a genuine recording's notes from moving.
   let tau = -1;
   for (let t = minLag; t <= maxLag; t++) {
-    if (norm[t] < YIN_THRESHOLD) {
+    if ((norm[t] as number) < YIN_THRESHOLD) {
       let localMin = t;
-      while (localMin + 1 <= maxLag && norm[localMin + 1] < norm[localMin]) localMin++;
+      while (localMin + 1 <= maxLag && (norm[localMin + 1] as number) < (norm[localMin] as number)) {
+        localMin++;
+      }
       tau = localMin;
       break;
     }
@@ -168,12 +336,51 @@ function yinMidi(
   if (tau < 0) {
     let best = Number.POSITIVE_INFINITY;
     for (let t = minLag; t <= maxLag; t++) {
-      if (norm[t] < best) {
-        best = norm[t];
+      if ((norm[t] as number) < best) {
+        best = norm[t] as number;
         tau = t;
       }
     }
     if (tau < 0 || best > YIN_FALLBACK_THRESHOLD) return null;
+  }
+
+  // Correction: when nothing is confidently periodic the primary read is whichever
+  // periodicity was STRONGEST, which on a real take is the room — D39 exactly. Among
+  // candidates that are as credible as it is, take the one whose harmonics carry
+  // energy in 200–2000 Hz. The correction is one-directional (higher pitch only):
+  // a lower reading is never the melody, and allowing one is how the old pass ended
+  // up three octaves down.
+  const candidates: number[] = [];
+  for (let t = minLag; t < tau; t++) {
+    const value = norm[t] as number;
+    if (value > YIN_FALLBACK_THRESHOLD) continue;
+    const prev = t - 1 >= minLag ? (norm[t - 1] as number) : Number.POSITIVE_INFINITY;
+    const next = norm[t + 1] as number;
+    if (value <= prev && value <= next) candidates.push(t);
+  }
+  if (candidates.length > 0) {
+    const primaryScore = harmonicScore(
+      samples,
+      start,
+      windowSamples,
+      sampleRate,
+      sampleRate / tau,
+    );
+    let chosen = tau;
+    let chosenScore = primaryScore;
+    for (const t of candidates) {
+      const hz = sampleRate / t;
+      if (hz < minFreqHz * 0.9 || hz > maxFreqHz * 1.1) continue;
+      const score = harmonicScore(samples, start, windowSamples, sampleRate, hz);
+      // A strictly better harmonic series wins. Equality does not: a ratio-based
+      // near-tie let noise-level differences between two clean candidates move a
+      // note, which is not a correction worth making.
+      if (score > chosenScore) {
+        chosen = t;
+        chosenScore = score;
+      }
+    }
+    tau = chosen;
   }
 
   let period = tau;
@@ -196,15 +403,21 @@ function yinMidi(
 
 function frameAt(
   samples: Float32Array,
+  analysis: Float32Array,
   start: number,
   grid: FrameGrid,
   sampleRate: number,
 ): PitchFrame {
+  // The level is the take's own: the high-pass is for the pitch search only, so the
+  // app's level readout still says how loud the recording was.
   const rms = rmsOf(samples, start, grid.windowSamples);
+  // …but a window whose energy is (almost) all below the band is room, not melody:
+  // it must not get a pitch, even though the take was loud.
+  const analysisRms = rmsOf(analysis, start, grid.windowSamples);
   const midi =
-    rms < grid.rmsThreshold
+    rms < grid.rmsThreshold || analysisRms < grid.rmsThreshold * 0.25
       ? null
-      : yinMidi(samples, start, grid.windowSamples, sampleRate, grid.minFreqHz, grid.maxFreqHz);
+      : yinMidi(analysis, start, grid.windowSamples, sampleRate, grid.minFreqHz, grid.maxFreqHz);
   return { tSec: start / sampleRate, midi, rms };
 }
 
@@ -215,6 +428,10 @@ function frameAt(
  * whole windows are analysed, and a frame the tracker is not confident about comes
  * back `midi: null` — an honest no-match beats a wrong note, the same rule the
  * recognition surfaces follow.
+ *
+ * Since vc64 (D39) the pitch search runs on a high-passed copy of the take
+ * (`highPassForDetection`) inside an 80–1200 Hz band, so room rumble and handling
+ * noise cannot be reported as the melody. The returned `rms` is still the take's own.
  */
 export function detectPitchFrames(
   samples: Float32Array,
@@ -229,8 +446,10 @@ export function detectPitchFrames(
   const total = samples.length;
   if (total < grid.windowSamples) return frames;
 
+  const analysis = highPassForDetection(samples, sampleRate, grid.highPassHz);
+
   for (let start = 0; start + grid.windowSamples <= total; start += grid.hopSamples) {
-    frames.push(frameAt(samples, start, grid, sampleRate));
+    frames.push(frameAt(samples, analysis, start, grid, sampleRate));
   }
   return frames;
 }
