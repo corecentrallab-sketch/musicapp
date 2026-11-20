@@ -32,6 +32,28 @@ import {
   type PitchFrame,
 } from './pitchDetection';
 
+/**
+ * THE TUNER'S OWN PITCH BAND (vc64 / D39 follow-up).
+ *
+ * The melody band (pitchDetection's defaults: 80 Hz floor, 85 Hz high-pass) is
+ * right for a hum or a sung take — it drops the room rumble that used to win the
+ * pitch vote. It is WRONG for a tuner: a tuner hears one deliberately plucked
+ * note, not a room, and a guitar's low E is 82 Hz, drop-D is 73.4 Hz and a
+ * 7-string's low B is 61.7 Hz — all at or under the melody floor, so the tuner
+ * simply stopped naming them.
+ *
+ * So the tuner carries its own band: search from 55 Hz (below low B, above the
+ * mains/room rumble that made the melody band necessary), a 45 Hz high-pass (a
+ * plucked low string's fundamental passes; handling noise and 50 Hz hum do not),
+ * and the same 1200 Hz ceiling as the melody band. The melody defaults are NOT
+ * moved — this is passed explicitly at the tuner's call site.
+ */
+export const TUNER_PITCH_BAND: PitchDetectionOptions = {
+  minFreqHz: 55,
+  maxFreqHz: 1200,
+  highPassHz: 45,
+};
+
 /** How long one tuner take is (ms). Long enough for a stable monophonic read. */
 export const TUNER_TAKE_MS = 700;
 /** Pause between takes while "keep listening" is on (ms). */
