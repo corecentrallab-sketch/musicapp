@@ -369,13 +369,10 @@ async function decodeTakeFromRecording(
   const pitchStartedAt = Date.now();
   /**
    * ── vc65 (owner 11-17) ── THE FALLBACK IS SAID BEFORE IT RUNS, NOT AFTER ──────
-   *
    * This pass is the 15–25 s the owner experiences as "still processing" with nothing on
-   * screen to explain it. The notice goes out HERE — before the work starts — so the
-   * surface can name the reason while the user is waiting, not after the wait is over.
+   * screen to explain it, so the notice goes out before the work starts.
    */
-  const framesFromServer = captured?.frames ?? null;
-  if (!(Array.isArray(framesFromServer) && framesFromServer.length > 0)) {
+  if (!(captured && Array.isArray(captured.frames) && captured.frames.length > 0)) {
     const notice = readFallbackNotice({
       pitchSource: 'device',
       network: captured?.network ?? null,
