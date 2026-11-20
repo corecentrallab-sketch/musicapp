@@ -206,6 +206,16 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
         <Text style={styles.emptyLine}>{STAFF_EMPTY_LINE}</Text>
       ) : (
         <>
+          {/* vc64: THE OCTAVE, SAID OUT LOUD. The staff is written in the octave
+              that reads on it (services/takeStaff.staffOctaveShift), so a hummed
+              take is drawn on the staff instead of twelve ledger lines below it.
+              When that move happened, the card says so — a silent octave change
+              would be the notation claiming a pitch the take did not have. */}
+          {rows.octaveLine ? (
+            <Text style={styles.octaveLine} testID="take-staff-octave-line">
+              {rows.octaveLine}
+            </Text>
+          ) : null}
           {/* 1. THE RAW TRACE — dimmed, labelled as exactly what it is. */}
           <Text style={styles.rowLabel}>{rows.rawLabel}</Text>
           {/* vc60: THE LENGTH, BESIDE THE STAFF AND FROM THE TAKE ITSELF. "Bars 1–4
@@ -290,6 +300,8 @@ const baseStyles = StyleSheet.create({
   chordChipText: { color: '#4ecdc4', fontSize: 13, fontWeight: '800' },
   chordHonest: { color: '#7d7d99', fontSize: 11, lineHeight: 16 },
   rowLabel: { color: '#a0a0b8', fontSize: 12, fontWeight: '700', marginTop: 8 },
+  /** vc64: the honest sentence for a written-octave move (see the card body). */
+  octaveLine: { color: '#a0a0b8', fontSize: 11, lineHeight: 16, marginTop: 8 },
   cleanedRowLabel: { color: '#4ecdc4', fontSize: 12, fontWeight: '800', marginTop: 4 },
   staffBox: {
     // A FLOOR, never a fixed height (v42 fix B2): the viewer is non-interactive, so

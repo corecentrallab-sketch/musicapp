@@ -54,6 +54,66 @@ export const STAFF_CLEANED_HONESTY =
 /** What the staff is, in one line, for the window's caption. */
 export const STAFF_CAPTION = 'Your melody, as notation — your own take, not a recording.';
 
+/**
+ * ── vc64 ── THE WRITTEN PITCH A TAKE'S NOTATION IS CENTRED ON (A4).
+ *
+ * A take is a VOICE. Whatever octave it was hummed in, notation for a voice is
+ * written in the octave that reads on the staff — the whole-octave move a vocal
+ * score makes — and A4 is the middle of the treble staff. See
+ * `staffOctaveShift`.
+ */
+export const STAFF_WRITTEN_CENTRE_MIDI = 69;
+
+/**
+ * ── vc64 ── THE WHOLE-OCTAVE SHIFT THAT PUTS A TAKE'S MELODY ON THE STAFF.
+ *
+ * WHAT WAS WRONG (owner, vc63 probe): the noteheads sat four to twelve ledger
+ * lines BELOW the treble staff while the take's own chords read Dm/F/Am/Em. The
+ * ABC spelling was standard (`C` is C4, `A,` is A3 — measured in a real abcjs
+ * render, and the pitch pass itself returns A3 for a 220 Hz tone), so nothing in
+ * the spelling was wrong: the take was simply written at the pitch it was
+ * detected at, which for a hummed or low-voiced take is far under the staff and
+ * unreadable on a phone.
+ *
+ * THE RULE. Write the take in the octave whose centre is `STAFF_WRITTEN_CENTRE_MIDI`
+ * (A4): the shift is the nearest WHOLE number of octaves to that centre, so the
+ * take's median note lands on or beside the staff instead of twelve ledger lines
+ * under it.
+ *
+ * WHOLE OCTAVES ONLY, which is what makes this safe: every pitch class, every
+ * interval, the key signature and every chord stay exactly as detected. Only the
+ * ledger-line distance changes, and `staffOctaveLine` says so on the card. A take
+ * that already reads on the staff is shifted by 0 and nothing changes.
+ */
+export function staffOctaveShift(
+  notes: ReadonlyArray<{ midi?: number | null }> | null | undefined,
+): number {
+  const values = (Array.isArray(notes) ? notes : [])
+    .map((note) => Number(note?.midi))
+    .filter((midi) => Number.isFinite(midi));
+  if (values.length === 0) return 0;
+  values.sort((a, b) => a - b);
+  const middle = Math.floor(values.length / 2);
+  const median =
+    values.length % 2 === 0 ? (values[middle - 1] + values[middle]) / 2 : values[middle];
+  const octaves = Math.round((STAFF_WRITTEN_CENTRE_MIDI - median) / 12);
+  return Number.isFinite(octaves) ? octaves * 12 : 0;
+}
+
+/**
+ * The honest sentence for a shift, or null when the take already reads on the
+ * staff. Never a silent octave change: the card prints this beside the staff.
+ */
+export function staffOctaveLine(shift: number | null | undefined): string | null {
+  const value = Number(shift);
+  if (!Number.isFinite(value) || value === 0) return null;
+  const octaves = Math.abs(value) / 12;
+  const count = octaves === 1 ? 'an octave' : `${octaves} octaves`;
+  return value > 0
+    ? `Written ${count} higher than it sounded, so the melody sits on the staff.`
+    : `Written ${count} lower than it sounded, so the melody sits on the staff.`;
+}
+
 const LETTERS_BY_PITCH_CLASS: Record<number, StaffLetter> = {
   0: 'C',
   1: 'C',
@@ -308,6 +368,13 @@ export interface TakeStaffRows {
   /** The key token the staff was written in (the ABC `K:` value). */
   keyToken: string;
   keyLabel: string;
+  /**
+   * ── vc64 ── The whole-octave shift BOTH staves were written with (0 = the take
+   * already read on the staff). `octaveLine` is the honest sentence for it, or
+   * null when there is nothing to say.
+   */
+  octaveShift: number;
+  octaveLine: string | null;
 }
 
 /**
@@ -331,11 +398,23 @@ export function takeStaffRows(input: TakeStaffInput): TakeStaffRows {
   const chordRow = (Array.isArray(input.chordNames) ? input.chordNames : []).filter(
     (name): name is string => typeof name === 'string' && name.trim().length > 0,
   );
+  // vc64: ONE shift for BOTH staves, taken from the line the card draws crisp —
+  // two staves of the same take must never sit in different octaves.
+  const octaveShift = staffOctaveShift(notes);
   return {
-    rawAbc: raw.length > 0 ? takeToAbc(raw, { signature, eighthSec, title, suffix: 'as hummed' }) : null,
+    rawAbc:
+      raw.length > 0
+        ? takeToAbc(raw, { signature, eighthSec, title, suffix: 'as hummed', octaveShiftMidi: octaveShift })
+        : null,
     cleanedAbc:
       cleaned.length > 0
-        ? takeToAbc(cleaned, { signature, eighthSec, title, suffix: 'auto-cleaned' })
+        ? takeToAbc(cleaned, {
+            signature,
+            eighthSec,
+            title,
+            suffix: 'auto-cleaned',
+            octaveShiftMidi: octaveShift,
+          })
         : null,
     rawLabel: 'As you hummed it',
     cleanedLabel: 'Auto-cleaned',
@@ -345,26 +424,49 @@ export function takeStaffRows(input: TakeStaffInput): TakeStaffRows {
     noteCount: notes.length,
     keyToken: signature.abcToken,
     keyLabel: signature.label,
+    octaveShift,
+    octaveLine: staffOctaveLine(octaveShift),
   };
 }
 
 /**
  * The ABC document for one monophonic line: header, key, the notes with the
  * timing the take really has (a gap becomes a rest) and bar lines every 4/4.
+ *
+ * ── vc64 ── NO TITLE IN THE DOCUMENT, AND THE NOTES IN A READABLE OCTAVE.
+ *
+ * 1. The header carries NO `T:` line. It used to carry one — `T:<take label>
+ *    (as hummed)` — and abcjs draws a `T:` line as a big centred title inside
+ *    the staff box, which is what the owner saw clipped across the card as
+ *    "video (as humn". The card already prints its own heading above the staff
+ *    ("As you hummed it" / "Auto-cleaned"), so the title belongs there and
+ *    nowhere else. `title`/`suffix` are still ACCEPTED (every caller passes them,
+ *    the PDF prints the ABC source) and are deliberately NOT written out.
+ * 2. The notes are written through `staffOctaveShift`, so a hummed take lands on
+ *    the staff instead of twelve ledger lines under it. Pass `octaveShiftMidi`
+ *    when two staves of the same take must share one shift (the card does).
  */
 export function takeToAbc(
   notes: ReadonlyArray<MidiNoteEvent>,
   opts: {
     signature: StaffKeySignature;
     eighthSec: number;
-    title: string;
+    /** Accepted for the callers that still pass it; never written (see above). */
+    title?: string;
+    /** Accepted for the callers that still pass it; never written (see above). */
     suffix?: string;
+    /** Whole-octave shift to write with (default: `staffOctaveShift(notes)`). */
+    octaveShiftMidi?: number;
   },
 ): string {
   const list = notes
     .filter((note) => note && Number.isFinite(note.midi))
     .slice()
     .sort((a, b) => (a.startSec ?? 0) - (b.startSec ?? 0));
+  const octaveShift =
+    typeof opts.octaveShiftMidi === 'number' && Number.isFinite(opts.octaveShiftMidi)
+      ? opts.octaveShiftMidi
+      : staffOctaveShift(list);
   const barState: Record<StaffLetter, number> = barStateFor(opts.signature);
   const body: string[] = [];
   let barUnits = 0;
@@ -397,14 +499,18 @@ export function takeToAbc(
       if (restUnits >= 1) pushToken('z', Math.min(STAFF_BAR_UNITS, restUnits));
     }
     const units = durationUnits(Number(note.durationSec), opts.eighthSec);
-    pushToken(abcNoteToken(Number(note.midi), opts.signature, barState), units);
+    pushToken(
+      abcNoteToken(Number(note.midi) + octaveShift, opts.signature, barState),
+      units,
+    );
     cursorSec = start + (Number.isFinite(note.durationSec) ? Number(note.durationSec) : 0);
   }
   if (barUnits > 0) body.push('|');
 
+  // vc64: NO `T:` LINE. The take's name is the card's own heading; a title inside
+  // the ABC is drawn by abcjs as a giant centred title that the staff box clips.
   const header = [
     'X:1',
-    `T:${opts.title}${opts.suffix ? ` (${opts.suffix})` : ''}`,
     'M:4/4',
     `L:1/${STAFF_UNIT_DIVISION}`,
     'K:' + opts.signature.abcToken,

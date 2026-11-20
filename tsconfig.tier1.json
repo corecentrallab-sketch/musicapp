@@ -163,6 +163,7 @@
     "scripts/searchExternal.test.ts",
     "scripts/zeroPromise.test.ts",
     "scripts/v33TakeEditor.test.ts",
+    "scripts/vc64TakeNotation.test.ts",
     "scripts/v33UiWiring.test.ts",
     "scripts/v34Fixes.test.ts",
     "scripts/v34UiWiring.test.ts",
