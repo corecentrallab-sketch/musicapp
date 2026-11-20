@@ -290,6 +290,9 @@
     "src/services/takeProbeSource.ts",
     "src/services/vc64ProbeSourceContract.ts",
     "scripts/vc64ProbeSource.test.ts",
-    "scripts/vc64TunerBand.test.ts"
+    "scripts/vc64TunerBand.test.ts",
+    "src/services/scoreReaderViewport.ts",
+    "src/services/practiceFailure.ts",
+    "scripts/d37FullScreenScore.test.ts"
   ]
 }

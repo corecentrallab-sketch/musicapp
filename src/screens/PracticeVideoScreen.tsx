@@ -259,6 +259,11 @@ import { TakeNotationReader } from '../components/TakeNotationReader';
 // staff is card-width inside a scrolling page; this screen hands the shared
 // opener to the card and renders the one window itself.
 import { FullScreenScore, useFullScreenScoreBox } from '../components/FullScreenScore';
+import {
+  failureIsShownAt,
+  failureWhereForLine,
+} from '../services/practiceFailure';
+import type { FailureWhere } from '../services/practiceFailure';
 import { READER_SCALE } from '../services/abcHtml';
 import { TakeCorrectionEditor } from '../components/TakeCorrectionEditor';
 
@@ -428,6 +433,23 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   const [cameraReady, setCameraReady] = useState(false);
   const [line, setLine] = useState<string | null>(null);
   const [errorLine, setErrorLine] = useState<string | null>(null);
+  /**
+   * ── D38 ── WHERE THAT LINE IS SAID.
+   *
+   * The line used to print at the BOTTOM of the playback page, screens away from
+   * the control that failed, so a press that failed looked like a press that did
+   * nothing. It is now said by the block that owns the failure
+   * (`services/practiceFailure`): the video block for a missing/gone video, the
+   * alignment controls for a take with nothing to line up, the delete button for
+   * a delete that did not happen. A record-surface failure carries NO anchor and
+   * is said where it always was — on the record surface.
+   */
+  const [errorWhere, setErrorWhere] = useState<FailureWhere | null>(null);
+  /** The one way a failure is set: the sentence and the block that will say it. */
+  const fail = useCallback((line: string | null, where: FailureWhere | null) => {
+    setErrorLine(line);
+    setErrorWhere(failureWhereForLine(line, where));
+  }, []);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [editorOpen, setEditorOpen] = useState(false);
   // THE FULL-SCREEN READING STATE (v43 slice 3, item E7) — the same window and
@@ -705,7 +727,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       const stored = await loadPracticeVideoRow(requestedRowId);
       if (!alive) return;
       if (!stored) {
-        setErrorLine(VIDEO_MISSING_LINE);
+        fail(VIDEO_MISSING_LINE, 'video');
         return;
       }
       /**
@@ -728,7 +750,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       if (!alive) return;
       const plan = practiceVideoPlaybackPlan(refUsable, fileExists);
       const ref = plan === 'play' ? storedRef : null;
-      if (plan === 'file-missing') setErrorLine(PRACTICE_VIDEO_FILE_GONE_LINE);
+      if (plan === 'file-missing') fail(PRACTICE_VIDEO_FILE_GONE_LINE, 'video');
       audioUriRef.current = stored.personalMelody?.audioUri ?? null;
       setVideoLoaded(false);
       setRow({
@@ -761,7 +783,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   const startBothCaptures = useCallback(async () => {
     if (armedRef.current || !cameraRef.current) return;
     armedRef.current = true;
-    setErrorLine(null);
+    fail(null, null);
     setLine(PRACTICE_VIDEO_ARMING_LINE);
 
     let audioStarted = false;
@@ -875,10 +897,10 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
    */
   const handleStart = useCallback(() => {
     if (!cameraReady || !cameraRef.current) {
-      setErrorLine(PRACTICE_VIDEO_CAMERA_NOT_READY_LINE);
+      fail(PRACTICE_VIDEO_CAMERA_NOT_READY_LINE, null);
       return;
     }
-    setErrorLine(null);
+    fail(null, null);
     /**
      * THE COUNT-IN IS A PHASE, NOT A DELAY INSIDE THE CAPTURE (vc49). With a
      * lead-in chosen, Start only moves the screen to `count_in` and RETURNS — the
@@ -1107,7 +1129,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     ) => {
       setPhase('keeping');
       setLine(PRACTICE_VIDEO_KEEPING_LINE);
-      setErrorLine(null);
+      fail(null, null);
       setTakeLine(null);
       setTakeBusy(false);
       const capturedAt = new Date().toISOString();
@@ -1221,7 +1243,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       setLine(null);
       // WHY THERE IS NO VIDEO, WHEN THERE IS NO VIDEO (vc50): the camera's own
       // refusal, said out loud instead of swallowed by an empty `.catch`.
-      if (!persisted.uri) setErrorLine(videoFailureRef.current ?? PRACTICE_VIDEO_NOT_KEPT_LINE);
+      if (!persisted.uri) fail(videoFailureRef.current ?? PRACTICE_VIDEO_NOT_KEPT_LINE, null);
 
       // ── PHASE B: THE NOTES, BOUNDED AND NEVER SILENT ───────────────────────
       /**
@@ -1417,7 +1439,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       audio = null;
     }
     const stopFailure = audio ? null : recorder.takeStopFailure();
-    if (stopFailure) setErrorLine(stopFailure.message);
+    if (stopFailure) fail(stopFailure.message, null);
     const pairedSeparately = separateTakeRef.current;
     try {
       await keepTake(audio?.uri ?? null, pairedSeparately, audio?.diagnostics?.peakDbFS ?? null);
@@ -1430,8 +1452,9 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
        */
       setTakeBusy(false);
       setLine('This take could not be saved to your History.');
-      setErrorLine(
+      fail(
         'Your video file, if it was filmed, is still on this device. Nothing else was changed.',
+        null,
       );
       setPhase('review');
     }
@@ -1507,7 +1530,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
    * (`stopSeparateTake`), which is the only thing that ends this take.
    */
   const recordSeparateTake = useCallback(async () => {
-    setErrorLine(null);
+    fail(null, null);
     setLine(VIDEO_SEPARATE_TAKE_LINE);
     notesOnlyStartedAtRef.current = Date.now();
     elapsedRef.current = 0;
@@ -1521,7 +1544,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       // (`errorLine` renders on the review body) and the user is put back where
       // they pressed the CTA.
       const failure = recorder.takeStartFailure();
-      setErrorLine(failure?.message ?? null);
+      fail(failure?.message ?? null, null);
       setPhase('review');
     }
   }, [recorder]);
@@ -1546,7 +1569,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     }
     if (!stopped) {
       const failure = recorder.takeStopFailure();
-      setErrorLine(failure?.message ?? null);
+      fail(failure?.message ?? null, null);
       setPhase('review');
       return;
     }
@@ -1609,7 +1632,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     setRow(null);
     setElapsedSec(0);
     setLine(null);
-    setErrorLine(null);
+    fail(null, null);
     // A NEW take starts with no window and no label of the old one (vc49: the
     // clip is per-take, so re-filming must not inherit it), and the count-in
     // choice stays as the user left it — it is a preference, not take data.
@@ -1744,7 +1767,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       firstOnsetSec: firstOnsetSec(take),
     });
     if (computed === null) {
-      setErrorLine('There are no notes in this take to line up yet.');
+      fail('There are no notes in this take to line up yet.', 'align');
       return;
     }
     void applyOffset(computed);
@@ -1783,7 +1806,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   const handleSaveRetry = useCallback(async () => {
     if (!row || saveRetrying) return;
     setSaveRetrying(true);
-    setErrorLine(null);
+    fail(null, null);
     let stored = false;
     try {
       const written = await savePracticeVideoRow({
@@ -1811,7 +1834,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     if (!row) return;
     const ok = await deletePracticeVideo(row.rowId, row.ref);
     if (!ok) {
-      setErrorLine(DELETE_PRACTICE_VIDEO_FAILED_LINE);
+      fail(DELETE_PRACTICE_VIDEO_FAILED_LINE, 'delete');
       return;
     }
     setRow({ ...row, ref: null });
@@ -2115,6 +2138,11 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               ) : (
                 <Text style={styles.meta}>{VIDEO_PLAY_HINT}</Text>
               )}
+              {/* D38: a video that is missing or gone says so HERE, under the
+                  player it could not fill, not at the end of the page. */}
+              {errorLine && failureIsShownAt(errorWhere, 'video') ? (
+                <Text style={styles.error}>{errorLine}</Text>
+              ) : null}
             </>
           ) : (
             <View style={styles.missingCard}>
@@ -2228,6 +2256,11 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
             <Text style={styles.honest}>{VIDEO_SEPARATE_TAKE_LINE}</Text>
           ) : null}
           {deletedLine ? <Text style={styles.meta}>{deletedLine}</Text> : null}
+          {/* D38: the alignment controls own their own failure — the buttons that
+              moved the notes are three lines above this sentence, not a page away. */}
+          {errorLine && failureIsShownAt(errorWhere, 'align') ? (
+            <Text style={styles.error}>{errorLine}</Text>
+          ) : null}
 
           {/* STILL NOTATION, unchanged: the editor's own staff of the same take. */}
           {take && take.notes.length > 0 ? (
@@ -2257,6 +2290,12 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                   chordHonestLine={null}
                   title={PRACTICE_VIDEO_ROW_TITLE}
                   interactive={false}
+                  // D37: THE READER'S BOX IS THE AREA THE USER CAN SEE. Without
+                  // this the card inside the window fell back to the raw WINDOW
+                  // height, which in landscape is taller than the body the modal
+                  // actually gives it (header + insets), so the staff was laid out
+                  // below the fold of a window that does not scroll like the page.
+                  viewportHeight={expandBoxHeight}
                   // D27: the full-screen reader draws the same take BIGGER and pans
                   // sideways. The card behind this window passes no `readerScale`,
                   // so the card itself is unchanged.
@@ -2297,8 +2336,13 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               <Text style={styles.secondaryBtnText}>{'Delete the video'}</Text>
             </TouchableOpacity>
           ) : null}
+          {/* D38: a delete that did not happen is said under the button that was
+              pressed. This is the line that used to sit at the very bottom of the
+              page, away from everything that could have failed. */}
+          {errorLine && failureIsShownAt(errorWhere, 'delete') ? (
+            <Text style={styles.error}>{errorLine}</Text>
+          ) : null}
           {line ? <Text style={styles.meta}>{line}</Text> : null}
-          {errorLine ? <Text style={styles.error}>{errorLine}</Text> : null}
           {onClose ? (
             <TouchableOpacity style={styles.secondaryBtn} onPress={onClose}>
               <Text style={styles.secondaryBtnText}>{'← Back'}</Text>
