@@ -285,6 +285,9 @@
     "src/services/takeReadLabel.ts",
     "scripts/vc62ServerNotesRead.test.ts",
     "src/services/abcHtml.ts",
-    "scripts/d27ReaderScale.test.ts"
+    "scripts/d27ReaderScale.test.ts",
+    "src/services/takeProbeSource.ts",
+    "src/services/vc64ProbeSourceContract.ts",
+    "scripts/vc64ProbeSource.test.ts"
   ]
 }
