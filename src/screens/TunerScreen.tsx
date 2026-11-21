@@ -44,6 +44,7 @@ import {
   TUNER_DEVICE_LINE,
   TUNER_FREE_LINE,
   TUNER_HEADLINE,
+  TUNER_HEARING_TICK_MS,
   TUNER_IDLE_LINE,
   TUNER_INSTRUMENT_LINE,
   TUNER_LISTENING_LINE,
@@ -54,6 +55,7 @@ import {
   TUNER_TAKE_MS,
   TUNER_UNCLEAR_LINE,
   describeTunerReading,
+  tunerHearingLine,
   tunerReadingFromTake,
   type TunerReading,
 } from '../services/tuner';
@@ -63,7 +65,11 @@ import {
   parseTunerDecoderReply,
 } from '../services/tunerDecoder';
 
-type TunerStatus = 'idle' | 'listening' | 'reading' | 'error';
+/**
+ * The screen's phases. `hearing` is the decide phase — the take has been stopped
+ * and is being decoded and read — and it is the one that must look ALIVE (vc66).
+ */
+type TunerStatus = 'idle' | 'listening' | 'hearing' | 'error';
 
 export const TunerScreen: React.FC = () => {
   const { styles, theme } = useThemedStyles(baseStyles);
@@ -90,6 +96,8 @@ export const TunerScreen: React.FC = () => {
   const [message, setMessage] = useState<string | null>(null);
   const [auto, setAuto] = useState(false);
   const [decoderReady, setDecoderReady] = useState(false);
+  /** Advances while a take is being read, so the "Hearing…" line moves (vc66). */
+  const [hearingTick, setHearingTick] = useState(0);
 
   const clearTimer = useCallback((ref: React.MutableRefObject<ReturnType<typeof setTimeout> | null>) => {
     if (ref.current) {
@@ -117,6 +125,19 @@ export const TunerScreen: React.FC = () => {
   useEffect(() => {
     autoRef.current = auto;
   }, [auto]);
+
+  /**
+   * vc66 — THE LIVE "HEARING…" STATE. While a take is being decoded and read the
+   * dots advance, so the tuner is visibly working instead of looking stalled on one
+   * unchanging line. The timer exists only during that phase and is cleared the
+   * moment it ends (and on unmount, with every other timer this screen owns).
+   */
+  useEffect(() => {
+    if (status !== 'hearing') return undefined;
+    setHearingTick(0);
+    const ticker = setInterval(() => setHearingTick((tick) => tick + 1), TUNER_HEARING_TICK_MS);
+    return () => clearInterval(ticker);
+  }, [status]);
 
   /** Hand a decode request to the page, queueing until it has said "ready". */
   const postToDecoder = useCallback((payload: string) => {
@@ -166,7 +187,7 @@ export const TunerScreen: React.FC = () => {
           busyRef.current = false;
           return;
         }
-        setStatus('reading');
+        setStatus('hearing');
         const base64 = await FileSystem.readAsStringAsync(stopped.uri, {
           encoding: FileSystem.EncodingType.Base64,
         });
@@ -294,7 +315,7 @@ export const TunerScreen: React.FC = () => {
     else clearTimer(gapTimerRef);
   }, [clearTimer, startTake]);
 
-  const busy = status === 'listening' || status === 'reading';
+  const busy = status === 'listening' || status === 'hearing';
   const listenLabel = busy
     ? TUNER_LISTENING_LINE
     : reading
@@ -312,7 +333,7 @@ export const TunerScreen: React.FC = () => {
           (busy
             ? status === 'listening'
               ? TUNER_LISTENING_LINE
-              : 'Reading that take…'
+              : tunerHearingLine(hearingTick)
             : recorder.error ?? TUNER_IDLE_LINE)}
       </Text>
 
