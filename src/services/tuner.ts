@@ -54,8 +54,17 @@ export const TUNER_PITCH_BAND: PitchDetectionOptions = {
   highPassHz: 45,
 };
 
-/** How long one tuner take is (ms). Long enough for a stable monophonic read. */
-export const TUNER_TAKE_MS = 700;
+/**
+ * How long one tuner take is (ms) — THE LISTENING WINDOW before the app decides.
+ *
+ * vc66 (owner 11-21: the tuner is accurate but "very slow in resolving the key").
+ * It was 700 ms, and 700 ms is a long time to hold a string while a tuner decides:
+ * you play, wait, and play again. 400 ms still fills the reading window the rule
+ * below uses (8 frames at the engine's 25 ms hop ≈ 200 ms, and a 400 ms take yields
+ * ~15 frames), so the name is not less certain — the app simply stops listening
+ * long after the string has told it everything it is going to.
+ */
+export const TUNER_TAKE_MS = 400;
 /** Pause between takes while "keep listening" is on (ms). */
 export const TUNER_AUTO_GAP_MS = 450;
 /** If the decoder does not answer in this long, the screen says so (ms). */
@@ -67,8 +76,16 @@ export const TUNER_IN_TUNE_CENTS = 5;
 export const TUNER_CENTS_FULL_SCALE = 50;
 /** Trailing frames of a take the reading is taken from (~200 ms at 25 ms hop). */
 export const TUNER_READING_FRAMES = 8;
-/** Agreeing (confident) frames required before a note is named. */
-export const TUNER_MIN_CONFIDENT_FRAMES = 3;
+/**
+ * Agreeing (confident) frames required before a note is named.
+ *
+ * vc66: 3 → 2. Three frames (75 ms of the tail) is a high bar for a plucked string,
+ * and the take had to reach it before the tuner named anything at all — which is
+ * what made it feel like it was thinking. Two agreeing frames still means the note
+ * was heard twice, and the AGREEMENT rule below still applies to them: two frames a
+ * semitone or more apart name nothing. The vc66 gate holds both halves of this.
+ */
+export const TUNER_MIN_CONFIDENT_FRAMES = 2;
 /**
  * How close the agreeing frames must sit to the window's median pitch, in
  * semitones. A take in which the player moved to another note mid-window has no
@@ -359,6 +376,25 @@ export const TUNER_DEVICE_LINE =
 export const TUNER_IDLE_LINE = 'Tap Listen, then play a single note and hold it.';
 /** While the mic is open. */
 export const TUNER_LISTENING_LINE = 'Listening…';
+/**
+ * THE LIVE "HEARING…" STATE (vc66).
+ *
+ * The decide phase is short but not instant — the take is decoded by the WebView
+ * and then read by the pitch engine — and while it ran the screen showed one
+ * unchanging line, so a tuner that was working looked like a tuner that had
+ * stalled. The word is fixed and the dots move (`tunerHearingLine`, driven by a
+ * tick in the screen), so the surface is visibly alive while it decides.
+ */
+export const TUNER_HEARING_WORD = 'Hearing';
+/** The line as the accessibility label reads it (the visible line animates). */
+export const TUNER_HEARING_LINE = 'Hearing…';
+/** How often the live dots advance while a take is being read (ms). */
+export const TUNER_HEARING_TICK_MS = 300;
+/** The live line for a tick: "Hearing.", "Hearing..", "Hearing..." and round again. */
+export function tunerHearingLine(tick: number): string {
+  const safe = typeof tick === 'number' && Number.isFinite(tick) ? Math.abs(Math.floor(tick)) : 0;
+  return `${TUNER_HEARING_WORD}${'.'.repeat((safe % 3) + 1)}`;
+}
 /** No sound above the gate in that take. */
 export const TUNER_SILENT_LINE = 'Heard nothing — play one note and hold it.';
 /** Sound, but no single pitch. */
