@@ -248,8 +248,13 @@ import {
   createStageRecorder,
   finishReadTiming,
   pushReadTiming,
+  type TakeReadStage,
   type TakeReadTiming,
 } from '../services/takeReadTimings';
+// vc65 (owner 11-17): what the read is DOING while it runs, and who is reading when the
+// server comes up short and the phone takes over. The clock stays the number; these are
+// the words under it, and the fallback is announced instead of happening in silence.
+import { readStepLine } from '../services/takeReadProgress';
 // vc62 (D30/D26): the take's own label, and whose pitch pass a read used.
 import { takeReadLabel } from '../services/takeReadLabel';
 import { loadReadThroughput, rememberReadThroughput } from '../services/takeReadThroughput';
@@ -1005,6 +1010,21 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   const [readAudioSec, setReadAudioSec] = useState<number | null>(null);
   const [readTimings, setReadTimings] = useState<TakeReadTiming[]>([]);
   const [deviceThroughput, setDeviceThroughput] = useState<number[]>([]);
+  /**
+   * ── vc65 ── THE STEP THE READ HAS REACHED, from the read's OWN stage callbacks.
+   *
+   * `null` means nothing has reported yet (the request is in flight). It is never guessed:
+   * `onStage` fires as each stage of the real read finishes, and `readStepLine` turns the
+   * last one into a sentence. No percentage, no bar — the app cannot measure the fraction.
+   */
+  const [readStep, setReadStep] = useState<TakeReadStage | null>(null);
+  /**
+   * ── vc65 ── THE FALLBACK, SAID ON SCREEN (the defect class that hid a dead route).
+   *
+   * Set the moment the phone takes over the pitch pass (`onPitchFallback`), so the user is
+   * told WHY the read is slow instead of watching a clock with no explanation.
+   */
+  const [readFallbackLine, setReadFallbackLine] = useState<string | null>(null);
   const readClockStartRef = useRef(0);
   // vc61 part 3: the full-screen reader, and the ABC it draws (the take's own).
   const [notationOpen, setNotationOpen] = useState(false);
@@ -1051,11 +1071,22 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
     setReadClockMs(0);
     setReadStalled(false);
     setReadFailed(false);
+    // vc65: a fresh read starts with nothing reported and nothing to announce.
+    setReadStep(null);
+    setReadFallbackLine(null);
     setTakeBusy(true);
     setTakeLine(VIDEO_TAKE_READING_LINE);
     const read = deriveCaptureTakeFromRecording(
       { uri, capturedAt: target.ref?.filmedAt, peakDbFS: null },
-      { onStage: recorder.record },
+      {
+        // vc65: the step is the read's own stage callback, and the fallback is reported
+        // BEFORE the phone's pitch pass runs — never after the wait is over.
+        onStage: (stage, ms) => {
+          recorder.record(stage, ms);
+          setReadStep(stage);
+        },
+        onPitchFallback: (notice) => setReadFallbackLine(notice.line),
+      },
     );
     void read
       .then(async (derived) => {
@@ -1278,6 +1309,9 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       setReadClockMs(0);
       setReadStalled(false);
       setReadFailed(false);
+      // vc65: a fresh read starts with nothing reported and nothing to announce.
+      setReadStep(null);
+      setReadFallbackLine(null);
       setReadAudioSec(durationSec > 0 ? durationSec : null);
 
       /**
@@ -1364,7 +1398,15 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
 
       const read = deriveCaptureTakeFromRecording(
         { uri: audioCacheUri, capturedAt, peakDbFS: measuredPeakDbFS },
-        { onStage: stageRecorder.record },
+        {
+          // vc65: the step is the read's own stage callback, and the fallback is reported
+          // BEFORE the phone's pitch pass runs — never after the wait is over.
+          onStage: (stage, ms) => {
+            stageRecorder.record(stage, ms);
+            setReadStep(stage);
+          },
+          onPitchFallback: (notice) => setReadFallbackLine(notice.line),
+        },
       );
       let settled: Awaited<ReturnType<typeof deriveCaptureTakeFromRecording>> | null = null;
       try {
@@ -2890,6 +2932,15 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 )}
               </Text>
             ) : null}
+            {/* ── vc65 (owner 11-17) ── WHAT IT IS DOING, WHILE IT DOES IT.
+                A clock with one unchanging sentence under it still reads as a still
+                screen. This is the step the read itself reported (`onStage`), turned
+                into words — never a percentage, because the app cannot measure one. */}
+            {takeBusy ? <Text style={styles.meta}>{readStepLine(readStep)}</Text> : null}
+            {/* ── vc65 ── THE FALLBACK, SAID OUT LOUD. Shown from the moment the phone
+                takes over the pitch pass and kept afterwards, so a read that took
+                longer than it should have has an explanation on the surface. */}
+            {readFallbackLine ? <Text style={styles.honest}>{readFallbackLine}</Text> : null}
             {!takeBusy && takeLine ? <Text style={styles.honest}>{takeLine}</Text> : null}
             {/* ── vc61 (spec §1.3/§1.4) ── THE WAY OUT, IN THE PLACE THE PROGRESS LINE SITS.
                 A failed or stalled read must not trap the user: the retry re-runs the read on
