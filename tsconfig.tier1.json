@@ -293,6 +293,7 @@
     "scripts/vc64TunerBand.test.ts",
     "src/services/scoreReaderViewport.ts",
     "src/services/practiceFailure.ts",
-    "scripts/d37FullScreenScore.test.ts"
+    "scripts/d37FullScreenScore.test.ts",
+    "scripts/d40ScoreWrap.test.ts"
   ]
 }
