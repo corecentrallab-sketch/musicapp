@@ -231,6 +231,10 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
               wholeWork
               viewportHeight={staffViewport}
               readerScale={readerScale}
+              // D40: THE TAKE WRAPS. A long take is drawn as several systems
+              // stacked down the page — a few bars each, fit to the card's width —
+              // instead of one unbroken line shrunk to a few pixels tall.
+              wrapSystems
             />
           </View>
           <Text style={styles.honesty}>{STAFF_RAW_HONESTY}</Text>
@@ -254,6 +258,8 @@ export const TakeStaffCard: React.FC<TakeStaffCardProps> = ({
               wholeWork
               viewportHeight={staffViewport}
               readerScale={readerScale}
+              // D40: the cleaned line wraps exactly as the raw one does.
+              wrapSystems
             />
           </View>
           <Text style={styles.honesty}>{STAFF_CLEANED_HONESTY}</Text>

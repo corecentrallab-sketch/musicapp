@@ -948,6 +948,9 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
               ink={TAKE_STAFF_CLEANED_INK}
               background={TAKE_STAFF_PAPER}
               interactive={false}
+              // D40: the SAME take the card draws, so it wraps the same way —
+              // several systems down the page instead of one line shrunk to fit.
+              wrapSystems
             />
           </View>
 
@@ -1525,6 +1528,9 @@ export const TakeCorrectionEditor: React.FC<TakeCorrectionEditorProps> = ({
           // D27: THE READER DRAWS BIGGER. Unset everywhere else, so the card this
           // window covers still fits its box exactly as it did.
           readerScale={READER_SCALE}
+          // D40: and it wraps, so the whole take is reachable by scrolling down
+          // instead of panning along one unbroken line.
+          wrapSystems
         />
       </ScrollView>
     </FullScreenScore>

@@ -39,8 +39,10 @@ import {
   ABC_DEFAULT_INK,
   generateAbcHtml,
   generateAbcReaderHtml,
+  generateAbcWrappedHtml,
   READER_MIN_SCALE,
   READER_SCALE,
+  WRAP_DEFAULT_SCALE,
 } from '../services/abcHtml';
 import { readerViewportKey, readerZoomProps } from '../services/scoreReaderViewport';
 
@@ -155,6 +157,31 @@ interface AbcScoreViewProps {
    * last bar would be unreachable.
    */
   readerScale?: number;
+  /**
+   * ── D40 ── FIT TO WIDTH, THEN WRAP DOWN THE PAGE (owner 11-21).
+   *
+   * WHAT THE OWNER SAW. A 32-bar take drawn as ONE unbroken system: a strip of
+   * marks about four pixels tall across the full width, the rest of the screen
+   * empty. The card and the full-screen reader both did it.
+   *
+   * WHY. The card document (`generateAbcHtml`) lays the tune out at abcjs's
+   * default 740 layout px and lets `max-width: 100%` scale that drawing down into
+   * the card — so a long take is SHRUNK, never wrapped. abcjs only breaks a tune
+   * into systems when it is given BOTH `staffwidth` and `wrap`, and the card gave
+   * it neither.
+   *
+   * WHAT THIS ASKS FOR. The wrapped document
+   * (`abcHtml.generateAbcWrappedHtml`): the score is laid out at the width it
+   * actually has, so nothing is ever scaled down, and the music continues onto
+   * the next system — a few bars per line, stacked down the page — instead of
+   * being crammed onto one. A bar keeps `WRAP_MIN_BAR_WIDTH_PX` of room, so more
+   * bars per line never means smaller marks (the D27 legibility floor).
+   *
+   * SET IT FOR ANY SCORE THAT IS THE USER'S OWN TAKE. Unset (every other call
+   * site) keeps the card and reader documents byte for byte as they were, so the
+   * published library's scores are untouched.
+   */
+  wrapSystems?: boolean;
 }
 
 /**
@@ -211,6 +238,7 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   wholeWork = false,
   viewportHeight,
   readerScale,
+  wrapSystems = false,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   /** The reader's viewport (the box a whole-work document that does not fit is
@@ -249,19 +277,33 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
    */
   const viewportKey = reader ? readerViewportKey(window.width, window.height) : '';
   const zoomProps = readerZoomProps(reader);
+  /**
+   * ── D40 ── WHICH DOCUMENT DRAWS A TAKE (see the `wrapSystems` prop).
+   *
+   * `wrapped` picks the third document — fit to width, then wrap down the page —
+   * AHEAD of the reader document: a long take is the one case where "a fixed
+   * staffwidth, pan sideways" is the wrong trade, because the music should use the
+   * height it has instead of running off the side. A wrapped CARD is drawn at
+   * natural size and never shrunk (`WRAP_DEFAULT_SCALE`); a wrapped READER keeps
+   * the D27 floor, since `readerScaleValue` is already clamped to `READER_MIN_SCALE`.
+   */
+  const wrapped = wrapSystems === true;
+  const wrapScale = reader ? readerScaleValue : WRAP_DEFAULT_SCALE;
   // Use the abc text (and the ink, which changes the document) as a rendering
   // key so a fresh WebView reloads whenever the score or its colour changes.
   const html = useMemo(
     () =>
-      reader
-        ? generateAbcReaderHtml(abc, ink, background, undefined, readerScaleValue)
-        : generateAbcHtml(abc, ink, background),
-    [abc, ink, background, reader, readerScaleValue],
+      wrapped
+        ? generateAbcWrappedHtml(abc, ink, background, undefined, wrapScale)
+        : reader
+          ? generateAbcReaderHtml(abc, ink, background, undefined, readerScaleValue)
+          : generateAbcHtml(abc, ink, background),
+    [abc, ink, background, reader, readerScaleValue, wrapped, wrapScale],
   );
   const key = useMemo(
     () =>
-      `${abcRenderKey(abc, ink, background)}${reader ? `-r${readerScaleValue}` : ''}${reader ? viewportKey : ''}`,
-    [abc, ink, background, reader, readerScaleValue, viewportKey],
+      `${abcRenderKey(abc, ink, background)}${reader ? `-r${readerScaleValue}` : ''}${wrapped ? `-w${wrapScale}` : ''}${reader ? viewportKey : ''}`,
+    [abc, ink, background, reader, readerScaleValue, wrapped, wrapScale, viewportKey],
   );
   /**
    * THE DOCUMENT'S OWN HEIGHT (v37 item 2). It is keyed on `abcRenderKey` on

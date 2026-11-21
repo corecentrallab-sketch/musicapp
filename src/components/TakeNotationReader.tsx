@@ -240,6 +240,15 @@ export const TakeNotationReader: React.FC<TakeNotationReaderProps> = ({
                     ink={TAKE_STAFF_CLEANED_INK}
                     background={TAKE_STAFF_PAPER}
                     interactive={false}
+                    // D40: FIT MEANS FIT-TO-WIDTH WITH WRAPPING. This reader used to
+                    // draw the CARD document, which abcjs lays out at its 740 px
+                    // default and CSS then shrinks into the box — so "Fit" on a long
+                    // take meant one microscopic line, and Bigger only shrank the box
+                    // further. The wrapped document lays the music out at the width it
+                    // has and continues onto the next system: Fit now fills the width
+                    // and the systems stack down the page, and Bigger gives fewer bars
+                    // per system with bigger marks.
+                    wrapSystems
                     onDocumentHeight={(height) => {
                       if (height > 0) setDocumentHeight(height);
                     }}
