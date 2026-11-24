@@ -266,12 +266,19 @@ function fixtureTests(): void {
   );
 
   const homeSrc = readAppFile(DOOR_FILE);
-  const mount = '<FindPieceScreen onClose={() => setShowFindPiece(false)} />';
-  assert(homeSrc.indexOf(mount) >= 0, 'the door mounts the Discover surface without a destination prop');
-  const preFixMount = homeSrc.replace(
-    mount,
-    '<FindPieceScreen onClose={() => setShowFindPiece(false)} onBrowseLibrary={() => {}} />',
+  // Read the mount from the real door: a prop added to it (the affiliate
+  // entry-surface label, 11-24) must not silently retire this probe.
+  const mountAt = homeSrc.indexOf('<FindPieceScreen');
+  const mountEnd = homeSrc.indexOf('/>', mountAt);
+  assert(mountAt >= 0 && mountEnd > mountAt, 'the door really mounts the Discover surface');
+  const mount = homeSrc.slice(mountAt, mountEnd + 2);
+  assert(
+    mount.indexOf('onBrowseLibrary') < 0,
+    'the door mounts the Discover surface without a destination prop',
   );
+  const preFixMount = homeSrc
+    .split(mount)
+    .join(`${mount.slice(0, -2)} onBrowseLibrary={() => {}} />`);
   assert(preFixMount !== homeSrc, 'the pre-fix mount differs from the shipped one');
   assertEq(
     theDoorCannotRepointTheFreeScoresLever(preFixMount),
@@ -451,10 +458,13 @@ function mutationProbes(): void {
   );
 
   // ── B8: the door re-points the lever ──
-  const repointed = homeSrc.replace(
-    '<FindPieceScreen onClose={() => setShowFindPiece(false)} />',
-    '<FindPieceScreen onClose={() => setShowFindPiece(false)} onBrowseLibrary={() => {}} />',
-  );
+  const doorMountAt = homeSrc.indexOf('<FindPieceScreen');
+  const doorMountEnd = homeSrc.indexOf('/>', doorMountAt);
+  assert(doorMountAt >= 0 && doorMountEnd > doorMountAt, 'B8: the door really mounts the surface');
+  const doorMount = homeSrc.slice(doorMountAt, doorMountEnd + 2);
+  const repointed = homeSrc
+    .split(doorMount)
+    .join(`${doorMount.slice(0, -2)} onBrowseLibrary={() => {}} />`);
   assert(repointed !== homeSrc, 'B8: the re-point mutation changed the real door');
   assertEq(
     theDoorCannotRepointTheFreeScoresLever(repointed),
