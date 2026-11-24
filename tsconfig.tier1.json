@@ -297,6 +297,7 @@
     "src/services/practiceFailure.ts",
     "scripts/d37FullScreenScore.test.ts",
     "scripts/d40ScoreWrap.test.ts",
+    "scripts/d40bLibraryCard.test.ts",
     "scripts/vc66TunerSpeed.test.ts"
   ]
 }
