@@ -44,7 +44,7 @@ import { detectPitchFramesAsync } from './pitchDetection';
 // computed, its own spans, and what actually happened on the wire.
 import type { NetworkReadResult, ServerReadTimings } from './readNetwork';
 // vc61 (spec §2): the stage names this pipeline reports as each one finishes.
-import type { TakeReadStage } from './takeReadTimings';
+import { pitchStageMs, type TakeReadStage } from './takeReadTimings';
 // vc60: the level verdict (nothing recorded / decode failed / no melody) is decided
 // in ONE pure place, so every surface that reads a take speaks the same facts.
 import { TAKE_NO_SOUND_LINE, levelIsNoSound, takeLevelDbFS } from './takeReadVerdict';
@@ -386,7 +386,22 @@ async function decodeTakeFromRecording(
       : await detectPitchFramesAsync(captured.samples, captured.sampleRate);
   const pitchSource: 'server' | 'device' =
     Array.isArray(serverFrames) && serverFrames.length > 0 ? 'server' : 'device';
-  deps.onStage?.('pitch', Date.now() - pitchStartedAt);
+  /**
+   * ── v66 (F4) ── THE STAGE CARRIES THE SERVER'S OWN SPAN ──────────────────────
+   * This used to record `Date.now() - pitchStartedAt` unconditionally. On the server
+   * path the phone only assigns `captured.frames` — its own work is ~0 ms — so the
+   * card printed `pitch=0ms@server` against a server that had just measured 4283 ms,
+   * and the owner read that as the fast path not working. `pitchStageMs` is the rule:
+   * the server's span on the server path, the measured device span on the device
+   * path, and NOTHING at all when the server sent no span (the line then prints
+   * `?@server` — a zero would be a measurement nobody made).
+   */
+  const pitchStage = pitchStageMs({
+    pitchSource,
+    serverPitchMs: captured?.serverTimings?.pitchMs ?? null,
+    deviceMs: Date.now() - pitchStartedAt,
+  });
+  if (pitchStage !== null) deps.onStage?.('pitch', pitchStage);
   const buildStartedAt = Date.now();
   const take = buildCaptureTake(frames, {
     tempoBpm: input.tempoBpm,

@@ -239,7 +239,15 @@ function readStagesAreMeasured(exportSource: string, captureSource: string): boo
   if (src.indexOf('const uploadStartedAt = Date.now();') < 0) return false;
   if (src.indexOf("deps.onStage?.('upload', Date.now() - uploadStartedAt);") < 0) return false;
   if (src.indexOf('const pitchStartedAt = Date.now();') < 0) return false;
-  if (src.indexOf("deps.onStage?.('pitch', Date.now() - pitchStartedAt);") < 0) return false;
+  // vc66 (F4): the PITCH stage is the one span that is not recorded straight from a
+  // `Date.now()` difference — on the server path that measured the phone's ~0 ms of
+  // work and printed it as `pitch=0ms@server`. It is now chosen by `pitchStageMs`
+  // (the server's own span, or the device's measured one, or nothing at all), and the
+  // device span still has to be a real elapsed reading handed to that rule.
+  if (src.indexOf('deviceMs: Date.now() - pitchStartedAt,') < 0) return false;
+  if (src.indexOf('const pitchStage = pitchStageMs({') < 0) return false;
+  if (src.indexOf("if (pitchStage !== null) deps.onStage?.('pitch', pitchStage);") < 0) return false;
+  if (src.indexOf("deps.onStage?.('pitch', Date.now() - pitchStartedAt);") >= 0) return false;
   if (src.indexOf('const buildStartedAt = Date.now();') < 0) return false;
   if (src.indexOf("deps.onStage?.('build', Date.now() - buildStartedAt);") < 0) return false;
   if (cap.indexOf('const unpackStartedAt = Date.now();') < 0) return false;
