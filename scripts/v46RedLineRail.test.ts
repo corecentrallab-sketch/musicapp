@@ -149,8 +149,11 @@ function liveScanTests(): void {
   // The row's own geometry, read out of the source: 16dp padding on each CTA is
   // what makes a collapse land on exactly the 32dp the screenshot shows.
   const viewSheet = page.slice(page.indexOf('viewSheetBtn: {'), page.indexOf('viewSheetText: {'));
-  assert(/padding:\s*16/.test(viewSheet), 'styles.viewSheetBtn still declares the 16dp padding the arithmetic uses');
-  assert(/backgroundColor:\s*'#e94560'/.test(viewSheet), 'the collapsed control is the accent-filled CTA (the red in the screenshot)');
+  // design-system v1: the same 16 dp padding and the same accent-filled CTA, now
+  // written as theme tokens (`spacing.s16`, `colors.brand.anchor` — the pill fill
+  // white labels live on). The numbers the arithmetic uses are unchanged.
+  assert(/padding:\s*(16|spacing\.s16)/.test(viewSheet), 'styles.viewSheetBtn still declares the 16dp padding the arithmetic uses');
+  assert(/backgroundColor:\s*(colors\.brand\.anchor|'#e94560')/.test(viewSheet), 'the collapsed control is the accent-filled CTA (the red in the screenshot)');
   assert(/flex:\s*1/.test(viewSheet), '…and it is a flex: 1 child, which is why it could be squeezed at all');
 }
 

@@ -47,6 +47,7 @@
  * The wiring itself is guarded by services/searchExternalContract.ts.
  */
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -1120,19 +1121,19 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
+    gap: spacing.s8,
+    marginTop: spacing.s12,
   },
   bandChip: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 999,
+    backgroundColor: colors.bg.canvas,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.control,
     paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: spacing.s12,
   },
   bandChipText: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -1141,67 +1142,67 @@ const baseStyles = StyleSheet.create({
   browseLibraryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#16213e',
-    borderRadius: 14,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: '#0f3460',
-    paddingVertical: 12,
+    borderColor: colors.border.control,
+    paddingVertical: spacing.s12,
     paddingHorizontal: 14,
     marginTop: 10,
     minHeight: 56,
   },
   browseLibraryEmoji: {
     fontSize: 20,
-    marginRight: 12,
+    marginRight: spacing.s12,
   },
   browseLibraryInfo: {
     flex: 1,
   },
   browseLibraryTitle: {
-    color: '#ffffff',
+    color: colors.text.primary,
     fontSize: 15,
     fontWeight: '700',
   },
   browseLibraryHint: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 12,
     marginTop: 2,
   },
   browseLibraryChevron: {
-    color: '#4ecdc4',
+    color: colors.accent.secondary,
     fontSize: 22,
     fontWeight: '700',
-    marginLeft: 8,
+    marginLeft: spacing.s8,
   },
   // The relocated beta note: small and quiet, under the row's own hint.
   browseLibraryBetaNote: {
-    color: '#6a6a8a',
+    color: colors.text.secondary,
     fontSize: 10.5,
     lineHeight: 15,
-    marginTop: 4,
+    marginTop: spacing.s4,
   },
 
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.canvas,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 60,
-    paddingBottom: 8,
+    paddingBottom: spacing.s8,
   },
   backBtn: {
-    marginRight: 12,
+    marginRight: spacing.s12,
   },
   backText: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontSize: 16,
     fontWeight: '600',
   },
   headerTitle: {
-    color: '#ffffff',
+    color: colors.text.primary,
     fontSize: 18,
     fontWeight: '700',
   },
@@ -1215,10 +1216,10 @@ const baseStyles = StyleSheet.create({
     marginTop: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: '#0f3460',
-    backgroundColor: '#16213e',
+    borderColor: colors.border.subtle,
+    backgroundColor: colors.bg.surface,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1226,7 +1227,7 @@ const baseStyles = StyleSheet.create({
   },
   autoSearchHeadline: {
     flexShrink: 1,
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '700',
@@ -1236,10 +1237,10 @@ const baseStyles = StyleSheet.create({
     minWidth: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: spacing.s8,
   },
   autoSearchDismissText: {
-    color: '#4ecdc4',
+    color: colors.text.secondary,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -1250,21 +1251,21 @@ const baseStyles = StyleSheet.create({
     marginHorizontal: 20,
     marginTop: 10,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: spacing.s12,
+    borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: '#0f3460',
-    backgroundColor: '#16213e',
+    borderColor: colors.border.subtle,
+    backgroundColor: colors.bg.surface,
     gap: 10,
   },
   prefillNote: {
-    color: '#cfe9ff',
+    color: colors.text.secondary,
     fontSize: 12,
     lineHeight: 17,
   },
   /* v44 #59 — the words this control will search, in bold, before the tap. */
   prefillWords: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 14,
     fontWeight: '800',
     marginTop: 6,
@@ -1272,12 +1273,12 @@ const baseStyles = StyleSheet.create({
   prefillCta: {
     alignSelf: 'flex-start',
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#e94560',
+    paddingVertical: spacing.s8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brand.anchor,
   },
   prefillCtaText: {
-    color: '#ffffff',
+    color: colors.bg.surface,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -1286,7 +1287,7 @@ const baseStyles = StyleSheet.create({
   // The "what actually matched" line for a typo'd query (v33 §F3): quiet, above
   // the list, never a warning — it explains the results, it does not scold.
   retryNotice: {
-    color: '#4ecdc4',
+    color: colors.text.secondary,
     fontSize: 13,
     lineHeight: 19,
     marginHorizontal: 20,
@@ -1297,41 +1298,41 @@ const baseStyles = StyleSheet.create({
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#16213e',
-    borderRadius: 12,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.control,
     marginHorizontal: 20,
-    marginTop: 12,
-    paddingHorizontal: 12,
+    marginTop: spacing.s12,
+    paddingHorizontal: spacing.s12,
   },
   searchIcon: {
     fontSize: 16,
-    marginRight: 8,
+    marginRight: spacing.s8,
   },
   searchInput: {
     flex: 1,
-    color: '#ffffff',
+    color: colors.text.primary,
     fontSize: 16,
-    paddingVertical: 12,
+    paddingVertical: spacing.s12,
   },
   clearBtn: {
     width: 28,
     height: 28,
-    borderRadius: 14,
-    backgroundColor: '#1a1a2e',
+    borderRadius: radius.circle,
+    backgroundColor: colors.bg.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.control,
   },
   clearBtnText: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontSize: 13,
     fontWeight: '700',
   },
   subtitle: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 12,
     lineHeight: 17,
     marginHorizontal: 20,
@@ -1341,12 +1342,12 @@ const baseStyles = StyleSheet.create({
      the user is looking) and uses the palette's accent so it reads as an answer,
      not as decoration. */
   submitNotice: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontSize: 12.5,
     lineHeight: 17,
     fontWeight: '700',
     marginHorizontal: 20,
-    marginTop: 8,
+    marginTop: spacing.s8,
   },
 
   // ── States (v41 item 3) ──────────────────────────────────────
@@ -1360,31 +1361,31 @@ const baseStyles = StyleSheet.create({
   },
   resultsContent: {
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 40,
+    paddingTop: spacing.s16,
+    paddingBottom: spacing.s40,
   },
   // A state block takes its NATURAL height and never `flex: 1`: a flexible block
   // is what used to push the retailer cards off the bottom of the screen.
   stateBlock: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: spacing.s4,
     paddingTop: 20,
-    paddingBottom: 8,
+    paddingBottom: spacing.s8,
   },
   centerSubtext: {
-    color: '#a0a0b8',
-    marginTop: 12,
+    color: colors.text.secondary,
+    marginTop: spacing.s12,
     fontSize: 14,
   },
   emptyEmoji: {
     fontSize: 48,
-    marginBottom: 12,
+    marginBottom: spacing.s12,
   },
   emptyTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.text.primary,
     marginBottom: 6,
     // v49: the zero-match headline now quotes the user's own (possibly long)
     // words, so a wrapped title must centre like the lines under it.
@@ -1392,7 +1393,7 @@ const baseStyles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 21,
   },
@@ -1404,9 +1405,9 @@ const baseStyles = StyleSheet.create({
   emptyRetailerCta: {
     alignSelf: 'stretch',
     minHeight: 52,
-    marginTop: 16,
-    borderRadius: 14,
-    backgroundColor: '#e94560',
+    marginTop: spacing.s16,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brand.anchor,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,
@@ -1425,20 +1426,20 @@ const baseStyles = StyleSheet.create({
      SearchExternalSection's own disclosure uses. */
   noMatchDisclosure: {
     fontSize: 11,
-    color: '#8a8aa3',
+    color: colors.text.secondary,
     lineHeight: 15,
-    marginTop: 8,
+    marginTop: spacing.s8,
     textAlign: 'center',
   },
   primaryBtn: {
-    backgroundColor: '#e94560',
-    borderRadius: 12,
-    paddingVertical: 12,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.s12,
     paddingHorizontal: 28,
     marginTop: 18,
   },
   primaryBtnText: {
-    color: '#ffffff',
+    color: colors.bg.surface,
     fontSize: 15,
     fontWeight: '700',
   },
@@ -1447,7 +1448,7 @@ const baseStyles = StyleSheet.create({
   listHeader: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#e94560',
+    color: colors.brand.anchor,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 10,
@@ -1455,12 +1456,12 @@ const baseStyles = StyleSheet.create({
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#16213e',
-    borderRadius: 14,
-    padding: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
+    padding: spacing.s16,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.subtle,
   },
   itemInfo: {
     flex: 1,
@@ -1469,38 +1470,38 @@ const baseStyles = StyleSheet.create({
   itemTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.text.primary,
   },
   itemComposer: {
     fontSize: 14,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     marginTop: 2,
   },
   itemDifficulty: {
     fontSize: 12,
-    color: '#4ecdc4',
+    color: colors.text.secondary,
     fontWeight: '600',
     marginTop: 6,
   },
   badge: {
     fontSize: 11,
     fontWeight: '700',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.s8,
+    paddingVertical: spacing.s4,
     overflow: 'hidden',
   },
   badgeReady: {
-    color: '#4ecdc4',
-    backgroundColor: '#1a1a2e',
+    color: colors.text.secondary,
+    backgroundColor: colors.bg.canvas,
     borderWidth: 1,
-    borderColor: '#4ecdc4',
+    borderColor: colors.accent.secondary,
   },
   badgeSoon: {
-    color: '#8a8aa3',
-    backgroundColor: '#1a1a2e',
+    color: colors.text.secondary,
+    backgroundColor: colors.bg.canvas,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.subtle,
   },
 
   // External (licensed-retailer) results — the money path, now INSIDE the one
@@ -1508,7 +1509,7 @@ const baseStyles = StyleSheet.create({
   // flow directly under the internal results / the no-match sentence and scroll
   // with them, which is what makes them reachable on a no-match.
   externalBlock: {
-    paddingTop: 12,
+    paddingTop: spacing.s12,
     paddingBottom: 20,
   },
 });

@@ -302,6 +302,7 @@
     "src/services/incrementalNotes.ts",
     "scripts/incrementalNotes.test.ts",
     "src/theme/tokens.ts",
-    "scripts/designTokens.test.ts"
+    "scripts/designTokens.test.ts",
+    "scripts/designTokenMigration.test.ts"
   ]
 }

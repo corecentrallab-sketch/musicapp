@@ -42,7 +42,8 @@ export const TODAY_CARD_SPEC = {
   /** Card width at 390 dp frame width, 16 dp side margins. */
   widthDp: 358,
   heightDp: 92,
-  radius: 18,
+  /** design-system v1 (§2): four radii only — the card radius is 16 (`radius.card`). */
+  radius: 16,
   sideMarginDp: 16,
   tileDp: 56,
   eyebrowSize: 10,
@@ -62,9 +63,15 @@ export function styleValue(source: string, styleName: string, prop: string): str
   const close = matchingBrace(text, open);
   if (close < 0) return null;
   const body = text.slice(open, close);
-  const match = new RegExp(`(?:^|[\\s{,])${prop}\\s*:\\s*('([^']*)'|"([^"]*)"|([-0-9.]+))`).exec(body);
+  // design-system v1: a value may also be a THEME TOKEN EXPRESSION
+  // (`colors.bg.surface`, `radius.card`, `spacing.s16`) — the fifth alternative.
+  // It is last, so a quoted or numeric literal still wins, and the token text is
+  // returned verbatim for the caller to compare against the expected token.
+  const match = new RegExp(
+    `(?:^|[\\s{,])${prop}\\s*:\\s*('([^']*)'|"([^"]*)"|([-0-9.]+)|([A-Za-z_][A-Za-z0-9_.]*))`,
+  ).exec(body);
   if (!match) return null;
-  return match[2] ?? match[3] ?? match[4] ?? null;
+  return match[2] ?? match[3] ?? match[4] ?? match[5] ?? null;
 }
 
 /** The index of the `}` that closes the `{` at `open` (quotes skipped). */
@@ -146,27 +153,27 @@ export function todayCardMatchesSpec(source: string): boolean {
     return raw === null ? Number.NaN : Number(raw);
   };
   // the card
-  if (number('todayCard', 'borderRadius') !== spec.radius) return false;
+  if (styleValue(source, 'todayCard', 'borderRadius') !== 'radius.card') return false;
   if (number('todayCard', 'minHeight') !== spec.heightDp) return false;
   if (number('todayCard', 'borderWidth') !== spec.borderWidth) return false;
-  if (number('todayCard', 'marginHorizontal') !== spec.sideMarginDp) return false;
-  if (styleValue(source, 'todayCard', 'backgroundColor') !== '#16213e') return false;
-  if (styleValue(source, 'todayCard', 'borderColor') !== '#0f3460') return false;
+  if (styleValue(source, 'todayCard', 'marginHorizontal') !== 'spacing.s16') return false;
+  if (styleValue(source, 'todayCard', 'backgroundColor') !== 'colors.bg.surface') return false;
+  if (styleValue(source, 'todayCard', 'borderColor') !== 'colors.border.subtle') return false;
   if (styleValue(source, 'todayCard', 'flexDirection') !== 'row') return false;
   // the paper tile
   if (number('todayCardTile', 'width') !== spec.tileDp) return false;
   if (number('todayCardTile', 'height') !== spec.tileDp) return false;
-  if (styleValue(source, 'todayCardTile', 'backgroundColor') !== '#ffffff') return false;
+  if (styleValue(source, 'todayCardTile', 'backgroundColor') !== 'colors.bg.surface') return false;
   // the three type levels
   if (number('todayCardEyebrow', 'fontSize') !== spec.eyebrowSize) return false;
-  if (styleValue(source, 'todayCardEyebrow', 'color') !== '#4ecdc4') return false;
+  if (styleValue(source, 'todayCardEyebrow', 'color') !== 'colors.text.secondary') return false;
   if (number('todayCardPiece', 'fontSize') !== spec.titleSize) return false;
-  if (styleValue(source, 'todayCardPiece', 'color') !== '#ffffff') return false;
+  if (styleValue(source, 'todayCardPiece', 'color') !== 'colors.text.primary') return false;
   if (number('todayCardComposer', 'fontSize') !== spec.subSize) return false;
-  if (styleValue(source, 'todayCardComposer', 'color') !== '#a0a0b8') return false;
+  if (styleValue(source, 'todayCardComposer', 'color') !== 'colors.text.secondary') return false;
   // the affordance mark
   if (number('todayCardChevron', 'fontSize') !== spec.chevronSize) return false;
-  if (styleValue(source, 'todayCardChevron', 'color') !== '#a0a0b8') return false;
+  if (styleValue(source, 'todayCardChevron', 'color') !== 'colors.text.secondary') return false;
   return true;
 }
 
