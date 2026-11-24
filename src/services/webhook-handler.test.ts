@@ -532,8 +532,14 @@ describe("GET /api/entitlement answers from purchases AND subscriptions", () => 
 // --- E. purchase_complete is server-only ----------------------------------
 
 describe("purchase_complete cannot be forged by a client", () => {
-  test("it is a SERVER event, not one of the client's nine", () => {
-    expect([...EVENT_NAMES]).toHaveLength(9);
+  // The count is pinned so a name can never be added to the client allowlist
+  // silently. It is 11 since 2026-11-24, when the affiliate funnel added
+  // affiliate_cta_viewed / affiliate_cta_clicked (PR #248). The point of this
+  // test is the SECOND and THIRD assertions — that `purchase_complete` is not
+  // among the client's names and is among the server's — so the count moves
+  // with the allowlist and the invariant stays.
+  test("it is a SERVER event, not one of the client's eleven", () => {
+    expect([...EVENT_NAMES]).toHaveLength(11);
     expect(EVENT_NAMES as readonly string[]).not.toContain("purchase_complete");
     expect(SERVER_EVENT_NAMES as readonly string[]).toContain("purchase_complete");
   });

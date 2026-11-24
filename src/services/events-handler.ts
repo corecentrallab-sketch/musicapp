@@ -71,7 +71,7 @@
  * returning from a checkout page proves nothing about whether money moved.
  *
  * The split is enforced by two lists, not by convention:
- *   EVENT_NAMES        — the nine names a CLIENT may post to /api/events.
+ *   EVENT_NAMES        — the eleven names a CLIENT may post to /api/events.
  *   SERVER_EVENT_NAMES — names only the server may write (`purchase_complete`).
  * `handleEvents` validates against EVENT_NAMES only, so an app — or anyone
  * holding the app's public API — cannot forge a purchase by posting one.
@@ -80,10 +80,11 @@ import { sql } from "~/db";
 
 /**
  * THE ALLOWLIST — eleven event names, identical on both sides of the wire.
- * The brief calls it "exactly these seven" and then lists nine; the list is
- * what binds, so nine are accepted. The app's client module must keep the same
- * nine, and `events-handler.test.ts` pins this array so a drift shows up as a
- * failing test rather than as silently-dropped events in production.
+ * Nine were the v47.2 instrumentation set; `affiliate_cta_viewed` and
+ * `affiliate_cta_clicked` joined on 2026-11-24 (PR #248) so affiliate CTR
+ * (clicked / viewed, per surface) is computable. The list is what binds, and
+ * `events-handler.test.ts` pins this array so a drift shows up as a failing
+ * test rather than as silently-dropped events in production.
  */
 export const EVENT_NAMES = [
   "app_open",
