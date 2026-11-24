@@ -345,17 +345,22 @@ assert(
   (todayCardBlock(home).match(/<TouchableOpacity/g) || []).length === 1,
   'the card holds no second tap target (exactly one: the card itself; the chevron is only a mark)',
 );
-assertEq(styleValue(home, 'todayCard', 'borderRadius'), '18', 'radius 18');
+// design-system v1: the card's geometry is unchanged in VALUE (16 dp radius, 16 dp
+// side margins) but both are now theme tokens, so the assertions name the token.
+assertEq(styleValue(home, 'todayCard', 'borderRadius'), 'radius.card', 'radius.card (16 dp)');
 assertEq(styleValue(home, 'todayCard', 'minHeight'), '92', '92 dp tall');
-assertEq(styleValue(home, 'todayCard', 'marginHorizontal'), '16', '16 dp side margins (never touches the screen edge)');
+assertEq(styleValue(home, 'todayCard', 'marginHorizontal'), 'spacing.s16', '16 dp side margins (never touches the screen edge)');
 assertEq(styleValue(home, 'todayCardTile', 'width'), '56', 'a 56 dp score tile');
 assertEq(styleValue(home, 'todayCardEyebrow', 'fontSize'), '10', 'eyebrow at 10 dp');
 assertEq(styleValue(home, 'todayCardPiece', 'fontSize'), '16', 'title at 16 dp');
 assertEq(styleValue(home, 'todayCardComposer', 'fontSize'), '12', 'composer at 12 dp');
 // MUTATIONS — each one must break the contract.
 const cardMutations: Array<{ label: string; source: string }> = [
-  { label: 'radius 16 (the old band’s card)', source: home.replace('borderRadius: 18,', 'borderRadius: 16,') },
-  { label: 'no side margin (edge-to-edge)', source: home.replace('    marginHorizontal: 16,\n    minHeight: 92,', '    minHeight: 92,') },
+  { label: 'the modal radius on the card', source: home.replace(
+    '  todayCard: {\n    backgroundColor: colors.bg.surface,\n    borderRadius: radius.card,',
+    '  todayCard: {\n    backgroundColor: colors.bg.surface,\n    borderRadius: radius.modal,',
+  ) },
+  { label: 'no side margin (edge-to-edge)', source: home.replace('    marginHorizontal: spacing.s16,\n    minHeight: 92,', '    minHeight: 92,') },
   { label: 'a 44 dp tile instead of 56 dp', source: home.replace('    width: 56,\n    height: 56,', '    width: 44,\n    height: 44,') },
   { label: 'a 20 dp title (the old card)', source: home.replace(`  todayCardPiece: {
     fontSize: 16,`, `  todayCardPiece: {
@@ -369,10 +374,10 @@ const cardMutations: Array<{ label: string; source: string }> = [
   { label: 'a non-paper tile', source: home.replace(`  todayCardTile: {
     width: 56,
     height: 56,
-    backgroundColor: '#ffffff',`, `  todayCardTile: {
+    backgroundColor: colors.bg.surface,`, `  todayCardTile: {
     width: 56,
     height: 56,
-    backgroundColor: '#0f3460',`) },
+    backgroundColor: colors.bg.canvas,`) },
 ];
 for (const mutation of cardMutations) {
   assert(mutation.source !== home, `the mutation "${mutation.label}" changed the real screen`);

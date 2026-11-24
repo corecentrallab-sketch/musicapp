@@ -9,6 +9,7 @@
  * 3. Results shown in RecognitionResultView modal
  */
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 // THE BILLING SWITCH (services/billingMode): with it off the quota-exhausted
 // card gets NO upgrade handler at all, so the result view has nothing to open
 // even if a future edit renders the button by mistake.
@@ -1762,35 +1763,35 @@ export const HomeScreen: React.FC = () => {
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.canvas,
   },
   scroll: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 40,
+    paddingTop: spacing.s24,
+    paddingBottom: spacing.s40,
   },
 
   // Header
   headerEmoji: {
     fontSize: 48,
     textAlign: 'center',
-    marginBottom: 4,
+    marginBottom: spacing.s4,
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#e94560',
+    color: colors.accent.primary,
     textAlign: 'center',
     marginBottom: 2,
   },
   subtitle: {
     fontSize: 14,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: spacing.s24,
   },
 
   // 🏅 The quiet medals entry — a small row, deliberately lighter than the
@@ -1801,33 +1802,33 @@ const baseStyles = StyleSheet.create({
   // This Week / For You) — the card says where the tap goes instead of only
   // looking tappable.
   cardCta: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontSize: 14,
     fontWeight: '700',
-    marginTop: 12,
+    marginTop: spacing.s12,
   },
 
 
   challengeMeta: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 8,
-    marginBottom: 12,
+    gap: spacing.s8,
+    marginBottom: spacing.s12,
   },
   challengeTag: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 8,
+    backgroundColor: colors.bg.canvas,
+    borderRadius: radius.pill,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: spacing.s4,
   },
   challengeTagText: {
-    color: '#c0c0d0',
+    color: colors.text.primary,
     fontSize: 12,
     fontWeight: '600',
   },
   challengeDesc: {
     fontSize: 13,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 19,
     marginBottom: 14,
@@ -1846,7 +1847,7 @@ const baseStyles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.4,
-    color: '#8a8aa3',
+    color: colors.text.secondary,
     marginBottom: 10,
   },
   heroPairWrap: {
@@ -1856,7 +1857,7 @@ const baseStyles = StyleSheet.create({
   heroPairRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 12,
+    gap: spacing.s12,
     width: '100%',
   },
   recognitionBtn: {
@@ -1868,24 +1869,24 @@ const baseStyles = StyleSheet.create({
   // The honest support line under the pair (free-recognition count / state).
   splitSupportLine: {
     fontSize: 12,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     textAlign: 'center',
-    marginTop: 12,
+    marginTop: spacing.s12,
     lineHeight: 17,
   },
 
   // Demo button (dev-only)
   demoBtn: {
     marginTop: 14,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 10,
+    paddingVertical: spacing.s8,
+    paddingHorizontal: spacing.s16,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: '#4ecdc4',
+    borderColor: colors.accent.secondary,
     backgroundColor: 'transparent',
   },
   demoBtnText: {
-    color: '#4ecdc4',
+    color: colors.text.secondary,
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',
@@ -1904,45 +1905,45 @@ const baseStyles = StyleSheet.create({
   recordingIndicator: {
     width: 16,
     height: 16,
-    borderRadius: 8,
-    backgroundColor: '#e94560',
-    marginBottom: 12,
+    borderRadius: radius.circle,
+    backgroundColor: colors.accent.primary,
+    marginBottom: spacing.s12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   recordingDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
-    backgroundColor: '#ff6b6b',
+    borderRadius: radius.circle,
+    backgroundColor: colors.accent.primary,
   },
 
   // Permission error
   permissionError: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 10,
-    padding: 12,
+    backgroundColor: colors.bg.canvas,
+    borderRadius: radius.card,
+    padding: spacing.s12,
     marginBottom: 14,
     width: '100%',
     borderWidth: 1,
-    borderColor: '#e94560',
+    borderColor: colors.accent.primary,
   },
   permissionErrorText: {
-    color: '#ffb347',
+    color: colors.text.primary,
     fontSize: 13,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: spacing.s8,
     lineHeight: 18,
   },
   settingsBtn: {
-    backgroundColor: '#0f3460',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.s8,
+    paddingHorizontal: spacing.s16,
     alignSelf: 'center',
   },
   settingsBtnText: {
-    color: '#ffffff',
+    color: colors.bg.surface,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -1958,8 +1959,8 @@ const baseStyles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 0.6,
-    color: '#8a8aa3',
-    marginBottom: 8,
+    color: colors.text.secondary,
+    marginBottom: spacing.s8,
   },
   // A wrapping row of small chips / entries. flexWrap matters: the hum label is
   // long on purpose (it names all three capture modes) and must reflow rather
@@ -1977,10 +1978,10 @@ const baseStyles = StyleSheet.create({
     minHeight: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
+    borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: '#0f3460',
-    backgroundColor: '#16213e',
+    borderColor: colors.border.control,
+    backgroundColor: colors.bg.surface,
     paddingHorizontal: 26,
   },
   findASongBarIcon: {
@@ -1988,38 +1989,38 @@ const baseStyles = StyleSheet.create({
     height: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
+    marginRight: spacing.s8,
   },
   // The drawn magnifier: a 13 dp lens ring + a 6 dp handle at 45° (no icon font,
   // no new asset, nothing to go missing on a device).
   findASongBarLens: {
     width: 13,
     height: 13,
-    borderRadius: 7,
+    borderRadius: radius.circle,
     borderWidth: 2,
-    borderColor: '#a0a0b8',
+    borderColor: colors.text.secondary,
   },
   findASongBarHandle: {
     position: 'absolute',
     width: 6,
     height: 2,
-    borderRadius: 1,
-    backgroundColor: '#a0a0b8',
+    borderRadius: radius.circle,
+    backgroundColor: colors.text.secondary,
     right: 0,
     bottom: 3,
     transform: [{ rotate: '45deg' }],
   },
   findASongBarLabel: {
     flex: 1,
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 15,
     fontWeight: '600',
   },
   findASongBarChevron: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 22,
     fontWeight: '700',
-    marginLeft: 8,
+    marginLeft: spacing.s8,
   },
   // Band B — ONE card, one destination (owner 10-02).
   // ── Today's piece — ONE CARD (v41 item 4 · designer spec §1) ──────────────
@@ -2028,39 +2029,39 @@ const baseStyles = StyleSheet.create({
   // are the existing palette roles, so the light mode remap (services/themeApply)
   // repaints them and nothing new is invented.
   todayCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 18,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: '#0f3460',
-    marginHorizontal: 16,
+    borderColor: colors.border.subtle,
+    marginHorizontal: spacing.s16,
     minHeight: 92,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: spacing.s12,
   },
   // The 56 dp paper score tile — paper-white in BOTH themes (the theme remap
   // treats #ffffff as a surface, not as ink).
   todayCardTile: {
     width: 56,
     height: 56,
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     marginRight: 14,
     justifyContent: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: spacing.s8,
     overflow: 'hidden',
   },
   todayCardStaffLine: {
     height: 1,
-    backgroundColor: '#c9cddb',
+    backgroundColor: colors.border.subtle,
     marginVertical: 2,
   },
   todayCardNote: {
     position: 'absolute',
     width: 6,
     height: 5,
-    borderRadius: 3,
-    backgroundColor: '#16213e',
+    borderRadius: radius.circle,
+    backgroundColor: colors.text.primary,
     left: 15,
     top: 19,
   },
@@ -2076,7 +2077,7 @@ const baseStyles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.8,
-    color: '#4ecdc4',
+    color: colors.text.secondary,
     marginBottom: 2,
   },
   todayCardBadge: {
@@ -2085,27 +2086,27 @@ const baseStyles = StyleSheet.create({
   todayCardTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.text.primary,
   },
   todayCardPiece: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.text.primary,
   },
   todayCardComposer: {
     fontSize: 12,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     marginTop: 2,
   },
   // The only affordance mark — decoration, never its own hit region.
   todayCardChevron: {
     fontSize: 14,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     marginLeft: 10,
   },
   todayCardBody: {
     fontSize: 14,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     lineHeight: 20,
     marginTop: 10,
   },

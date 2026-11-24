@@ -18,6 +18,7 @@
  * Global catalog discovery still lives on Home's own Find-a-piece entry.
  */
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -483,7 +484,7 @@ export const HistoryScreen: React.FC = () => {
             value={noteDraft.text}
             onChangeText={(text) => setNoteDraft({ id: item.id, text })}
             placeholder={TAKE_NOTE_PLACEHOLDER}
-            placeholderTextColor="#8a8ab0"
+            placeholderTextColor={colors.text.secondary}
             maxLength={TAKE_NOTE_MAX_LENGTH}
             autoFocus
             accessibilityLabel={`${TAKE_NOTE_LABEL} for ${item.title}`}
@@ -1010,33 +1011,33 @@ export const HistoryScreen: React.FC = () => {
 };
 
 const baseStyles = StyleSheet.create({
-  sheetDisclosure: { fontSize: 10, color: '#8a8aa3', lineHeight: 14, marginTop: 6 },
+  sheetDisclosure: { fontSize: 10, color: colors.text.secondary, lineHeight: 14, marginTop: 6 },
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.canvas,
   },
   center: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.canvas,
     alignItems: 'center',
     justifyContent: 'center',
   },
   centerSubtext: {
-    color: '#a0a0b8',
-    marginTop: 12,
+    color: colors.text.secondary,
+    marginTop: spacing.s12,
     fontSize: 14,
   },
 
   // Streak header — a column card: the 🔥 row, then the CTA line saying where
   // the tap goes (same shape as Home's streak card).
   streakCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     padding: 18,
     marginHorizontal: 20,
-    marginTop: 16,
+    marginTop: spacing.s16,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.subtle,
   },
   streakRow: {
     flexDirection: 'row',
@@ -1052,30 +1053,30 @@ const baseStyles = StyleSheet.create({
   streakCount: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.text.primary,
   },
   streakBest: {
     fontSize: 13,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     marginTop: 2,
   },
   streakCta: {
-    marginTop: 12,
+    marginTop: spacing.s12,
     fontSize: 14,
     fontWeight: '700',
-    color: '#e94560',
+    color: colors.brand.anchor,
   },
 
   // List
   listContent: {
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 40,
+    paddingTop: spacing.s16,
+    paddingBottom: spacing.s40,
   },
   listHeader: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#e94560',
+    color: colors.brand.anchor,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 10,
@@ -1085,88 +1086,88 @@ const baseStyles = StyleSheet.create({
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0f3460',
-    borderRadius: 12,
-    paddingVertical: 4,
-    paddingHorizontal: 12,
+    backgroundColor: colors.bg.surfaceTinted,
+    borderRadius: radius.card,
+    paddingVertical: spacing.s4,
+    paddingHorizontal: spacing.s12,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#1a1a2e',
+    borderColor: colors.border.control,
   },
   searchEmoji: {
     fontSize: 16,
-    marginRight: 8,
+    marginRight: spacing.s8,
   },
   searchInput: {
     flex: 1,
-    color: '#ffffff',
+    color: colors.text.primary,
     fontSize: 13,
     paddingVertical: 10,
   },
   searchClear: {
-    paddingHorizontal: 4,
+    paddingHorizontal: spacing.s4,
     paddingVertical: 6,
   },
   searchClearText: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 14,
     fontWeight: '700',
   },
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#16213e',
-    borderRadius: 14,
-    padding: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
+    padding: spacing.s16,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.subtle,
   },
   itemInfo: {
     flex: 1,
-    marginRight: 12,
+    marginRight: spacing.s12,
   },
   itemTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.text.primary,
   },
   itemComposer: {
     fontSize: 14,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     marginTop: 2,
   },
   itemMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 6,
-    gap: 8,
+    gap: spacing.s8,
   },
   itemGenre: {
     fontSize: 12,
-    color: '#4ecdc4',
+    color: colors.text.secondary,
     fontWeight: '600',
-    backgroundColor: '#1a1a2e',
-    borderRadius: 6,
-    paddingHorizontal: 8,
+    backgroundColor: colors.bg.canvas,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.s8,
     paddingVertical: 2,
     overflow: 'hidden',
   },
   itemDate: {
     fontSize: 12,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
   },
   /** The captured take line on a row that came from a hum/whistle/sing capture. */
   itemTakeLabel: {
     fontSize: 12,
-    color: '#4ecdc4',
+    color: colors.text.secondary,
     marginTop: 6,
   },
   /** The take's detected key ("Key: G major") — rendered only when the take
    *  really had one, so the row never claims a key it cannot support. */
   itemTakeKey: {
     fontSize: 12,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     marginTop: 2,
   },
   /** The row's purchase action (bundle C, owner 10-02) — the same "buy" weight the
@@ -1174,16 +1175,16 @@ const baseStyles = StyleSheet.create({
    *  row's saved purchase map resolves to a licensed retailer URL. */
   sheetBtn: {
     alignSelf: 'flex-start',
-    backgroundColor: '#0f3460',
-    borderColor: '#e94560',
+    backgroundColor: colors.bg.surfaceTinted,
+    borderColor: colors.accent.primary,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: radius.pill,
     paddingVertical: 7,
-    paddingHorizontal: 12,
-    marginTop: 8,
+    paddingHorizontal: spacing.s12,
+    marginTop: spacing.s8,
   },
   sheetBtnText: {
-    color: '#ffffff',
+    color: colors.text.primary,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -1194,33 +1195,33 @@ const baseStyles = StyleSheet.create({
    */
   playTakeBtn: {
     alignSelf: 'flex-start',
-    backgroundColor: '#16213e',
-    borderColor: '#4ecdc4',
+    backgroundColor: colors.bg.surface,
+    borderColor: colors.accent.secondary,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: radius.pill,
     minHeight: 44,
     justifyContent: 'center',
     paddingHorizontal: 14,
-    marginTop: 8,
+    marginTop: spacing.s8,
   },
   playTakeBtnText: {
-    color: '#4ecdc4',
+    color: colors.text.secondary,
     fontSize: 13,
     fontWeight: '700',
   },
   /** Which audio this is — said out loud while it plays (never a re-synthesis). */
   playTakeCaption: {
     fontSize: 12,
-    color: '#4ecdc4',
+    color: colors.text.secondary,
     lineHeight: 17,
     marginTop: 6,
   },
   /** The honest line for a melody row saved before its clip was kept. */
   playTakeMissing: {
     fontSize: 12,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     lineHeight: 17,
-    marginTop: 8,
+    marginTop: spacing.s8,
   },
   /**
    * The row's MIDI export action (v29 Batch A) — teal outline, like the app's
@@ -1228,26 +1229,26 @@ const baseStyles = StyleSheet.create({
    */
   midiBtn: {
     alignSelf: 'flex-start',
-    backgroundColor: '#0f3460',
-    borderColor: '#4ecdc4',
+    backgroundColor: colors.bg.surfaceTinted,
+    borderColor: colors.accent.secondary,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: radius.pill,
     paddingVertical: 7,
-    paddingHorizontal: 12,
-    marginTop: 8,
+    paddingHorizontal: spacing.s12,
+    marginTop: spacing.s8,
   },
   /**
    * The row's MIDI export action (v29 Batch A) — teal outline, like the app's
    * other "extra capability" actions. It presses independently of the card.
    */
   midiBtnText: {
-    color: '#4ecdc4',
+    color: colors.text.secondary,
     fontSize: 13,
     fontWeight: '700',
   },
   midiNote: {
     fontSize: 12,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     lineHeight: 17,
     marginTop: 6,
   },
@@ -1258,16 +1259,16 @@ const baseStyles = StyleSheet.create({
    */
   sendTakeBtn: {
     alignSelf: 'flex-start',
-    backgroundColor: '#0f3460',
-    borderColor: '#4ecdc4',
+    backgroundColor: colors.bg.surfaceTinted,
+    borderColor: colors.accent.secondary,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: radius.pill,
     paddingVertical: 7,
-    paddingHorizontal: 12,
-    marginTop: 8,
+    paddingHorizontal: spacing.s12,
+    marginTop: spacing.s8,
   },
   sendTakeBtnText: {
-    color: '#4ecdc4',
+    color: colors.text.secondary,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -1277,32 +1278,32 @@ const baseStyles = StyleSheet.create({
    */
   editTakeBtn: {
     alignSelf: 'flex-start',
-    backgroundColor: '#16213e',
-    borderColor: '#4ecdc4',
+    backgroundColor: colors.bg.surface,
+    borderColor: colors.accent.secondary,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: radius.pill,
     minHeight: 44,
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    marginTop: 8,
+    paddingHorizontal: spacing.s12,
+    marginTop: spacing.s8,
   },
   editTakeBtnText: {
-    color: '#4ecdc4',
+    color: colors.text.secondary,
     fontSize: 13,
     fontWeight: '700',
   },
   removeBtn: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: '#1a1a2e',
+    borderRadius: radius.circle,
+    backgroundColor: colors.bg.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.control,
   },
   removeBtnText: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -1310,22 +1311,22 @@ const baseStyles = StyleSheet.create({
   // Empty state
   empty: {
     alignItems: 'center',
-    paddingTop: 48,
-    paddingHorizontal: 24,
+    paddingTop: spacing.s48,
+    paddingHorizontal: spacing.s24,
   },
   emptyEmoji: {
     fontSize: 48,
-    marginBottom: 12,
+    marginBottom: spacing.s12,
   },
   emptyTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.text.primary,
     marginBottom: 6,
   },
   emptyText: {
     fontSize: 14,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 21,
   },
