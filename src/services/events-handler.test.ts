@@ -60,7 +60,7 @@ const post = (body: unknown, init: RequestInit = {}): Request =>
   });
 
 describe("events: the allowlist is the contract, pinned on both sides", () => {
-  test("exactly the nine brief event names, in order", () => {
+  test("exactly the eleven event names, in order", () => {
     expect([...EVENT_NAMES]).toEqual([
       "app_open",
       "recognition_start",
@@ -71,6 +71,8 @@ describe("events: the allowlist is the contract, pinned on both sides", () => {
       "plans_view",
       "upgrade_tap",
       "pro_feature_use",
+      "affiliate_cta_viewed",
+      "affiliate_cta_clicked",
     ]);
   });
 

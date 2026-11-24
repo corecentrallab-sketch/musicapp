@@ -79,7 +79,7 @@
 import { sql } from "~/db";
 
 /**
- * THE ALLOWLIST — nine event names, identical on both sides of the wire.
+ * THE ALLOWLIST — eleven event names, identical on both sides of the wire.
  * The brief calls it "exactly these seven" and then lists nine; the list is
  * what binds, so nine are accepted. The app's client module must keep the same
  * nine, and `events-handler.test.ts` pins this array so a drift shows up as a
@@ -95,6 +95,8 @@ export const EVENT_NAMES = [
   "plans_view",
   "upgrade_tap",
   "pro_feature_use",
+  "affiliate_cta_viewed",
+  "affiliate_cta_clicked",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];
