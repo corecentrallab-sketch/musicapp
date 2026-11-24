@@ -300,6 +300,8 @@
     "scripts/d40bLibraryCard.test.ts",
     "scripts/vc66TunerSpeed.test.ts",
     "src/services/incrementalNotes.ts",
-    "scripts/incrementalNotes.test.ts"
+    "scripts/incrementalNotes.test.ts",
+    "src/theme/tokens.ts",
+    "scripts/designTokens.test.ts"
   ]
 }
