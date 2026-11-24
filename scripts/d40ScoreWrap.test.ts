@@ -168,7 +168,9 @@ const view = read('src/components/AbcScoreView.tsx');
 ok(
   'a wrapped READER is still drawn at no less than the D27 floor',
   view.includes('Math.max(READER_MIN_SCALE, readerScale)') &&
-    view.includes('const wrapScale = reader ? readerScaleValue : WRAP_DEFAULT_SCALE;'),
+    // v66: the scale goes through the window's own floor rule (`scoreWindowWrapScale`
+    // clamps to READER_MIN_SCALE), so the guarantee is the same one, enforced once.
+    view.includes('scoreWindowWrapScale(readerScaleValue)'),
 );
 ok(`the D27 floor is still ${READER_MIN_SCALE}`, READER_MIN_SCALE >= 1.5);
 
@@ -188,7 +190,10 @@ const editor = read('src/components/TakeCorrectionEditor.tsx');
 ok('the take editor and its full-screen staff wrap', editor.split('wrapSystems').length - 1 >= 2);
 ok(
   'the viewer chooses the wrapped document when asked',
-  view.includes('wrapSystems === true') && view.includes('generateAbcWrappedHtml('),
+  // v66: the choice is `scoreWindowDocument(...)` — `wrapSystems` still asks for the
+  // wrap by name, and the full-screen window now asks for it too.
+  view.includes('scoreWindowDocument({ inWindow: inScoreWindow, wrapSystems, autoWrap })') &&
+    view.includes('generateAbcWrappedHtml('),
 );
 // The library's own scores are NOT silently re-laid out: the card document is
 // unchanged, which is what the D27 guards also assert.

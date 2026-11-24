@@ -47,6 +47,8 @@ import {
   WRAP_DEFAULT_SCALE,
 } from '../services/abcHtml';
 import { readerViewportKey, readerZoomProps } from '../services/scoreReaderViewport';
+import { scoreWindowDocument, scoreWindowWrapScale } from '../services/scoreWindow';
+import { useFullScreenScoreWindow } from './scoreWindowContext';
 
 /** The ink a score is drawn in when the caller names none (near-black on paper). */
 export { ABC_DEFAULT_INK, ABC_DEFAULT_BACKGROUND } from '../services/abcHtml';
@@ -245,6 +247,8 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   wrapSystems = false,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
+  /** Inside the full-screen score window? See the document rule below (vc66 F1/F3). */
+  const inScoreWindow = useFullScreenScoreWindow();
   /** The reader's viewport (the box a whole-work document that does not fit is
    *  given; it then scrolls itself inside it). The caller's own measured area wins
    *  when it has one (see `viewportHeight`); otherwise the window is the best
@@ -309,8 +313,22 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
       cardDocumentChoice(abc, window.width - CARD_DOCUMENT_INSET_PX).document === 'wrapped',
     [abc, reader, window.width],
   );
-  const wrapped = wrapSystems === true || autoWrap;
-  const wrapScale = reader ? readerScaleValue : WRAP_DEFAULT_SCALE;
+  /**
+   * ── v66 F1/F2/F3 ── AND THE FULL-SCREEN WINDOW LAID THE SCORE OUT FOR ITSELF.
+   *
+   * The window (`components/FullScreenScore`) hands this viewer the element its
+   * surface already drew, so its props are the CARD's: a reader `readerScale`,
+   * which selects the fixed-width reader document. That drawing is measured once
+   * from constants and never re-measured for the box it lands in, so in a window it
+   * was wider than the phone (a cut-off page that pans, F3) and far shorter than
+   * the screen (the page did not fill it, F1), and a rotation re-keyed the WebView
+   * onto the same fixed drawing (F2). `scoreWindowDocument` is the rule: inside the
+   * window the score is always laid out for the window, and outside it the
+   * surface's own choice stands untouched (D27, D40b).
+   */
+  const wrapped =
+    scoreWindowDocument({ inWindow: inScoreWindow, wrapSystems, autoWrap }) === 'wrapped';
+  const wrapScale = reader ? scoreWindowWrapScale(readerScaleValue) : WRAP_DEFAULT_SCALE;
   // Use the abc text (and the ink, which changes the document) as a rendering
   // key so a fresh WebView reloads whenever the score or its colour changes.
   const html = useMemo(

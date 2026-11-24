@@ -190,7 +190,9 @@ ok(
 );
 ok(
   'the wrap is chosen for a card that must wrap',
-  view.includes('const wrapped = wrapSystems === true || autoWrap;'),
+  // v66: the card's own decision is still `autoWrap`, now read through the one document
+  // rule (`scoreWindowDocument`), which the window overrides for itself.
+  view.includes('autoWrap }) === \'wrapped\'') && view.includes('autoWrap = useMemo('),
 );
 ok(
   'the reader documents are never auto-wrapped (D27 pins them)',

@@ -114,8 +114,11 @@ function progressIsTheReadsOwnAndShownWhileItRuns(screenSource: string, modelSou
   //     fails here.
   const stepAt = src.indexOf('readStepLine(readStep)');
   if (stepAt < 0) return false;
-  const gateAt = src.lastIndexOf('{takeBusy ? <Text', stepAt);
-  if (gateAt < 0 || stepAt - gateAt > 120) return false;
+  // v66 (F6): the line has its own style and testID, so the gate and the render are
+  // no longer one short line — the gate is still the same `takeBusy` test, and the
+  // step still has to be inside it.
+  const gateAt = src.lastIndexOf('{takeBusy ?', stepAt);
+  if (gateAt < 0 || stepAt - gateAt > 140) return false;
 
   // (b) The step is the READ's own stage callback, in every read path.
   if (countOf(src, 'onStage: (stage, ms) => {') !== 2) return false;

@@ -58,6 +58,16 @@ export interface TakeReadTiming {
   at: string;
   /** The take's own length in seconds, when the screen knew it. */
   audioSec: number | null;
+  /**
+   * ── v66 (F5) ── HOW MUCH OF THAT TAKE THE READ ACTUALLY PRODUCED NOTES FOR.
+   *
+   * `audioSec` is the TAKE's length (a three-minute take is 180), which is not what
+   * the read covered: a read stops at the payload cap, so the two numbers are
+   * different facts and the card was printing the first as the second. Measured from
+   * the notes the read made (`takeReadCoverage`); absent on an older record, which
+   * then prints exactly the line it printed before.
+   */
+  coveredSec?: number | null;
   /** The measured spans, in milliseconds. A missing stage was not measured. */
   stages: Partial<Record<TakeReadStage, number>>;
   /** The whole read, press to result, in milliseconds. */
@@ -148,11 +158,123 @@ export function readTimingsServerLine(timing: TakeReadTiming | null | undefined)
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
-/** The take's own length beside the line, so a slow read can be scaled by what it read. */
+/**
+ * ── v66 (F5) ── WHAT THE READ COVERED, SAID AS WHAT THE READ COVERED.
+ *
+ * vc61 printed the TAKE's own length here ("this read covered 180s of audio" on a
+ * three-minute take). 180 s is how long the user held the phone up, not what the read
+ * produced notes for: the read stops at the payload cap (D21, the owner's 60-second
+ * ceiling), so on the owner's v65 take the notes stopped at 61.7 s while the line
+ * claimed the whole three minutes. Coverage is now measured from the notes the read
+ * actually made, and a read that stopped short says so, with the take's own length
+ * beside it so the two facts cannot be mistaken for each other.
+ *
+ * A record with no `coveredSec` (written before vc66) prints exactly the line it
+ * always printed — an older read says what it said, rather than a coverage it never
+ * measured.
+ */
 export function readTimingsAudioLine(timing: TakeReadTiming | null | undefined): string | null {
   const audio = Number(timing?.audioSec);
+  const hasAudio = Number.isFinite(audio) && audio > 0;
+  const rawCovered = timing?.coveredSec;
+  const covered = rawCovered === null || rawCovered === undefined ? Number.NaN : Number(rawCovered);
+  const hasCovered = Number.isFinite(covered) && covered > 0;
+  if (!hasAudio && !hasCovered) return null;
+  if (!hasCovered) return `this read covered ${secondsLabel(audio)}s of audio`;
+  if (hasAudio && audio - covered > COVERAGE_SHORTFALL_SEC) {
+    return `this read covered the first ${secondsLabel(covered)}s of a ${secondsLabel(audio)}s take`;
+  }
+  return `this read covered ${secondsLabel(hasAudio ? Math.min(covered, audio) : covered)}s of audio`;
+}
+
+/** A span of seconds as the card says it: whole seconds from ten up, one decimal below. */
+function secondsLabel(value: number): string {
+  const safe = Number.isFinite(value) && value > 0 ? value : 0;
+  return safe.toFixed(safe >= 10 ? 0 : 1);
+}
+
+/** Under this much of the take left unread, a read is treated as having covered it. */
+export const COVERAGE_SHORTFALL_SEC = 2;
+
+/** The one note shape coverage is measured from (`MidiNoteEvent`, structurally). */
+export interface CoverageNote {
+  startSec?: number | null;
+  durationSec?: number | null;
+}
+
+/**
+ * ── v66 (F5) ── COVERAGE, MEASURED FROM THE NOTES THE READ MADE.
+ *
+ * The end of the last note the read produced, in seconds — the only honest answer to
+ * "how much of this take did the read read?". No notes means NO coverage (null, never
+ * 0 and never the take's length): a read that produced nothing covered nothing, and
+ * saying "0" would be a measurement the read did not make.
+ */
+export function takeReadCoverage(input: {
+  notes?: ReadonlyArray<CoverageNote> | null;
+  audioSec?: number | null;
+}): { coveredSec: number | null; audioSec: number | null } {
+  const notes = Array.isArray(input?.notes) ? input.notes : [];
+  const rawAudio = input?.audioSec;
+  const audio = rawAudio === null || rawAudio === undefined ? Number.NaN : Number(rawAudio);
+  let end = Number.NaN;
+  for (const note of notes) {
+    const start = Number(note?.startSec);
+    if (!Number.isFinite(start)) continue;
+    const duration = Number(note?.durationSec);
+    const noteEnd = start + (Number.isFinite(duration) && duration > 0 ? duration : 0);
+    if (!Number.isFinite(end) || noteEnd > end) end = noteEnd;
+  }
+  return {
+    coveredSec: Number.isFinite(end) && end > 0 ? Math.round(end * 1000) / 1000 : null,
+    audioSec: Number.isFinite(audio) && audio > 0 ? audio : null,
+  };
+}
+
+/**
+ * ── v66 (F5) ── THE PLAIN-WORDS LINE BESIDE THE NOTATION.
+ *
+ * The owner: if the notes stop short of the take, "then it plainly needs to say so for
+ * the user". Null when the read covered the take (nothing to explain), and null when
+ * either number is unknown — a shortfall is never invented from a missing measurement.
+ */
+export function takeCoverageLine(input: {
+  audioSec?: number | null;
+  coveredSec?: number | null;
+}): string | null {
+  const rawAudio = input?.audioSec;
+  const rawCovered = input?.coveredSec;
+  const audio = rawAudio === null || rawAudio === undefined ? Number.NaN : Number(rawAudio);
+  const covered = rawCovered === null || rawCovered === undefined ? Number.NaN : Number(rawCovered);
   if (!Number.isFinite(audio) || audio <= 0) return null;
-  return `this read covered ${audio.toFixed(audio >= 10 ? 0 : 1)}s of audio`;
+  if (!Number.isFinite(covered) || covered <= 0) return null;
+  if (audio - covered <= COVERAGE_SHORTFALL_SEC) return null;
+  return `The notes stop at the first ${Math.round(covered)} seconds of this ${Math.round(audio)}-second take — a read stops at the 60-second mark, so record a shorter take for the whole piece.`;
+}
+
+/**
+ * ── v66 (F4) ── WHICH SPAN THE `pitch` STAGE CARRIES.
+ *
+ * On the server path the phone only assigns `captured.frames`, so timing that span
+ * with `Date.now()` measured the phone's ~0 ms of work and printed it as
+ * `pitch=0ms@server` against a server that had just measured 4283 ms (the owner's v65
+ * card). The stage now carries the SERVER's own span. A server answer that came with
+ * no span records NOTHING (null → the line prints `?@server`): a zero would be a
+ * measurement nobody made, and it was the invented zero that made the fast path look
+ * broken.
+ */
+export function pitchStageMs(input: {
+  pitchSource?: PitchSource | null;
+  serverPitchMs?: number | null;
+  deviceMs?: number | null;
+}): number | null {
+  const source = input?.pitchSource === 'server' ? 'server' : input?.pitchSource === 'device' ? 'device' : null;
+  if (source === null) return null;
+  const raw = source === 'server' ? input?.serverPitchMs : input?.deviceMs;
+  if (raw === null || raw === undefined) return null;
+  const ms = Number(raw);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return Math.round(ms);
 }
 
 /** Keep the newest reads first, capped — a slow read sits beside the fast one it beat. */
@@ -196,6 +318,8 @@ export function finishReadTiming(input: {
   stages: Partial<Record<TakeReadStage, number>> | null | undefined;
   totalMs: number | null | undefined;
   audioSec?: number | null;
+  /** v66 (F5): how much of that take the read produced notes for (`takeReadCoverage`). */
+  coveredSec?: number | null;
   at?: string;
   /** vc62: which take this read timed, and where its frames came from. */
   label?: string | null;
@@ -209,10 +333,15 @@ export function finishReadTiming(input: {
   const rawTotal = input?.totalMs;
   const total = rawTotal === null || rawTotal === undefined ? Number.NaN : Number(rawTotal);
   const audio = Number(input?.audioSec);
+  const rawCovered = input?.coveredSec;
+  const covered = rawCovered === null || rawCovered === undefined ? Number.NaN : Number(rawCovered);
   const source = input?.pitchSource === 'server' || input?.pitchSource === 'device' ? input.pitchSource : null;
   return {
     at: typeof input?.at === 'string' && input.at.length > 0 ? input.at : new Date().toISOString(),
     audioSec: Number.isFinite(audio) && audio > 0 ? audio : null,
+    // v66 (F5) — additive: a caller that measured no coverage records none (null), so
+    // the card says what it always said rather than a coverage nobody measured.
+    coveredSec: Number.isFinite(covered) && covered > 0 ? covered : null,
     stages: { ...(input?.stages ?? {}) },
     totalMs: Number.isFinite(total) && total >= 0 ? Math.round(total) : null,
     // vc62 — additive: absent fields stay absent (null), so an older caller's timing

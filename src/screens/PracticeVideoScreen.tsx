@@ -248,6 +248,8 @@ import {
   createStageRecorder,
   finishReadTiming,
   pushReadTiming,
+  takeCoverageLine,
+  takeReadCoverage,
   type TakeReadStage,
   type TakeReadTiming,
 } from '../services/takeReadTimings';
@@ -1098,6 +1100,16 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               stages: recorder.stages,
               totalMs: elapsedMs,
               audioSec: readAudioSec,
+              /**
+               * ── v66 (F5) ── WHAT THE READ COVERED, NOT HOW LONG THE TAKE IS ──────
+               * `readAudioSec` is the TAKE's length; the read stops at the payload
+               * cap, so the card printed the one number the read had not measured.
+               * Coverage is the end of the last note this read actually produced.
+               */
+              coveredSec: takeReadCoverage({
+                notes: derived.take?.notes ?? null,
+                audioSec: readAudioSec,
+              }).coveredSec,
               // vc62 (D30/D26): WHICH TAKE THIS READ TIMED, and whose pitch pass it
               // was. Built from the take's own filmed stamp and its measured length,
               // so a row can never be read as another take's.
@@ -1345,6 +1357,12 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
               stages: stageRecorder.stages,
               totalMs: readElapsedMs,
               audioSec: durationSec > 0 ? durationSec : null,
+              // v66 (F5): the coverage THIS read measured, from the notes it made —
+              // `durationSec` above is the take's own length, not what was read.
+              coveredSec: takeReadCoverage({
+                notes: derived?.take?.notes ?? null,
+                audioSec: durationSec > 0 ? durationSec : null,
+              }).coveredSec,
               // vc62 (D30/D26): the label and the source of the frames, per read.
               label: takeReadLabel({
                 // This read is of the take just filmed, so its own start stamp IS the
@@ -1699,6 +1717,23 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
   // ── PLAYBACK: the overlay's own numbers ─────────────────────────────────────
   const take = row?.take ?? null;
   const ref = row?.ref ?? null;
+  /**
+   * ── v66 (F5) ── WHAT THIS TAKE'S READ COVERED, IN PLAIN WORDS ────────────────
+   * The owner's rule for a read that stops short of the take: "then it plainly needs
+   * to say so for the user". Coverage is the end of the last note the read produced
+   * (`takeReadCoverage`), never the take's own length — the two are different facts,
+   * and printing the second as the first was the v65 card's defect. Null when the
+   * notes reach the end of the take: there is nothing to explain.
+   */
+  const takeCoverageNotice = take
+    ? takeCoverageLine({
+        audioSec: take.durationSec > 0 ? take.durationSec : readAudioSec,
+        coveredSec: takeReadCoverage({
+          notes: take.notes,
+          audioSec: take.durationSec,
+        }).coveredSec,
+      })
+    : null;
 
   /**
    * ── vc53, ITEM 4: WHERE A DRAG ON THE SCRUB BAR LANDS ──────────────────────
@@ -2936,7 +2971,11 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 A clock with one unchanging sentence under it still reads as a still
                 screen. This is the step the read itself reported (`onStage`), turned
                 into words — never a percentage, because the app cannot measure one. */}
-            {takeBusy ? <Text style={styles.meta}>{readStepLine(readStep)}</Text> : null}
+            {takeBusy ? (
+              <Text style={styles.readStep} testID="practice-video-read-step">
+                {readStepLine(readStep)}
+              </Text>
+            ) : null}
             {/* ── vc65 ── THE FALLBACK, SAID OUT LOUD. Shown from the moment the phone
                 takes over the pitch pass and kept afterwards, so a read that took
                 longer than it should have has an explanation on the surface. */}
@@ -2968,6 +3007,11 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
             ) : null}
             {!takeBusy && !takeLine && !take ? (
               <Text style={styles.honest}>{VIDEO_TAKE_FAILED_LINE}</Text>
+            ) : null}
+            {takeCoverageNotice ? (
+              <Text style={styles.honest} testID="practice-video-coverage">
+                {takeCoverageNotice}
+              </Text>
             ) : null}
             {take && take.notes.length > 0 ? (
               <TakeStaffCard
@@ -3157,6 +3201,13 @@ const baseStyles = StyleSheet.create({
   tipsLabel: { color: '#cfe4ff', fontSize: 14, fontWeight: '800', marginBottom: 6 },
   tipsBody: { color: '#9aa0b5', fontSize: 12, lineHeight: 18 },
   meta: { color: '#cfe4ff', fontSize: 13, lineHeight: 19, marginTop: 10 },
+  /**
+   * ── v66 (F6) ── THE READ'S STEP LINE, AT A SIZE THAT CAN BE READ ─────────────
+   * This was drawn in `meta` — the 13 pt caption — so the one line that says the
+   * read is alive ("Decoding the audio", "Finding the notes") was the least legible
+   * thing on the screen. Its own style: 16 pt, bold, accent.
+   */
+  readStep: { color: '#4ECDC4', fontSize: 16, fontWeight: '700', lineHeight: 22, marginTop: 10 },
   error: { color: '#ffb4b4', fontSize: 12, lineHeight: 18, marginTop: 10 },
   /**
    * ── vc52 STYLES ──────────────────────────────────────────────────────

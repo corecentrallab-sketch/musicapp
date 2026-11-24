@@ -17,10 +17,18 @@
  * the gate without it).
  *
  * LANDSCAPE. A phone held sideways is a genuinely wide staff, which is the whole
- * point of a full-screen reading view, so the window unlocks the orientation while
- * it is open and puts back the lock it found when it closes. A failure to talk to
- * the orientation service is swallowed: reading a score must never fail because a
- * rotation could not be arranged.
+ * point of a full-screen reading view, so the window LOCKS to a both-ways lock
+ * while it is open and puts back the lock it found when it closes
+ * (`services/scoreWindow.scoreWindowOrientationPlan`). It does not UNLOCK: an
+ * unlock hands the decision back to the device's auto-rotate setting, which is off
+ * on a phone that has been locked upright — and App.tsx locks phones to portrait
+ * itself at startup — so "unlock" was a no-op on the owner's handset (v65 F2). A
+ * failure to talk to the orientation service is swallowed: reading a score must
+ * never fail because a rotation could not be arranged.
+ *
+ * AND IT TELLS THE RENDERER WHERE IT IS (v66 F1/F3). The element handed in was
+ * built for a card and carries a fixed-width reader drawing, so the window provides
+ * `ScoreWindowContext` and `AbcScoreView` lays the score out for this box instead.
  */
 import React, { useEffect, useRef } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -30,6 +38,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useThemedStyles } from '../services/themeStore';
 import { SCORE_EXPAND_CLOSE_LABEL, fullScreenScoreBox } from '../services/scoreExpand';
+import { scoreWindowOrientationPlan } from '../services/scoreWindow';
+import { ScoreWindowContext } from './scoreWindowContext';
 
 /**
  * THE BOX THIS WINDOW GIVES THE RENDERER, on this device. Every surface computes
@@ -70,28 +80,56 @@ export const FullScreenScore: React.FC<FullScreenScoreProps> = ({
   const { styles, theme } = useThemedStyles(baseStyles);
   const insets = useSafeAreaInsets();
   /** The orientation lock that was in force before this window opened. */
-  const priorLock = useRef<ScreenOrientation.OrientationLock | null>(null);
+  const priorLock = useRef<string | null>(null);
 
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
-    const allowLandscape = async (): Promise<void> => {
+    /**
+     * ── v65 F2: LOCK BOTH WAYS, DO NOT UNLOCK ─────────────────────────────────
+     * The old code read the previous lock and then called `unlockAsync()` inside
+     * ONE `try`. Both halves were wrong. The unlock hands the orientation decision
+     * to the device's auto-rotate setting, which is OFF on a phone that has been
+     * locked upright (and this app locks phones to portrait at startup, App.tsx),
+     * so turning the phone still changed nothing; and because the read and the
+     * unlock shared a `try`, an unreadable previous lock silently cancelled the
+     * unlock as well. The READ now has its own `try` — a failed read is just
+     * "nothing to restore" — and the window takes a real both-ways lock
+     * (`scoreWindowOrientationPlan`).
+     */
+    const takeWindowLock = async (): Promise<void> => {
+      let prior: string | null = null;
       try {
-        const lock = await ScreenOrientation.getOrientationLockAsync();
-        if (!cancelled) priorLock.current = lock;
-        await ScreenOrientation.unlockAsync();
+        // Read as `unknown`: the orientation service is allowed to answer junk, and an
+        // `OrientationLock` is a string enum — narrowing it directly is a type error.
+        const lock: unknown = await ScreenOrientation.getOrientationLockAsync();
+        prior = typeof lock === 'string' && lock.length > 0 ? lock : null;
+      } catch {
+        // Nothing readable to restore — the honest answer is "nothing claimed".
+        prior = null;
+      }
+      const plan = scoreWindowOrientationPlan(prior);
+      if (!cancelled) priorLock.current = plan.close;
+      try {
+        await ScreenOrientation.lockAsync(
+          plan.open as unknown as ScreenOrientation.OrientationLock,
+        );
       } catch {
         // No orientation service on this platform — the window still works.
       }
     };
-    void allowLandscape();
+    void takeWindowLock();
     return () => {
       cancelled = true;
       const restore = async (): Promise<void> => {
         try {
           const lock = priorLock.current;
           if (lock === null) await ScreenOrientation.unlockAsync();
-          else await ScreenOrientation.lockAsync(lock);
+          else {
+            await ScreenOrientation.lockAsync(
+              lock as unknown as ScreenOrientation.OrientationLock,
+            );
+          }
         } catch {
           // Same: best effort, and never a reason to block closing.
         }
@@ -145,8 +183,13 @@ export const FullScreenScore: React.FC<FullScreenScoreProps> = ({
           </Pressable>
         </View>
         {/* THE BODY IS THE SCORE'S OWN BOX: flex 1, so the renderer the surface
-            handed in lays out in the whole remaining rectangle. */}
-        <View style={styles.body}>{children}</View>
+            handed in lays out in the whole remaining rectangle. It is also where
+            the window says WHO it is: the element handed in was built for a card
+            and carries a fixed-width reader drawing, so `AbcScoreView` lays the
+            score out for this box instead (vc66 F1/F3). */}
+        <ScoreWindowContext.Provider value={visible}>
+          <View style={styles.body}>{children}</View>
+        </ScoreWindowContext.Provider>
       </View>
     </Modal>
   );
