@@ -33,7 +33,15 @@
  */
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { generateAbcHtml, generateAbcReaderHtml, readerLayout, READER_SCALE } from '../src/services/abcHtml';
+import {
+  CARD_DOCUMENT_INSET_PX,
+  cardDocumentChoice,
+  generateAbcHtml,
+  generateAbcReaderHtml,
+  generateAbcWrappedHtml,
+  readerLayout,
+  READER_SCALE,
+} from '../src/services/abcHtml';
 import { staffKeySignature, takeToAbc } from '../src/services/takeStaff';
 
 const CHROME = process.env.D27_CHROME || '/usr/local/bin/chromium';
@@ -329,10 +337,24 @@ async function measureAt(
 }
 
 const abc = sixtySecondTakeAbc();
+/**
+ * D40b — THE LIBRARY CARD. A saved library score is a whole piece, not a take:
+ * `bars` bars of 4/4 on one line. The card that draws it is the one D40 left
+ * alone, so this harness renders BOTH documents for the same long score at the
+ * same phone width, and the short score as a control (it must keep its card).
+ */
+function libraryScoreAbc(bars: number): string {
+  return `X:1\nT:Library score\nM:4/4\nL:1/8\nK:C\n${'CDEF GABc|'.repeat(bars)}\n`;
+}
+const libraryLongAbc = libraryScoreAbc(32);
+const libraryShortAbc = libraryScoreAbc(4);
 const layout = readerLayout(READER_SCALE);
 const variants: Array<{ name: string; html: string }> = [
   { name: 'before-card-document', html: generateAbcHtml(abc) },
   { name: 'after-reader-document', html: generateAbcReaderHtml(abc) },
+  { name: 'before-library-card-long', html: generateAbcHtml(libraryLongAbc) },
+  { name: 'after-library-card-wrapped', html: generateAbcWrappedHtml(libraryLongAbc) },
+  { name: 'short-library-card', html: generateAbcHtml(libraryShortAbc) },
 ];
 
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
@@ -340,6 +362,11 @@ if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 const rows: Record<string, unknown> = {
   abcBars: (abc.match(/\|/g) || []).length,
   readerLayout: layout,
+  /** D40b: what the LIBRARY CARD chooses at a 393 px phone, long vs short. */
+  libraryCardChoice393: {
+    long: cardDocumentChoice(libraryLongAbc, 393 - CARD_DOCUMENT_INSET_PX),
+    short: cardDocumentChoice(libraryShortAbc, 393 - CARD_DOCUMENT_INSET_PX),
+  },
   emulation: 'CDP Emulation.setDeviceMetricsOverride (CSS px, mobile: true)',
   screens: {},
 };

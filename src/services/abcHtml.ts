@@ -27,6 +27,7 @@
  */
 import { ABCJS_BASIC_MIN_JS } from '../assets/abcjsBasic';
 import { abcHeightProbeScript } from './scoreHeight';
+import { countAbcBars } from './transposedScore';
 
 /** The ink a score is drawn in when the caller names none (near-black on paper). */
 export const ABC_DEFAULT_INK = '#0b1220';
@@ -420,6 +421,79 @@ export function generateAbcWrappedHtml(
   #paper svg { max-width: none; }`,
     wrapRenderCall(applied),
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D40 FOR THE LIBRARY CARD — WRAP A SAVED SCORE THAT CANNOT BE DRAWN AT SIZE
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// THE BUG, on the library's own cards. D40 fixed every surface that draws the
+// user's TAKE. The card that draws a SAVED library score — the notation editor's
+// in-page staff, the card a saved piece opens into — kept the plain card
+// document, and the card document has no `wrap`: `responsive: 'resize'` re-flows
+// the whole tune onto ONE system at the card's width. Same defect, same file, the
+// one call site D40 deliberately left alone.
+//
+// MEASURED (scripts/d27NoteheadHarness.ts, a 393 px phone, a 32-bar score): the
+// card document drew the whole piece as ONE system 13 px tall with 1 px
+// noteheads — the owner's strip of marks. The wrapped document draws it as 16
+// systems of two bars, 1746 px down the page, with 9 px noteheads. A four-bar
+// excerpt on the same card is 56 px tall with 4 px noteheads — the shipped,
+// D27-pinned state, which the owner reads today and which this change must not
+// disturb.
+//
+// THE RULE. A card keeps its card document while every bar still gets
+// `CARD_MIN_BAR_WIDTH_PX` of room — the same room the wrapped document gives a
+// bar. Below that the score wraps instead (`generateAbcWrappedHtml`): each bar is
+// then drawn at the wrapped document's own size, which is BIGGER than the card
+// could give it, and the music continues down the page. So a short score keeps the
+// card document byte for byte, and a long one never ends up as one shrunken line.
+//
+// `cardDocumentChoice` is pure, so the gate can prove the floor holds at every
+// width and every bar count without a browser.
+
+/** The room a bar must keep on a CARD before the card must wrap instead. */
+export const CARD_MIN_BAR_WIDTH_PX = WRAP_MIN_BAR_WIDTH_PX;
+
+/**
+ * The horizontal room a phone width does NOT give the card's paper: the host
+ * screen's own content padding (16 px each side) plus the document's body padding
+ * (8 px each side, see `documentShell`). Measured on the notation editor's card.
+ */
+export const CARD_DOCUMENT_INSET_PX = 48;
+
+/** Which document a card should draw. */
+export type CardDocument = 'card' | 'wrapped';
+
+export interface CardDocumentChoice {
+  /** `card` = the plain card document; `wrapped` = fit to width, then wrap. */
+  document: CardDocument;
+  /** The score's own bar count (0 when it has no readable music). */
+  bars: number;
+  /** What each bar would get if the card document drew it, in screen px. */
+  barWidthPx: number;
+}
+
+/**
+ * WHICH DOCUMENT A CARD DRAWS, for this score in this much width. Pure.
+ *
+ * A score with no readable music is left alone (`card`): there is nothing to
+ * wrap, and the card's empty state is what should show. Anything else wraps as
+ * soon as one bar would be drawn narrower than `CARD_MIN_BAR_WIDTH_PX` — i.e. as
+ * soon as the card would shrink the marks below the size the wrapped document
+ * draws them at.
+ */
+export function cardDocumentChoice(abc: unknown, cardWidthPx: unknown): CardDocumentChoice {
+  const bars = countAbcBars(abc);
+  const rawWidth = Number(cardWidthPx);
+  const width = Number.isFinite(rawWidth) && rawWidth > 0 ? rawWidth : WRAP_FALLBACK_WIDTH_PX;
+  if (bars <= 0) return { document: 'card', bars: 0, barWidthPx: width };
+  const barWidthPx = width / bars;
+  return {
+    document: barWidthPx >= CARD_MIN_BAR_WIDTH_PX ? 'card' : 'wrapped',
+    bars,
+    barWidthPx,
+  };
 }
 
 /**

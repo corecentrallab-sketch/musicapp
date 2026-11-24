@@ -37,6 +37,8 @@ import {
 import {
   ABC_DEFAULT_BACKGROUND,
   ABC_DEFAULT_INK,
+  CARD_DOCUMENT_INSET_PX,
+  cardDocumentChoice,
   generateAbcHtml,
   generateAbcReaderHtml,
   generateAbcWrappedHtml,
@@ -177,9 +179,11 @@ interface AbcScoreViewProps {
    * being crammed onto one. A bar keeps `WRAP_MIN_BAR_WIDTH_PX` of room, so more
    * bars per line never means smaller marks (the D27 legibility floor).
    *
-   * SET IT FOR ANY SCORE THAT IS THE USER'S OWN TAKE. Unset (every other call
-   * site) keeps the card and reader documents byte for byte as they were, so the
-   * published library's scores are untouched.
+   * SET IT FOR ANY SCORE THAT IS THE USER'S OWN TAKE — the surface knows a take
+   * is long, so it asks by name. Unset, a CARD decides for itself: a short score
+   * keeps the card document byte for byte, and a score too long to draw at natural
+   * size in this card wraps (see `autoWrap` below and
+   * `abcHtml.cardDocumentChoice`). The reader documents are unchanged either way.
    */
   wrapSystems?: boolean;
 }
@@ -278,7 +282,7 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
   const viewportKey = reader ? readerViewportKey(window.width, window.height) : '';
   const zoomProps = readerZoomProps(reader);
   /**
-   * ── D40 ── WHICH DOCUMENT DRAWS A TAKE (see the `wrapSystems` prop).
+   * ── D40 ── WHICH DOCUMENT DRAWS THIS SCORE (see the `wrapSystems` prop).
    *
    * `wrapped` picks the third document — fit to width, then wrap down the page —
    * AHEAD of the reader document: a long take is the one case where "a fixed
@@ -286,8 +290,26 @@ export const AbcScoreView: React.FC<AbcScoreViewProps> = ({
    * height it has instead of running off the side. A wrapped CARD is drawn at
    * natural size and never shrunk (`WRAP_DEFAULT_SCALE`); a wrapped READER keeps
    * the D27 floor, since `readerScaleValue` is already clamped to `READER_MIN_SCALE`.
+   *
+   * ── AND A LIBRARY CARD WRAPS WHEN THE SCORE NO LONGER FITS IT (owner 11-21) ──
+   * The take surfaces ask for the wrap by name. The card that draws a SAVED
+   * library score cannot: whether it fits depends on the score, so the card asks
+   * `cardDocumentChoice` — the score's own bar count against the width this card
+   * really has (`window.width` minus the host's padding and the document's).
+   *
+   * A short score (the bundled four-bar excerpts, most cards) gets the card
+   * document byte for byte, exactly as D27 pinned it. A score whose bars would be
+   * squeezed below `CARD_MIN_BAR_WIDTH_PX` — i.e. below the size the wrapped
+   * document draws them at, the owner's unreadable strip — wraps instead. The
+   * READER documents are untouched: they are pinned by D27 and pan by design.
    */
-  const wrapped = wrapSystems === true;
+  const autoWrap = useMemo(
+    () =>
+      !reader &&
+      cardDocumentChoice(abc, window.width - CARD_DOCUMENT_INSET_PX).document === 'wrapped',
+    [abc, reader, window.width],
+  );
+  const wrapped = wrapSystems === true || autoWrap;
   const wrapScale = reader ? readerScaleValue : WRAP_DEFAULT_SCALE;
   // Use the abc text (and the ink, which changes the document) as a rendering
   // key so a fresh WebView reloads whenever the score or its colour changes.
