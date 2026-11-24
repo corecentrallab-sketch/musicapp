@@ -54,8 +54,14 @@
 export const ANALYTICS_ENDPOINT_PATH = '/api/events';
 
 /**
- * THE ALLOWLIST — the same nine names the server accepts. A name outside this
+ * THE ALLOWLIST — the same eleven names the server accepts. A name outside this
  * list is dropped on the phone and refused with 400 on the server.
+ *
+ * `affiliate_cta_viewed` / `affiliate_cta_clicked` (2026-11-2x) are the affiliate
+ * CTR pair: the first two names added since the log shipped, so the numbers the
+ * plan already asks for (affiliate CTR >8%) can finally be read. They carry ONE
+ * prop, `surface`, and no user data — see `services/affiliateCtaEvents.ts`, which
+ * is the only module that emits them.
  */
 export const ANALYTICS_EVENT_NAMES = [
   'app_open',
@@ -67,6 +73,8 @@ export const ANALYTICS_EVENT_NAMES = [
   'plans_view',
   'upgrade_tap',
   'pro_feature_use',
+  'affiliate_cta_viewed',
+  'affiliate_cta_clicked',
 ] as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
@@ -87,6 +95,7 @@ export const ANALYTICS_PROP_KEYS = [
   'opened',
   'feature',
   'ok',
+  'surface',
 ] as const;
 
 export type AnalyticsPropKey = (typeof ANALYTICS_PROP_KEYS)[number];

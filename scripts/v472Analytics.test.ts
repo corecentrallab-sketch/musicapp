@@ -51,12 +51,17 @@ import {
 } from '../src/services/analytics';
 import {
   ABOUT_USAGE_LINE_MARKER,
+  AFFILIATE_CTA_CALL_SITES,
+  AFFILIATE_CTA_DOORS,
   EVENT_CALL_SITES,
   UNUSED_EVENTS,
   aboutUsageLineViolations,
+  affiliateCtaViolations,
+  affiliateSurfaceIdViolations,
   allowlistViolations,
   endpointPathFiles,
   hostingViolations,
+  maskComments,
   propVocabularyIsClean,
   purchaseEventMentions,
   purchaseEventName,
@@ -64,6 +69,13 @@ import {
   deniedTokens,
   type SourceFile,
 } from '../src/services/v472AnalyticsContract';
+import {
+  AFFILIATE_CTA_SURFACES,
+  affiliateCtaEventName,
+  affiliateCtaProps,
+  isAffiliateCtaSurface,
+  trackAffiliateCta,
+} from '../src/services/affiliateCtaEvents';
 import { aboutDialogBody } from '../src/services/settingsSpec';
 
 let passes = 0;
@@ -154,14 +166,16 @@ const SERVER_EVENT_NAMES = [
   'plans_view',
   'upgrade_tap',
   'pro_feature_use',
+  'affiliate_cta_viewed',
+  'affiliate_cta_clicked',
 ];
 
 function allowlistTests(): void {
   console.log('\nallowlist');
-  assertEq(ANALYTICS_EVENT_NAMES.length, 9, 'the app knows exactly nine event names');
-  assertEq(allowlistViolations(SERVER_EVENT_NAMES).length, 0, 'the nine names match the server, in order');
+  assertEq(ANALYTICS_EVENT_NAMES.length, 11, 'the app knows exactly eleven event names');
+  assertEq(allowlistViolations(SERVER_EVENT_NAMES).length, 0, 'the eleven names match the server, in order');
   assert(
-    allowlistViolations(SERVER_EVENT_NAMES.slice(0, 8)).length > 0,
+    allowlistViolations(SERVER_EVENT_NAMES.slice(0, 10)).length > 0,
     'a shorter server list is reported as drift',
   );
   assert(
@@ -187,9 +201,18 @@ function hostingTests(): void {
 
   // Every event except the one with no surface must appear in the table.
   const hosted = new Set(EVENT_CALL_SITES.map((site) => site.event));
+  // The affiliate pair is hosted by the funnel table below (a call site calls
+  // `trackAffiliateCta(surface, phase)`, never `track('name')` directly), so it is
+  // proven there instead of here.
+  const affiliateNames = ['affiliate_cta_viewed', 'affiliate_cta_clicked'];
   for (const name of ANALYTICS_EVENT_NAMES) {
     if (UNUSED_EVENTS.some((unused) => unused.event === name)) {
       assert(!hosted.has(name), `${name} is declared unused and has no call site`);
+    } else if (affiliateNames.includes(name)) {
+      assert(
+        AFFILIATE_CTA_CALL_SITES.length > 0,
+        `${name} is hosted through the affiliate funnel's call-site table`,
+      );
     } else {
       assert(hosted.has(name), `${name} has a call site in the table`);
     }
@@ -507,6 +530,150 @@ function aboutLineTests(): void {
   );
 }
 
+// ─── 8. the affiliate CTR pair ────────────────────────────────
+
+function affiliateCtaTests(): void {
+  console.log('\naffiliate CTA events (affiliate_cta_viewed / affiliate_cta_clicked)');
+  assertEq(AFFILIATE_CTA_SURFACES.length, 5, 'five surfaces are enumerated');
+  for (const surface of AFFILIATE_CTA_SURFACES) {
+    assert(isAffiliateCtaSurface(surface), `${surface} is an enumerated surface`);
+  }
+  assert(!isAffiliateCtaSurface('invented_surface'), 'an invented surface is refused');
+  assert(!isAffiliateCtaSurface(''), 'an empty surface is refused');
+
+  // NO USER DATA: one prop, `surface`, and nothing else can ride the event.
+  assertEq(JSON.stringify(affiliateCtaProps('find_piece')), '{"surface":"find_piece"}', 'the props are the surface alone');
+  assertEq(JSON.stringify(affiliateCtaProps('piece_title' as any)), '{}', 'an unknown surface sends no props');
+  const moduleSource = maskComments(fileText('src/services/affiliateCtaEvents.ts'));
+  for (const leak of ['piece_id', 'composer', 'title', 'http', 'sheetmusicdirect']) {
+    assert(!moduleSource.includes(leak), `the affiliate module never carries ${leak}`);
+  }
+  assertEq(affiliateCtaEventName('viewed'), 'affiliate_cta_viewed', 'the view event name');
+  assertEq(affiliateCtaEventName('clicked'), 'affiliate_cta_clicked', 'the click event name');
+  for (const name of ['affiliate_cta_viewed', 'affiliate_cta_clicked']) {
+    assert(
+      (ANALYTICS_EVENT_NAMES as readonly string[]).includes(name),
+      `${name} is on the allowlist the server accepts`,
+    );
+  }
+  assert(
+    (ANALYTICS_PROP_KEYS as readonly string[]).includes('surface'),
+    'surface is in the prop vocabulary',
+  );
+
+  // THE FUNNEL really emits the allowlisted name with the surface prop.
+  resetAnalyticsForTests();
+  configureAnalytics({ storage: fakeStorage(), baseUrl: 'https://example.test' });
+  trackAffiliateCta('find_piece', 'clicked');
+  trackAffiliateCta('cover_scan', 'viewed');
+  const queued = pendingAnalyticsEvents();
+  assertEq(queued.length, 2, 'both moments are queued');
+  assertEq(queued[0].name, 'affiliate_cta_clicked', 'the click is queued under the allowlisted name');
+  assertEq(queued[0].props.surface, 'find_piece', 'the click names its surface');
+  assertEq(queued[1].name, 'affiliate_cta_viewed', 'the view is queued under the allowlisted name');
+  assertEq(queued[1].props.surface, 'cover_scan', 'the view names its surface');
+  assertEq(JSON.stringify(sanitizeAnalyticsProps(queued[0].props)), '{"surface":"find_piece"}', 'the queue holds no second key');
+  resetAnalyticsForTests();
+
+  // EVERY SURFACE IS HOSTED — the real tree passes, on both directions.
+  const violations = affiliateCtaViolations(TREE);
+  if (violations.length > 0) console.log('     ' + violations.join('\n     '));
+  assertEq(violations.length, 0, 'every enumerated surface records both moments on a real money path');
+  const strayIds = affiliateSurfaceIdViolations(TREE);
+  if (strayIds.length > 0) console.log('     ' + strayIds.join('\n     '));
+  assertEq(strayIds.length, 0, 'no call site invents a surface id');
+  assertEq(AFFILIATE_CTA_CALL_SITES.length, 3, 'three rendering surfaces carry the call sites');
+  assert(AFFILIATE_CTA_DOORS.length >= 4, 'the three doors are pinned to their callers');
+}
+
+function affiliateCtaMutationProbes(): void {
+  console.log('\nmutation probes — each affiliate guard bites');
+
+  // 1. the recognition card stops recording the TAP.
+  const recognition = fileText('src/components/RecognitionResultView.tsx');
+  const noRecognitionClick = recognition
+    .split("trackAffiliateCta('recognition_result', 'clicked');")
+    .join('');
+  assert(noRecognitionClick !== recognition, 'probe: the recognition click call can be removed');
+  assert(
+    affiliateCtaViolations(withFile('src/components/RecognitionResultView.tsx', noRecognitionClick)).length > 0,
+    'FAILS when the recognition result CTA stops recording taps',
+  );
+
+  // 2. the search section stops recording the VIEW.
+  const section = fileText('src/components/SearchExternalSection.tsx');
+  const noSectionView = section.split("trackAffiliateCta(surface, 'viewed');").join('');
+  assert(noSectionView !== section, 'probe: the section view call can be removed');
+  assert(
+    affiliateCtaViolations(withFile('src/components/SearchExternalSection.tsx', noSectionView)).length > 0,
+    'FAILS when the sheet-music section stops recording views',
+  );
+
+  // 3. the section's tap is left in a COMMENT only — not a call site at all.
+  const commented = section
+    .split("trackAffiliateCta(surface, 'clicked');")
+    .join("// trackAffiliateCta(surface, 'clicked');");
+  assert(
+    affiliateCtaViolations(withFile('src/components/SearchExternalSection.tsx', commented)).length > 0,
+    'FAILS when the section tap is commented out',
+  );
+
+  // 4. the zero-match CTA on Find-a-Piece goes uninstrumented.
+  const findPiece = fileText('src/screens/FindPieceScreen.tsx');
+  const noNoMatchView = findPiece.split("trackAffiliateCta('find_piece', 'viewed');").join('');
+  assert(
+    affiliateCtaViolations(withFile('src/screens/FindPieceScreen.tsx', noNoMatchView)).length > 0,
+    'FAILS when the Find-a-Piece zero-match CTA stops recording views',
+  );
+
+  // 5. Home's door stops labelling its surface — every view would read as a plain search.
+  const home = fileText('src/screens/HomeScreen.tsx');
+  const noHomeDoor = home.split('entrySurface="home_front_door"').join('');
+  assert(noHomeDoor !== home, 'probe: the Home door literal can be removed');
+  assert(
+    affiliateCtaViolations(withFile('src/screens/HomeScreen.tsx', noHomeDoor)).length > 0,
+    'FAILS when the Home front door stops naming its surface',
+  );
+
+  // 6. the cover-scan money path stops labelling its surface.
+  const scan = fileText('src/screens/ScanScoreScreen.tsx');
+  const noScanDoor = scan.split('entrySurface="cover_scan"').join('');
+  assert(noScanDoor !== scan, 'probe: the scan door literal can be removed');
+  assert(
+    affiliateCtaViolations(withFile('src/screens/ScanScoreScreen.tsx', noScanDoor)).length > 0,
+    'FAILS when the cover-scan money path stops naming its surface',
+  );
+
+  // 7. the scanned viewer's door (the other half of the scan flow).
+  const viewer = fileText('src/screens/ScannedViewerScreen.tsx');
+  const noViewerDoor = viewer.split('entrySurface="cover_scan"').join('');
+  assert(
+    affiliateCtaViolations(withFile('src/screens/ScannedViewerScreen.tsx', noViewerDoor)).length > 0,
+    'FAILS when the scanned viewer stops naming its surface',
+  );
+
+  // 8. a surface id nobody enumerated would land in the database ungroupable.
+  const invented = findPiece.replace(
+    "trackAffiliateCta('find_piece', 'clicked');",
+    "trackAffiliateCta('invented_surface', 'clicked');",
+  );
+  assert(invented !== findPiece, 'probe: a stray surface id can be planted');
+  assert(
+    affiliateSurfaceIdViolations(withFile('src/screens/FindPieceScreen.tsx', invented)).length > 0,
+    'FAILS when a call site invents a surface id',
+  );
+
+  // 9. the recognition card is no longer mounted anywhere.
+  const tab = fileText('src/screens/HomeScreen.tsx').split('<RecognitionResultView').join('<Renamed');
+  assert(
+    affiliateCtaViolations(withFile('src/screens/HomeScreen.tsx', tab)).length > 0,
+    'FAILS when the surface that records the event is never mounted',
+  );
+
+  // The real tree still passes after every probe.
+  assertEq(affiliateCtaViolations(TREE).length, 0, 'the real tree still passes after the probes');
+}
+
 // ─── run ──────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -519,6 +686,8 @@ async function main(): Promise<void> {
   purchaseTests();
   await queueTests();
   aboutLineTests();
+  affiliateCtaTests();
+  affiliateCtaMutationProbes();
   console.log(`\n${passes} passed, ${failures} failed\n`);
   process.exit(failures === 0 ? 0 : 1);
 }

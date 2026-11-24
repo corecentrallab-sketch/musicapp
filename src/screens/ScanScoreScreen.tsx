@@ -352,6 +352,7 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
         autoSearchNotice={autoSearch}
         onDismissAutoSearch={() => setAutoSearch(null)}
         onClose={() => setAutoSearch(null)}
+        entrySurface="cover_scan"
       />
     );
   }
@@ -364,7 +365,7 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
    */
   if (findQuery !== null) {
     return (
-      <FindPieceScreen initialQuery={findQuery} onClose={() => setFindQuery(null)} />
+      <FindPieceScreen initialQuery={findQuery} onClose={() => setFindQuery(null)} entrySurface="cover_scan" />
     );
   }
 

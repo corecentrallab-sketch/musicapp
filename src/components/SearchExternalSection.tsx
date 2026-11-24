@@ -24,7 +24,7 @@
  * promises free access to a copyrighted work.
  */
 import { useThemedStyles } from '../services/themeStore';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   EXTERNAL_HOSTING_NOTE,
@@ -34,6 +34,7 @@ import {
   EXTERNAL_SMD_CTA_LABEL,
   type ExternalSearchSection as ExternalSearchSectionModel,
 } from '../services/searchExternal';
+import { trackAffiliateCta, type AffiliateCtaSurface } from '../services/affiliateCtaEvents';
 import { AFFILIATE_DISCLOSURE } from '../services/v471bMoneyCta';
 
 interface SearchExternalSectionProps {
@@ -41,14 +42,31 @@ interface SearchExternalSectionProps {
   section: ExternalSearchSectionModel;
   /** Opens a retailer URL in the shared in-app browser shell. Tap-driven only. */
   onOpen: (url: string) => void;
+  /**
+   * WHICH DOOR this section is on — `search_external` (the library's search),
+   * `home_front_door` (Home's "Find a song" bar) or `cover_scan` (a photographed
+   * cover). The CTA is the same card in all three, so the door is the only thing
+   * that makes the affiliate number readable: it is what says which entry leads
+   * to a retailer tap. Passed in by FindPieceScreen, never guessed here.
+   */
+  surface: AffiliateCtaSurface;
 }
 
 export const SearchExternalSection: React.FC<SearchExternalSectionProps> = ({
   section,
   onOpen,
+  surface,
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   // Empty query → nothing to search for, so no section at all.
+  const showsSmdCta = section.visible && !!section.smdUrl;
+  // affiliate_cta_viewed — THE CARD WAS PUT IN FRONT OF THE USER. Keyed on the
+  // fact that it is shown (not on the query), so typing another letter into the
+  // same section does not count as a second view, and one mount counts once.
+  useEffect(() => {
+    if (!showsSmdCta) return;
+    trackAffiliateCta(surface, 'viewed');
+  }, [showsSmdCta, surface]);
   if (!section.visible) return null;
   const smdUrl = section.smdUrl;
   if (!smdUrl) return null;
@@ -63,7 +81,13 @@ export const SearchExternalSection: React.FC<SearchExternalSectionProps> = ({
       <TouchableOpacity
         style={styles.card}
         activeOpacity={0.7}
-        onPress={() => onOpen(smdUrl)}
+        onPress={() => {
+          // affiliate_cta_clicked — the primary retailer CTA was TAPPED. Fired
+          // beside the real work (handing the SMD URL to the in-app shell), the
+          // same way the other events sit next to their action.
+          trackAffiliateCta(surface, 'clicked');
+          onOpen(smdUrl);
+        }}
         accessibilityRole="button"
         accessibilityLabel={`${EXTERNAL_SMD_CTA_LABEL} for ${section.query}`}
       >

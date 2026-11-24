@@ -69,6 +69,8 @@ import { PurchaseWebView } from './PurchaseWebView';
 // the page the primary CTA already opens, so this card can never render two taps
 // to one page.
 import { recognitionPurchaseUrl, resultSecondaryOfferUrl } from '../services/purchaseCta';
+// The affiliate CTR pair (`recognition_result`): shown, and tapped.
+import { trackAffiliateCta } from '../services/affiliateCtaEvents';
 import { AFFILIATE_DISCLOSURE } from '../services/v471bMoneyCta';
 // The category a result card is allowed to claim. A match without a catalog
 // number (every modern song) used to fall through to the literal "Classical" —
@@ -235,6 +237,36 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
       setPurchaseWebUrl(null);
     }
   }, [visible]);
+
+  /**
+   * affiliate_cta_viewed — THE SHEET MUSIC DIRECT BUTTON ON THIS CARD WAS PUT IN
+   * FRONT OF THE USER.
+   *
+   * The card carries the PRIMARY retailer CTA (Sheet Music Direct, affiliate ID
+   * 67650) exactly when a match resolved a purchase URL that is not public
+   * domain — the same two facts the button itself renders on. Recorded HERE, at
+   * the top, because the phases below return early: the effect must run before
+   * them or a success card would never report its own view. It carries the
+   * surface name and nothing else — no title, no composer, no URL.
+   */
+  const affiliateCtaUrl =
+    phase !== null && phase.type === 'success' && phase.response.matches.length > 0
+      ? recognitionPurchaseUrl(
+          phase.response.matches[0].purchase_url,
+          phase.response.purchase_url,
+        )
+      : null;
+  const showsAffiliateCta =
+    visible &&
+    !!affiliateCtaUrl &&
+    phase !== null &&
+    phase.type === 'success' &&
+    phase.response.matches.length > 0 &&
+    !phase.response.matches[0].is_public_domain;
+  React.useEffect(() => {
+    if (!showsAffiliateCta) return;
+    trackAffiliateCta('recognition_result', 'viewed');
+  }, [showsAffiliateCta]);
 
   if (!visible || !phase) return null;
 
@@ -611,6 +643,11 @@ export const RecognitionResultView: React.FC<RecognitionResultViewProps> = ({
                     <TouchableOpacity
                       style={styles.purchaseBtn}
                       onPress={() => {
+                        // affiliate_cta_clicked — the primary retailer CTA was
+                        // TAPPED. Recorded beside the real work (opening the SMD
+                        // page in the in-app shell), and it carries the surface
+                        // name only.
+                        trackAffiliateCta('recognition_result', 'clicked');
                         if (purchaseUrl) setPurchaseWebUrl(purchaseUrl);
                       }}
                       accessibilityRole="button"
