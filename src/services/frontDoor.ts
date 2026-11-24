@@ -40,6 +40,10 @@ import {
   isPermissionFailure,
   type StartFailure,
 } from './recognitionRetry';
+// The design-system v1 token VALUES (owner 11-24). Pure data, zero deps, so this
+// module stays free of react/react-native — it is imported only so a guard can
+// resolve a token expression back to the number it stands for.
+import { radius, spacing } from '../theme/tokens';
 
 // ─────────────────────── the one hero CTA's words ───────────────────────
 
@@ -1000,6 +1004,46 @@ function styleBlock(masked: string, styleKey: string): string {
 }
 
 /**
+ * The NUMBER a style property is written with — a plain literal (`56`), or a
+ * design-system token expression standing for that same number (`radius.card`,
+ * `spacing.s16`, `tokens.radius.card`). Undefined for anything else: an unknown
+ * token name, a token whose value is not a number (`radius.circle` is `'50%'`),
+ * a colour, or a computed expression.
+ *
+ * WHY THIS EXISTS (design-system v1 migration, owner 11-24). The migrated
+ * screens write `borderRadius: radius.card` where they used to write
+ * `borderRadius: 16` — the SAME 16 dp, spelled as a token. A guard that only
+ * read the literal did not go red on that change, it went BLIND: the block no
+ * longer matched, so the check silently stopped reading the bar's geometry and
+ * only a false negative (a guard that can never pass) made anyone notice. The
+ * guard's job is the VALUE — a 56 dp bar with a 16 dp radius is a search field,
+ * a 12 dp row is a re-chip — so it resolves the token instead of matching text.
+ *
+ * Accepting a token is not weakening the check: a DIFFERENT token still fails,
+ * because the comparison is against the resolved number (a `radius.modal` bar
+ * resolves to 24 and is rejected just as a literal `24` would be).
+ */
+function resolveStyleNumber(raw: string): number | undefined {
+  const value = raw.trim();
+  if (/^\d+(?:\.\d+)?$/.test(value)) return Number(value);
+  const token = /^(?:tokens\.)?(radius|spacing)\.([A-Za-z]\w*)$/.exec(value);
+  if (!token) return undefined;
+  const group: Record<string, number | string> = token[1] === 'radius' ? radius : spacing;
+  const resolved = group[token[2]];
+  return typeof resolved === 'number' ? resolved : undefined;
+}
+
+/** True when the style block declares `prop` with the value `expected` — as a
+ *  literal or as a token expression of that same value (see
+ *  `resolveStyleNumber`). A missing property, or one written with a different
+ *  value or an unresolvable expression, is false. */
+function styleBlockDeclares(block: string, prop: string, expected: number): boolean {
+  const match = new RegExp(`\\b${prop}:\\s*([^,\\n}]+)`).exec(block);
+  if (!match) return false;
+  return resolveStyleNumber(match[1]) === expected;
+}
+
+/**
  * True when the front door really wires the "Find a song" SEARCH BAR (v45).
  *
  * This REPLACES `findAnySongChipWired` (v33 bundle B, owner 10-02): the element
@@ -1039,10 +1083,12 @@ export function findASongBarWired(source: string): boolean {
   if (element.indexOf('styles.recognitionBtn') >= 0) return false;
   if (element.indexOf(`onPress={${HERO_TAP_HANDLER}}`) >= 0) return false;
   // …and it is a BAR, not a chip: the numbers live in one place and are pinned.
+  // Read by VALUE, so the token spelling of the same geometry (`radius.card` for
+  // 16) still counts while a different shape does not.
   const bar = styleBlock(masked, FIND_A_SONG_BAR_STYLE.replace('styles.', ''));
   if (!bar) return false;
-  if (!new RegExp(`minHeight:\\s*${FIND_A_SONG_BAR_MIN_HEIGHT}\\b`).test(bar)) return false;
-  if (!new RegExp(`borderRadius:\\s*${FIND_A_SONG_BAR_RADIUS}\\b`).test(bar)) return false;
+  if (!styleBlockDeclares(bar, 'minHeight', FIND_A_SONG_BAR_MIN_HEIGHT)) return false;
+  if (!styleBlockDeclares(bar, 'borderRadius', FIND_A_SONG_BAR_RADIUS)) return false;
 
   // The handler's OWN declaration (not `handleFindAnySongFromCard`, the result
   // card's modern bridge, which lives above it).
