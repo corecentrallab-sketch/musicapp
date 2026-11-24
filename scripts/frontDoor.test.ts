@@ -1622,10 +1622,16 @@ function findAnySongTests(): void {
   );
   // The door taking the destination back — the exact defect: it hands the surface
   // a prop that decides where "Browse what is free now" goes.
-  const propReAdded = home.replace(
-    '<FindPieceScreen onClose={() => setShowFindPiece(false)} />',
-    '<FindPieceScreen onClose={() => setShowFindPiece(false)} onBrowseLibrary={() => {}} />',
-  );
+  // The mount is READ from the real door rather than pinned to a literal, so a
+  // prop added to the mount (the affiliate entry-surface label, 11-24) cannot
+  // quietly retire this probe.
+  const mountAt = home.indexOf('<FindPieceScreen');
+  const mountEnd = home.indexOf('/>', mountAt);
+  assert(mountAt >= 0 && mountEnd > mountAt, 'the door really mounts the Discover surface');
+  const doorMount = home.slice(mountAt, mountEnd + 2);
+  const propReAdded = home
+    .split(doorMount)
+    .join(`${doorMount.slice(0, -2)} onBrowseLibrary={() => {}} />`);
   assert(propReAdded !== home, 'the re-point mutation changed the real mount');
   assertEq(
     fragmentEntryPointsAreWired(propReAdded, findPieceSource),

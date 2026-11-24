@@ -464,7 +464,7 @@ function mutationProbes(): void {
     false,
     'MUTATION: the section rendering its own WebView FAILS (the shared shell owns the browser)',
   );
-  const deadCard = section.replace('onPress={() => onOpen(smdUrl)}', 'onPress={() => {}}');
+  const deadCard = section.split('onOpen(smdUrl)').join('void 0');
   assert(deadCard !== section, 'the dead-card mutation changed the section component');
   assertEq(
     externalSectionOpensOnTapOnly(deadCard),

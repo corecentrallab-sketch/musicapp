@@ -92,6 +92,9 @@ import { noMatchState } from '../services/searchNoMatch';
 // the explanation, and the disclosure must still render outside the tap target.
 // Same constant the rest of the money path uses (one spelling, one place).
 import { AFFILIATE_DISCLOSURE } from '../services/v471bMoneyCta';
+// The affiliate CTR pair: `find_piece` for THIS screen's own zero-match CTA, and
+// the caller-supplied door (`entrySurface`) for the retailer panel's card.
+import { trackAffiliateCta, type AffiliateCtaSurface } from '../services/affiliateCtaEvents';
 // ── v46 CORRECTIVE: THIS SCREEN **IS** DISCOVER ──────────────────────────────
 // The ratified v45 design puts the genre surface HERE, not on Home: "Home
 // (minimal) → Discover (five families + money rows) → family screen", and
@@ -188,6 +191,18 @@ interface FindPieceScreenProps {
    * the retailer section that always accompanies them) get the screen.
    */
   showDiscover?: boolean;
+  /**
+   * WHICH DOOR OPENED THIS SCREEN (affiliate measurement).
+   *
+   * The Sheet Music Direct card in this screen's retailer section is the same
+   * component wherever it is rendered, so the DOOR is the only thing that makes
+   * the affiliate number readable: `home_front_door` (Home's "Find a song" bar),
+   * `cover_scan` (a photographed cover's lookup) or `search_external` (the
+   * library's own search door — the default, so an un-updated caller is labelled
+   * honestly rather than mislabelled). It labels the panel's CTA only; the
+   * zero-match CTA below is this screen's OWN surface (`find_piece`).
+   */
+  entrySurface?: AffiliateCtaSurface;
 }
 
 export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
@@ -196,6 +211,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
   autoSearchNotice,
   onDismissAutoSearch,
   showDiscover = true,
+  entrySurface = 'search_external',
 }) => {
   const { styles, theme } = useThemedStyles(baseStyles);
   /**
@@ -607,6 +623,21 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
    */
   const noMatch = noMatchState(query, external);
 
+  /**
+   * affiliate_cta_viewed — THIS SCREEN'S OWN SMD CTA WAS PUT IN FRONT OF THE USER.
+   *
+   * The zero-match block's "Search the licensed edition for “…”" button is a
+   * different surface from the retailer panel below it (it is the results state's
+   * money path, v49/v51), so it reports `find_piece` rather than the door. Keyed
+   * on whether the button is SHOWN, so a keystroke that keeps it on screen is one
+   * view, not one per character.
+   */
+  const showsNoMatchCta = noMatch.showRetailer && !!noMatch.retailerUrl;
+  useEffect(() => {
+    if (!showsNoMatchCta) return;
+    trackAffiliateCta('find_piece', 'viewed');
+  }, [showsNoMatchCta]);
+
   const renderItem = ({ item }: { item: CatalogPiece }) => {
     const meta = [item.composer, item.catalog].filter(
       (part): part is string => !!part && part.length > 0,
@@ -1002,7 +1033,12 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
               <>
                 <TouchableOpacity
                   style={styles.emptyRetailerCta}
-                  onPress={() => handleOpenRetailer(noMatch.retailerUrl as string)}
+                  onPress={() => {
+                    // affiliate_cta_clicked — the zero-match money CTA was TAPPED,
+                    // recorded beside the real work (opening the retailer URL).
+                    trackAffiliateCta('find_piece', 'clicked');
+                    handleOpenRetailer(noMatch.retailerUrl as string);
+                  }}
                   accessibilityRole="button"
                   accessibilityLabel={noMatch.retailerCtaLabel}
                 >
@@ -1048,7 +1084,7 @@ export const FindPieceScreen: React.FC<FindPieceScreenProps> = ({
             retailer in the shell below); we host and cache nothing. */}
         {external.visible ? (
           <View style={styles.externalBlock}>
-            <SearchExternalSection section={external} onOpen={handleOpenRetailer} />
+            <SearchExternalSection section={external} onOpen={handleOpenRetailer} surface={entrySurface} />
           </View>
         ) : null}
       </ScrollView>

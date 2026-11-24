@@ -101,7 +101,7 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
   // the reader is exactly where the user left it when they come back.
   if (findQuery !== null) {
     return (
-      <FindPieceScreen initialQuery={findQuery} onClose={() => setFindQuery(null)} />
+      <FindPieceScreen initialQuery={findQuery} onClose={() => setFindQuery(null)} entrySurface="cover_scan" />
     );
   }
 

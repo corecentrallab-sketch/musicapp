@@ -1318,7 +1318,7 @@ export const HomeScreen: React.FC = () => {
   // destination the row had on the door.
   if (showFindPiece) {
     return (
-      <FindPieceScreen onClose={() => setShowFindPiece(false)} />
+      <FindPieceScreen onClose={() => setShowFindPiece(false)} entrySurface="home_front_door" />
     );
   }
 

@@ -22,6 +22,7 @@ import {
   findDeniedAnalyticsKey,
   normalizeAnalyticsKey,
 } from './analytics';
+import { AFFILIATE_CTA_SURFACES } from './affiliateCtaEvents';
 
 /** One file as the guards see it. */
 export interface SourceFile {
@@ -333,7 +334,7 @@ export function aboutUsageLineViolations(aboutBody: string, settingsSource: stri
   return violations;
 }
 
-/** The allowlist must be exactly the server's nine, in the same order. */
+/** The allowlist must be exactly the server's eleven, in the same order. */
 export function allowlistViolations(serverNames: readonly string[]): string[] {
   const violations: string[] = [];
   if (ANALYTICS_EVENT_NAMES.length !== serverNames.length) {
@@ -350,3 +351,177 @@ export function allowlistViolations(serverNames: readonly string[]): string[] {
   }
   return violations;
 }
+
+// ─── THE AFFILIATE CTR PAIR: shown, and tapped ─────────────────────────────
+//
+// WHY THESE GUARDS EXIST. Affiliate CTR (>8%) is a Tier-2 KPI and Sheet Music
+// Direct (ID 67650) is the PRIMARY retailer, so "was the CTA shown, and was it
+// tapped" is a number the business is asked to report. The failure mode is the
+// v46 one exactly: a module that can emit the event, and a surface that never
+// calls it, produces a table of zeroes that reads like "nobody taps the
+// affiliate CTA" rather than "nothing was instrumented". So, per SURFACE: the
+// file that renders the CTA must call the funnel for BOTH moments, in code (not
+// in a comment), beside the real work (the URL hand-off), and be mounted by
+// something else. And because three doors render the same card, the door
+// literals are pinned too — otherwise every affiliate view on Home would be
+// reported as a plain search.
+
+/** One surface's call sites, evidence and host. */
+export interface AffiliateCtaCallSite {
+  surface: string;
+  file: string;
+  /** The literals that must appear in the file's CODE (both moments). */
+  calls: string[];
+  /** Proof the call sits on the real money path, not beside a dead button. */
+  evidence: string[];
+  /** The module that mounts this surface. */
+  host: string;
+  hostLiteral?: string;
+}
+
+export const AFFILIATE_CTA_CALL_SITES: readonly AffiliateCtaCallSite[] = [
+  {
+    surface: 'recognition_result',
+    file: 'src/components/RecognitionResultView.tsx',
+    calls: [
+      "trackAffiliateCta('recognition_result', 'viewed')",
+      "trackAffiliateCta('recognition_result', 'clicked')",
+    ],
+    evidence: ['recognitionPurchaseUrl(', 'setPurchaseWebUrl(purchaseUrl)', 'AFFILIATE_DISCLOSURE'],
+    host: 'src/screens/HomeScreen.tsx',
+    hostLiteral: '<RecognitionResultView',
+  },
+  {
+    surface: 'search_external',
+    file: 'src/components/SearchExternalSection.tsx',
+    calls: ["trackAffiliateCta(surface, 'viewed')", "trackAffiliateCta(surface, 'clicked')"],
+    evidence: ['onOpen(smdUrl)', 'AFFILIATE_DISCLOSURE'],
+    host: 'src/screens/FindPieceScreen.tsx',
+    hostLiteral: '<SearchExternalSection',
+  },
+  {
+    surface: 'find_piece',
+    file: 'src/screens/FindPieceScreen.tsx',
+    calls: [
+      "trackAffiliateCta('find_piece', 'viewed')",
+      "trackAffiliateCta('find_piece', 'clicked')",
+    ],
+    evidence: ['noMatch.retailerUrl', 'handleOpenRetailer(', 'AFFILIATE_DISCLOSURE'],
+    host: 'src/screens/HomeScreen.tsx',
+    hostLiteral: '<FindPieceScreen',
+  },
+];
+
+/**
+ * THE DOORS. The retailer card in SearchExternalSection is one component reached
+ * three ways, so the surface name is the caller's: these literals are what make
+ * `home_front_door` and `cover_scan` real rather than declared.
+ */
+export const AFFILIATE_CTA_DOORS: readonly { surface: string; file: string; literal: string }[] = [
+  {
+    surface: 'search_external',
+    file: 'src/screens/FindPieceScreen.tsx',
+    literal: "entrySurface = 'search_external'",
+  },
+  {
+    surface: 'home_front_door',
+    file: 'src/screens/HomeScreen.tsx',
+    literal: 'entrySurface="home_front_door"',
+  },
+  {
+    surface: 'cover_scan',
+    file: 'src/screens/ScanScoreScreen.tsx',
+    literal: 'entrySurface="cover_scan"',
+  },
+  {
+    surface: 'cover_scan',
+    file: 'src/screens/ScannedViewerScreen.tsx',
+    literal: 'entrySurface="cover_scan"',
+  },
+];
+
+/**
+ * EVERY SURFACE THAT SHOWS AN SMD CTA MUST RECORD BOTH MOMENTS. Returns one
+ * sentence per violation; an empty array is the only passing answer.
+ */
+export function affiliateCtaViolations(files: readonly SourceFile[]): string[] {
+  const map = byPath(files);
+  const violations: string[] = [];
+
+  for (const site of AFFILIATE_CTA_CALL_SITES) {
+    const text = map.get(site.file);
+    if (text === undefined) {
+      violations.push(`${site.surface}: ${site.file} is missing from the tree`);
+      continue;
+    }
+    for (const call of site.calls) {
+      if (!text.includes(call)) {
+        violations.push(`${site.surface}: ${site.file} does not call ${call}`);
+      }
+    }
+    for (const literal of site.evidence) {
+      if (!text.includes(literal)) {
+        violations.push(
+          `${site.surface}: ${site.file} records the event but is not on the real money path (no ${literal})`,
+        );
+      }
+    }
+    const host = map.get(site.host);
+    if (host === undefined) {
+      violations.push(`${site.surface}: host ${site.host} is missing from the tree`);
+    } else if (!host.includes(site.hostLiteral ?? moduleName(site.file))) {
+      violations.push(
+        `${site.surface}: ${site.file} is never mounted by ${site.host} — the call site is unreachable`,
+      );
+    }
+  }
+
+  for (const door of AFFILIATE_CTA_DOORS) {
+    const text = map.get(door.file);
+    if (text === undefined) {
+      violations.push(`${door.surface}: door file ${door.file} is missing from the tree`);
+      continue;
+    }
+    if (!text.includes(door.literal)) {
+      violations.push(`${door.surface}: ${door.file} does not pass ${door.literal}`);
+    }
+  }
+
+  // A surface on the list with no call site and no door is a name nobody sends.
+  for (const surface of AFFILIATE_CTA_SURFACES) {
+    const hosted = AFFILIATE_CTA_CALL_SITES.some((site) => site.surface === surface);
+    const doored = AFFILIATE_CTA_DOORS.some((door) => door.surface === surface);
+    if (!hosted && !doored) {
+      violations.push(`${surface}: declared as a surface but nothing records or passes it`);
+    }
+    if (surface === 'search_external' && !hosted) {
+      violations.push(`${surface}: the section's own call sites are missing`);
+    }
+  }
+  return violations;
+}
+
+/**
+ * THE OTHER DIRECTION: an id used at a call site but not on the enumerated list
+ * would arrive at the database as a surface nobody can group by. Only LITERALS
+ * are read (`trackAffiliateCta('find_piece', …)`); the parameterised form
+ * `trackAffiliateCta(surface, …)` is checked by the door assertions above.
+ */
+export function affiliateSurfaceIdViolations(files: readonly SourceFile[]): string[] {
+  const violations: string[] = [];
+  const literal = /trackAffiliateCta\('([^']+)'/g;
+  for (const file of files) {
+    const text = maskComments(file.text);
+    let match = literal.exec(text);
+    while (match !== null) {
+      const id = match[1];
+      if (!(AFFILIATE_CTA_SURFACES as readonly string[]).includes(id)) {
+        violations.push(`${file.path} records an unknown affiliate surface "${id}"`);
+      }
+      match = literal.exec(text);
+    }
+    literal.lastIndex = 0;
+  }
+  return violations;
+}
+

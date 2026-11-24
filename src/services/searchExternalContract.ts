@@ -161,11 +161,26 @@ export function externalSectionOpensOnTapOnly(source: string): boolean {
   // flag-contract scanner reads every .ts/.tsx under src/ as raw text and would
   // demand the runtime flags from a file that only names the tag.
   if (masked.indexOf('<' + 'WebView') >= 0) return false;
-  if (/useEffect\s*\(/.test(masked)) return false;
+  // NO OPEN-ON-MOUNT. The defect is an effect that OPENS a page by itself, so the
+  // check reads each effect BODY rather than banning `useEffect` outright: the
+  // affiliate funnel records `affiliate_cta_viewed` from an effect that opens
+  // nothing, and a telemetry effect is not an auto-redirect.
+  for (const effect of masked.split('useEffect').slice(1)) {
+    const bodyEnd = effect.indexOf('}, [');
+    const body = bodyEnd < 0 ? effect.slice(0, 400) : effect.slice(0, bodyEnd);
+    if (body.indexOf(EXTERNAL_OPEN_CALL) >= 0) return false;
+  }
   // Both cards must open, and the PRIMARY card must open the section's own SMD
   // url — a card whose handler opens nothing is the dead card the owner keeps
-  // finding.
-  if (!/onPress=\{\(\)\s*=>\s*onOpen\(\s*smdUrl\s*\)\}/.test(masked)) return false;
+  // finding. The tap may record itself first (`affiliate_cta_clicked`) and then do
+  // the real work, so the open has to sit inside the card's OWN onPress handler.
+  const smdOpenAt = masked.indexOf('onOpen(smdUrl)');
+  if (smdOpenAt < 0) return false;
+  const pressAt = masked.lastIndexOf('onPress=', smdOpenAt);
+  if (pressAt < 0) return false;
+  // Measured in TOKENS, not characters: the handler's own comment lines are
+  // masked to whitespace, and a long comment must not read as a distance.
+  if (masked.slice(pressAt, smdOpenAt).replace(/\s+/g, '').length > 120) return false;
   if (!/onPress=\{\(\)\s*=>\s*onOpen\(\s*section\.musicnotesUrl\s+as\s+string\s*\)\}/.test(masked)) {
     return false;
   }

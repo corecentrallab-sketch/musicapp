@@ -400,17 +400,15 @@ function mutationTests(screen: string): void {
     },
     {
       label: 'the zero-match CTA is wired to undefined',
-      source: screen.replace(
-        'onPress={() => handleOpenRetailer(noMatch.retailerUrl as string)}',
-        'onPress={() => handleOpenRetailer(undefined)}',
-      ),
+      // The handler records the tap and then opens the retailer, so the mutation
+      // runs on the CALL, not on a pinned one-line onPress.
+      source: screen
+        .split('handleOpenRetailer(noMatch.retailerUrl as string)')
+        .join('handleOpenRetailer(undefined)'),
     },
     {
       label: 'the zero-match CTA opens nothing at all',
-      source: screen.replace(
-        'onPress={() => handleOpenRetailer(noMatch.retailerUrl as string)}',
-        'onPress={() => {}}',
-      ),
+      source: screen.split('handleOpenRetailer(noMatch.retailerUrl as string)').join('void 0'),
     },
     {
       label: 'the honest no-match line is dropped from the state',
