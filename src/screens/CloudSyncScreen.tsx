@@ -19,6 +19,7 @@
  *     stays available as an extra.
  */
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -307,9 +308,9 @@ export const CloudSyncScreen: React.FC = () => {
           accessibilityHint="Opens your phone's file picker and copies the scores you pick into your Library"
         >
           {busy ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color={colors.bg.surface} size="small" />
           ) : (
-            <Ionicons name="cloud-download" size={16} color="#fff" />
+            <Ionicons name="cloud-download" size={16} color={colors.bg.surface} />
           )}
           <Text style={styles.importButtonText}>
             {busy
@@ -330,9 +331,9 @@ export const CloudSyncScreen: React.FC = () => {
             onPress={() => handleSyncNow(provider)}
           >
             {syncing ? (
-              <ActivityIndicator color="#fff" size="small" />
+              <ActivityIndicator color={colors.bg.surface} size="small" />
             ) : (
-              <Ionicons name="sync" size={16} color="#fff" />
+              <Ionicons name="sync" size={16} color={colors.bg.surface} />
             )}
             <Text style={styles.syncButtonText}>
               {syncing ? 'Syncing…' : 'Sync Now'}
@@ -375,31 +376,31 @@ export const CloudSyncScreen: React.FC = () => {
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.canvas,
   },
   content: {
-    padding: 16,
+    padding: spacing.s16,
     gap: 14,
   },
   hero: {
-    backgroundColor: '#16213e',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
+    padding: spacing.s16,
     marginBottom: 2,
   },
   heroTitle: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 6,
   },
   heroText: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 14,
     lineHeight: 20,
   },
   heroNote: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 13,
     lineHeight: 19,
     marginTop: 10,
@@ -409,39 +410,38 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#0f3460',
-    borderWidth: 1,
-    borderColor: '#e94560',
-    borderRadius: 10,
+    gap: spacing.s8,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
     paddingVertical: 10,
+    minHeight: 44,
   },
   importButtonText: {
-    color: '#fff',
+    color: colors.bg.surface,
     fontWeight: '700',
     fontSize: 14,
   },
   importHint: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 12,
     lineHeight: 17,
   },
   providerCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 12,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     padding: 14,
-    gap: 12,
+    gap: spacing.s12,
   },
   providerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: spacing.s12,
   },
   providerIcon: {
     width: 42,
     height: 42,
-    borderRadius: 8,
-    backgroundColor: '#1a1a2e',
+    borderRadius: radius.circle,
+    backgroundColor: colors.bg.surfaceTinted,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -449,53 +449,59 @@ const baseStyles = StyleSheet.create({
     flex: 1,
   },
   providerName: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 16,
     fontWeight: '700',
   },
+  /** The provider status line is body copy, so it takes the secondary ink (6.65:1)
+   *  — crimson at 13 pt is 3.83:1 and fails AA for text. */
   providerStatus: {
-    color: '#e94560',
+    color: colors.text.secondary,
     fontSize: 13,
     marginTop: 1,
   },
   providerMeta: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 12,
     marginTop: 2,
   },
   connectButton: {
-    backgroundColor: '#e94560',
-    borderRadius: 8,
-    paddingVertical: 8,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.s8,
     paddingHorizontal: 14,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   connectButtonText: {
-    color: '#fff',
+    color: colors.bg.surface,
     fontWeight: '700',
     fontSize: 14,
   },
   disconnectButton: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.surfaceTinted,
     borderWidth: 1,
-    borderColor: '#e94560',
-    borderRadius: 8,
-    paddingVertical: 8,
+    borderColor: colors.border.control,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.s8,
     paddingHorizontal: 14,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   disconnectButtonText: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontWeight: '700',
     fontSize: 14,
   },
   hintBox: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.surfaceTinted,
     borderWidth: 1,
-    borderColor: '#0f3460',
-    borderRadius: 8,
+    borderColor: colors.border.subtle,
+    borderRadius: radius.card,
     padding: 10,
   },
   hintText: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 12,
     lineHeight: 17,
   },
@@ -503,17 +509,18 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#e94560',
-    borderRadius: 10,
+    gap: spacing.s8,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
     paddingVertical: 10,
+    minHeight: 44,
   },
+  /** Disabled: dims as a whole, keeping the brand fill and the white label. */
   syncButtonDisabled: {
-    backgroundColor: '#2a2a4a',
     opacity: 0.6,
   },
   syncButtonText: {
-    color: '#fff',
+    color: colors.bg.surface,
     fontWeight: '700',
     fontSize: 14,
   },
@@ -521,19 +528,19 @@ const baseStyles = StyleSheet.create({
     opacity: 0.75,
   },
   noteBox: {
-    backgroundColor: '#16213e',
-    borderRadius: 12,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     padding: 14,
     marginTop: 2,
   },
   noteTitle: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 6,
   },
   noteText: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 13,
     lineHeight: 19,
   },

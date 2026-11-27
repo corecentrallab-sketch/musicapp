@@ -5,8 +5,9 @@
  * has ONE token source, `src/theme/tokens.ts`. Batch 1 migrated five screens (Home,
  * Library, Piece detail, History, Find-a-piece); batch 2, slice 1 migrated seven more
  * (Editor, Scanned viewer, Onboarding, PDF viewer, Practice week, Achievements,
- * Tuner). This suite is the proof that each migration is real and that it changed
- * NOTHING ELSE:
+ * Tuner); batch 2, slice 2 migrated five more (Hum search, Metronome, Transposed
+ * score reader, Cloud sync, Modern search). This suite is the proof that each
+ * migration is real and that it changed NOTHING ELSE:
  *
  *   1. NO RAW HEX in those files — every colour is a `colors.*` role. The
  *      scan runs on the source with its comments blanked, so a doc comment that
@@ -63,7 +64,7 @@ function assertEq<T>(actual: T, expected: T, label: string): void {
 
 // ─── the migrated set ───────────────────────────────────────────────────────
 
-/** Batch 1 (five screens) + batch 2 slice 1 (seven screens). The other nine are LATER batches. */
+/** Batch 1 (five screens) + batch 2 slice 1 (seven) + slice 2 (five). The other four are LATER. */
 const MIGRATED_SCREENS: readonly string[] = [
   'src/screens/HomeScreen.tsx',
   'src/screens/LibraryScreen.tsx',
@@ -77,6 +78,11 @@ const MIGRATED_SCREENS: readonly string[] = [
   'src/screens/PracticeWeekScreen.tsx',
   'src/screens/AchievementsScreen.tsx',
   'src/screens/TunerScreen.tsx',
+  'src/screens/HumSearchScreen.tsx',
+  'src/screens/MetronomeScreen.tsx',
+  'src/screens/TransposedScoreReaderScreen.tsx',
+  'src/screens/CloudSyncScreen.tsx',
+  'src/screens/ModernSearchScreen.tsx',
 ];
 
 /**
@@ -114,6 +120,19 @@ const AFFILIATE_BYTES: Record<string, readonly string[]> = {
   'src/screens/PracticeWeekScreen.tsx': [],
   'src/screens/AchievementsScreen.tsx': [],
   'src/screens/TunerScreen.tsx': [],
+  /* Batch 2, slice 2. Four of the five carry no retailer string at all, which is
+     pinned: a styling pass may not ADD a money surface either. Modern search is
+     the one that touches the funnel — it saves the licensed links a modern match
+     arrived with onto the History row — so its builder call and its import are
+     frozen byte-for-byte. */
+  'src/screens/HumSearchScreen.tsx': [],
+  'src/screens/MetronomeScreen.tsx': [],
+  'src/screens/TransposedScoreReaderScreen.tsx': [],
+  'src/screens/CloudSyncScreen.tsx': [],
+  'src/screens/ModernSearchScreen.tsx': [
+    "import { modernPurchaseUrls } from '../services/purchaseCta';",
+    'purchaseUrls: modernPurchaseUrls(m),',
+  ],
 };
 
 /** How many `http(s)://` occurrences each file carries. Pinned, not sampled. */
@@ -130,6 +149,11 @@ const HTTP_COUNT: Record<string, number> = {
   'src/screens/PracticeWeekScreen.tsx': 0,
   'src/screens/AchievementsScreen.tsx': 0,
   'src/screens/TunerScreen.tsx': 0,
+  'src/screens/HumSearchScreen.tsx': 0,
+  'src/screens/MetronomeScreen.tsx': 0,
+  'src/screens/TransposedScoreReaderScreen.tsx': 0,
+  'src/screens/CloudSyncScreen.tsx': 0,
+  'src/screens/ModernSearchScreen.tsx': 0,
 };
 
 /**
@@ -137,6 +161,8 @@ const HTTP_COUNT: Record<string, number> = {
  * crimson fill cannot appear on a surface that carries a small white label: the
  * three counted here are a progress dot and two progress bars — graphics with no
  * text on them. Everything text-labelled fills with `brand.anchor` (8.05:1).
+ * The record cue is the ONE crimson fill batch 2 slice 2 keeps, and nothing is
+ * written on it but a 44 pt glyph.
  */
 const CRIMSON_FILL_COUNT: Record<string, number> = {
   'src/screens/EditorScreen.tsx': 0,
@@ -146,6 +172,11 @@ const CRIMSON_FILL_COUNT: Record<string, number> = {
   'src/screens/PracticeWeekScreen.tsx': 1, // progressFill
   'src/screens/AchievementsScreen.tsx': 1, // barFill
   'src/screens/TunerScreen.tsx': 0,
+  'src/screens/HumSearchScreen.tsx': 0,
+  'src/screens/MetronomeScreen.tsx': 0,
+  'src/screens/TransposedScoreReaderScreen.tsx': 0,
+  'src/screens/CloudSyncScreen.tsx': 0,
+  'src/screens/ModernSearchScreen.tsx': 1, // micBtn (the record cue, no label on it)
 };
 
 /**
@@ -167,6 +198,29 @@ const BRAND_PILL_BYTES: Record<string, readonly string[]> = {
     'color: colors.bg.surface,',
   ],
   'src/screens/TunerScreen.tsx': [
+    'backgroundColor: colors.brand.anchor,',
+    'color: colors.bg.surface,',
+  ],
+  /* Batch 2, slice 2 — every text-labelled button on these five screens fills
+     with brand.anchor and carries a white label. Four of them used to be crimson
+     pills with a small white label (3.83:1), the exact combination the spec bans. */
+  'src/screens/HumSearchScreen.tsx': [
+    'backgroundColor: colors.brand.anchor,',
+    'color: colors.bg.surface,',
+  ],
+  'src/screens/MetronomeScreen.tsx': [
+    'backgroundColor: colors.brand.anchor,',
+    'color: colors.bg.surface,',
+  ],
+  'src/screens/TransposedScoreReaderScreen.tsx': [
+    'backgroundColor: colors.brand.anchor,',
+    'color: colors.bg.surface,',
+  ],
+  'src/screens/CloudSyncScreen.tsx': [
+    'backgroundColor: colors.brand.anchor,',
+    'color: colors.bg.surface,',
+  ],
+  'src/screens/ModernSearchScreen.tsx': [
     'backgroundColor: colors.brand.anchor,',
     'color: colors.bg.surface,',
   ],
@@ -426,6 +480,37 @@ const practiceWeekLabelGreyed = practiceWeekSrc.replace(
   'color: colors.text.primary,',
 );
 
+// ── batch 2, slice 2: the five screens converted after slice 1 ──────────────
+/** Replace EVERY occurrence (a style string can appear more than once). */
+function replaceAll(text: string, from: string, to: string): string {
+  return text.split(from).join(to);
+}
+
+const humSrc = sources['src/screens/HumSearchScreen.tsx'];
+const metronomeSrc = sources['src/screens/MetronomeScreen.tsx'];
+const readerSrc = sources['src/screens/TransposedScoreReaderScreen.tsx'];
+const cloudSyncSrc = sources['src/screens/CloudSyncScreen.tsx'];
+const modernSrc = sources['src/screens/ModernSearchScreen.tsx'];
+
+const humHexBack = humSrc.replace('backgroundColor: colors.bg.canvas,', "backgroundColor: '#12122b',");
+const metronomeRadiusBack = metronomeSrc.replace('borderRadius: radius.circle,', 'borderRadius: 60,');
+const readerSpaceBack = readerSrc.replace('paddingHorizontal: spacing.s16,', 'paddingHorizontal: 16,');
+/** The metronome's Start pill and the modern flow's "Open Settings" put back to
+ *  crimson: the fill count rises by one, which is what fails. */
+const metronomeCrimsonPill = metronomeSrc.replace(
+  'backgroundColor: colors.brand.anchor,',
+  'backgroundColor: colors.accent.primary,',
+);
+const cloudSyncLabelGreyed = replaceAll(
+  cloudSyncSrc,
+  'color: colors.bg.surface,',
+  'color: colors.text.primary,',
+);
+const modernFunnelDropped = modernSrc.replace(
+  'purchaseUrls: modernPurchaseUrls(m),',
+  'purchaseUrls: null,',
+);
+
 const probes: Array<{ label: string; caught: boolean }> = [
   { label: 'a raw hex put back into a style block', caught: hexLiterals(hexBackInStyle).length === 1 },
   { label: 'a raw hex put back into a one-line style', caught: hexLiterals(hexBackInline).length === 1 },
@@ -481,6 +566,35 @@ const probes: Array<{ label: string; caught: boolean }> = [
     caught:
       practiceWeekLabelGreyed !== practiceWeekSrc &&
       missingBrandPillBytes(practiceWeekLabelGreyed, 'src/screens/PracticeWeekScreen.tsx').length === 1,
+  },
+  {
+    label: 'slice 2: a raw hex put back into the hum search screen',
+    caught: humHexBack !== humSrc && hexLiterals(humHexBack).length === 1,
+  },
+  {
+    label: 'slice 2: a numeric radius put back into the metronome',
+    caught:
+      metronomeRadiusBack !== metronomeSrc && radiusLiterals(metronomeRadiusBack).length === 1,
+  },
+  {
+    label: 'slice 2: an on-scale spacing literal put back into the score reader',
+    caught: readerSpaceBack !== readerSrc && onScaleSpacingLiterals(readerSpaceBack).length === 1,
+  },
+  {
+    label: 'slice 2: crimson put back under the metronome Start pill',
+    caught: metronomeCrimsonPill !== metronomeSrc && crimsonFillCount(metronomeCrimsonPill) === 1,
+  },
+  {
+    label: 'slice 2: the white label dropped from the cloud sync import pill',
+    caught:
+      cloudSyncLabelGreyed !== cloudSyncSrc &&
+      missingBrandPillBytes(cloudSyncLabelGreyed, 'src/screens/CloudSyncScreen.tsx').length === 1,
+  },
+  {
+    label: 'slice 2: the modern flow stopped saving the licensed links',
+    caught:
+      modernFunnelDropped !== modernSrc &&
+      missingAffiliateBytes(modernFunnelDropped, 'src/screens/ModernSearchScreen.tsx').length === 1,
   },
 ];
 

@@ -21,6 +21,7 @@
  * once into expo-av `Audio.Sound` objects and replayed per beat.
  */
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -70,10 +71,6 @@ const TIME_SIGNATURES: TimeSignature[] = [
   { label: '6/8', beats: 6 },
   { label: '2/4', beats: 2 },
 ];
-
-const ACCENT_COLOR = '#e94560';
-const BEAT_COLOR = '#4ecdc4';
-const MUTED_TEXT = '#a0a0b8';
 
 /** Monotonic clock — `performance.now()` is provided by Hermes/RN; DOM lib
  *  types declare it so it also type-checks on web. */
@@ -519,7 +516,7 @@ export const MetronomeScreen: React.FC = () => {
             styles.orb,
             {
               borderColor: orbGlow,
-              backgroundColor: 'rgba(22,33,62,0.55)',
+              backgroundColor: colors.bg.surface,
               transform: [{ scale: pulseScale }],
             },
           ]}
@@ -575,7 +572,7 @@ export const MetronomeScreen: React.FC = () => {
         <Ionicons
           name={isRunning ? 'stop' : 'play'}
           size={22}
-          color="#ffffff"
+          color={colors.bg.surface}
         />
         <Text style={styles.startButtonText}>
           {isRunning ? 'Stop' : 'Start'}
@@ -596,23 +593,23 @@ export const MetronomeScreen: React.FC = () => {
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.canvas,
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 32,
+    paddingHorizontal: spacing.s24,
+    paddingTop: spacing.s24,
+    paddingBottom: spacing.s32,
   },
   bpmValue: {
     fontSize: 72,
     fontWeight: '800',
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontVariant: ['tabular-nums'],
-    marginTop: 8,
+    marginTop: spacing.s8,
   },
   bpmLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: MUTED_TEXT,
+    color: colors.text.secondary,
     letterSpacing: 2,
     marginBottom: 20,
   },
@@ -620,20 +617,21 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    gap: 12,
-    marginBottom: 24,
+    gap: spacing.s12,
+    marginBottom: spacing.s24,
   },
   slider: {
     flex: 1,
     height: 40,
   },
+  /** 44 pt circle: the spec's icon-only trigger shape. */
   stepButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: '#16213e',
+    borderRadius: radius.circle,
+    backgroundColor: colors.bg.surface,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.control,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -646,24 +644,27 @@ const baseStyles = StyleSheet.create({
     marginBottom: 28,
   },
   tsChip: {
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.s16,
     paddingVertical: 9,
-    borderRadius: 20,
-    backgroundColor: '#16213e',
+    borderRadius: radius.pill,
+    backgroundColor: colors.bg.surface,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.control,
+    minHeight: 44,
+    justifyContent: 'center',
   },
+  /** The selected chip is a text-labelled pill: brand.anchor, white label. */
   tsChipSelected: {
-    backgroundColor: '#e94560',
-    borderColor: '#e94560',
+    backgroundColor: colors.brand.anchor,
+    borderColor: colors.brand.anchor,
   },
   tsChipText: {
-    color: MUTED_TEXT,
+    color: colors.text.secondary,
     fontSize: 15,
     fontWeight: '700',
   },
   tsChipTextSelected: {
-    color: '#ffffff',
+    color: colors.bg.surface,
   },
   pulseArea: {
     alignItems: 'center',
@@ -672,21 +673,21 @@ const baseStyles = StyleSheet.create({
   orb: {
     width: 120,
     height: 120,
-    borderRadius: 60,
+    borderRadius: radius.circle,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: spacing.s16,
   },
   orbInner: {
     width: 84,
     height: 84,
-    borderRadius: 42,
+    borderRadius: radius.circle,
     alignItems: 'center',
     justifyContent: 'center',
   },
   orbBeatNumber: {
-    color: '#ffffff',
+    color: colors.bg.surface,
     fontSize: 34,
     fontWeight: '800',
   },
@@ -697,68 +698,73 @@ const baseStyles = StyleSheet.create({
   dot: {
     width: 12,
     height: 12,
-    borderRadius: 6,
-    backgroundColor: '#2a2a4a',
+    borderRadius: radius.circle,
+    backgroundColor: colors.bg.surfaceTinted,
   },
+  /** The beat dot is a non-text indicator, so the teal identity is allowed. */
   dotActive: {
-    backgroundColor: BEAT_COLOR,
+    backgroundColor: colors.accent.secondary,
   },
   tapButton: {
     width: 132,
     height: 132,
-    borderRadius: 66,
-    backgroundColor: '#16213e',
+    borderRadius: radius.circle,
+    backgroundColor: colors.bg.surface,
     borderWidth: 2,
-    borderColor: '#0f3460',
+    borderColor: colors.border.control,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 28,
   },
   tapButtonPressed: {
-    borderColor: ACCENT_COLOR,
-    backgroundColor: '#1f2b52',
+    borderColor: colors.accent.primary,
+    backgroundColor: colors.bg.surfaceTinted,
   },
   tapTitle: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 24,
     fontWeight: '800',
     letterSpacing: 2,
   },
   tapHint: {
-    color: MUTED_TEXT,
+    color: colors.text.secondary,
     fontSize: 13,
-    marginTop: 4,
+    marginTop: spacing.s4,
     fontWeight: '600',
   },
   startButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#e94560',
-    borderRadius: 28,
+    gap: spacing.s8,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
     paddingHorizontal: 44,
     paddingVertical: 14,
+    minHeight: 44,
   },
+  /** Running: the pill KEEPS its brand fill and white label and gains the crimson
+   *  ring as the stop cue — a grey fill here would put a white label on a pale
+   *  card, and crimson under a 17 pt white label is the one combination the spec
+   *  bans (3.83:1). */
   startButtonRunning: {
-    backgroundColor: '#3a3a5c',
     borderWidth: 1,
-    borderColor: '#e94560',
+    borderColor: colors.accent.primary,
   },
   startButtonText: {
-    color: '#ffffff',
+    color: colors.bg.surface,
     fontSize: 17,
     fontWeight: '700',
   },
   loadingHint: {
-    color: MUTED_TEXT,
+    color: colors.text.secondary,
     fontSize: 12,
-    marginTop: 12,
+    marginTop: spacing.s12,
   },
   soundFailedHint: {
-    color: '#ffd166',
+    color: colors.text.primary,
     fontSize: 12,
     lineHeight: 17,
-    marginTop: 12,
+    marginTop: spacing.s12,
   },
 });
