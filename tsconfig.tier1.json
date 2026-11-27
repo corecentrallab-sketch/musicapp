@@ -95,6 +95,8 @@
     "src/services/takePreview.ts",
     "src/services/takeEditor.ts",
     "src/services/takeStaff.ts",
+    "src/services/takeLibraryModel.ts",
+    "scripts/takeLibrarySave.test.ts",
     "src/services/v33UiContract.ts",
     "src/services/takePlayback.ts",
     "src/services/midiExportContract.ts",
