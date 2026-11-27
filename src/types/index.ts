@@ -473,6 +473,18 @@ export interface LibraryItem {
    * and synced item, which keep exactly the behaviour they had.
    */
   sourcePieceId?: string;
+  /**
+   * ADDITIVE (owner 2026-11-24, option A): the practice TAKE this row is a copy
+   * of, when the row was written by "Save to library" on a take result card or on
+   * a History row (`addAbcToLibrary` with a `takeId`).
+   *
+   * History keeps every take the user plays; Library keeps only the ones they
+   * deliberately save. This field is what makes the take's save action
+   * idempotent — the registry is read for this id, the surface shows the real
+   * "Saved to library" state, and a second tap (or a save from the other
+   * surface) can never write a duplicate. Absent on every other row.
+   */
+  sourceTakeId?: string;
 }
 
 // ─── Catalog search ("Find a piece", GET /api/pieces?q=) ──────

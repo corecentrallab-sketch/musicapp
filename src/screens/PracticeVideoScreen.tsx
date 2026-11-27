@@ -233,6 +233,10 @@ import { tabScreenBottomPadding } from '../services/tabBarLayout';
 import { PracticeVideoSendToSheet } from '../components/PracticeVideoSendToSheet';
 import { PracticeVideoCompare, type CompareTakeSide } from '../components/PracticeVideoCompare';
 import { TakeStaffCard } from '../components/TakeStaffCard';
+// Owner 2026-11-24 (option A): a practice take finally has a route into
+// Library, and the split between the two stores is said on the surface.
+import { TakeSaveToLibraryButton } from '../components/TakeSaveToLibraryButton';
+import { LIBRARY_VS_HISTORY_LINE } from '../services/takeLibraryModel';
 // vc61 (spec §1/§3): the read's clock, the way out of a stuck read, and the full-screen reader.
 import {
   READ_CLOCK_TICK_MS,
@@ -3038,6 +3042,23 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
                 with the camera OFF, so it is offered whenever the take has no notes
                 — and it is written onto THIS row (the same row id), so the notes
                 land under this video. */}
+            {/* ── owner 2026-11-24, option A: THE TAKE CAN BE KEPT ─────────────
+                A practice video had NO route into Library at all: it landed in
+                History and stayed there. This is the missing door — one explicit
+                action that writes the take's OWN ABC (the line the card above
+                draws) into the existing library store, idempotent on the take's
+                row id, with the one line that says what each store holds. A take
+                with no notes offers nothing: there is no score to save. */}
+            {take && take.notes.length > 0 ? (
+              <>
+                <TakeSaveToLibraryButton
+                  takeId={row?.rowId ?? null}
+                  title={row?.title ?? PRACTICE_VIDEO_ROW_TITLE}
+                  take={take}
+                />
+                <Text style={styles.honest}>{LIBRARY_VS_HISTORY_LINE}</Text>
+              </>
+            ) : null}
             {(!take || take.notes.length === 0) && !takeBusy ? (
               <>
                 <Text style={styles.honest}>{VIDEO_TAKE_ON_ITS_OWN_LINE}</Text>

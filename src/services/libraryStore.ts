@@ -469,6 +469,15 @@ const ABC_FILENAME = 'score.abc';
 export async function addAbcToLibrary(input: {
   title: string;
   abc: string;
+  /**
+   * ADDITIVE (owner 2026-11-24, option A): the practice take this copy was
+   * written from. When present the write is IDEMPOTENT on it — a take already
+   * in the library is returned as it stands instead of being written twice, so
+   * the Save-to-Library action on the result card and on a History row (and a
+   * second tap on either) can never duplicate the same take. Absent on the
+   * editor's transposed copies, which keep exactly the behaviour they had.
+   */
+  takeId?: string | null;
 }): Promise<LibraryItem> {
   const title = input.title.trim();
   const abc = input.abc;
@@ -477,6 +486,12 @@ export async function addAbcToLibrary(input: {
   }
   if (!abc.trim()) {
     throw new Error('There is no score to save.');
+  }
+
+  const takeId = typeof input.takeId === 'string' ? input.takeId.trim() : '';
+  if (takeId) {
+    const existing = await findLibraryItemByTakeId(takeId);
+    if (existing) return existing;
   }
 
   const id = makeId();
@@ -495,12 +510,27 @@ export async function addAbcToLibrary(input: {
     pageCount: 1,
     sizeBytes: info.exists ? info.size ?? 0 : 0,
     createdAt: new Date().toISOString(),
+    ...(takeId ? { sourceTakeId: takeId } : {}),
   };
 
   const items = await getLibraryItems();
   items.unshift(item);
   await persistLibrary(items);
   return item;
+}
+
+/**
+ * The library row written from this practice take, or null when the take has
+ * never been saved (owner 2026-11-24, option A). The surfaces READ this to show
+ * the action's real state instead of assuming a tap worked.
+ */
+export async function findLibraryItemByTakeId(
+  takeId: string | null | undefined,
+): Promise<LibraryItem | null> {
+  const wanted = typeof takeId === 'string' ? takeId.trim() : '';
+  if (!wanted) return null;
+  const items = await getLibraryItems();
+  return items.find((item) => item.sourceTakeId === wanted) ?? null;
 }
 
 /**

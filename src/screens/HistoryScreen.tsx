@@ -63,6 +63,11 @@ import { PurchaseWebView } from '../components/PurchaseWebView';
 import { primaryPurchaseUrl } from '../services/purchaseCta';
 import { AFFILIATE_DISCLOSURE } from '../services/v471bMoneyCta';
 import { exportCaptureMidiFromTake } from '../services/captureMidiExport';
+// OWNER 2026-11-24 (option A): a take can be KEPT, and the split between the
+// two stores is said on the surface. History is the record of everything the
+// user played; Library is what they deliberately saved.
+import { TakeSaveToLibraryButton } from '../components/TakeSaveToLibraryButton';
+import { LIBRARY_VS_HISTORY_LINE } from '../services/takeLibraryModel';
 import {
   MIDI_EXPORT_BUSY_LABEL,
   MIDI_EXPORT_LABEL,
@@ -714,6 +719,19 @@ export const HistoryScreen: React.FC = () => {
               {editTakeNote?.id === item.id && (
                 <Text style={styles.midiNote}>{editTakeNote.text}</Text>
               )}
+              {/* ── OWNER 2026-11-24, OPTION A: KEEP THIS TAKE ───────────────
+                  This row is the RECORD of a take; Library is what the user
+                  deliberately kept. The action writes the take's own ABC (the
+                  same notes the card and the MIDI export read) through the
+                  existing library store, idempotent on the row id — so a take
+                  saved on the result card reads as saved here, and a second tap
+                  never writes a duplicate. A row with no notes offers nothing. */}
+              <TakeSaveToLibraryButton
+                takeId={item.id}
+                title={item.title}
+                take={item.capture}
+                compact
+              />
             </>
           ) : null}
           {/* A PRACTICE VIDEO ON THIS ROW (owner GO 10-10, backlog a49fbe2d).
@@ -913,6 +931,13 @@ export const HistoryScreen: React.FC = () => {
                 Saved recognitions ({items.length}) · tap a piece to open it
               </Text>
             ) : null}
+            {/* ── OWNER 2026-11-24, OPTION A: THE TWO STORES, SAID PLAINLY ─────
+                The difference between History and Library used to be invisible:
+                everything landed here and nothing said what Library was for.
+                One line, above the list, outside every tap target. */}
+            <Text style={[styles.librarySplitLine, { color: theme.subtext }]}>
+              {LIBRARY_VS_HISTORY_LINE}
+            </Text>
           </View>
         }
         ListEmptyComponent={
@@ -1072,6 +1097,11 @@ const baseStyles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: spacing.s16,
     paddingBottom: spacing.s40,
+  },
+  librarySplitLine: {
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 6,
   },
   listHeader: {
     fontSize: 13,
