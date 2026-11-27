@@ -1,4 +1,5 @@
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -236,7 +237,7 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
           disabled={page <= 1}
           accessibilityLabel="Previous page"
         >
-          <Ionicons name="chevron-up" size={20} color={theme.text} />
+          <Ionicons name="chevron-up" size={20} color={colors.text.primary} />
         </Pressable>
         <Text style={styles.pageLabel}>
           Page {pageCount > 0 ? page : '–'} of {pageCount > 0 ? pageCount : '–'}
@@ -253,7 +254,7 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
           disabled={pageCount > 0 && page >= pageCount}
           accessibilityLabel="Next page"
         >
-          <Ionicons name="chevron-down" size={20} color={theme.text} />
+          <Ionicons name="chevron-down" size={20} color={colors.text.primary} />
         </Pressable>
       </View>
       )}
@@ -274,7 +275,7 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
             testID="pdf-expand-exit"
             hitSlop={8}
           >
-            <Ionicons name="contract-outline" size={20} color={theme.text} />
+            <Ionicons name="contract-outline" size={20} color={colors.text.primary} />
           </Pressable>
         </View>
       )}
@@ -285,49 +286,51 @@ export const PdfViewerScreen: React.FC<Props> = ({ route, navigation }) => {
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#10101c',
+    backgroundColor: colors.bg.canvas,
   },
   /** The floating expand / exit control (v43 slice 3, item E11). */
   expandDock: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: spacing.s12,
+    right: spacing.s12,
   },
   immersiveExit: {
     width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 22,
-    backgroundColor: '#16213e',
+    borderRadius: radius.circle,
+    backgroundColor: colors.bg.surface,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.control,
   },
   pdf: {
     flex: 1,
-    backgroundColor: '#10101c',
+    backgroundColor: colors.bg.surface,
   },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10101c',
-    gap: 16,
-    padding: 24,
+    backgroundColor: colors.bg.canvas,
+    gap: spacing.s16,
+    padding: spacing.s24,
   },
   errorText: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 16,
     textAlign: 'center',
   },
   backButton: {
-    backgroundColor: '#e94560',
+    backgroundColor: colors.brand.anchor,
     paddingVertical: 10,
     paddingHorizontal: 18,
-    borderRadius: 10,
+    borderRadius: radius.pill,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   backButtonText: {
-    color: '#fff',
+    color: colors.bg.surface,
     fontWeight: '700',
   },
   footer: {
@@ -336,34 +339,34 @@ const baseStyles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 10,
-    backgroundColor: '#16213e',
+    backgroundColor: colors.bg.surface,
     borderTopWidth: 1,
-    borderTopColor: '#0f3460',
+    borderTopColor: colors.border.subtle,
   },
   footerButton: {
-    width: 40,
-    height: 36,
-    borderRadius: 8,
+    width: 44,
+    height: 44,
+    borderRadius: radius.circle,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.canvas,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.control,
   },
   footerButtonDisabled: {
     opacity: 0.35,
   },
   /* v43 item B2 — the honest one-page line, in the footer's own quiet type. */
   autoScrollNote: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 12,
     lineHeight: 17,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: spacing.s16,
+    paddingVertical: spacing.s8,
     textAlign: 'center',
   },
   pageLabel: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 14,
     fontWeight: '600',
   },

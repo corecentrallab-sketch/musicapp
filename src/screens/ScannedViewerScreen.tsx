@@ -1,4 +1,5 @@
 import { useThemedStyles } from '../services/themeStore';
+import { colors, spacing } from '../theme/tokens';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -192,7 +193,7 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
           the swipe hint that does work. See this screen's header comment for the
           honest-scope decision (no OMR, no score following, no audio). */}
       <View style={styles.autoScrollNoteRow}>
-        <Ionicons name="hand-left-outline" size={14} color={theme.subtext} />
+        <Ionicons name="hand-left-outline" size={14} color={colors.text.secondary} />
         <Text style={styles.autoScrollNote}>{SCANNED_NO_AUTOSCROLL_LINE}</Text>
       </View>
 
@@ -231,7 +232,7 @@ export const ScannedViewerScreen: React.FC<Props> = ({ route, navigation }) => {
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#10101c',
+    backgroundColor: colors.bg.canvas,
   },
   scoreArea: {
     flex: 1,
@@ -240,21 +241,21 @@ const baseStyles = StyleSheet.create({
   /** The floating expander (v43 slice 3, item E12). */
   expandDock: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: spacing.s12,
+    right: spacing.s12,
   },
   /** One page inside the full-screen window (v43 slice 3, item E12). */
   fullPage: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10101c',
+    backgroundColor: colors.bg.surface,
   },
   page: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10101c',
+    backgroundColor: colors.bg.surface,
   },
   pageImage: {
     width: '100%',
@@ -264,15 +265,15 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#16213e',
+    paddingHorizontal: spacing.s16,
+    paddingVertical: spacing.s8,
+    backgroundColor: colors.bg.surface,
     borderTopWidth: 1,
-    borderTopColor: '#0f3460',
+    borderTopColor: colors.border.subtle,
   },
   autoScrollNote: {
     flex: 1,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 11,
     lineHeight: 15,
   },
@@ -280,34 +281,34 @@ const baseStyles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10101c',
-    padding: 24,
+    backgroundColor: colors.bg.canvas,
+    padding: spacing.s24,
   },
   emptyText: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 16,
     textAlign: 'center',
   },
   footer: {
     paddingVertical: 10,
     alignItems: 'center',
-    backgroundColor: '#16213e',
+    backgroundColor: colors.bg.surface,
     borderTopWidth: 1,
-    borderTopColor: '#0f3460',
+    borderTopColor: colors.border.subtle,
   },
   /** The scan's way into the search (v39 fix 1b) — bounded so the score keeps room. */
   findBar: {
     maxHeight: 300,
-    backgroundColor: '#16213e',
+    backgroundColor: colors.bg.surface,
     borderTopWidth: 1,
-    borderTopColor: '#0f3460',
+    borderTopColor: colors.border.subtle,
   },
   findBody: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingHorizontal: spacing.s16,
+    paddingBottom: spacing.s12,
   },
   pageLabel: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 14,
     fontWeight: '600',
   },

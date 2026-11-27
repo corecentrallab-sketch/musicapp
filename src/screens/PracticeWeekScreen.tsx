@@ -14,6 +14,7 @@
  * Node). Rendered in place by Home, like the app's other full-screen flows.
  */
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -249,25 +250,27 @@ export const PracticeWeekScreen: React.FC<PracticeWeekScreenProps> = ({
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.canvas,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 60,
-    paddingBottom: 8,
+    paddingBottom: spacing.s8,
   },
   backBtn: {
-    marginRight: 12,
+    marginRight: spacing.s12,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   backText: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontSize: 16,
     fontWeight: '600',
   },
   headerTitle: {
-    color: '#ffffff',
+    color: colors.text.primary,
     fontSize: 18,
     fontWeight: '700',
   },
@@ -276,95 +279,95 @@ const baseStyles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 40,
+    paddingTop: spacing.s12,
+    paddingBottom: spacing.s40,
   },
 
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.s24,
   },
   centerSubtext: {
-    color: '#a0a0b8',
-    marginTop: 12,
+    color: colors.text.secondary,
+    marginTop: spacing.s12,
     fontSize: 14,
   },
 
   // Summary (same shape as Home's weekly card)
   summaryCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.subtle,
   },
   summaryTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.text.primary,
     marginBottom: 6,
   },
   summaryValue: {
     fontSize: 15,
-    color: '#c0c0d0',
+    color: colors.text.secondary,
     fontWeight: '600',
     marginBottom: 10,
   },
   progressBar: {
     height: 8,
-    backgroundColor: '#1a1a2e',
-    borderRadius: 4,
+    backgroundColor: colors.border.subtle,
+    borderRadius: radius.pill,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#e94560',
-    borderRadius: 4,
+    backgroundColor: colors.accent.primary,
+    borderRadius: radius.pill,
   },
   progressFillComplete: {
-    backgroundColor: '#4ecdc4',
+    backgroundColor: colors.accent.secondary,
   },
   summarySub: {
     fontSize: 13,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     marginTop: 10,
   },
   summaryWarn: {
     fontSize: 13,
-    color: '#ffb347',
-    marginTop: 8,
+    color: colors.text.primary,
+    marginTop: spacing.s8,
     lineHeight: 18,
   },
 
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#e94560',
+    color: colors.brand.anchor,
     marginTop: 22,
     marginBottom: 10,
   },
 
   // Day rows
   daysCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    paddingHorizontal: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
+    paddingHorizontal: spacing.s16,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.subtle,
   },
   dayRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
+    paddingVertical: spacing.s12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#0f3460',
+    borderBottomColor: colors.border.subtle,
   },
   dayRowToday: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.surfaceTinted,
   },
   dayInfo: {
     flexDirection: 'row',
@@ -373,18 +376,18 @@ const baseStyles = StyleSheet.create({
   },
   dayName: {
     fontSize: 15,
-    color: '#c0c0d0',
+    color: colors.text.secondary,
     fontWeight: '600',
   },
   dayNameToday: {
-    color: '#ffffff',
+    color: colors.text.primary,
     fontWeight: '700',
   },
   todayTag: {
-    marginLeft: 8,
+    marginLeft: spacing.s8,
     fontSize: 11,
     fontWeight: '700',
-    color: '#e94560',
+    color: colors.brand.anchor,
   },
   dayStatus: {
     fontSize: 14,
@@ -392,55 +395,55 @@ const baseStyles = StyleSheet.create({
     marginLeft: 10,
   },
   dayStatusDone: {
-    color: '#4ecdc4',
+    color: colors.text.primary,
   },
   dayStatusIdle: {
-    color: '#8a8aa3',
+    color: colors.text.secondary,
   },
 
   // Coached takes
   takesCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.subtle,
   },
   takesLine: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#ffffff',
+    color: colors.text.primary,
   },
   takesSub: {
     fontSize: 13,
-    color: '#a0a0b8',
-    marginTop: 8,
+    color: colors.text.secondary,
+    marginTop: spacing.s8,
     lineHeight: 19,
   },
 
   // CTAs
   primaryBtn: {
-    backgroundColor: '#e94560',
-    borderRadius: 12,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: spacing.s24,
   },
   primaryBtnText: {
-    color: '#ffffff',
+    color: colors.bg.surface,
     fontSize: 15,
     fontWeight: '700',
   },
   secondaryBtn: {
-    borderRadius: 12,
+    borderRadius: radius.pill,
     paddingVertical: 14,
     alignItems: 'center',
     marginTop: 10,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.control,
   },
   secondaryBtnText: {
-    color: '#4ecdc4',
+    color: colors.text.secondary,
     fontSize: 14,
     fontWeight: '700',
   },
