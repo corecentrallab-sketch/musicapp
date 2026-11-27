@@ -3,6 +3,7 @@
  * 3-4 screens with skip option.
  */
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import React, { useState } from 'react';
 import {
   View,
@@ -211,36 +212,38 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
-    paddingHorizontal: 24,
+    backgroundColor: colors.bg.canvas,
+    paddingHorizontal: spacing.s24,
     paddingTop: 60,
-    paddingBottom: 40,
+    paddingBottom: spacing.s40,
   },
   skipBtn: {
     position: 'absolute',
     top: 60,
-    right: 24,
+    right: spacing.s24,
     zIndex: 10,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   skipText: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 15,
     fontWeight: '600',
   },
   dots: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 8,
-    marginBottom: 32,
+    gap: spacing.s8,
+    marginBottom: spacing.s32,
   },
   dot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
-    backgroundColor: '#333355',
+    borderRadius: radius.circle,
+    backgroundColor: colors.border.control,
   },
   dotActive: {
-    backgroundColor: '#e94560',
+    backgroundColor: colors.accent.primary,
     width: 24,
   },
   content: {
@@ -251,37 +254,37 @@ const baseStyles = StyleSheet.create({
   emoji: {
     fontSize: 72,
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: spacing.s16,
   },
   title: {
     fontSize: 26,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.text.primary,
     textAlign: 'center',
-    marginBottom: 8,
-    paddingHorizontal: 16,
+    marginBottom: spacing.s8,
+    paddingHorizontal: spacing.s16,
   },
   subtitle: {
     fontSize: 15,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: spacing.s32,
     lineHeight: 22,
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.s16,
   },
   option: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#16213e',
-    borderRadius: 14,
-    padding: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
+    padding: spacing.s16,
     marginBottom: 10,
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: colors.border.control,
   },
   optionSelected: {
-    borderColor: '#e94560',
-    backgroundColor: '#1e2d50',
+    borderColor: colors.brand.anchor,
+    backgroundColor: colors.bg.surfaceTinted,
   },
   optionEmoji: {
     fontSize: 28,
@@ -290,26 +293,26 @@ const baseStyles = StyleSheet.create({
   optionText: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#c0c0d0',
+    color: colors.text.secondary,
     flex: 1,
   },
   optionTextSelected: {
-    color: '#ffffff',
+    color: colors.text.primary,
   },
   checkmark: {
     fontSize: 20,
-    color: '#e94560',
+    color: colors.accent.primary,
     fontWeight: '700',
   },
   nextBtn: {
-    backgroundColor: '#e94560',
-    borderRadius: 14,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
     padding: 18,
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: spacing.s12,
   },
   nextText: {
-    color: '#ffffff',
+    color: colors.bg.surface,
     fontSize: 18,
     fontWeight: '700',
   },

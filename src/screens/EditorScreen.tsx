@@ -5,6 +5,7 @@
  * editor (correcting/transposing scores) is still in the works.
  */
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,7 +59,7 @@ export const EditorScreen: React.FC = () => {
             Keep time with tap tempo, accent patterns, and a visual pulse.
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
+        <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
       </Pressable>
 
       {/* THE TUNER (owner APPROVED 10-10, backlog 2bbbbc8f). Placed with the
@@ -79,7 +80,7 @@ export const EditorScreen: React.FC = () => {
           <Text style={styles.cardTitle}>{TUNER_CARD_TITLE}</Text>
           <Text style={styles.cardSubtitle}>{TUNER_CARD_SUBTITLE}</Text>
         </View>
-        <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
+        <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
       </Pressable>
 
       {/* Notation editor (transpose v1) is live, so this card is a control
@@ -103,7 +104,7 @@ export const EditorScreen: React.FC = () => {
             Note-by-note editing is coming.
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
+        <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
       </Pressable>
 
       {/* RECORD YOUR PRACTICE (owner GO 10-10, backlog a49fbe2d). The third
@@ -124,7 +125,7 @@ export const EditorScreen: React.FC = () => {
           <Text style={styles.cardTitle}>{PRACTICE_VIDEO_CARD_TITLE}</Text>
           <Text style={styles.cardSubtitle}>{PRACTICE_VIDEO_CARD_SUBTITLE}</Text>
         </View>
-        <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
+        <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
       </Pressable>
       </ScrollView>
     </View>
@@ -134,44 +135,44 @@ export const EditorScreen: React.FC = () => {
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.canvas,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingTop: spacing.s24,
   },
   screenTitle: {
     fontSize: 26,
     fontWeight: '700',
-    color: '#eaeaff',
+    color: colors.text.primary,
     marginBottom: 6,
   },
   screenSubtitle: {
     fontSize: 14,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     lineHeight: 21,
-    marginBottom: 24,
+    marginBottom: spacing.s24,
   },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#16213e',
-    borderRadius: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     padding: 18,
-    marginBottom: 12,
+    marginBottom: spacing.s12,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.control,
   },
   cardPressed: {
-    backgroundColor: '#1f2b52',
+    backgroundColor: colors.bg.surfaceTinted,
   },
   cardIcon: {
     width: 46,
     height: 46,
-    borderRadius: 12,
-    backgroundColor: '#1a1a2e',
+    borderRadius: radius.card,
+    backgroundColor: colors.bg.canvas,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.subtle,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14,
@@ -181,13 +182,13 @@ const baseStyles = StyleSheet.create({
     marginRight: 10,
   },
   cardTitle: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 17,
     fontWeight: '700',
     marginBottom: 3,
   },
   cardSubtitle: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 13,
     lineHeight: 19,
   },

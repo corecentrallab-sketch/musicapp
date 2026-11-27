@@ -30,6 +30,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 import { WebView } from 'react-native-webview';
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { TunerMeter } from '../components/TunerMeter';
 import { decodePcm16Base64 } from '../services/wavCapture';
@@ -349,7 +350,7 @@ export const TunerScreen: React.FC = () => {
         accessibilityLabel={listenLabel}
         accessibilityState={{ disabled: busy }}
       >
-        <Ionicons name="mic" size={20} color="#ffffff" />
+        <Ionicons name="mic" size={20} color={colors.bg.surface} />
         <Text style={styles.listenButtonText}>{listenLabel}</Text>
       </Pressable>
 
@@ -367,7 +368,7 @@ export const TunerScreen: React.FC = () => {
         <Ionicons
           name={auto ? 'pause' : 'repeat'}
           size={16}
-          color={auto ? theme.text : theme.accent}
+          color={auto ? colors.text.primary : theme.accent}
         />
         <Text style={[styles.autoButtonText, auto && styles.autoButtonTextOn]}>
           {auto ? TUNER_AUTO_STOP_CTA : TUNER_AUTO_CTA}
@@ -411,33 +412,34 @@ export const TunerScreen: React.FC = () => {
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.canvas,
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: spacing.s16,
   },
   headline: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 14,
     lineHeight: 20,
     textAlign: 'center',
   },
   readoutLine: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 13,
     lineHeight: 19,
     textAlign: 'center',
     minHeight: 38,
-    marginTop: 4,
-    marginBottom: 12,
+    marginTop: spacing.s4,
+    marginBottom: spacing.s12,
   },
   listenButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#e94560',
+    gap: spacing.s8,
+    backgroundColor: colors.brand.anchor,
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: radius.pill,
+    minHeight: 44,
   },
   listenButtonBusy: {
     opacity: 0.6,
@@ -446,7 +448,7 @@ const baseStyles = StyleSheet.create({
     opacity: 0.7,
   },
   listenButtonText: {
-    color: '#ffffff',
+    color: colors.bg.surface,
     fontSize: 16,
     fontWeight: '800',
   },
@@ -457,29 +459,30 @@ const baseStyles = StyleSheet.create({
     gap: 6,
     marginTop: 10,
     paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#16213e',
+    borderRadius: radius.pill,
+    backgroundColor: colors.bg.surface,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.control,
+    minHeight: 44,
   },
   autoButtonOn: {
-    backgroundColor: '#1f2b52',
-    borderColor: '#e94560',
+    backgroundColor: colors.bg.surfaceTinted,
+    borderColor: colors.brand.anchor,
   },
   autoButtonText: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 13,
     fontWeight: '700',
   },
   autoButtonTextOn: {
-    color: '#ffffff',
+    color: colors.text.primary,
   },
   notes: {
-    marginTop: 16,
+    marginTop: spacing.s16,
     gap: 6,
   },
   noteLine: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 12,
     lineHeight: 17,
   },
