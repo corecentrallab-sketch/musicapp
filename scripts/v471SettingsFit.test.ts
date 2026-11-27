@@ -25,6 +25,7 @@
  * Plain Node, no react-native, no network. Run with `npm run test:tier1`.
  */
 import { SETTINGS_SPEC } from '../src/services/settingsSpec';
+import { spacing } from '../src/theme/tokens';
 import {
   HARD_RIGHT_PAD_DP,
   MIN_TAP_TARGET_DP,
@@ -130,7 +131,9 @@ function ruleTests(): void {
   assertEq(SETTINGS_SPEC.proMinHeight, 62, 'the Pro row floor is still the spec’s 62 dp');
   assertEq(SETTINGS_SPEC.rowMinHeight, 52, 'the row floor is still the spec’s 52 dp');
   assertEq(SETTINGS_SPEC.proPadY, 12, 'the Pro row carries 12 dp vertical padding');
-  assertEq(SETTINGS_SPEC.rowPadY, 10, 'the row carries 10 dp vertical padding');
+  // 11-24 design system: the 4/8 scale supersedes v43's off-scale 10 dp — the
+  // row now carries `spacing.s8`, and the pin is against the TOKEN, not a magic 8.
+  assertEq(SETTINGS_SPEC.rowPadY, spacing.s8, 'the row carries spacing.s8 (8 dp) vertical padding');
   assertEq(SETTINGS_SPEC.rowValueGap, 12, 'the value gap is 12 dp — not a 100 dp reservation');
 }
 
@@ -230,7 +233,12 @@ function mutationProbes(): void {
   );
   probe(
     'the row loses its vertical padding (the floor becomes a squeeze)',
-    SETTINGS.replace('    paddingRight: 10,\n    paddingVertical: 10,', '    paddingRight: 10,'),
+    // 11-24 design system: the row's padding is `spacing.s8` (a token) now, so the
+    // mutation has to remove the token the screen actually carries.
+    SETTINGS.replace(
+      '    paddingRight: 10,\n    paddingVertical: spacing.s8,',
+      '    paddingRight: 10,',
+    ),
     SETTINGS,
     textRowsCarryNoFixedHeight,
   );
@@ -263,9 +271,10 @@ function mutationProbes(): void {
   );
   probe(
     'the Pro pill stops being measured (flexShrink goes)',
+    // The pill's padding/margin are `spacing.s8` tokens since the 11-24 migration.
     SETTINGS.replace(
-      '    paddingVertical: 8,\n    flexShrink: 0,\n    marginLeft: 8,',
-      '    paddingVertical: 8,\n    marginLeft: 8,',
+      '    paddingVertical: spacing.s8,\n    flexShrink: 0,\n    marginLeft: spacing.s8,',
+      '    paddingVertical: spacing.s8,\n    marginLeft: spacing.s8,',
     ),
     SETTINGS,
     proRowLaysOutWithoutHardPad,

@@ -199,6 +199,7 @@ import { getDeviceId } from '../services/device';
 // (useThemeMode = the shared mode, useThemedStyles = this screen's StyleSheet
 // re-painted for the chosen palette). This screen is the TOGGLE.
 import { useThemeMode, useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import {
   PRACTICE_SECTION_SUBTITLE,
   PRACTICE_SECTION_TITLE,
@@ -1525,9 +1526,9 @@ const baseStyles = StyleSheet.create({
   // services/settingsSpec's SETTINGS_SPEC; NO colour lives in this block — the
   // palette supplies every one of them at render time.)
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 40,
+    paddingHorizontal: spacing.s16,
+    paddingTop: spacing.s16,
+    paddingBottom: spacing.s40,
   },
   // The Pro row: a 62 dp FLOOR, r16, 1 dp LISTEN edge. v47.1 Part A — it was a
   // fixed `height: 62`, which clipped the 16/700 title + 12 sub the moment the OS
@@ -1535,14 +1536,14 @@ const baseStyles = StyleSheet.create({
   // padding lets the row GROW instead.
   proRow: {
     minHeight: 62,
-    borderRadius: 16,
+    borderRadius: radius.card,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingLeft: 16,
-    paddingRight: 12,
-    paddingVertical: 12,
+    paddingLeft: spacing.s16,
+    paddingRight: spacing.s12,
+    paddingVertical: spacing.s12,
   },
   // The copy FLEXES; the pill beside it is measured (flexShrink: 0), so no side
   // reserves space the other may not need.
@@ -1550,11 +1551,11 @@ const baseStyles = StyleSheet.create({
   proTitle: { fontSize: 16, fontWeight: '700' },
   proSub: { fontSize: 12, marginTop: 2 },
   proCta: {
-    borderRadius: 999,
+    borderRadius: radius.pill,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: spacing.s8,
     flexShrink: 0,
-    marginLeft: 8,
+    marginLeft: spacing.s8,
   },
   proCtaText: { fontSize: 13, fontWeight: '700' },
   // The section header: 11 dp caps bold, 20 above / 18 below, indent x16.
@@ -1566,12 +1567,13 @@ const baseStyles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 18,
   },
-  // The card IS the group bound: r16, 1 dp CARD_LINE, 20 dp to the next group.
+  // The card IS the group bound: r16, 1 dp CARD_LINE, 24 dp to the next group
+  // (11-24 design system: the 4/8 scale supersedes v43's off-scale 20).
   specGroup: {
-    borderRadius: 16,
+    borderRadius: radius.card,
     borderWidth: 1,
     overflow: 'hidden',
-    marginBottom: 20,
+    marginBottom: spacing.s24,
   },
   specDivider: { height: 1 },
   // v45 slice 2 · the "Your practice" card that carries the three retention rows.
@@ -1579,10 +1581,10 @@ const baseStyles = StyleSheet.create({
   // but its own key: the spec's four-group guard counts ITS cards, and these rows
   // deliberately sit BELOW the spec's closed row set (owner 10-26).
   retentionCard: {
-    borderRadius: 16,
+    borderRadius: radius.card,
     borderWidth: 1,
     overflow: 'hidden',
-    marginBottom: 20,
+    marginBottom: spacing.s24,
   },
   // ONE row style: a 52 dp FLOOR (never a fixed height — v47.1 Part A: it was
   // `height: 52`, which clipped the 15/700 title + 11 sub at a raised font scale),
@@ -1591,9 +1593,9 @@ const baseStyles = StyleSheet.create({
     minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: 16,
+    paddingLeft: spacing.s16,
     paddingRight: 10,
-    paddingVertical: 10,
+    paddingVertical: spacing.s8,
   },
   // The copy flexes; the trailing value is MEASURED. The v47 defect was
   // `{ flex: 1, paddingRight: 100 }` — a hard 100 dp reserved for a value that may
@@ -1603,14 +1605,14 @@ const baseStyles = StyleSheet.create({
   specRowSub: { fontSize: 11, marginTop: 2 },
   // A short trailing state label: it may shrink and ellipsize rather than push the
   // title out of the row.
-  specRowValue: { fontSize: 13, fontWeight: '700', marginLeft: 12, flexShrink: 1 },
+  specRowValue: { fontSize: 13, fontWeight: '700', marginLeft: spacing.s12, flexShrink: 1 },
   // The Theme row's in-place choice (the existing Dark/Light binding).
   specThemePanel: {
-    borderRadius: 16,
+    borderRadius: radius.card,
     borderWidth: 1,
-    padding: 16,
+    padding: spacing.s16,
     marginTop: -8,
-    marginBottom: 20,
+    marginBottom: spacing.s24,
   },
   specPanelTitle: { fontSize: 15, fontWeight: '700', marginBottom: 8 },
   // The honest tail, once.
@@ -1619,7 +1621,7 @@ const baseStyles = StyleSheet.create({
 
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.canvas,
   },
   section: {
     marginBottom: 28,
@@ -1627,57 +1629,57 @@ const baseStyles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#e94560',
-    marginBottom: 8,
+    color: colors.brand.anchor,
+    marginBottom: spacing.s8,
   },
   sectionSubtitle: {
     fontSize: 14,
-    color: '#a0a0b8',
-    marginBottom: 16,
+    color: colors.text.secondary,
+    marginBottom: spacing.s16,
     lineHeight: 20,
   },
 
   reminderRow: { flexDirection: 'row', alignItems: 'center' },
   reminderCopy: { flex: 1, marginRight: 12 },
-  reminderTitle: { color: '#fff', fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  reminderTitle: { color: colors.text.primary, fontSize: 15, fontWeight: '700', marginBottom: 4 },
   // The reminder-time picker (owner 09-25): one row, two steppers, the chosen
   // time in the middle.
   timePickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
   timeStepper: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  timeStepBtn: { backgroundColor: '#3a3a5c', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  timeStepText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  timeStepLabel: { color: '#8f8fa8', fontSize: 12 },
-  timePickerValue: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  toggle: { backgroundColor: '#3a3a5c', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 },
-  toggleOn: { backgroundColor: '#e94560' },
-  toggleText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  timeStepBtn: { backgroundColor: colors.bg.surfaceTinted, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6 },
+  timeStepText: { color: colors.text.primary, fontSize: 15, fontWeight: '700' },
+  timeStepLabel: { color: colors.text.secondary, fontSize: 12 },
+  timePickerValue: { color: colors.text.primary, fontSize: 15, fontWeight: '700' },
+  toggle: { backgroundColor: colors.bg.surfaceTinted, borderRadius: radius.pill, paddingHorizontal: spacing.s12, paddingVertical: 8 },
+  toggleOn: { backgroundColor: colors.brand.anchor },
+  toggleText: { color: colors.bg.surface, fontWeight: '800', fontSize: 12 },
 
   // The calendar-reminder row (owner 10-10, backlog b033ab48). Layout only — every
   // colour comes from the resolved theme tokens at the call site; the two-reminder
   // line is the one line that is highlighted, because it is the one the user needs
   // to notice (it is shown exactly when the plan says `doublePing`).
   calendarHonestLine: { fontSize: 13, lineHeight: 19, marginTop: 6 },
-  calendarWarn: { color: '#f0b429', fontWeight: '700' },
+  calendarWarn: { color: colors.bg.surface, fontWeight: '700' },
   calendarChoiceTitle: { fontSize: 14, fontWeight: '700', marginTop: 14 },
   calendarActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 12,
+    marginTop: spacing.s12,
     gap: 10,
   },
   calendarDeniedBlock: { marginTop: 10 },
-  calendarSmallBtn: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  calendarSmallBtn: { borderRadius: radius.pill, paddingHorizontal: spacing.s12, paddingVertical: 8 },
   calendarSmallBtnText: { fontSize: 13, fontWeight: '700' },
 
   // The Appearance segment buttons (v33 §F2). Layout only — every colour comes
   // from the resolved theme tokens at the call site.
-  themeChoiceRow: { flexDirection: 'row', marginTop: 12, gap: 10 },
+  themeChoiceRow: { flexDirection: 'row', marginTop: spacing.s12, gap: 10 },
   themeChoice: {
     flex: 1,
-    borderRadius: 12,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    paddingVertical: 12,
+    paddingVertical: spacing.s12,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1686,45 +1688,45 @@ const baseStyles = StyleSheet.create({
 
   // Current Plan
   planCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     padding: 20,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.subtle,
     minHeight: 110,
     justifyContent: 'center',
   },
   planEmoji: {
     fontSize: 40,
-    marginBottom: 8,
+    marginBottom: spacing.s8,
   },
   planName: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 4,
+    color: colors.text.primary,
+    marginBottom: spacing.s4,
   },
   planStatus: {
     fontSize: 14,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
   },
   // v47.1 Part A: `planRenews` is gone — a one-time purchase has no renewal date,
   // so the screen has no style for one either.
 
   // Upgrade Cards
   upgradeCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     padding: 18,
-    marginBottom: 12,
+    marginBottom: spacing.s12,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.subtle,
     flexDirection: 'row',
     alignItems: 'center',
   },
   upgradeCardHighlight: {
-    borderColor: '#e94560',
+    borderColor: colors.accent.primary,
     borderWidth: 2,
   },
   // v47.1 Part A: `bestValueBadge`/`bestValueText` are gone with the "BEST VALUE"
@@ -1734,62 +1736,62 @@ const baseStyles = StyleSheet.create({
   upgradeInfo: {
     flex: 1,
     minWidth: 0,
-    marginRight: 12,
+    marginRight: spacing.s12,
   },
   upgradeName: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.text.primary,
     marginBottom: 2,
   },
   upgradePrice: {
     fontSize: 15,
-    color: '#c0c0d0',
+    color: colors.text.secondary,
     fontWeight: '600',
     marginBottom: 2,
   },
   upgradeFeature: {
     fontSize: 13,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     lineHeight: 20,
   },
   upgradeBtn: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 12,
+    backgroundColor: colors.bg.canvas,
+    borderRadius: radius.pill,
     paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.s16,
     borderWidth: 1,
-    borderColor: '#e94560',
+    borderColor: colors.accent.primary,
     // The CTA is the measured side of the row: the copy beside it flexes and the
     // card GROWS vertically at a raised font scale (no fixed height anywhere here).
     flexShrink: 0,
     alignSelf: 'center',
   },
   upgradeBtnPrimary: {
-    backgroundColor: '#e94560',
+    backgroundColor: colors.brand.anchor,
   },
   upgradeBtnText: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontSize: 14,
     fontWeight: '700',
   },
   upgradeBtnTextPrimary: {
-    color: '#ffffff',
+    color: colors.bg.surface,
     fontSize: 14,
     fontWeight: '700',
   },
 
   // Billing info
   infoCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.subtle,
   },
   infoText: {
     fontSize: 14,
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     lineHeight: 22,
   },
   /* v43 item B1 — the build stamp: the quietest type on the screen, but
@@ -1797,9 +1799,9 @@ const baseStyles = StyleSheet.create({
   buildStamp: {
     // vc55 — the stamp is a quiet line, not a block: 11 pt on 15 dp leading.
     fontSize: ABOUT_STAMP_FONT_SIZE,
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     lineHeight: ABOUT_STAMP_LINE_HEIGHT,
-    paddingHorizontal: 4,
+    paddingHorizontal: spacing.s4,
     paddingTop: ABOUT_STAMP_PADDING_TOP,
   },
 
@@ -1809,7 +1811,7 @@ const baseStyles = StyleSheet.create({
    *  reads these values. */
   aboutTail: {
     marginTop: ABOUT_CARD_MARGIN_TOP,
-    borderRadius: 16,
+    borderRadius: radius.card,
     borderWidth: 1,
     paddingHorizontal: ABOUT_CARD_PADDING_H,
     paddingVertical: ABOUT_CARD_PADDING_V,

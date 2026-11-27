@@ -16,6 +16,8 @@
  * scripts/vc52DeviceRepairs.test.ts can pin it. The files it reads are passed in
  * as strings; nothing here opens a file.
  */
+import { colors } from '../theme/tokens';
+import { lightRoleFor } from './themeApply';
 
 /** Strip comments before scanning: prose must never satisfy (or fail) a guard. */
 export function maskComments(source: string): string {
@@ -157,7 +159,7 @@ export function videoMountPaintsAFrame(screenSource: string): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. LIGHT MODE — THE LITERALS ON THIS SURFACE ARE ONES THE PALETTE KNOWS
+// 3. LIGHT MODE — THE COLOURS ON THIS SURFACE ARE ONES THE PALETTE KNOWS
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -211,27 +213,98 @@ export const AA_TEXT_MIN = 4.5;
 /** WCAG AA for large/bold text. */
 export const AA_LARGE_MIN = 3;
 
+// ─── THE TOKEN TABLE, FLATTENED: `colors.text.secondary` → '#4e576b' ─────────
+
+function flattenColorTokens(prefix: string, node: unknown, out: Record<string, string>): void {
+  if (typeof node === 'string') {
+    out[prefix.toLowerCase()] = node.toLowerCase();
+    return;
+  }
+  if (node === null || typeof node !== 'object') return;
+  const table = node as Record<string, unknown>;
+  Object.keys(table).forEach((key) => {
+    flattenColorTokens(`${prefix}.${key}`, table[key], out);
+  });
+}
+
+/** Every `colors.*` path → its hex, lower-cased. Built once, from tokens.ts. */
+const COLOR_TOKEN_HEX: Record<string, string> = (() => {
+  const out: Record<string, string> = {};
+  flattenColorTokens('colors', colors, out);
+  return out;
+})();
+
 /**
- * EVERY COLOUR THE PRACTICE-VIDEO SURFACE PAINTS ITS TEXT WITH MUST BE A LITERAL
- * `themeApply` KNOWS. A colour that is not in the table keeps its dark-palette
+ * THE HEX BEHIND A COLOUR EXPRESSION.
+ *
+ * The 11-24 design system moved the screens onto `src/theme/tokens.ts`, so a
+ * StyleSheet colour is now `colors.text.secondary` as often as it is `'#4e576b'`.
+ * Resolving the expression to the hex the device actually paints is what keeps
+ * every check below a MEASURED number instead of a comparison of token NAMES — a
+ * resolver that answered a placeholder would make the contrast check vacuous.
+ * Returns null for anything neither the token table nor the hex syntax knows.
+ */
+export function resolveColorExpression(raw: string): string | null {
+  const value = typeof raw === 'string' ? raw.trim().replace(/^['"]|['"]$/g, '') : '';
+  if (!value) return null;
+  const token = COLOR_TOKEN_HEX[value.toLowerCase()];
+  if (token) return token;
+  const rgb = hexToRgb(value);
+  if (!rgb) return null;
+  return `#${rgb.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Is this hex a value `src/theme/tokens.ts` itself defines? */
+export function isTokenColorValue(hex: string): boolean {
+  const value = hex.toLowerCase();
+  return Object.keys(COLOR_TOKEN_HEX).some((key) => COLOR_TOKEN_HEX[key] === value);
+}
+
+/**
+ * IS THIS INK A COLOUR THE THEME SYSTEM OWNS? Two ways to qualify, and both mean
+ * "light mode cannot leave this ink dark":
+ *
+ *   • it is a VALUE of `src/theme/tokens.ts` — the light register IS its value, so
+ *     there is nothing left to repaint and `themedSheet` is a no-op on it; or
+ *   • it is a legacy dark literal `themeApply` remaps to a role — the v51 pale
+ *     blue was exactly this, and was missing from the table.
+ *
+ * What this does NOT judge is legibility: the ratio is MEASURED against the fill,
+ * not asserted here (see `contrastRatio`, and the C1 check that runs these same
+ * resolved hexes). A colour the theme system does not own keeps its dark-palette
  * value in light mode — which is exactly how pale blue landed on paper-white
  * (owner, twice: "light blue text … almost impossible to read").
  */
+export function inkIsThemeOwned(hex: string, applySource: string): boolean {
+  if (isTokenColorValue(hex)) return true;
+  const apply = maskComments(applySource);
+  if (apply.indexOf(`'${hex}'`) < 0) return false;
+  return lightRoleFor(hex, 'color') !== null;
+}
+
+/**
+ * EVERY COLOUR THE PRACTICE-VIDEO SURFACE PAINTS ITS TEXT WITH MUST BE A COLOUR
+ * THE THEME SYSTEM OWNS — a `tokens.ts` value or a literal `themeApply` remaps.
+ * The inks are read off the surface's own StyleSheet and RESOLVED to hex first,
+ * so a token expression and a literal are judged by the same rule.
+ */
 export function surfaceInkIsThemed(screenSource: string, applySource: string): boolean {
   const src = maskComments(screenSource);
-  const apply = maskComments(applySource);
   if (src.length < 20000) return false;
   // The text colours this surface actually uses, read off its own StyleSheet.
   const inks = ['honest', 'meta', 'missingText', 'secondaryBtnText', 'chipText', 'error'];
-  const literals: string[] = [];
+  const hexes: string[] = [];
   inks.forEach((key) => {
-    const re = new RegExp(`\\b${key}:\\s*\\{[^}]*color:\\s*'(#[0-9a-fA-F]{3,6})'`);
+    const re = new RegExp(
+      `\\b${key}:\\s*\\{[^}]*color:\\s*(?:'(#[0-9a-fA-F]{3,8})'|(colors\\.[A-Za-z0-9_.]+))`,
+    );
     const found = re.exec(src);
-    if (found) literals.push(found[1].toLowerCase());
+    const hex = found ? resolveColorExpression(found[1] ?? found[2] ?? '') : null;
+    if (hex) hexes.push(hex);
   });
-  if (literals.length < inks.length) return false;
-  // …and each one must appear in the remap table (so light mode repaints it).
-  return literals.every((literal) => apply.indexOf(`'${literal}'`) >= 0);
+  if (hexes.length < inks.length) return false;
+  // …and every one of them is a colour the theme system can account for.
+  return hexes.every((hex) => inkIsThemeOwned(hex, applySource));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

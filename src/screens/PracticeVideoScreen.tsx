@@ -35,6 +35,7 @@
  * scripts/v38UiWiring.test.ts, and proven to bite by on-disk mutation probes).
  */
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -2055,7 +2056,7 @@ export const PracticeVideoScreen: React.FC<PracticeVideoScreenProps> = ({
       accessibilityLabel={FULL_SCREEN_VIDEO_ICON_LABEL}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
-      <Ionicons name={FULL_SCREEN_VIDEO_ICON_NAME} size={20} color="#ffffff" />
+      <Ionicons name={FULL_SCREEN_VIDEO_ICON_NAME} size={20} color={colors.bg.surface} />
     </TouchableOpacity>
   );
 
@@ -3198,12 +3199,12 @@ function levelHeight(level: number): number {
 }
 
 const baseStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#12122b' },
-  body: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 },
+  container: { flex: 1, backgroundColor: colors.bg.canvas },
+  body: { paddingHorizontal: 20, paddingTop: spacing.s24, paddingBottom: 40 },
   /** The full-screen take's own scrolling body (v43 slice 3, item E7). */
-  expandedBody: { paddingHorizontal: 16, paddingVertical: 12 },
-  title: { color: '#ffffff', fontSize: 22, fontWeight: '800', marginBottom: 8 },
-  honest: { color: '#9aa0b5', fontSize: 12, lineHeight: 18, marginTop: 6 },
+  expandedBody: { paddingHorizontal: spacing.s16, paddingVertical: 12 },
+  title: { color: colors.text.primary, fontSize: 22, fontWeight: '800', marginBottom: 8 },
+  honest: { color: colors.text.secondary, fontSize: 12, lineHeight: 18, marginTop: 6 },
   /**
    * ── vc58, C1: THE COVERAGE INDICATOR'S OWN LINE ────────────────────────
    * Not a warning banner and not `warn` (that is the amber "past a minute" line):
@@ -3211,25 +3212,25 @@ const baseStyles = StyleSheet.create({
    * and one shade so a thumb-scroll sees it. Both literals are in
    * `services/themeApply.ts`, so light mode repaints it.
    */
-  coverageLine: { color: '#cfe4ff', fontSize: 14, lineHeight: 20, marginTop: 10 },
+  coverageLine: { color: colors.text.secondary, fontSize: 14, lineHeight: 20, marginTop: 10 },
   /** The Tips block (vc58, item 2): a quiet card, not a warning. */
   tipsBlock: {
-    backgroundColor: '#1b2a4a',
-    borderRadius: 12,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     padding: 14,
-    marginTop: 16,
+    marginTop: spacing.s16,
   },
-  tipsLabel: { color: '#cfe4ff', fontSize: 14, fontWeight: '800', marginBottom: 6 },
-  tipsBody: { color: '#9aa0b5', fontSize: 12, lineHeight: 18 },
-  meta: { color: '#cfe4ff', fontSize: 13, lineHeight: 19, marginTop: 10 },
+  tipsLabel: { color: colors.text.secondary, fontSize: 14, fontWeight: '800', marginBottom: 6 },
+  tipsBody: { color: colors.text.secondary, fontSize: 12, lineHeight: 18 },
+  meta: { color: colors.text.secondary, fontSize: 13, lineHeight: 19, marginTop: 10 },
   /**
    * ── v66 (F6) ── THE READ'S STEP LINE, AT A SIZE THAT CAN BE READ ─────────────
    * This was drawn in `meta` — the 13 pt caption — so the one line that says the
    * read is alive ("Decoding the audio", "Finding the notes") was the least legible
    * thing on the screen. Its own style: 16 pt, bold, accent.
    */
-  readStep: { color: '#4ECDC4', fontSize: 16, fontWeight: '700', lineHeight: 22, marginTop: 10 },
-  error: { color: '#ffb4b4', fontSize: 12, lineHeight: 18, marginTop: 10 },
+  readStep: { color: colors.brand.anchor, fontSize: 16, fontWeight: '700', lineHeight: 22, marginTop: 10 },
+  error: { color: colors.text.primary, fontSize: 12, lineHeight: 18, marginTop: 10 },
   /**
    * ── vc52 STYLES ──────────────────────────────────────────────────────
    * `windowLine` states which window the player is playing (A4). The save-failure
@@ -3238,40 +3239,40 @@ const baseStyles = StyleSheet.create({
    * Every literal below is one `services/themeApply.ts` knows, so light mode
    * repaints all of them (scripts/vc52DeviceRepairs.test.ts measures the ratios).
    */
-  windowLine: { color: '#cfe4ff', fontSize: 13, fontWeight: '700', lineHeight: 19, marginTop: 8 },
+  windowLine: { color: colors.text.secondary, fontSize: 13, fontWeight: '700', lineHeight: 19, marginTop: 8 },
   saveFailedCard: {
-    backgroundColor: '#1b2a4a',
-    borderColor: '#e94560',
+    backgroundColor: colors.bg.surface,
+    borderColor: colors.accent.primary,
     borderWidth: 2,
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: radius.card,
+    padding: spacing.s16,
     marginTop: 14,
   },
-  saveFailedHeadline: { color: '#ff6b6b', fontSize: 16, fontWeight: '800', marginBottom: 6 },
-  saveFailedText: { color: '#cfe4ff', fontSize: 13, lineHeight: 19 },
-  warn: { color: '#ffd166', fontSize: 12, marginTop: 8 },
-  timer: { color: '#ffffff', fontSize: 16, fontWeight: '700', marginTop: 10 },
+  saveFailedHeadline: { color: colors.text.primary, fontSize: 16, fontWeight: '800', marginBottom: 6 },
+  saveFailedText: { color: colors.text.secondary, fontSize: 13, lineHeight: 19 },
+  warn: { color: colors.text.primary, fontSize: 12, marginTop: 8 },
+  timer: { color: colors.text.primary, fontSize: 16, fontWeight: '700', marginTop: 10 },
   preview: {
     height: OVERLAY_LANE_HEIGHT * 2,
-    borderRadius: 12,
+    borderRadius: radius.card,
     overflow: 'hidden',
     marginTop: 14,
-    backgroundColor: '#000000',
+    backgroundColor: colors.text.primary,
   },
   camera: { flex: 1 },
   levelRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     height: 48,
-    marginTop: 12,
+    marginTop: spacing.s12,
   },
   levelBar: {
     width: 4,
     marginRight: 3,
-    backgroundColor: '#4ecdc4',
-    borderRadius: 2,
+    backgroundColor: colors.accent.secondary,
+    borderRadius: radius.pill,
   },
-  video: { width: '100%', height: 220, backgroundColor: '#000000', borderRadius: 12 },
+  video: { width: '100%', height: 220, backgroundColor: colors.text.primary, borderRadius: radius.card},
   /**
    * ── vc54, ITEM 3: THE FRAME AROUND THE PLAYER ────────────────────
    * The video and the icon on it are one box, so the icon's `position: 'absolute'`
@@ -3289,18 +3290,18 @@ const baseStyles = StyleSheet.create({
     right: 8,
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: radius.circle,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
   },
   missingCard: {
-    backgroundColor: '#1b2a4a',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 12,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
+    padding: spacing.s16,
+    marginTop: spacing.s12,
   },
-  missingText: { color: '#cfe4ff', fontSize: 13, lineHeight: 19 },
+  missingText: { color: colors.text.secondary, fontSize: 13, lineHeight: 19 },
   syncRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
   /** vc53 item 3 — the fullscreen control sits beside Play, not under it. */
   fullScreenBtn: { marginLeft: 10 },
@@ -3313,59 +3314,59 @@ const baseStyles = StyleSheet.create({
     alignSelf: 'center',
     width: 108,
     height: 108,
-    borderRadius: 54,
+    borderRadius: radius.circle,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2ecc71',
+    backgroundColor: colors.brand.anchor,
     marginTop: 14,
     marginBottom: 6,
-    paddingHorizontal: 8,
+    paddingHorizontal: spacing.s8,
   },
-  startBtnRoundText: { color: '#0b1a12', fontSize: 18, fontWeight: '800', textAlign: 'center' },
-  syncLabel: { color: '#9aa0b5', fontSize: 12, marginRight: 10 },
+  startBtnRoundText: { color: colors.bg.surface, fontSize: 18, fontWeight: '800', textAlign: 'center' },
+  syncLabel: { color: colors.text.secondary, fontSize: 12, marginRight: 10 },
   syncBtn: {
     minWidth: 44,
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 10,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: '#2f4370',
-    backgroundColor: '#1b2a4a',
+    borderColor: colors.border.subtle,
+    backgroundColor: colors.bg.surface,
   },
-  syncBtnText: { color: '#ffffff', fontSize: 18, fontWeight: '700' },
-  syncValue: { color: '#ffffff', fontSize: 13, marginHorizontal: 12, minWidth: 84, textAlign: 'center' },
+  syncBtnText: { color: colors.text.primary, fontSize: 18, fontWeight: '700' },
+  syncValue: { color: colors.text.primary, fontSize: 13, marginHorizontal: spacing.s12, minWidth: 84, textAlign: 'center' },
   primaryBtn: {
-    backgroundColor: '#e94560',
-    borderRadius: 10,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
     minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 14,
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.s16,
   },
-  primaryBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
+  primaryBtnText: { color: colors.bg.surface, fontSize: 15, fontWeight: '700' },
   secondaryBtn: {
-    backgroundColor: '#1b2a4a',
-    borderColor: '#2f4370',
+    backgroundColor: colors.bg.surface,
+    borderColor: colors.border.subtle,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: radius.pill,
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.s16,
   },
-  secondaryBtnText: { color: '#cfe4ff', fontSize: 14, fontWeight: '600' },
+  secondaryBtnText: { color: colors.text.secondary, fontSize: 14, fontWeight: '600' },
   stopBtn: {
-    backgroundColor: '#e94560',
-    borderRadius: 999,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
     minHeight: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 16,
+    marginTop: spacing.s16,
   },
-  stopBtnText: { color: '#ffffff', fontSize: 17, fontWeight: '800' },
+  stopBtnText: { color: colors.bg.surface, fontSize: 17, fontWeight: '800' },
   /**
    * ── vc59 (D25): THE CAMERA-OFF WINDOW'S OWN STOP ─────────────────────────
    * The same shape and colour as the filming Stop, under its OWN key: the record
@@ -3373,61 +3374,61 @@ const baseStyles = StyleSheet.create({
    * this is a different control in a different phase — not a copy of that one.
    */
   notesOnlyStopBtn: {
-    backgroundColor: '#e94560',
-    borderRadius: 999,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
     minHeight: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 16,
+    marginTop: spacing.s16,
   },
   /** The Start control (v39 fix 2) — the same big, obvious shape as Stop. */
   startBtn: {
-    backgroundColor: '#2fbf71',
-    borderRadius: 999,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
     minHeight: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 16,
+    marginTop: spacing.s16,
   },
-  startBtnText: { color: '#06210f', fontSize: 17, fontWeight: '800' },
+  startBtnText: { color: colors.bg.surface, fontSize: 17, fontWeight: '800' },
   /** vc49: the camera flip — visible whenever the preview is up. */
   flipRow: { marginTop: 10 },
   flipBtn: {
-    backgroundColor: '#1b2a4a',
-    borderColor: '#4ecdc4',
+    backgroundColor: colors.bg.surface,
+    borderColor: colors.accent.secondary,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: radius.pill,
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.s16,
   },
   /** Locked while a capture is running: dimmed, disabled, and explained. */
-  flipBtnOff: { opacity: 0.45, borderColor: '#2f4370' },
-  flipBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
-  flipLine: { color: '#9aa0b5', fontSize: 12, lineHeight: 18, marginTop: 6 },
+  flipBtnOff: { opacity: 0.45, borderColor: colors.border.subtle },
+  flipBtnText: { color: colors.text.primary, fontSize: 15, fontWeight: '700' },
+  flipLine: { color: colors.text.secondary, fontSize: 12, lineHeight: 18, marginTop: 6 },
   /** vc49: the count-in and recording-length choices. */
   optionBlock: { marginTop: 16 },
-  optionLabel: { color: '#ffffff', fontSize: 13, fontWeight: '800', marginTop: 10 },
+  optionLabel: { color: colors.text.primary, fontSize: 13, fontWeight: '800', marginTop: 10 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
   chip: {
     minWidth: 64,
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1b2a4a',
-    borderColor: '#2f4370',
+    backgroundColor: colors.bg.surface,
+    borderColor: colors.border.control,
     borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    marginRight: 8,
-    marginBottom: 8,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.s12,
+    marginRight: spacing.s8,
+    marginBottom: spacing.s8,
   },
-  chipOn: { borderColor: '#4ecdc4', backgroundColor: '#12243a' },
-  chipText: { color: '#cfe4ff', fontSize: 13, fontWeight: '700' },
+  chipOn: { borderColor: colors.accent.secondary, backgroundColor: colors.bg.canvas },
+  chipText: { color: colors.text.secondary, fontSize: 13, fontWeight: '700' },
   /** The count-in's big number — visible from across the room. */
   countInBig: {
-    color: '#4ecdc4',
+    color: colors.brand.anchor,
     fontSize: 72,
     fontWeight: '800',
     textAlign: 'center',

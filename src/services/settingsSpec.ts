@@ -38,6 +38,7 @@
 import { maskSourceComments } from './audioFocusContract';
 import type { ThemeMode, ThemeTokens } from './theme';
 import { DEFAULT_PAGE_TURN_PROFILE, PAGE_TURN_PRESETS } from './pageTurnPresets';
+import { radius as RADIUS_TOKENS, spacing as SPACING_TOKENS } from '../theme/tokens';
 
 declare const process: { cwd(): string; exit(code: number): never };
 
@@ -229,10 +230,15 @@ export const SETTINGS_FAQ: readonly { q: string; a: string }[] = [
 export const SETTINGS_SPEC = {
   /** The screen's side inset — the cards are 358 of 390 wide. */
   screenInset: 16,
-  /** Cards: r16, CARD fill + 1 dp CARD_LINE, 20 dp apart. */
+  /**
+   * Cards: r16, CARD fill + 1 dp CARD_LINE, 24 dp apart.
+   *
+   * 11-24 DESIGN SYSTEM (§3, owner-ratified): spacing is a 4/8 px scale ONLY, so
+   * v43's off-scale 20 dp gap is superseded by `spacing.s24` — design, not drift.
+   */
   cardRadius: 16,
   cardBorderWidth: 1,
-  cardGap: 20,
+  cardGap: SPACING_TOKENS.s24,
   /** Section header: 11 dp caps bold SUB, 20 above / 18 below, indent x16. */
   headerSize: 11,
   headerAbove: 20,
@@ -249,7 +255,13 @@ export const SETTINGS_SPEC = {
   proSubSize: 12,
   /** One row style everywhere: a 52 dp FLOOR, inset x32, title 15, sub 11, value 13. */
   rowMinHeight: 52,
-  rowPadY: 10,
+  /**
+   * 8 dp vertical padding, not v43's 10.
+   *
+   * 11-24 DESIGN SYSTEM (§3, owner-ratified): spacing is a 4/8 px scale ONLY, so
+   * the off-scale 10 dp is superseded by `spacing.s8` — design, not drift.
+   */
+  rowPadY: SPACING_TOKENS.s8,
   rowInset: 32,
   rowTitleSize: 15,
   rowSubSize: 11,
@@ -839,6 +851,27 @@ export function settingsStyleBody(settingsSource: string, styleName: string): st
   return text.slice(open, close);
 }
 
+/**
+ * Resolve one raw style value to the string a §3 predicate compares against.
+ *
+ * The 11-24 design system moved the screen's spacing and radii onto the shared
+ * tokens (`spacing.s16`, `radius.card`), so a raw value is often an EXPRESSION
+ * rather than a literal. This resolves the two token tables to their NUMBERS —
+ * so `radius.card` reads as `'16'` and `spacing.s8` as `'8'`, and every §3 number
+ * is still enforced rather than silently skipped. Anything the token tables do
+ * not know (a quoted string, an unknown identifier) is returned unchanged.
+ */
+export function resolveSettingsStyleValue(raw: string): string {
+  const expression = /^(spacing|radius)\.([A-Za-z0-9_]+)$/.exec(raw.trim());
+  if (expression === null) return raw;
+  const table: Record<string, number | string> =
+    expression[1] === 'spacing' ? SPACING_TOKENS : RADIUS_TOKENS;
+  const value = table[expression[2]];
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'string') return value;
+  return raw;
+}
+
 /** One property of one named style, as source text (null when absent). */
 export function settingsStyleValue(
   settingsSource: string,
@@ -848,8 +881,9 @@ export function settingsStyleValue(
   const body = settingsStyleBody(settingsSource, styleName);
   if (body === null) return null;
   const match = new RegExp(
-    `(?:^|[\\s,{])${prop}\\s*:\\s*(?:'([^']*)'|"([^"]*)"|([-0-9.]+))`
+    `(?:^|[\\s,{])${prop}\\s*:\\s*(?:'([^']*)'|"([^"]*)"|([-0-9.]+)|([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*))`
   ).exec(body);
   if (!match) return null;
-  return match[1] ?? match[2] ?? match[3] ?? null;
+  const raw = match[1] ?? match[2] ?? match[3] ?? match[4];
+  return raw === undefined ? null : resolveSettingsStyleValue(raw);
 }
