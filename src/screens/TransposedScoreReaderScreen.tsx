@@ -38,6 +38,7 @@
  * any kind.
  */
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -382,7 +383,7 @@ export const TransposedScoreReaderScreen: React.FC<Props> = ({ navigation, route
             <Ionicons
               name="remove"
               size={20}
-              color={keyPlan.atFloor ? '#6a6a8a' : theme.accent}
+              color={keyPlan.atFloor ? colors.text.secondary : theme.accent}
             />
           </Pressable>
           <Pressable
@@ -401,7 +402,7 @@ export const TransposedScoreReaderScreen: React.FC<Props> = ({ navigation, route
             <Ionicons
               name="add"
               size={20}
-              color={keyPlan.atCeiling ? '#6a6a8a' : theme.accent}
+              color={keyPlan.atCeiling ? colors.text.secondary : theme.accent}
             />
           </Pressable>
         </View>
@@ -448,9 +449,9 @@ export const TransposedScoreReaderScreen: React.FC<Props> = ({ navigation, route
           accessibilityState={{ disabled: saving }}
         >
           {saving ? (
-            <ActivityIndicator color="#ffffff" size="small" />
+            <ActivityIndicator color={colors.bg.surface} size="small" />
           ) : (
-            <Ionicons name={saved ? 'checkmark' : 'bookmark'} size={18} color="#ffffff" />
+            <Ionicons name={saved ? 'checkmark' : 'bookmark'} size={18} color={colors.bg.surface} />
           )}
           <Text style={styles.primaryBtnText}>
             {saving ? READER_SAVING_LINE : saved ? READER_SAVED_CTA : READER_SAVE_CTA}
@@ -534,94 +535,95 @@ export const TransposedScoreReaderScreen: React.FC<Props> = ({ navigation, route
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.canvas,
   },
   headerCard: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingHorizontal: spacing.s16,
+    paddingTop: spacing.s12,
     paddingBottom: 10,
-    gap: 4,
+    gap: spacing.s4,
   },
   title: {
-    color: '#ffffff',
+    color: colors.text.primary,
     fontSize: 18,
     fontWeight: '800',
   },
   subtitle: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 13,
   },
   sampleBadge: {
-    marginTop: 4,
+    marginTop: spacing.s4,
   },
   /** The honest length line: directly under the subtitle it completes. */
   scoreLengthLine: {
-    marginTop: 4,
+    marginTop: spacing.s4,
   },
   keyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
+    gap: spacing.s8,
+    marginTop: spacing.s8,
   },
   keyChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#16213e',
-    borderColor: '#0f3460',
+    backgroundColor: colors.bg.surface,
+    borderColor: colors.border.subtle,
     borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.s12,
     paddingVertical: 6,
   },
   keyChipText: {
-    color: '#ffffff',
+    color: colors.text.primary,
     fontSize: 14,
     fontWeight: '700',
   },
+  /** The key stepper is a control, so it is 44 pt and outlined in border.control. */
   keyStep: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 38,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: '#16213e',
-    borderColor: '#0f3460',
+    width: 44,
+    height: 44,
+    borderRadius: radius.circle,
+    backgroundColor: colors.bg.surface,
+    borderColor: colors.border.control,
     borderWidth: 1,
   },
   keyStepSpent: {
-    backgroundColor: '#101828',
-    borderColor: '#1b2540',
+    backgroundColor: colors.bg.surfaceTinted,
+    borderColor: colors.border.subtle,
   },
   keyLimitNote: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 12,
     marginTop: 2,
   },
   wholeWorkNote: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 12,
-    marginTop: 4,
+    marginTop: spacing.s4,
   },
   scroller: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 12,
-    paddingBottom: 16,
+    paddingHorizontal: spacing.s12,
+    paddingBottom: spacing.s16,
   },
   footer: {
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.s16,
     paddingTop: 10,
     paddingBottom: 18,
     gap: 10,
     borderTopWidth: 1,
-    borderTopColor: '#0f3460',
-    backgroundColor: '#1a1a2e',
+    borderTopColor: colors.border.subtle,
+    backgroundColor: colors.bg.canvas,
   },
   unsavedNote: {
-    color: '#f0c674',
+    color: colors.text.primary,
     fontSize: 12,
     textAlign: 'center',
   },
@@ -629,16 +631,19 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#e94560',
-    borderRadius: 12,
+    gap: spacing.s8,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
     paddingVertical: 14,
+    minHeight: 44,
   },
+  /** Busy: the pill dims as a WHOLE and keeps its brand fill and white label — a
+   *  grey fill would leave a white label on a pale card. */
   primaryBtnBusy: {
-    backgroundColor: '#3a3a55',
+    opacity: 0.6,
   },
   primaryBtnText: {
-    color: '#ffffff',
+    color: colors.bg.surface,
     fontSize: 15,
     fontWeight: '700',
   },
@@ -646,26 +651,27 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#16213e',
-    borderColor: '#0f3460',
+    gap: spacing.s8,
+    backgroundColor: colors.bg.surface,
+    borderColor: colors.border.control,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: radius.pill,
     paddingVertical: 13,
+    minHeight: 44,
   },
   secondaryBtnText: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontSize: 15,
     fontWeight: '700',
   },
   freeNote: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 12,
     textAlign: 'center',
   },
   /** What the print / PDF control does — under the control, never in a tooltip. */
   pdfHint: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 12,
     textAlign: 'center',
   },
@@ -677,50 +683,52 @@ const baseStyles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.s24,
     backgroundColor: 'rgba(6, 8, 20, 0.72)',
   },
   promptCard: {
     alignSelf: 'stretch',
     gap: 10,
-    backgroundColor: '#16213e',
-    borderColor: '#0f3460',
+    backgroundColor: colors.bg.surface,
+    borderColor: colors.border.subtle,
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: radius.modal,
     padding: 18,
   },
   promptTitle: {
-    color: '#ffffff',
+    color: colors.text.primary,
     fontSize: 17,
     fontWeight: '800',
   },
   promptBody: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 13,
   },
   promptPrimary: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#e94560',
-    borderRadius: 12,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
     paddingVertical: 13,
+    minHeight: 44,
   },
   promptPrimaryText: {
-    color: '#ffffff',
+    color: colors.bg.surface,
     fontSize: 15,
     fontWeight: '700',
   },
   promptSecondary: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1a1a2e',
-    borderColor: '#0f3460',
+    backgroundColor: colors.bg.surfaceTinted,
+    borderColor: colors.border.control,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.s12,
+    minHeight: 44,
   },
   promptSecondaryText: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontSize: 15,
     fontWeight: '700',
   },
