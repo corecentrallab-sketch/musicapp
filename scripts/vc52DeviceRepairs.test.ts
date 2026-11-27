@@ -58,6 +58,7 @@ import {
   playbackChecksTheFileExists,
   playbackHonoursTheWindow,
   relativeLuminance,
+  resolveColorExpression,
   saveFailureIsLoud,
   saveIsVerifiedByReadBack,
   stampIsFindableInSettings,
@@ -188,18 +189,32 @@ function testSaveAndPlaybackDecisions(): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. LIGHT MODE — MEASURED, ON THE REAL LITERALS, THROUGH THE REAL REMAPPER
+// 3. LIGHT MODE — MEASURED, ON THE REAL COLOURS, THROUGH THE REAL REMAPPER
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** The colour literal a StyleSheet key paints, read off the REAL screen source. */
+/**
+ * The colour a StyleSheet key paints, as HEX, read off the REAL screen source.
+ *
+ * The 11-24 design system moved this surface onto `src/theme/tokens.ts`, so a
+ * value is `colors.text.secondary` as often as it is `'#4e576b'`. Both resolve to
+ * the hex the device paints (`resolveColorExpression`), so every ratio below is a
+ * MEASURED number and never a comparison of token names.
+ */
 function literalOf(key: string, prop: string): string {
-  const re = new RegExp(`\\b${key}:\\s*\\{[^}]*${prop}:\\s*'(#[0-9a-fA-F]{3,6})'`);
-  const found = re.exec(SCREEN);
-  if (!found) {
-    assert(false, `the screen still declares styles.${key}.${prop}`);
+  return literalOfIn(SCREEN, key, prop);
+}
+
+function literalOfIn(source: string, key: string, prop: string): string {
+  const re = new RegExp(
+    `\\b${key}:\\s*\\{[^}]*${prop}:\\s*(?:'(#[0-9a-fA-F]{3,8})'|(colors\\.[A-Za-z0-9_.]+))`,
+  );
+  const found = re.exec(source);
+  const hex = found ? resolveColorExpression(found[1] ?? found[2] ?? '') : null;
+  if (!hex) {
+    assert(false, `the screen still declares styles.${key}.${prop} as a resolvable colour`);
     return '#000000';
   }
-  return found[1];
+  return hex;
 }
 
 type Sheet = Record<string, Record<string, string>>;
@@ -262,6 +277,43 @@ function testLightModeContrast(): void {
   assert(contrastRatio(DARK_THEME.chipText, DARK_THEME.background) >= AA_TEXT_MIN, 'dark chipText on background clears AA');
   assert(relativeLuminance('#ffffff') === 1 && relativeLuminance('#000000') === 0, 'the luminance anchor is right');
   assertEq(contrastRatio('#ffffff', '#000000'), 21, 'white on black is 21:1');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE CONTRAST CHECK IS NOT VACUOUS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A GENUINELY LOW-CONTRAST INK STILL FAILS THE C1 CHECK.
+ *
+ * Drifting ONE ink on the real screen to a real token that is too pale for body
+ * text — `colors.accent.secondaryBright` (#4ecdc4), the spec's decoration-only
+ * teal, banned as a mark on a white surface — must make the SAME measurement
+ * fail. It proves two things at once: the token resolution returns the token's
+ * real hex (a resolver that answered a placeholder could never measure ~1.8:1),
+ * and the `>= AA_TEXT_MIN` assertion in the loop above still bites.
+ */
+function testContrastCheckStillBites(): void {
+  console.log('\nC1 — the contrast check bites on a genuinely low-contrast ink');
+  const mutated = mutate(
+    SCREEN,
+    'meta: { color: colors.text.secondary',
+    'meta: { color: colors.accent.secondaryBright',
+  );
+  assert(mutated !== SCREEN, 'the mutation reaches the real screen source');
+  const ink = literalOfIn(mutated, 'meta', 'color');
+  assertEq(ink, '#4ecdc4', 'the mutated ink resolves to the hex of the token it names');
+  const fill = literalOfIn(mutated, 'container', 'backgroundColor');
+  const ratio = contrastRatio(ink, fill);
+  assert(
+    ratio < AA_TEXT_MIN,
+    `and the check that passes above FAILS on it: ${ink} on ${fill} = ${ratio}:1 < AA ${AA_TEXT_MIN}`,
+  );
+  // The mutation is only meaningful while the REAL ink clears the same floor.
+  assert(
+    contrastRatio(literalOf('meta', 'color'), fill) >= AA_TEXT_MIN,
+    'while the real meta ink on the same page clears AA',
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -329,8 +381,24 @@ const guards: Guard[] = [
   },
   {
     name: 'surfaceInkIsThemed',
+    /**
+     * RE-ANCHORED ON THE TOKENS (11-24 design system). The surface's inks are
+     * `colors.*` expressions now, so the remap table is no longer the only way an
+     * ink can be accounted for: a token VALUE is the light register itself. The
+     * bite proves BOTH halves are load-bearing — an ink that is neither a token
+     * value nor a remapped literal (the v51 defect, in the shape it can still
+     * take), and a legacy literal whose entry has been dropped from `themeApply`.
+     */
     run: () => surfaceInkIsThemed(SCREEN, APPLY),
-    bite: () => surfaceInkIsThemed(SCREEN, mutate(APPLY, "'#cfe4ff': 'chipText',", '')),
+    bite: () =>
+      surfaceInkIsThemed(
+        mutate(SCREEN, 'meta: { color: colors.text.secondary', "meta: { color: '#123456'"),
+        APPLY,
+      ) ||
+      surfaceInkIsThemed(
+        mutate(SCREEN, 'meta: { color: colors.text.secondary', "meta: { color: '#cfe4ff'"),
+        mutate(APPLY, "'#cfe4ff': 'chipText',", ''),
+      ),
     bit: false,
   },
   {
@@ -397,6 +465,7 @@ function testStampContractStillHolds(): void {
 testTrimPlaybackAction();
 testSaveAndPlaybackDecisions();
 testLightModeContrast();
+testContrastCheckStillBites();
 testSourceGuards();
 testStampContractStillHolds();
 
