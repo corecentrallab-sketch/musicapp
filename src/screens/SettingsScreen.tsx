@@ -1567,12 +1567,13 @@ const baseStyles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 18,
   },
-  // The card IS the group bound: r16, 1 dp CARD_LINE, 20 dp to the next group.
+  // The card IS the group bound: r16, 1 dp CARD_LINE, 24 dp to the next group
+  // (11-24 design system: the 4/8 scale supersedes v43's off-scale 20).
   specGroup: {
     borderRadius: radius.card,
     borderWidth: 1,
     overflow: 'hidden',
-    marginBottom: 20,
+    marginBottom: spacing.s24,
   },
   specDivider: { height: 1 },
   // v45 slice 2 · the "Your practice" card that carries the three retention rows.
@@ -1583,7 +1584,7 @@ const baseStyles = StyleSheet.create({
     borderRadius: radius.card,
     borderWidth: 1,
     overflow: 'hidden',
-    marginBottom: 20,
+    marginBottom: spacing.s24,
   },
   // ONE row style: a 52 dp FLOOR (never a fixed height — v47.1 Part A: it was
   // `height: 52`, which clipped the 15/700 title + 11 sub at a raised font scale),
@@ -1594,7 +1595,7 @@ const baseStyles = StyleSheet.create({
     alignItems: 'center',
     paddingLeft: spacing.s16,
     paddingRight: 10,
-    paddingVertical: 10,
+    paddingVertical: spacing.s8,
   },
   // The copy flexes; the trailing value is MEASURED. The v47 defect was
   // `{ flex: 1, paddingRight: 100 }` — a hard 100 dp reserved for a value that may
@@ -1611,7 +1612,7 @@ const baseStyles = StyleSheet.create({
     borderWidth: 1,
     padding: spacing.s16,
     marginTop: -8,
-    marginBottom: 20,
+    marginBottom: spacing.s24,
   },
   specPanelTitle: { fontSize: 15, fontWeight: '700', marginBottom: 8 },
   // The honest tail, once.

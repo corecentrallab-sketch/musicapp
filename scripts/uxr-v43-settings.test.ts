@@ -63,6 +63,7 @@ import {
   specRowTitles,
   themeValueLabel,
 } from '../src/services/settingsSpec';
+import { radius, spacing } from '../src/theme/tokens';
 
 declare const process: { cwd(): string; exit(code: number): never };
 declare const require: (name: string) => any;
@@ -170,7 +171,9 @@ console.log('\n§3 GEOMETRY — the spec’s numbers, named once');
 // v47.1 Part A: the row and Pro heights are FLOORS, not fixed heights, and the
 // sub's hard right-100 dp cap is gone (the copy flexes; the value is measured).
 assertEq(SETTINGS_SPEC.rowMinHeight, 52, 'a row’s FLOOR is 52 dp (never a fixed height)');
-assertEq(SETTINGS_SPEC.rowPadY, 10, 'a row carries 10 dp of vertical padding, so it can grow');
+// 11-24 design system (§3): a 4/8 px spacing scale ONLY, so v43's off-scale 10 dp
+// of vertical padding is superseded by `spacing.s8`. Pinned against the TOKEN.
+assertEq(SETTINGS_SPEC.rowPadY, spacing.s8, 'a row carries spacing.s8 (8 dp) of vertical padding, so it can grow');
 assertEq(SETTINGS_SPEC.rowInset, 32, 'the row’s text is inset x32');
 assertEq(SETTINGS_SPEC.rowTitleSize, 15, 'row title 15 dp');
 assertEq(SETTINGS_SPEC.rowSubSize, 11, 'row sub 11 dp');
@@ -180,7 +183,9 @@ assertEq(SETTINGS_SPEC.headerSize, 11, 'header 11 dp');
 assertEq(SETTINGS_SPEC.headerAbove, 20, '20 dp above a header');
 assertEq(SETTINGS_SPEC.headerBelow, 18, '18 dp below a header');
 assertEq(SETTINGS_SPEC.cardRadius, 16, 'cards r16');
-assertEq(SETTINGS_SPEC.cardGap, 20, 'cards 20 dp apart');
+// 11-24 design system (§3): the 4/8 scale supersedes v43's off-scale 20 dp gap —
+// cards are `spacing.s24` apart. Pinned against the TOKEN.
+assertEq(SETTINGS_SPEC.cardGap, spacing.s24, 'cards are spacing.s24 (24 dp) apart');
 assertEq(SETTINGS_SPEC.cardBorderWidth, 1, 'cards carry a 1 dp CARD_LINE border');
 assertEq(SETTINGS_SPEC.proMinHeight, 62, 'the Pro row’s FLOOR is 62 dp (never a fixed height)');
 assertEq(SETTINGS_SPEC.proPadY, 12, 'the Pro row carries 12 dp of vertical padding, so it can grow');
@@ -457,6 +462,42 @@ probe(
     'specRowCopy: { flex: 1, paddingRight: 100 },',
   ),
   settingsRowGeometry,
+);
+/* 11-24 design system: the styles are TOKENS now (`spacing.s8`, `radius.card`), so
+   the §3 numbers are only still enforced if the predicates RESOLVE those
+   expressions to their numeric values. These four probes drift the token, not the
+   number: each one must go red, which a literal-only reader could not see. */
+probe(
+  'the row’s vertical padding drifts to the wrong spacing token',
+  settings.replace(
+    '    paddingRight: 10,\n    paddingVertical: spacing.s8,',
+    '    paddingRight: 10,\n    paddingVertical: spacing.s12,',
+  ),
+  settingsRowGeometry,
+);
+probe(
+  'the row inset drifts to the wrong spacing token',
+  settings.replace(
+    "    alignItems: 'center',\n    paddingLeft: spacing.s16,\n    paddingRight: 10,",
+    "    alignItems: 'center',\n    paddingLeft: spacing.s24,\n    paddingRight: 10,",
+  ),
+  settingsRowGeometry,
+);
+probe(
+  'the card gap drifts to the wrong spacing token',
+  settings.replace(
+    "    overflow: 'hidden',\n    marginBottom: spacing.s24,\n  },\n  specDivider:",
+    "    overflow: 'hidden',\n    marginBottom: spacing.s16,\n  },\n  specDivider:",
+  ),
+  settingsRowGeometry,
+);
+probe(
+  'the card radius drifts to the wrong radius token',
+  settings.replace(
+    '  specGroup: {\n    borderRadius: radius.card,',
+    '  specGroup: {\n    borderRadius: radius.modal,',
+  ),
+  settingsGroupsAreCards,
 );
 probe(
   'a group stops being a card (no CARD + CARD_LINE bounds)',
