@@ -361,7 +361,7 @@ probe('the pill is stretched the full width of the screen', fullWidthPill, SCREE
   scanPillHostsTheControls(fullWidthPill),
 );
 // 5. The pill is squared off into a bar.
-const squarePill = mutate(SCREEN, 'borderRadius: SCAN_PILL_RADIUS,', 'borderRadius: 2,');
+const squarePill = mutate(SCREEN, 'borderRadius: radius.pill,', 'borderRadius: 2,');
 probe('the pill is squared off (a bar again)', squarePill, SCREEN, () =>
   scanPillHostsTheControls(squarePill),
 );

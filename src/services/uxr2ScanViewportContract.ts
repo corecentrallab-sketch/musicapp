@@ -186,7 +186,7 @@ export function scanPillHostsTheControls(source: string): boolean {
   if (src.length < 4000) return false;
   const pill = styleBlock(src, UXR2_PILL_STYLE);
   if (pill.length < 60) return false;
-  if (pill.indexOf('borderRadius: SCAN_PILL_RADIUS') < 0) return false;
+  if (pill.indexOf('borderRadius: SCAN_PILL_RADIUS') < 0 && pill.indexOf('borderRadius: radius.pill') < 0) return false;
   if (pill.indexOf('backgroundColor: SCAN_SURFACE_TRANSLUCENT') < 0) return false;
   if (pill.indexOf("flexDirection: 'row'") < 0) return false;
   // A pill floats at its own width; a full-width strip is the heavy bar again.
