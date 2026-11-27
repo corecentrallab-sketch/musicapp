@@ -1,4 +1,5 @@
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -667,7 +668,7 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
             accessibilityRole="button"
             accessibilityLabel={scanFinishCta(pages.length)}
           >
-            <Ionicons name="checkmark" size={22} color="#fff" />
+            <Ionicons name="checkmark" size={22} color={colors.bg.surface} />
             <Text style={styles.doneLabel}>{scanFinishCta(pages.length)}</Text>
           </Pressable>
         </View>
@@ -679,7 +680,7 @@ export const ScanScoreScreen: React.FC<Props> = ({ navigation }) => {
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#10101c',
+    backgroundColor: colors.bg.canvas,
   },
   /* UX ROUND 2 STEP 1 — THE PREVIEW IS THE WHOLE WINDOW. A camera with a floor in
      a column is what letterboxed this screen: on a short viewport the panel below
@@ -702,20 +703,20 @@ const baseStyles = StyleSheet.create({
   backChip: {
     width: SCAN_TOUCH_MIN,
     height: SCAN_TOUCH_MIN,
-    borderRadius: SCAN_TOUCH_MIN / 2,
+    borderRadius: radius.circle,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: SCAN_CHIP_TRANSLUCENT,
   },
   statusChip: {
     flexShrink: 1,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.s12,
+    paddingVertical: spacing.s8,
     backgroundColor: SCAN_CHIP_TRANSLUCENT,
   },
   statusCount: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 12,
     fontWeight: '600',
     lineHeight: 17,
@@ -743,7 +744,7 @@ const baseStyles = StyleSheet.create({
        themed StyleSheet repaint is exactly what turned this box black-on-black
        (see services/scanViewport). */
     maxWidth: `${Math.round(SCAN_TIP_MAX_WIDTH_RATIO * 100)}%`,
-    borderRadius: 14,
+    borderRadius: radius.card,
     borderWidth: 1,
     paddingHorizontal: SCAN_TIP_PADDING_X,
     paddingVertical: SCAN_TIP_PADDING_Y,
@@ -782,13 +783,13 @@ const baseStyles = StyleSheet.create({
      shutter or the Done button. */
   errorFloat: {
     maxWidth: '92%',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: radius.card,
+    paddingHorizontal: spacing.s12,
+    paddingVertical: spacing.s8,
     backgroundColor: 'rgba(70,14,22,0.86)',
   },
   error: {
-    color: '#ffb3b3',
+    color: colors.text.primary,
     fontSize: 12,
     lineHeight: 17,
   },
@@ -797,15 +798,15 @@ const baseStyles = StyleSheet.create({
   filmstrip: {
     height: SCAN_FILMSTRIP_HEIGHT,
     maxWidth: '92%',
-    borderRadius: 18,
+    borderRadius: radius.card,
     backgroundColor: SCAN_CHIP_TRANSLUCENT,
-    paddingHorizontal: 8,
+    paddingHorizontal: spacing.s8,
     overflow: 'hidden',
   },
   filmstripBody: {
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 4,
+    gap: spacing.s8,
+    paddingVertical: spacing.s4,
   },
   thumbWrap: {
     alignItems: 'center',
@@ -813,12 +814,12 @@ const baseStyles = StyleSheet.create({
   thumb: {
     width: 40,
     height: 48,
-    borderRadius: 6,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.control,
   },
   thumbIndex: {
-    color: '#c8c8e0',
+    color: colors.text.secondary,
     fontSize: 10,
     fontWeight: '700',
   },
@@ -828,12 +829,12 @@ const baseStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     minHeight: SCAN_TOUCH_MIN,
-    paddingHorizontal: 16,
-    borderRadius: SCAN_TOUCH_MIN / 2,
+    paddingHorizontal: spacing.s16,
+    borderRadius: radius.circle,
     backgroundColor: SCAN_CHIP_TRANSLUCENT,
   },
   findChipLabel: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -841,7 +842,7 @@ const baseStyles = StyleSheet.create({
      so it cannot grow over the controls the way the v40 footer did. */
   findSheet: {
     width: '92%',
-    borderRadius: 20,
+    borderRadius: radius.modal,
     backgroundColor: SCAN_SURFACE_TRANSLUCENT,
     overflow: 'hidden',
   },
@@ -850,11 +851,11 @@ const baseStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingLeft: 14,
-    paddingRight: 4,
+    paddingRight: spacing.s4,
     paddingVertical: 6,
   },
   findSheetTitle: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -873,12 +874,12 @@ const baseStyles = StyleSheet.create({
     gap: 6,
   },
   resumedLine: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 12,
     lineHeight: 17,
   },
   savedLine: {
-    color: '#c8c8e0',
+    color: colors.text.secondary,
     fontSize: 12,
     lineHeight: 17,
   },
@@ -888,7 +889,7 @@ const baseStyles = StyleSheet.create({
      and it is never a dead end, because the typed title and the retake sit under
      it. */
   verdictLine: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 13,
     lineHeight: 19,
     fontWeight: '600',
@@ -901,10 +902,10 @@ const baseStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: SCAN_CONTROL_GAP,
-    borderRadius: SCAN_PILL_RADIUS,
+    borderRadius: radius.pill,
     backgroundColor: SCAN_SURFACE_TRANSLUCENT,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: spacing.s12,
+    paddingVertical: spacing.s8,
     maxWidth: '96%',
   },
   pillControl: {
@@ -918,15 +919,15 @@ const baseStyles = StyleSheet.create({
     opacity: 0.35,
   },
   controlLabel: {
-    color: '#c8c8e0',
+    color: colors.text.secondary,
     fontSize: 11,
   },
   shutter: {
     width: SCAN_SHUTTER_SIZE,
     height: SCAN_SHUTTER_SIZE,
-    borderRadius: SCAN_SHUTTER_SIZE / 2,
+    borderRadius: radius.circle,
     borderWidth: 4,
-    borderColor: '#e94560',
+    borderColor: colors.accent.primary,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
@@ -934,23 +935,23 @@ const baseStyles = StyleSheet.create({
   shutterInner: {
     width: 52,
     height: 52,
-    borderRadius: 26,
-    backgroundColor: '#fff',
+    borderRadius: radius.circle,
+    backgroundColor: colors.bg.surface,
   },
   shutterBusy: {
-    backgroundColor: '#e94560',
+    backgroundColor: colors.accent.primary,
   },
   doneButton: {
-    backgroundColor: '#e94560',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.s12,
+    paddingVertical: spacing.s8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: spacing.s4,
   },
   doneLabel: {
-    color: '#fff',
+    color: colors.bg.surface,
     fontWeight: '700',
     fontSize: 13,
   },
@@ -958,38 +959,38 @@ const baseStyles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1a1a2e',
-    padding: 32,
-    gap: 12,
+    backgroundColor: colors.bg.canvas,
+    padding: spacing.s32,
+    gap: spacing.s12,
   },
   permissionTitle: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 20,
     fontWeight: '700',
   },
   permissionBody: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 15,
     textAlign: 'center',
     lineHeight: 22,
   },
   permissionButton: {
-    backgroundColor: '#e94560',
-    paddingVertical: 12,
+    backgroundColor: colors.brand.anchor,
+    paddingVertical: spacing.s12,
     paddingHorizontal: 20,
-    borderRadius: 10,
-    marginTop: 8,
+    borderRadius: radius.pill,
+    marginTop: spacing.s8,
   },
   permissionButtonText: {
-    color: '#fff',
+    color: colors.bg.surface,
     fontWeight: '700',
     fontSize: 15,
   },
   settingsLink: {
-    marginTop: 12,
+    marginTop: spacing.s12,
   },
   settingsLinkText: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontSize: 14,
     fontWeight: '600',
     textDecorationLine: 'underline',

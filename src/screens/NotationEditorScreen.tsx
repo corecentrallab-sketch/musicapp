@@ -12,6 +12,7 @@
  * editor. Full note-by-note editing is a later phase — this is transpose-only.
  */
 import { useThemedStyles } from '../services/themeStore';
+import { colors, radius, spacing } from '../theme/tokens';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -596,7 +597,7 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
         onPress={handleSave}
         disabled={!canSave || saving}
       >
-        <Ionicons name="bookmark" size={20} color="#fff" />
+        <Ionicons name="bookmark" size={20} color={colors.bg.surface} />
         <Text style={styles.saveBtnText}>
           {offsetZero
             ? 'Save transposed copy (transpose first)'
@@ -640,34 +641,34 @@ export const NotationEditorScreen: React.FC<Props> = ({ route, navigation }) => 
 const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: colors.bg.canvas,
   },
   content: {
-    padding: 16,
-    paddingBottom: 40,
+    padding: spacing.s16,
+    paddingBottom: spacing.s40,
   },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1a1a2e',
-    gap: 12,
+    backgroundColor: colors.bg.canvas,
+    gap: spacing.s12,
   },
   centeredText: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 14,
   },
   screenSubtitle: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 14,
     lineHeight: 21,
-    marginBottom: 16,
+    marginBottom: spacing.s16,
   },
   section: {
     marginBottom: 18,
   },
   sectionLabel: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 12,
     fontWeight: '800',
     textTransform: 'uppercase',
@@ -676,7 +677,7 @@ const baseStyles = StyleSheet.create({
   },
   pickerRow: {
     gap: 10,
-    paddingRight: 8,
+    paddingRight: spacing.s8,
   },
   /**
    * THE WRAPPING GRID (v43 slice 2, item D). Two chips per row, `wrap` so the
@@ -689,56 +690,56 @@ const baseStyles = StyleSheet.create({
     gap: 10,
   },
   chip: {
-    backgroundColor: '#16213e',
+    backgroundColor: colors.bg.surface,
     borderWidth: 1,
-    borderColor: '#0f3460',
-    borderRadius: 12,
+    borderColor: colors.border.control,
+    borderRadius: radius.pill,
     paddingHorizontal: 14,
     paddingVertical: 10,
     width: '48%',
     flexGrow: 1,
   },
   chipActive: {
-    borderColor: '#e94560',
-    backgroundColor: '#1f2b52',
+    borderColor: colors.accent.primary,
+    backgroundColor: colors.bg.surfaceTinted,
   },
   chipTitle: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 14,
     fontWeight: '700',
   },
   chipComposer: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 11,
     marginTop: 2,
   },
   chipTextActive: {
-    color: '#eaeaff',
+    color: colors.text.primary,
   },
   transposeCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#16213e',
-    borderRadius: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: '#0f3460',
-    paddingHorizontal: 16,
+    borderColor: colors.border.subtle,
+    paddingHorizontal: spacing.s16,
     paddingVertical: 14,
   },
   stepBtn: {
     width: 52,
     height: 52,
-    borderRadius: 26,
-    backgroundColor: '#1a1a2e',
+    borderRadius: radius.circle,
+    backgroundColor: colors.bg.canvas,
     borderWidth: 1,
-    borderColor: '#e94560',
+    borderColor: colors.accent.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepBtnDisabled: {
     opacity: 0.35,
-    borderColor: '#2a2a4a',
+    borderColor: colors.border.subtle,
   },
   keyReadout: {
     flexDirection: 'row',
@@ -746,12 +747,12 @@ const baseStyles = StyleSheet.create({
     gap: 10,
   },
   keyFrom: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 15,
     fontWeight: '600',
   },
   keyTo: {
-    color: '#4ecdc4',
+    color: colors.brand.anchor,
     fontSize: 17,
     fontWeight: '800',
   },
@@ -759,15 +760,15 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    gap: spacing.s12,
     marginTop: 10,
   },
   offsetText: {
-    color: '#a0a0b8',
+    color: colors.text.secondary,
     fontSize: 13,
   },
   resetText: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -782,27 +783,27 @@ const baseStyles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     alignSelf: 'center',
-    marginTop: 12,
+    marginTop: spacing.s12,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: '#0f3460',
-    backgroundColor: '#16213e',
+    borderColor: colors.border.subtle,
+    backgroundColor: colors.bg.surface,
   },
   revertBtnOff: {
     opacity: 0.45,
   },
   revertText: {
-    color: '#eaeaff',
+    color: colors.text.primary,
     fontSize: 13,
     fontWeight: '700',
   },
   scoreCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
+    backgroundColor: colors.bg.surface,
+    borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: colors.border.subtle,
     overflow: 'hidden',
     marginBottom: 18,
   },
@@ -819,16 +820,16 @@ const baseStyles = StyleSheet.create({
     // owns its own height through the whole-work band, so this card can never
     // pre-cap a score again.
     minHeight: SCORE_STAFF_MIN_HEIGHT,
-    marginTop: 8,
-    marginHorizontal: 12,
+    marginTop: spacing.s8,
+    marginHorizontal: spacing.s12,
     marginBottom: 14,
-    borderRadius: 12,
+    borderRadius: radius.card,
     overflow: 'hidden',
   },
   scoreHeader: {
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.s16,
     paddingTop: 14,
-    paddingBottom: 4,
+    paddingBottom: spacing.s4,
   },
   scoreHeaderRow: {
     flexDirection: 'row',
@@ -838,34 +839,34 @@ const baseStyles = StyleSheet.create({
   scoreHeaderText: { flex: 1, paddingRight: 10 },
   expandBody: { flexGrow: 1, padding: 8 },
   scoreTitle: {
-    color: '#ffffff',
+    color: colors.text.primary,
     fontSize: 17,
     fontWeight: '700',
   },
   scoreComposer: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 13,
     marginTop: 2,
   },
   pdBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: spacing.s4,
     alignSelf: 'flex-start',
-    marginHorizontal: 16,
-    marginTop: 8,
-    backgroundColor: '#1a1a2e',
-    borderRadius: 6,
-    paddingHorizontal: 8,
+    marginHorizontal: spacing.s16,
+    marginTop: spacing.s8,
+    backgroundColor: colors.bg.canvas,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.s8,
     paddingVertical: 3,
   },
   pdBadgeText: {
-    color: '#4ecdc4',
+    color: colors.brand.anchor,
     fontSize: 11,
     fontWeight: '700',
   },
   sampleBadge: {
-    marginTop: 8,
+    marginTop: spacing.s8,
   },
   /** The honest length line sits right under the badge it complements. */
   scoreLengthLine: {
@@ -875,18 +876,18 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginTop: 12,
-    borderColor: '#0f3460',
+    gap: spacing.s8,
+    marginTop: spacing.s12,
+    borderColor: colors.border.subtle,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.s12,
   },
   readerBtnPressed: {
     opacity: 0.8,
   },
   readerBtnText: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -895,50 +896,50 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginTop: 8,
-    backgroundColor: '#16213e',
-    borderColor: '#0f3460',
+    gap: spacing.s8,
+    marginTop: spacing.s8,
+    backgroundColor: colors.bg.surface,
+    borderColor: colors.border.subtle,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.s12,
   },
   pdfBtnPressed: {
     opacity: 0.8,
   },
   pdfBtnText: {
-    color: '#e94560',
+    color: colors.brand.anchor,
     fontSize: 14,
     fontWeight: '700',
   },
   /** What that control does — under the control, never in a tooltip. */
   pdfHint: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 12,
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: spacing.s8,
   },
   saveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#e94560',
-    borderRadius: 14,
+    gap: spacing.s8,
+    backgroundColor: colors.brand.anchor,
+    borderRadius: radius.pill,
     paddingVertical: 15,
   },
   saveBtnDisabled: {
     opacity: 0.45,
   },
   saveBtnText: {
-    color: '#ffffff',
+    color: colors.bg.surface,
     fontSize: 16,
     fontWeight: '700',
   },
   copyrightNote: {
-    color: '#8a8ab0',
+    color: colors.text.secondary,
     fontSize: 12,
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: spacing.s8,
   },
 });

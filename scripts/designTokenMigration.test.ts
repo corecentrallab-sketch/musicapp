@@ -6,8 +6,10 @@
  * Library, Piece detail, History, Find-a-piece); batch 2, slice 1 migrated seven more
  * (Editor, Scanned viewer, Onboarding, PDF viewer, Practice week, Achievements,
  * Tuner); batch 2, slice 2 migrated five more (Hum search, Metronome, Transposed
- * score reader, Cloud sync, Modern search). This suite is the proof that each
- * migration is real and that it changed NOTHING ELSE:
+ * score reader, Cloud sync, Modern search); batch 2, slice 3 migrated the last
+ * four (Notation editor, Practice video, Scan score, Settings), which takes the
+ * sweep to ALL 21 screens. This suite is the proof that each migration is real
+ * and that it changed NOTHING ELSE:
  *
  *   1. NO RAW HEX in those files — every colour is a `colors.*` role. The
  *      scan runs on the source with its comments blanked, so a doc comment that
@@ -30,6 +32,8 @@
  *      progress dot, the two progress bars: graphics, no label on them), and every
  *      text-labelled primary button is pinned to a `brand.anchor` fill with a
  *      white-on-it label. A crimson pill with a small white label fails here.
+ *      R4-3 lives here: the practice-video result screen's "Watch with notes" was
+ *      crimson under a 15 pt white label (3.83:1), and it is pinned by name below.
  *
  * Each check is shown to FAIL on a mutated copy of the real file (the pre-migration
  * shape), so a green run cannot be vacuous — the standing defect class here is
@@ -64,7 +68,8 @@ function assertEq<T>(actual: T, expected: T, label: string): void {
 
 // ─── the migrated set ───────────────────────────────────────────────────────
 
-/** Batch 1 (five screens) + batch 2 slice 1 (seven) + slice 2 (five). The other four are LATER. */
+/** Batch 1 (five screens) + batch 2 slice 1 (seven) + slice 2 (five) + slice 3 (four).
+ *  ALL 21 screens are on the tokens as of slice 3. */
 const MIGRATED_SCREENS: readonly string[] = [
   'src/screens/HomeScreen.tsx',
   'src/screens/LibraryScreen.tsx',
@@ -83,6 +88,11 @@ const MIGRATED_SCREENS: readonly string[] = [
   'src/screens/TransposedScoreReaderScreen.tsx',
   'src/screens/CloudSyncScreen.tsx',
   'src/screens/ModernSearchScreen.tsx',
+  /* Batch 2, slice 3 — the last four. The sweep is complete: 21 of 21. */
+  'src/screens/NotationEditorScreen.tsx',
+  'src/screens/PracticeVideoScreen.tsx',
+  'src/screens/ScanScoreScreen.tsx',
+  'src/screens/SettingsScreen.tsx',
 ];
 
 /**
@@ -133,6 +143,13 @@ const AFFILIATE_BYTES: Record<string, readonly string[]> = {
     "import { modernPurchaseUrls } from '../services/purchaseCta';",
     'purchaseUrls: modernPurchaseUrls(m),',
   ],
+  /* Batch 2, slice 3. None of the last four touches the money path — no retailer
+     builder, no CTR event, no disclosure, no URL. That is pinned as EMPTY, so a
+     styling pass cannot add a money surface to any of them either. */
+  'src/screens/NotationEditorScreen.tsx': [],
+  'src/screens/PracticeVideoScreen.tsx': [],
+  'src/screens/ScanScoreScreen.tsx': [],
+  'src/screens/SettingsScreen.tsx': [],
 };
 
 /** How many `http(s)://` occurrences each file carries. Pinned, not sampled. */
@@ -154,6 +171,10 @@ const HTTP_COUNT: Record<string, number> = {
   'src/screens/TransposedScoreReaderScreen.tsx': 0,
   'src/screens/CloudSyncScreen.tsx': 0,
   'src/screens/ModernSearchScreen.tsx': 0,
+  'src/screens/NotationEditorScreen.tsx': 0,
+  'src/screens/PracticeVideoScreen.tsx': 0,
+  'src/screens/ScanScoreScreen.tsx': 0,
+  'src/screens/SettingsScreen.tsx': 0,
 };
 
 /**
@@ -177,6 +198,14 @@ const CRIMSON_FILL_COUNT: Record<string, number> = {
   'src/screens/TransposedScoreReaderScreen.tsx': 0,
   'src/screens/CloudSyncScreen.tsx': 0,
   'src/screens/ModernSearchScreen.tsx': 1, // micBtn (the record cue, no label on it)
+  /* Batch 2, slice 3. The notation editor, the practice video and Settings are
+     ZERO: every crimson pill on them carried a small white label and is now on
+     brand.anchor (R4-3 among them). Scan score keeps exactly one — `shutterBusy`,
+     the shutter's busy ring, which has no text on it. */
+  'src/screens/NotationEditorScreen.tsx': 0,
+  'src/screens/PracticeVideoScreen.tsx': 0,
+  'src/screens/ScanScoreScreen.tsx': 1, // shutterBusy (the shutter ring, no label)
+  'src/screens/SettingsScreen.tsx': 0,
 };
 
 /**
@@ -221,6 +250,27 @@ const BRAND_PILL_BYTES: Record<string, readonly string[]> = {
     'color: colors.bg.surface,',
   ],
   'src/screens/ModernSearchScreen.tsx': [
+    'backgroundColor: colors.brand.anchor,',
+    'color: colors.bg.surface,',
+  ],
+  /* Batch 2, slice 3 — and R4-3. The practice video's shared primary pill used to
+     be crimson with a 15 pt white label (3.83:1); it is brand.anchor now, so the
+     result screen's "Watch with notes" CTA clears 8.05:1. The other three screens'
+     primary buttons (notation save, scan score's done + permission, Settings' two
+     toggles/upgrade) follow the same rule. */
+  'src/screens/NotationEditorScreen.tsx': [
+    'backgroundColor: colors.brand.anchor,',
+    'color: colors.bg.surface,',
+  ],
+  'src/screens/PracticeVideoScreen.tsx': [
+    'backgroundColor: colors.brand.anchor,',
+    'color: colors.bg.surface,',
+  ],
+  'src/screens/ScanScoreScreen.tsx': [
+    'backgroundColor: colors.brand.anchor,',
+    'color: colors.bg.surface,',
+  ],
+  'src/screens/SettingsScreen.tsx': [
     'backgroundColor: colors.brand.anchor,',
     'color: colors.bg.surface,',
   ],
@@ -357,6 +407,26 @@ function missingBrandPillBytes(source: string, file: string): string[] {
   return expected.filter((needle) => source.indexOf(needle) < 0);
 }
 
+/**
+ * R4-3 — THE FILL OF THE PILL THE "Watch with notes" CTA IS DRAWN IN.
+ *
+ * The Round-4 audit's one colour defect: on the practice-video result screen the
+ * CTA rendered in `primaryBtn`, which was `#e94560` under a 15 pt white label —
+ * 3.83:1, the exact combination the design system bans. It is `brand.anchor` now
+ * (8.05:1). Pinned by the style BLOCK, not by a colour count, so the guard names
+ * the surface the owner pressed rather than "somewhere on the screen".
+ */
+function watchWithNotesFill(source: string): string | null {
+  const m = source.match(/primaryBtn: \{\s*\n\s*backgroundColor: (colors\.[\w.]+),/);
+  return m ? m[1] : null;
+}
+
+/** The colour of the label drawn ON that pill. */
+function watchWithNotesLabel(source: string): string | null {
+  const m = source.match(/primaryBtnText: \{ color: (colors\.[\w.]+),/);
+  return m ? m[1] : null;
+}
+
 // ─── the real files ─────────────────────────────────────────────────────────
 
 function repoRoot(): string {
@@ -404,6 +474,23 @@ for (const file of MIGRATED_SCREENS) {
     `${name} keeps its text-labelled primary button on brand.anchor with a white label`,
   );
 }
+
+console.log('\n[designTokenMigration] R4-3: "Watch with notes" clears AA');
+const practiceVideoSrc = sources['src/screens/PracticeVideoScreen.tsx'];
+assert(
+  practiceVideoSrc.indexOf('<Text style={styles.primaryBtnText}>{PRACTICE_VIDEO_DONE_CTA}</Text>') >= 0,
+  'the "Watch with notes" CTA still renders in the shared primary pill',
+);
+assertEq(
+  watchWithNotesFill(practiceVideoSrc),
+  'colors.brand.anchor',
+  'the "Watch with notes" pill fills with brand.anchor (8.05:1), not crimson (3.83:1)',
+);
+assertEq(
+  watchWithNotesLabel(practiceVideoSrc),
+  'colors.bg.surface',
+  'the label on the "Watch with notes" pill is the app white',
+);
 
 console.log('\n[designTokenMigration] the token source is the only colour authority');
 const tokensSrc = readRepoFile('src/theme/tokens.ts');
@@ -511,6 +598,30 @@ const modernFunnelDropped = modernSrc.replace(
   'purchaseUrls: null,',
 );
 
+// ── batch 2, slice 3: the last four screens ────────────────────────────────
+const notationSrc = sources['src/screens/NotationEditorScreen.tsx'];
+const scanSrc = sources['src/screens/ScanScoreScreen.tsx'];
+const settingsSrc = sources['src/screens/SettingsScreen.tsx'];
+
+const notationHexBack = notationSrc.replace('backgroundColor: colors.bg.canvas,', "backgroundColor: '#1a1a2e',");
+const settingsRadiusBack = settingsSrc.replace('borderRadius: radius.pill,', 'borderRadius: 999,');
+const scanSpaceBack = scanSrc.replace('paddingHorizontal: spacing.s12,', 'paddingHorizontal: 12,');
+/** The four screens carry no retailer string at all; a styling pass may not add one. */
+const notationUrlSmuggled = notationSrc.replace(
+  'const baseStyles',
+  "const EXTRA = 'https://example.com/x';\nconst baseStyles",
+);
+
+// ── R4-3: crimson put back under the "Watch with notes" pill ───────────────
+const watchPillCrimson = practiceVideoSrc.replace(
+  '  primaryBtn: {\n    backgroundColor: colors.brand.anchor,',
+  '  primaryBtn: {\n    backgroundColor: colors.accent.primary,',
+);
+const watchLabelGreyed = practiceVideoSrc.replace(
+  'primaryBtnText: { color: colors.bg.surface,',
+  'primaryBtnText: { color: colors.text.primary,',
+);
+
 const probes: Array<{ label: string; caught: boolean }> = [
   { label: 'a raw hex put back into a style block', caught: hexLiterals(hexBackInStyle).length === 1 },
   { label: 'a raw hex put back into a one-line style', caught: hexLiterals(hexBackInline).length === 1 },
@@ -595,6 +706,39 @@ const probes: Array<{ label: string; caught: boolean }> = [
     caught:
       modernFunnelDropped !== modernSrc &&
       missingAffiliateBytes(modernFunnelDropped, 'src/screens/ModernSearchScreen.tsx').length === 1,
+  },
+  {
+    label: 'slice 3: a raw hex put back into the notation editor',
+    caught: notationHexBack !== notationSrc && hexLiterals(notationHexBack).length === 1,
+  },
+  {
+    label: 'slice 3: a numeric radius put back into Settings',
+    caught:
+      settingsRadiusBack !== settingsSrc && radiusLiterals(settingsRadiusBack).length === 1,
+  },
+  {
+    label: 'slice 3: an on-scale spacing literal put back into the scan score',
+    caught: scanSpaceBack !== scanSrc && onScaleSpacingLiterals(scanSpaceBack).length === 1,
+  },
+  {
+    label: 'slice 3: a URL smuggled into the notation editor (its money pin is EMPTY)',
+    caught:
+      notationUrlSmuggled !== notationSrc &&
+      extraHttpOccurrences(notationUrlSmuggled, 'src/screens/NotationEditorScreen.tsx') === 1,
+  },
+  {
+    label: 'R4-3: crimson put back under the "Watch with notes" pill',
+    caught:
+      watchPillCrimson !== practiceVideoSrc &&
+      watchWithNotesFill(watchPillCrimson) === 'colors.accent.primary' &&
+      crimsonFillCount(watchPillCrimson) === 1,
+  },
+  {
+    label: 'R4-3: the white label dropped from the "Watch with notes" pill',
+    caught:
+      watchLabelGreyed !== practiceVideoSrc &&
+      watchWithNotesLabel(watchLabelGreyed) === 'colors.text.primary' &&
+      watchWithNotesLabel(practiceVideoSrc) === 'colors.bg.surface',
   },
 ];
 
